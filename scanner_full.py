@@ -317,7 +317,7 @@ def draw_chart(df_plot, symbol, signal_type, today):
     ax_price.yaxis.set_label_position("right"); ax_price.yaxis.tick_right()
     ax_price.set_ylabel(""); ax_price.tick_params(axis='y', labelsize=8)
     y_min, y_max = ax_price.get_ylim()
-    ax_price.set_ylim(y_min, y_max + (y_max - y_min) * 0.12)
+    ax_price.set_ylim(y_min, y_max + (y_max - y_min) * 0.15)
     ax_price.annotate(r'$\mathbf{\uparrow}$',
         xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
         ha='center', va='top', color='DeepPink', fontsize=12)
@@ -341,7 +341,7 @@ def draw_chart(df_plot, symbol, signal_type, today):
 
     xlim = ax_price.get_xlim()
     ax_price.set_xlim(xlim[0], xlim[1] + 20)
-    fig.savefig(img_name, bbox_inches='tight', pad_inches=0.1, dpi=150)
+    fig.savefig(img_name, bbox_inches='tight', pad_inches=0.15, dpi=150)
     plt.close(fig)
     return img_name
 
@@ -365,6 +365,7 @@ def run_scan_cycle(symbols, now_time, alerted_today):
     """
     new_signals    = []
     current_date   = datetime.now(TZ_VN).date()
+    date_str = datetime.now(TZ_VN).strftime('%d/%m/%Y')
 
     for symbol in symbols:
         for attempt in range(3):
@@ -428,6 +429,7 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                 # Tạo các link hỗ trợ
                 link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
                 link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
+                link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
                 link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
                 link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
                 
@@ -436,13 +438,15 @@ def run_scan_cycle(symbols, now_time, alerted_today):
 
                 img_name = draw_chart(df_plot, symbol, signal_type, today)
                 msg = (
-                    f"<b>{emoji} {signal_type}: {symbol}</b>{upgrade_note}\n"
-                    f"Giá: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+                    f"{emoji} #{symbol}  {date_str} \n"
+                    f"Sig: {signal_type} \n"
+                    f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%) \n"
                     f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}% \n"
                     f"<a href='{link_vnd_detail}'>⚖️</a> "
-                    f"<a href='{link_vnd_news}'>📰</a> "
-                    f"<a href='{link_vnd_summary}'>📈</a> "
-                    f"<a href='{link_24h_money}'>📈</a>"
+                    f"<a href='{link_vnd_news}'>🗞️</a> "
+                    f"<a href='{link_vietstock}'>📈</a> "
+                    f"<a href='{link_vnd_summary}'>📄</a> "
+                    f"<a href='{link_24h_money}'>📄</a>"
                 )
                 send_telegram_signal(msg, image_path=img_name)
                 break  # Thành công → thoát retry
@@ -487,8 +491,8 @@ while True:
         print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
 
     # --- Khoá ngoài giờ giao dịch ---
-    is_morning   = 84500 <= now_time <= 114500
-    is_afternoon = 130000 <= now_time <= 150000
+    is_morning   = 85000 <= now_time <= 113500
+    is_afternoon = 130000 <= now_time <= 170000
 
     if not (is_morning or is_afternoon):
         if   now_time < 84500:  next_open = "09:00"
