@@ -559,11 +559,11 @@ while True:
         last_run_date = current_date
         print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
 
-    is_morning   = 80000 <= now_time <= 123000
+    is_morning   = 85000 <= now_time <= 113500
     is_afternoon = 130000 <= now_time <= 240000
 
     if not (is_morning or is_afternoon):
-        if   now_time < 80000:  next_open = "09:00"
+        if   now_time < 85000:  next_open = "09:00"
         elif now_time < 130000: next_open = "13:00"
         else:                   next_open = "09:00 ngày mai"
         print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Ngủ {SCAN_INTERVAL_SEC}s...")
