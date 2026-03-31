@@ -1,0 +1,7 @@
+vnstock
+pandas
+requests
+mplfinance
+pytz
+numpy
+matplotlib
