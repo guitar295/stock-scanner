@@ -209,7 +209,7 @@ Sửa nội dung → nhấn "Commit changes"
 
 ## Bước B — Trên VPS, chạy đúng 1 lệnh này:
 
-bash
+bash // Chú ý sửa link file tải trước khi chạy
 ```
 cd ~/scanner && \
 curl -O https://raw.githubusercontent.com/TEN_BAN/stock-scanner/main/scanner_full.py && \
