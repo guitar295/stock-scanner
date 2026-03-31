@@ -20,7 +20,7 @@ Trong repo vừa tạo → nhấn "Add file" → "Create new file"
 
 Tên file: requirements.txt
 Nội dung:
-
+```
 vnstock
 pandas
 requests
@@ -28,7 +28,7 @@ mplfinance
 pytz
 numpy
 matplotlib
-
+```
 Nhấn "Commit changes" → "Commit changes" (xanh lá) để lưu.
 
 ## 1.3 — Tạo file Dockerfile
