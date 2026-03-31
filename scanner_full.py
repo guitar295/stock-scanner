@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import os
 from datetime import datetime
 import pytz
-
+import json
 
 # =============================================================================
 # BƯỚC 2: CẤU HÌNH
@@ -39,26 +39,75 @@ TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 register_user(VNSTOCK_API)
 
 # =============================================================================
-# BƯỚC 3: HÀM GỬI TELEGRAM
+# BƯỚC 3: CÁC HÀM BỔ TRỢ (TELEGRAM & WEEKLY DATA)
 # =============================================================================
-def send_telegram_signal(message, image_path=None):
+def build_weekly_df(df_daily):
+    """Resample OHLCV daily → weekly (tuần kết thúc thứ Sáu), tính lại chỉ báo."""
+    df_w = df_daily[['open','high','low','close','volume']].resample('W-FRI').agg({
+        'open':   'first',
+        'high':   'max',
+        'low':    'min',
+        'close':  'last',
+        'volume': 'sum',
+    }).dropna()
+    return compute_indicators(df_w)
+
+def send_telegram_signal(msg, image_paths=None, image_path=None):
+    """
+    - image_paths : list ảnh → media group, caption gắn vào ảnh đầu tiên
+    - image_path  : 1 ảnh (tương thích ngược)
+    - msg=None    : gửi ảnh không caption
+    """
+    if image_path and not image_paths:
+        image_paths = [image_path]
+
+    url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
+
     try:
-        if image_path and os.path.exists(image_path):
-            url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-            with open(image_path, 'rb') as photo:
-                payload = {
-                    "chat_id": TELEGRAM_CHAT_ID,
-                    "caption": message,
-                    "parse_mode": "HTML"
-                }
-                requests.post(url_photo, data=payload, files={"photo": photo})
-            print(f"  ✅ Đã gửi chart: {image_path}")
-            os.remove(image_path)
-        else:
-            url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
-            requests.post(url_msg, data=payload)
-            print(f"  ✅ Đã gửi tin nhắn văn bản.")
+        # Trường hợp gửi 1 ảnh
+        if image_paths and len(image_paths) == 1:
+            with open(image_paths[0], 'rb') as f:
+                requests.post(url_photo, data={
+                    'chat_id':    TELEGRAM_CHAT_ID,
+                    'caption':    msg or '',
+                    'parse_mode': 'HTML',
+                }, files={'photo': f})
+            print(f"  ✅ Đã gửi chart: {image_paths[0]}")
+
+        # Trường hợp gửi Album (nhiều ảnh)
+        elif image_paths and len(image_paths) >= 2:
+            files = {}
+            media = []
+            for i, path in enumerate(image_paths):
+                key        = f"photo{i}"
+                files[key] = open(path, 'rb')
+                item = {"type": "photo", "media": f"attach://{key}"}
+                if i == 0 and msg:
+                    item["caption"]    = msg
+                    item["parse_mode"] = "HTML"
+                media.append(item)
+            try:
+                requests.post(url_album, data={
+                    'chat_id': TELEGRAM_CHAT_ID,
+                    'media':   json.dumps(media),
+                }, files=files)
+                print(f"  ✅ Đã gửi chart: {image_paths[0]}")
+            finally:
+                for f in files.values(): f.close()
+
+        # Trường hợp chỉ gửi tin nhắn văn bản
+        elif msg:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'}
+            )
+
+        # Tự động dọn dẹp ảnh sau khi gửi thành công
+        if image_paths:
+            for path in image_paths:
+                if os.path.exists(path): os.remove(path)
+
     except Exception as e:
         print(f"  ❌ Lỗi gửi Telegram: {e}")
 
@@ -280,34 +329,44 @@ def detect_signal(df, now_time):
 
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
+# - timeframe='Daily' : có mũi tên ↑, title hiện [signal_type], dùng MA200
+# - timeframe='Weekly': KHÔNG mũi tên, title chỉ hiện [Weekly], KHÔNG dùng MA50
 # =============================================================================
-def draw_chart(df_plot, symbol, signal_type, today):
-    pct      = (today['close'] - df_plot['close'].iloc[-2]) / df_plot['close'].iloc[-2] * 100
-    hist_val = df_plot['MACD_Hist'].values
+def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily'):
+    is_daily = (timeframe == 'Daily')
+    date_str = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+
+    prev_close = df_plot['close'].iloc[-2]
+    pct        = (today['close'] - prev_close) / prev_close * 100
+
+    hist_val    = df_plot['MACD_Hist'].values
     macd_colors = []
     for i, val in enumerate(hist_val):
         prev = hist_val[i-1] if i > 0 else 0
         if val >= 0: macd_colors.append('#26A69A' if val >= prev else '#B2DFDB')
         else:        macd_colors.append('#EF5350' if val <= prev else '#FFCDD2')
 
-    colors_vol = ['#26A69A' if r['close'] >= r['open'] else '#EF5350' for _, r in df_plot.iterrows()]
+    colors_vol = ['#26A69A' if r['close'] >= r['open'] else '#EF5350'
+                  for _, r in df_plot.iterrows()]
 
     apds = [
-        mpf.make_addplot(df_plot['EMA10'],        color='red',    width=0.6),
-        mpf.make_addplot(df_plot['EMA20'],        color='green',  width=0.6),
-        mpf.make_addplot(df_plot['EMA50'],        color='purple', width=0.6),
-        mpf.make_addplot(df_plot['MA200'],       color='brown',  width=0.6),
-        mpf.make_addplot(df_plot['volume'],      type='bar', panel=1, color=colors_vol,  alpha=1.0),
-        mpf.make_addplot(df_plot['MACD_Hist'],   type='bar', panel=2, color=macd_colors, secondary_y=False),
-        mpf.make_addplot(df_plot['MACD'],        panel=2, color='blue',   width=0.6, secondary_y=False),
-        mpf.make_addplot(df_plot['MACD_Signal'], panel=2, color='orange', width=0.6, secondary_y=False),
+        mpf.make_addplot(df_plot['EMA10'],     color='red',    width=0.6),
+        mpf.make_addplot(df_plot['EMA20'],     color='green',  width=0.6),
+        mpf.make_addplot(df_plot['EMA50'],     color='purple', width=0.6),
+        mpf.make_addplot(df_plot['volume'],    type='bar', panel=1, color=colors_vol,  alpha=1.0),
+        mpf.make_addplot(df_plot['MACD_Hist'], type='bar', panel=2, color=macd_colors, secondary_y=False),
+        mpf.make_addplot(df_plot['MACD'],      panel=2, color='blue',   width=0.6, secondary_y=False),
+        mpf.make_addplot(df_plot['MACD_Signal'],panel=2,color='orange', width=0.6, secondary_y=False),
     ]
+
+    # Chỉ vẽ MA200 trên khung Daily
+    if is_daily:
+        apds.append(mpf.make_addplot(df_plot['MA200'], color='brown', width=0.6))
+
     mc           = mpf.make_marketcolors(up='#26A69A', down='#EF5350', edge='inherit', wick='inherit', alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles', marketcolors=mc, gridstyle='', facecolor='white')
-    img_name     = f"{symbol}.png"
-    
-    date_str = datetime.now(TZ_VN).strftime('%d/%m/%Y')
-    
+    img_name     = f"{symbol}_{timeframe.lower()}.png"
+
     fig, axlist = mpf.plot(
         df_plot, type='candle', volume=False, addplot=apds,
         style=custom_style, savefig=dict(fname=img_name, dpi=150),
@@ -318,21 +377,34 @@ def draw_chart(df_plot, symbol, signal_type, today):
     ax_price.set_ylabel(""); ax_price.tick_params(axis='y', labelsize=8)
     y_min, y_max = ax_price.get_ylim()
     ax_price.set_ylim(y_min, y_max + (y_max - y_min) * 0.15)
-    ax_price.annotate(r'$\mathbf{\uparrow}$',
-        xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
-        ha='center', va='top', color='DeepPink', fontsize=12)
-    ax_price.set_title(
-        f"[{signal_type}] {date_str} {symbol} | "
-        f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
-        f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)",
-        loc='left', fontsize=11)
+
+    if is_daily:
+        ax_price.annotate(r'$\mathbf{\uparrow}$',
+            xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
+            ha='center', va='top', color='DeepPink', fontsize=12)
+
+    # Daily: title hiện signal_type | Weekly: title chỉ hiện [Weekly]
+    if is_daily:
+        title_str = (
+            f"{symbol} [D] {date_str}  |  "
+            f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
+            f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%) \n\n"
+            f"{signal_type}"
+        )
+    else:
+        title_str = (
+            f"{symbol} [W] {date_str}  | "
+            f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
+            f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
+        )
+    ax_price.set_title(title_str, loc='left', fontsize=11)
 
     if len(axlist) > 4:
         ax_macd = axlist[4]
         ax_macd.yaxis.set_ticks([]); ax_macd.yaxis.set_ticklabels([])
-        m_vals = pd.concat([df_plot['MACD'], df_plot['MACD_Signal'], df_plot['MACD_Hist']])
-        abs_m  = max(abs(m_vals.min()), abs(m_vals.max()))
-        ax_macd.set_ylim(-abs_m*1.1, abs_m*1.1)
+        m_vals = pd.concat([df_plot['MACD'], df_plot['MACD_Signal'], df_plot['MACD_Hist']]).dropna()
+        abs_m  = max(abs(m_vals.min()), abs(m_vals.max())) if len(m_vals) > 0 else 1
+        ax_macd.set_ylim(-abs_m*0.8, abs_m*1.2)
         for spine in ['top','right','left','bottom']: ax_macd.spines[spine].set_visible(False)
 
     for i, ax in enumerate(axlist):
@@ -348,30 +420,28 @@ def draw_chart(df_plot, symbol, signal_type, today):
 # =============================================================================
 # BƯỚC 8: HÀM QUÉT 1 CHU KỲ
 # =============================================================================
-# Thứ tự ưu tiên tín hiệu — dùng để xét "leo hạng"
 SIGNAL_RANK  = {'PRE-BREAK': 1, 'POCKET PIVOT': 2, 'BREAKOUT': 3}
 SIGNAL_EMOJI = {'BREAKOUT': '🟢', 'POCKET PIVOT': '🟡', 'PRE-BREAK': '🟣'}
 
 def run_scan_cycle(symbols, now_time, alerted_today):
     """
     Quét toàn bộ danh sách mã trong 1 chu kỳ.
+    Tín hiệu chỉ tính trên Daily. Weekly chỉ vẽ kèm để đối chiếu.
 
     Logic chống spam:
-    - Nếu đã báo tín hiệu CÙNG LOẠI hoặc MẠNH HƠN rồi → bỏ qua.
-    - Nếu tín hiệu LEO HẠNG (VD: PRE-BREAK → BREAKOUT) → báo lại có ghi chú "Nâng cấp".
-    - Mỗi mã chỉ được báo tối đa 1 lần mỗi cấp độ trong ngày.
-
-    Trả về danh sách mã phát tín hiệu mới trong chu kỳ này.
+    - Cùng loại hoặc yếu hơn → bỏ qua.
+    - Leo hạng → báo lại.
     """
-    new_signals    = []
-    current_date   = datetime.now(TZ_VN).date()
-    date_str = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+    new_signals  = []
+    current_date = datetime.now(TZ_VN).date()
+    date_str     = datetime.now(TZ_VN).strftime('%d/%m/%Y')
 
     for symbol in symbols:
         for attempt in range(3):
             try:
                 quote  = Quote(symbol=symbol, source='KBS')
-                df_raw = quote.history(length='600', interval='1D')
+                # 1000 ngày: daily đủ 250 nến plot + weekly đủ ~200 nến sau resample
+                df_raw = quote.history(length='1000', interval='1D')
 
                 if df_raw is None or len(df_raw) < 200:
                     break
@@ -394,53 +464,43 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                             today_df.columns = [c.lower() for c in today_df.columns]
                             if today_df.index.max().date() == current_date:
                                 df_raw = df_raw[df_raw.index.date != current_date]
-                                df_raw = pd.concat([df_raw, today_df]).sort_index().last('600D')
+                                df_raw = pd.concat([df_raw, today_df]).sort_index().last('1000D')
                     except Exception:
-                        pass  # Giữ dữ liệu cũ nếu lỗi cập nhật
+                        pass
 
-                # Phát hiện tín hiệu
+                # ── Tín hiệu CHỈ tính trên Daily ────────────────────────────
                 df_calc     = compute_indicators(df_raw)
                 signal_type = detect_signal(df_calc, now_time)
 
                 if not signal_type:
                     break
 
-                # --- Kiểm tra chống spam ---
-                prev_signal      = alerted_today.get(symbol)
-                prev_rank        = SIGNAL_RANK.get(prev_signal, 0)
-                current_rank     = SIGNAL_RANK.get(signal_type, 0)
-
-                # Bỏ qua nếu tín hiệu hiện tại KHÔNG mạnh hơn tín hiệu đã báo
+                # Chống spam
+                prev_rank    = SIGNAL_RANK.get(alerted_today.get(symbol), 0)
+                current_rank = SIGNAL_RANK.get(signal_type, 0)
                 if prev_rank >= current_rank:
                     break
 
-                # Tín hiệu mới hoặc leo hạng → cập nhật bộ nhớ & gửi báo
                 alerted_today[symbol] = signal_type
                 new_signals.append(symbol)
 
                 today        = df_calc.iloc[-1]
-                df_plot      = df_calc.tail(250).copy()
                 pct          = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
                 change       = today['close'] - df_calc['close'].iloc[-2]
                 emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
                 vol_vs_prev  = (today['volume'] - df_calc['volume'].iloc[-2]) / df_calc['volume'].iloc[-2] * 100
                 vol_vs_vma50 = (today['volume'] - today['VMA50']) / today['VMA50'] * 100 if today['VMA50'] > 0 else 0
 
-                # Tạo các link hỗ trợ
                 link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
                 link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
                 link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
                 link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
                 link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
-                
-                # Ghi chú leo hạng
-                upgrade_note = (f"\n⬆️ <i>Nâng cấp từ {prev_signal}</i>" if prev_signal else "")
 
-                img_name = draw_chart(df_plot, symbol, signal_type, today)
                 msg = (
                     f"{emoji} #{symbol}  {date_str} \n"
                     f"Sig: {signal_type} \n"
-                    f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%) \n"
+                    f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
                     f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}% \n"
                     f"<a href='{link_vnd_detail}'>⚖️</a> "
                     f"<a href='{link_vnd_news}'>🗞️</a> "
@@ -448,8 +508,21 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                     f"<a href='{link_vnd_summary}'>📄</a> "
                     f"<a href='{link_24h_money}'>📄</a>"
                 )
-                send_telegram_signal(msg, image_path=img_name)
-                break  # Thành công → thoát retry
+
+                # ── Chart Daily (250 nến) — tín hiệu, mũi tên ───────────────
+                df_plot_d = df_calc.tail(250).copy()
+                img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily')
+
+                # ── Chart Weekly (150 tuần) — chỉ để đối chiếu ──────────────
+                df_weekly  = build_weekly_df(df_raw)
+                df_plot_w  = df_weekly.tail(150).copy()
+                today_w    = df_plot_w.iloc[-1]
+                img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly')
+
+                # ── Gửi 1 album: Daily (caption) + Weekly (đối chiếu) ───────
+                send_telegram_signal(msg, image_paths=[img_daily, img_weekly])
+
+                break
 
             except Exception as e:
                 if 'timeout' in str(e).lower() and attempt < 2:
@@ -458,16 +531,13 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                     print(f"  ❌ Lỗi mã {symbol}: {e}")
                     break
 
-        time.sleep(1)  # Nghỉ ngắn giữa mã để tránh sập API
+        time.sleep(1)
 
     return new_signals
 
 # =============================================================================
 # BƯỚC 9: AUTO-SCANNER — VÒNG LẶP CHÍNH
 # =============================================================================
-# alerted_today lưu tín hiệu cao nhất đã báo trong ngày cho mỗi mã
-# VD: {'SSI': 'BREAKOUT', 'VND': 'PRE-BREAK'}
-# Reset tự động khi sang ngày mới
 alerted_today = {}
 last_run_date = datetime.now(TZ_VN).date()
 
@@ -484,32 +554,28 @@ while True:
     now_time     = int(now_obj.strftime("%H%M%S"))
     ts           = now_obj.strftime("%H:%M:%S")
 
-    # --- Reset bộ nhớ khi sang ngày mới ---
     if current_date > last_run_date:
         alerted_today.clear()
         last_run_date = current_date
         print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
 
-    # --- Khoá ngoài giờ giao dịch ---
-    is_morning   = 85000 <= now_time <= 113500
-    is_afternoon = 130000 <= now_time <= 150000
+    is_morning   = 80000 <= now_time <= 123000
+    is_afternoon = 130000 <= now_time <= 240000
 
     if not (is_morning or is_afternoon):
-        if   now_time < 85000:  next_open = "09:00"
+        if   now_time < 80000:  next_open = "09:00"
         elif now_time < 130000: next_open = "13:00"
         else:                   next_open = "09:00 ngày mai"
         print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Ngủ {SCAN_INTERVAL_SEC}s...")
         time.sleep(SCAN_INTERVAL_SEC)
         continue
 
-    # --- Bắt đầu chu kỳ quét ---
     print(f"\n{'='*60}")
     print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT")
     print(f"{'='*60}")
 
     new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
 
-    # --- Tổng kết chu kỳ ---
     if new_signals:
         print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
     else:
