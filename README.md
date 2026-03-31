@@ -137,9 +137,9 @@ Thay TEN_BAN bằng username GitHub của bạn:
 Trong thư mục ~/scanner
 bash
 ```
-curl -O https://raw.githubusercontent.com/TEN_BAN/stock-scanner/main/Dockerfile
-curl -O https://raw.githubusercontent.com/TEN_BAN/stock-scanner/main/requirements.txt
-curl -O https://raw.githubusercontent.com/TEN_BAN/stock-scanner/main/scanner_full.py
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/Dockerfile
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/requirements.txt
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py
 ```
 Kiểm tra đã có đủ 3 file:
 bash
