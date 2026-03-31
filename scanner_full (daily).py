@@ -65,7 +65,7 @@ def send_telegram_signal(message, image_path=None):
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
-listing     = Listing(source='KBS')
+listing     = Listing(source='VCI')
 df_listing  = listing.all_symbols()
 col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
 all_symbols = df_listing[col_name].dropna().unique().tolist()
@@ -371,7 +371,7 @@ def run_scan_cycle(symbols, now_time, alerted_today):
     for symbol in symbols:
         for attempt in range(3):
             try:
-                quote  = Quote(symbol=symbol, source='KBS')
+                quote  = Quote(symbol=symbol, source='VCI')
                 df_raw = quote.history(length='600', interval='1D')
 
                 if df_raw is None or len(df_raw) < 200:
