@@ -212,7 +212,7 @@ Sửa nội dung → nhấn "Commit changes"
 bash // Chú ý sửa link file tải trước khi chạy
 ```
 cd ~/scanner && \
-curl -O https://raw.githubusercontent.com/TEN_BAN/stock-scanner/main/scanner_full.py && \
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
 docker stop scanner && \
 docker rm scanner && \
 docker build -t stock-scanner . && \
