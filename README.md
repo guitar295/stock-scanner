@@ -162,6 +162,11 @@ TELEGRAM_CHAT_ID=-100....
 ```
 Nhấn Ctrl+X → Y → Enter để lưu.
 
+Kiểm tra kết quả:
+```
+cat ~/scanner/.env
+```
+
 ## 2.5 — Build Docker image
 
 bash
