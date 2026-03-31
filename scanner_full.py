@@ -492,10 +492,10 @@ while True:
 
     # --- Khoá ngoài giờ giao dịch ---
     is_morning   = 85000 <= now_time <= 113500
-    is_afternoon = 130000 <= now_time <= 170000
+    is_afternoon = 130000 <= now_time <= 150000
 
     if not (is_morning or is_afternoon):
-        if   now_time < 84500:  next_open = "09:00"
+        if   now_time < 85000:  next_open = "09:00"
         elif now_time < 130000: next_open = "13:00"
         else:                   next_open = "09:00 ngày mai"
         print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Ngủ {SCAN_INTERVAL_SEC}s...")
