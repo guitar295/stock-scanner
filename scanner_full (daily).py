@@ -110,7 +110,8 @@ def compute_indicators(df):
     exp26             = df['close'].ewm(span=26, adjust=False).mean()
     df['MACD']        = exp12 - exp26
     df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['MACD_Hist']   = df['MACD'] - df['MACD_Signal']
+    df['MACD_Hist_origin'] = df['MACD'] - df['MACD_Signal']
+    df['MACD_Hist'] = df['MACD_Hist_origin']*3
     df['A']           = df['close'].pct_change()
     return df
 
