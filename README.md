@@ -152,7 +152,7 @@ Output đúng: Dockerfile  requirements.txt  scanner_full.py
 
 File này chỉ nằm trên VPS, không bao giờ lên GitHub:
 ```
-bashnano ~/scanner/.env
+nano ~/scanner/.env
 ```
 Paste nội dung sau (giữ nguyên thông tin thật của bạn):
 ```
