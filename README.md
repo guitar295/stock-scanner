@@ -34,7 +34,7 @@ Nhấn "Commit changes" → "Commit changes" (xanh lá) để lưu.
 ## 1.3 — Tạo file Dockerfile
 Nhấn "Add file" → "Create new file"
 
-Tên file: Dockerfile
+Tên file: ```Dockerfile```
 Nội dung:
 
 dockerfileFROM python:3.11-slim
