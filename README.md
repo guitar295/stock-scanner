@@ -1,9 +1,13 @@
 # stock-scanner
 
 
-```docker logs -f scanner```
+```
+docker logs -f scanner
+```
 Xem log real-time (Ctrl+C để thoát)
+
 ```docker logs --tail 50 scanner  # Xem 50 dòng log gần nhất```
+
 ```docker logs --tail 20 scanner  # Xem 20 dòng log gần nhất```
 
 
