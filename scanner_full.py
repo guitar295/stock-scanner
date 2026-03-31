@@ -305,7 +305,9 @@ def draw_chart(df_plot, symbol, signal_type, today):
     mc           = mpf.make_marketcolors(up='#26A69A', down='#EF5350', edge='inherit', wick='inherit', alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles', marketcolors=mc, gridstyle='', facecolor='white')
     img_name     = f"{symbol}.png"
-
+    
+    date_str = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+    
     fig, axlist = mpf.plot(
         df_plot, type='candle', volume=False, addplot=apds,
         style=custom_style, savefig=dict(fname=img_name, dpi=150),
@@ -320,7 +322,7 @@ def draw_chart(df_plot, symbol, signal_type, today):
         xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
         ha='center', va='top', color='DeepPink', fontsize=12)
     ax_price.set_title(
-        f"[{signal_type}] {symbol} | "
+        f"[{signal_type}] {date_str} {symbol} | "
         f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
         f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)",
         loc='left', fontsize=11)
