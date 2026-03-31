@@ -114,7 +114,7 @@ def send_telegram_signal(msg, image_paths=None, image_path=None):
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
-listing     = Listing(source='KBS')
+listing     = Listing(source='VCI')
 df_listing  = listing.all_symbols()
 col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
 all_symbols = df_listing[col_name].dropna().unique().tolist()
@@ -440,7 +440,7 @@ def run_scan_cycle(symbols, now_time, alerted_today):
     for symbol in symbols:
         for attempt in range(3):
             try:
-                quote  = Quote(symbol=symbol, source='KBS')
+                quote  = Quote(symbol=symbol, source='VCI')
                 # 1000 ngày: daily đủ 250 nến plot + weekly đủ ~200 nến sau resample
                 df_raw = quote.history(length='1000', interval='1D')
 
