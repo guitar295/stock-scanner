@@ -3,10 +3,8 @@
 SCANNER TÍN HIỆU MUA CỔ PHIẾU — PHIÊN BẢN ĐẦY ĐỦ + AUTO-SCANNER
 Pocket Pivot / Breakout / Pre-Break
 Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoài giờ
-+ Nhận lệnh qua Private Chat với Bot
 =============================================================================
 """
-
 
 # =============================================================================
 # BƯỚC 0: CÀI ĐẶT THƯ VIỆN (chạy 1 lần nếu chưa có)
@@ -32,16 +30,12 @@ import threading
 # =============================================================================
 # BƯỚC 2: CẤU HÌNH
 # =============================================================================
-VNSTOCK_API         = os.environ.get('VNSTOCK_API')
-TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
-TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
-MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
+VNSTOCK_API        = os.environ.get('VNSTOCK_API')
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID   = os.environ.get('TELEGRAM_CHAT_ID')
 
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
-
-# Danh sách chat được phép ra lệnh cho bot
-ALLOWED_CHATS = {str(TELEGRAM_CHAT_ID), str(MY_PERSONAL_CHAT_ID)}
 
 register_user(VNSTOCK_API)
 
@@ -72,6 +66,7 @@ def send_telegram_signal(msg, image_paths=None, image_path=None):
     url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
 
     try:
+        # Trường hợp gửi 1 ảnh
         if image_paths and len(image_paths) == 1:
             with open(image_paths[0], 'rb') as f:
                 requests.post(url_photo, data={
@@ -81,6 +76,7 @@ def send_telegram_signal(msg, image_paths=None, image_path=None):
                 }, files={'photo': f})
             print(f"  ✅ Đã gửi chart: {image_paths[0]}")
 
+        # Trường hợp gửi Album (nhiều ảnh)
         elif image_paths and len(image_paths) >= 2:
             files = {}
             media = []
@@ -101,12 +97,14 @@ def send_telegram_signal(msg, image_paths=None, image_path=None):
             finally:
                 for f in files.values(): f.close()
 
+        # Trường hợp chỉ gửi tin nhắn văn bản
         elif msg:
             requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'}
             )
 
+        # Tự động dọn dẹp ảnh sau khi gửi thành công
         if image_paths:
             for path in image_paths:
                 if os.path.exists(path): os.remove(path)
@@ -117,13 +115,13 @@ def send_telegram_signal(msg, image_paths=None, image_path=None):
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
-listing     = Listing(source='KBS')
+listing     = Listing(source='VCI')
 df_listing  = listing.all_symbols()
 col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
 all_symbols = df_listing[col_name].dropna().unique().tolist()
 
 vn30_symbols = [
-    'AAA','ACB','ANV','BFC','BID','BSR','BVH','BWE','CII','CRE','CTD','CTG','CTI','CTR','CTS','DBC','DCM','DGW','DIG','DPG','DPM','DXG','FCN','FPT','FRT','FTS','GAS','GEG','GEX','GMD','GVR','HAG','HAX','HBC','HCM','HDB','HDC','HDG','HNG','HPG','HSG','HTN','IDC','IJC','KBC','KDH','KSB','LPB','LTG','MBB','MBS','MSB','MSN','MWG','NKG','NLG','NTL','NVL','PC1','PET','PLC','PLX','PNJ','POW','PVD','PVS','PVT','REE','SBT','SCR','SHB','SHS','SSI','STB','SZC','TCB','TIG','TNG','TPB','VCB','VCI','VGT','VHC','VHM','VIB','VIC','VJC','VNM','VPB','VRE','MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF'
+    'AAA','ACB','ANV','BFC','BID','BSR','BVH','BWE','CII','CRE','CTD','CTG','CTI','CTR','CTS','DBC','DCM','DGW','DIG','DPG','DPM','DXG','FCN','FPT','FRT','FTS','GAS','GEG','GEX','GMD','GVR','HAG','HAX','HBC','HCM','HDB','HDC','HDG','HNG','HPG','HSG','HTN','IDC','IJC','KBC','KDH','KSB','LPB','MBB','MBS','MSB','MSN','MWG','NKG','NLG','NTL','NVL','PC1','PET','PLC','PLX','PNJ','POW','PVD','PVS','PVT','REE','SBT','SCR','SHB','SHS','SSI','STB','SZC','TCB','TIG','TNG','TPB','VCB','VCI','VGT','VHC','VHM','VIB','VIC','VJC','VNM','VPB','VRE','MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF'
 ]
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
 print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to_scan)}")
@@ -333,7 +331,7 @@ def detect_signal(df, now_time):
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
-def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily'):
+def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True):
     is_daily = (timeframe == 'Daily')
     date_str = datetime.now(TZ_VN).strftime('%d/%m/%Y')
 
@@ -378,7 +376,7 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily'):
     y_min, y_max = ax_price.get_ylim()
     ax_price.set_ylim(y_min, y_max + (y_max - y_min) * 0.15)
 
-    if is_daily:
+    if is_daily and add_arrow:
         ax_price.annotate(r'$\mathbf{\uparrow}$',
             xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
             ha='center', va='top', color='DeepPink', fontsize=12)
@@ -505,12 +503,12 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                 )
 
                 df_plot_d = df_calc.tail(250).copy()
-                img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily')
+                img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=True)
 
                 df_weekly  = build_weekly_df(df_raw)
                 df_plot_w  = df_weekly.tail(150).copy()
                 today_w    = df_plot_w.iloc[-1]
-                img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly')
+                img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
 
                 send_telegram_signal(msg, image_paths=[img_daily, img_weekly])
 
@@ -627,12 +625,12 @@ def fetch_and_send_chart(symbol, chat_id):
         )
 
         df_plot_d = df_calc.tail(250).copy()
-        img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily')
+        img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=False)
 
         df_weekly  = build_weekly_df(df_raw)
         df_plot_w  = df_weekly.tail(150).copy()
         today_w    = df_plot_w.iloc[-1]
-        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly')
+        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
 
         _send_chart_to_chat(msg, [img_daily, img_weekly], chat_id)
 
@@ -806,11 +804,11 @@ while True:
         last_run_date = current_date
         print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
 
-    is_morning   = 80000 <= now_time <= 123000
-    is_afternoon = 130000 <= now_time <= 240000
+    is_morning   = 85000 <= now_time <= 113000
+    is_afternoon = 130000 <= now_time <= 150000
 
     if not (is_morning or is_afternoon):
-        if   now_time < 80000:  next_open = "09:00"
+        if   now_time < 85000:  next_open = "09:00"
         elif now_time < 130000: next_open = "13:00"
         else:                   next_open = "09:00 ngày mai"
         print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener vẫn chạy.")
@@ -834,4 +832,3 @@ while True:
 
     print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
     time.sleep(SCAN_INTERVAL_SEC)
-
