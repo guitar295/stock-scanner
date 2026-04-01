@@ -471,6 +471,10 @@ def run_scan_cycle(symbols, now_time, alerted_today):
 
                 # ── Tín hiệu CHỈ tính trên Daily ────────────────────────────
                 df_calc     = compute_indicators(df_raw)
+                if df_calc.empty or df_calc.index.max().date() < current_date:
+                    print(f"  [{ts}] Mã {symbol}: Chưa có dữ liệu hôm nay, bỏ qua.")
+                    break
+                
                 signal_type = detect_signal(df_calc, now_time)
 
                 if not signal_type:
@@ -561,7 +565,7 @@ while True:
         print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
 
     is_morning   = 85000 <= now_time <= 113500
-    is_afternoon = 130000 <= now_time <= 240000
+    is_afternoon = 130000 <= now_time <= 150000
 
     if not (is_morning or is_afternoon):
         if   now_time < 85000:  next_open = "09:00"
