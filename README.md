@@ -83,6 +83,7 @@ import os
 VNSTOCK_API        = os.environ.get('VNSTOCK_API')
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID   = os.environ.get('TELEGRAM_CHAT_ID')
+MY_PERSONAL_CHAT_ID   = os.environ.get('MY_PERSONAL_CHAT_ID')
 
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -159,6 +160,7 @@ Paste nội dung sau (giữ nguyên thông tin thật của bạn):
 VNSTOCK_API=vnstock_a9d67fdafadsfad...565
 TELEGRAM_BOT_TOKEN=995266867:AAErWl......4MjlQV9Y8KWwfZoowPI
 TELEGRAM_CHAT_ID=-100....
+MY_PERSONAL_CHAT_ID = ...
 ```
 Nhấn Ctrl+X → Y → Enter để lưu.
 
