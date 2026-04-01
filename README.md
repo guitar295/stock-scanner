@@ -197,11 +197,6 @@ bash
 ```
 docker logs -f scanner
 ```
-Output đúng trong giờ giao dịch:
-
-🚀 Sẵn sàng quét 98 mã: AAA, ACB, ANV...
-⚙️  AUTO-SCANNER ĐÃ KÍCH HOẠT
-🔄 [09:02:15] BẮT ĐẦU CHU KỲ QUÉT
 
 Output đúng ngoài giờ giao dịch:
 [22:10:05] ⏸  Ngoài giờ giao dịch → Đợi đến 09:00 ngày mai. Ngủ 120s...
