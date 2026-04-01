@@ -206,6 +206,10 @@ Output đúng ngoài giờ giao dịch:
 [22:10:05] ⏸  Ngoài giờ giao dịch → Đợi đến 09:00 ngày mai. Ngủ 120s...
 Nhấn Ctrl+C để thoát xem log. Container vẫn chạy nền.
 
+Sau khi chạy hoàn thành< NÊN xoá caches:
+```
+docker system prune -f
+```
 
 # PHẦN 3: Cập nhật khi sửa code trên GitHub
 
@@ -241,6 +245,11 @@ Build lại image
 Chạy container mới
 In 20 dòng log cuối để xác nhận
 
+
+Sau khi chạy hoàn thành< NÊN xoá caches:
+```
+docker system prune -f
+```
 
 ## Lưu lệnh update thành shortcut (làm 1 lần, dùng mãi):
 
