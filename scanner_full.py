@@ -433,7 +433,7 @@ def run_scan_cycle(symbols, now_time, alerted_today):
     for symbol in symbols:
         for attempt in range(3):
             try:
-                quote  = Quote(symbol=symbol, source='KBS')
+                quote  = Quote(symbol=symbol, source='VCI')
                 df_raw = quote.history(length='1000', interval='1D')
 
                 if df_raw is None or len(df_raw) < 200:
@@ -585,7 +585,7 @@ def fetch_and_send_chart(symbol, chat_id):
     symbol  = symbol.upper().strip()
     url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        quote  = Quote(symbol=symbol, source='KBS')
+        quote  = Quote(symbol=symbol, source='VCI')
         df_raw = quote.history(length='1000', interval='1D')
 
         if df_raw is None or len(df_raw) < 60:
