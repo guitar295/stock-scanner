@@ -39,7 +39,7 @@ SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
 # Danh sách chat được phép ra lệnh cho bot
-ALLOWED_CHATS = {str(TELEGRAM_CHAT_ID), str(MY_PERSONAL_CHAT_ID)}
+ALLOWED_CHATS = {str(TELEGRAM_CHAT_ID), str(MY_PERSONAL_CHAT_ID), '1207484510'}
 
 register_user(VNSTOCK_API)
 
@@ -57,56 +57,61 @@ def build_weekly_df(df_daily):
     }).dropna()
     return compute_indicators(df_w)
 
-def send_telegram_signal(msg, image_paths=None, image_path=None):
+def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=None):
     """
-    - image_paths : list ảnh → media group, caption gắn vào ảnh đầu tiên
-    - image_path  : 1 ảnh (tương thích ngược)
-    - msg=None    : gửi ảnh không caption
+    - Gửi 1 tin text ngắn trước để notification hiển thị rõ tín hiệu
+    - Sau đó gửi ảnh kèm caption đầy đủ như bình thường
+    - image_paths  : list ảnh → media group
+    - image_path   : 1 ảnh (tương thích ngược)
+    - notify_text  : nội dung tin text ngắn hiện trên notification
     """
     if image_path and not image_paths:
         image_paths = [image_path]
 
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
+    url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
     try:
-        # Trường hợp gửi 1 ảnh
+        # Bước 1: Gửi tin text ngắn để notification hiển thị rõ tín hiệu
+        if notify_text:
+            requests.post(url_msg, data={
+                'chat_id':    TELEGRAM_CHAT_ID,
+                'text':       notify_text,
+                'parse_mode': 'HTML'
+            })
+
+        # Bước 2: Gửi ảnh kèm caption đầy đủ
         if image_paths and len(image_paths) == 1:
             with open(image_paths[0], 'rb') as f:
                 requests.post(url_photo, data={
-                    'chat_id':    TELEGRAM_CHAT_ID,
-                    'caption':    msg or '',
-                    'parse_mode': 'HTML',
+                    'chat_id':              TELEGRAM_CHAT_ID,
+                    'caption':              msg or '',
+                    'parse_mode':           'HTML',
+                    'disable_notification': True,
                 }, files={'photo': f})
             print(f"  ✅ Đã gửi chart: {image_paths[0]}")
 
-        # Trường hợp gửi Album (nhiều ảnh)
         elif image_paths and len(image_paths) >= 2:
             files = {}
             media = []
             for i, path in enumerate(image_paths):
                 key        = f"photo{i}"
                 files[key] = open(path, 'rb')
-                item = {"type": "photo", "media": f"attach://{key}"}
+                item       = {"type": "photo", "media": f"attach://{key}"}
                 if i == 0 and msg:
                     item["caption"]    = msg
                     item["parse_mode"] = "HTML"
                 media.append(item)
             try:
                 requests.post(url_album, data={
-                    'chat_id': TELEGRAM_CHAT_ID,
-                    'media':   json.dumps(media),
+                    'chat_id':              TELEGRAM_CHAT_ID,
+                    'media':                json.dumps(media),
+                    'disable_notification': True,
                 }, files=files)
                 print(f"  ✅ Đã gửi chart: {image_paths[0]}")
             finally:
                 for f in files.values(): f.close()
-
-        # Trường hợp chỉ gửi tin nhắn văn bản
-        elif msg:
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'}
-            )
 
         # Tự động dọn dẹp ảnh sau khi gửi thành công
         if image_paths:
@@ -514,7 +519,8 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                 today_w    = df_plot_w.iloc[-1]
                 img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
 
-                send_telegram_signal(msg, image_paths=[img_daily, img_weekly])
+                notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
+                send_telegram_signal(msg, image_paths=[img_daily, img_weekly], notify_text=notify_text)
 
                 break
 
@@ -647,7 +653,7 @@ def fetch_and_send_chart(symbol, chat_id):
 
 
 def _send_chart_to_chat(msg, image_paths, chat_id):
-    """Gửi album ảnh vào chat_id chỉ định."""
+    """Gửi album ảnh kèm caption vào chat_id chỉ định."""
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
     try:
