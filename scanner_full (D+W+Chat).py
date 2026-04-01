@@ -703,6 +703,11 @@ def telegram_listener():
     url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
     url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
+    # ✅ FIX: Bộ nhớ chống xử lý trùng update_id
+    # Telegram có thể gửi lại cùng 1 update nếu offset chưa được xác nhận
+    processed_ids     = set()
+    MAX_PROCESSED_IDS = 50   # tránh set phình to vô hạn
+
     print("🎧 Telegram Listener đã khởi động — nhận lệnh từ Group & Private Chat 24/7...")
 
     while True:
@@ -713,7 +718,20 @@ def telegram_listener():
             data = resp.json()
 
             for update in data.get('result', []):
-                offset  = update['update_id'] + 1
+                update_id = update['update_id']
+
+                # ✅ FIX: Bỏ qua nếu update này đã xử lý rồi (chống gửi chart 2 lần)
+                if update_id in processed_ids:
+                    offset = update_id + 1
+                    continue
+
+                processed_ids.add(update_id)
+                offset = update_id + 1
+
+                # Dọn set khi quá lớn để tránh rò rỉ bộ nhớ
+                if len(processed_ids) > MAX_PROCESSED_IDS:
+                    processed_ids.clear()
+
                 msg_obj = update.get('message', {})
                 text    = msg_obj.get('text', '').strip()
                 chat_id = msg_obj.get('chat', {}).get('id')
