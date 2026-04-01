@@ -833,7 +833,7 @@ while True:
         print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
 
     is_morning   = 85000 <= now_time <= 113000
-    is_afternoon = 130000 <= now_time <= 240000
+    is_afternoon = 130000 <= now_time <= 150000
 
     if not (is_morning or is_afternoon):
         if   now_time < 85000:  next_open = "09:00"
