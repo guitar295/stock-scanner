@@ -25,6 +25,7 @@ import os
 from datetime import datetime
 import pytz
 import json
+import threading
 
 # =============================================================================
 # BƯỚC 2: CẤU HÌNH
@@ -120,7 +121,7 @@ col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
 all_symbols = df_listing[col_name].dropna().unique().tolist()
 
 vn30_symbols = [
-    'AAA','ACB','ANV','BFC','BID','BSR','BVH','BWE','CII','CRE','CTD','CTG','CTI','CTR','CTS','DBC','DCM','DGW','DIG','DPG','DPM','DXG','FCN','FPT','FRT','FTS','GAS','GEG','GEX','GMD','GVR','HAG','HAX','HBC','HCM','HDB','HDC','HDG','HNG','HPG','HSG','HTN','IDC','IJC','KBC','KDH','KSB','LPB','LTG','MBB','MBS','MSB','MSN','MWG','NKG','NLG','NTL','NVL','PC1','PET','PLC','PLX','PNJ','POW','PVD','PVS','PVT','REE','SBT','SCR','SHB','SHS','SSI','STB','SZC','TCB','TIG','TNG','TPB','VCB','VCI','VGT','VHC','VHM','VIB','VIC','VJC','VNM','VPB','VRE','MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF'
+    'AAA','ACB','ANV','BFC','BID','BSR','BVH','BWE','CII','CRE','CTD','CTG','CTI','CTR','CTS','DBC','DCM','DGW','DIG','DPG','DPM','DXG','FCN','FPT','FRT','FTS','GAS','GEG','GEX','GMD','GVR','HAG','HAX','HBC','HCM','HDB','HDC','HDG','HNG','HPG','HSG','HTN','IDC','IJC','KBC','KDH','KSB','LPB','MBB','MBS','MSB','MSN','MWG','NKG','NLG','NTL','NVL','PC1','PET','PLC','PLX','PNJ','POW','PVD','PVS','PVT','REE','SBT','SCR','SHB','SHS','SSI','STB','SZC','TCB','TIG','TNG','TPB','VCB','VCI','VGT','VHC','VHM','VIB','VIC','VJC','VNM','VPB','VRE','MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF'
 ]
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
 print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to_scan)}")
@@ -159,8 +160,8 @@ def compute_indicators(df):
     exp26             = df['close'].ewm(span=26, adjust=False).mean()
     df['MACD']        = exp12 - exp26
     df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['MACD_Hist_origin']   = df['MACD'] - df['MACD_Signal']
-    df['MACD_Hist'] = df['MACD_Hist_origin']*3 
+    df['MACD_Hist_origin'] = df['MACD'] - df['MACD_Signal']
+    df['MACD_Hist'] = df['MACD_Hist_origin']*3
     df['A']           = df['close'].pct_change()
     return df
 
@@ -304,7 +305,6 @@ def calc_liquidity(df):
     )
 
 def detect_signal(df, now_time):
-    """Trả về loại tín hiệu tại phiên cuối: BREAKOUT > POCKET PIVOT > PRE-BREAK > None"""
     df = compute_indicators(df)
     if len(df) < 60:
         return None
@@ -330,10 +330,8 @@ def detect_signal(df, now_time):
 
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
-# - timeframe='Daily' : có mũi tên ↑, title hiện [signal_type], dùng MA200
-# - timeframe='Weekly': KHÔNG mũi tên, title chỉ hiện [Weekly], KHÔNG dùng MA50
 # =============================================================================
-def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily'):
+def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True):
     is_daily = (timeframe == 'Daily')
     date_str = datetime.now(TZ_VN).strftime('%d/%m/%Y')
 
@@ -360,7 +358,6 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily'):
         mpf.make_addplot(df_plot['MACD_Signal'],panel=2,color='orange', width=0.6, secondary_y=False),
     ]
 
-    # Chỉ vẽ MA200 trên khung Daily
     if is_daily:
         apds.append(mpf.make_addplot(df_plot['MA200'], color='brown', width=0.6))
 
@@ -379,12 +376,11 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily'):
     y_min, y_max = ax_price.get_ylim()
     ax_price.set_ylim(y_min, y_max + (y_max - y_min) * 0.15)
 
-    if is_daily:
+    if is_daily and add_arrow:
         ax_price.annotate(r'$\mathbf{\uparrow}$',
             xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
             ha='center', va='top', color='DeepPink', fontsize=12)
 
-    # Daily: title hiện signal_type | Weekly: title chỉ hiện [Weekly]
     if is_daily:
         title_str = (
             f"{symbol} [D] {date_str}  |  "
@@ -425,23 +421,15 @@ SIGNAL_RANK  = {'PRE-BREAK': 1, 'POCKET PIVOT': 2, 'BREAKOUT': 3}
 SIGNAL_EMOJI = {'BREAKOUT': '🟢', 'POCKET PIVOT': '🟡', 'PRE-BREAK': '🟣'}
 
 def run_scan_cycle(symbols, now_time, alerted_today):
-    """
-    Quét toàn bộ danh sách mã trong 1 chu kỳ.
-    Tín hiệu chỉ tính trên Daily. Weekly chỉ vẽ kèm để đối chiếu.
-
-    Logic chống spam:
-    - Cùng loại hoặc yếu hơn → bỏ qua.
-    - Leo hạng → báo lại.
-    """
     new_signals  = []
     current_date = datetime.now(TZ_VN).date()
     date_str     = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+    ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
 
     for symbol in symbols:
         for attempt in range(3):
             try:
-                quote  = Quote(symbol=symbol, source='VCI')
-                # 1000 ngày: daily đủ 250 nến plot + weekly đủ ~200 nến sau resample
+                quote  = Quote(symbol=symbol, source='KBS')
                 df_raw = quote.history(length='1000', interval='1D')
 
                 if df_raw is None or len(df_raw) < 200:
@@ -451,7 +439,6 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                 df_raw.set_index('time', inplace=True)
                 df_raw.columns = [c.lower() for c in df_raw.columns]
 
-                # Cập nhật nến real-time nếu chưa có dữ liệu hôm nay
                 if df_raw.index.max().date() < current_date:
                     try:
                         today_df = quote.history(
@@ -469,18 +456,19 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                     except Exception:
                         pass
 
-                # ── Tín hiệu CHỈ tính trên Daily ────────────────────────────
-                df_calc     = compute_indicators(df_raw)
+                # ── Tính chỉ báo ─────────────────────────────────────────
+                df_calc = compute_indicators(df_raw)
+
+                # ── Kiểm tra dữ liệu phải là hôm nay mới chạy tiếp ───────
                 if df_calc.empty or df_calc.index.max().date() < current_date:
                     print(f"  [{ts}] Mã {symbol}: Chưa có dữ liệu hôm nay, bỏ qua.")
                     break
-                
+
                 signal_type = detect_signal(df_calc, now_time)
 
                 if not signal_type:
                     break
 
-                # Chống spam
                 prev_rank    = SIGNAL_RANK.get(alerted_today.get(symbol), 0)
                 current_rank = SIGNAL_RANK.get(signal_type, 0)
                 if prev_rank >= current_rank:
@@ -514,17 +502,14 @@ def run_scan_cycle(symbols, now_time, alerted_today):
                     f"<a href='{link_24h_money}'>📄</a>"
                 )
 
-                # ── Chart Daily (250 nến) — tín hiệu, mũi tên ───────────────
                 df_plot_d = df_calc.tail(250).copy()
-                img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily')
+                img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=True)
 
-                # ── Chart Weekly (150 tuần) — chỉ để đối chiếu ──────────────
                 df_weekly  = build_weekly_df(df_raw)
                 df_plot_w  = df_weekly.tail(150).copy()
                 today_w    = df_plot_w.iloc[-1]
-                img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly')
+                img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
 
-                # ── Gửi 1 album: Daily (caption) + Weekly (đối chiếu) ───────
                 send_telegram_signal(msg, image_paths=[img_daily, img_weekly])
 
                 break
@@ -541,16 +526,271 @@ def run_scan_cycle(symbols, now_time, alerted_today):
     return new_signals
 
 # =============================================================================
-# BƯỚC 9: AUTO-SCANNER — VÒNG LẶP CHÍNH
+# BƯỚC 8B: HÀM PARSE LỆNH CHART — nhận diện nhiều cú pháp
+# =============================================================================
+def parse_chart_command(text):
+    """
+    Nhận diện lệnh chart với nhiều cú pháp:
+      / HPG
+      / c HPG
+      / chart HPG
+      / HPG VNM FPT   (nhiều mã)
+      /HPG            (không có dấu cách)
+      /c HPG
+      /chart HPG
+
+    Trả về: list mã cổ phiếu, hoặc None nếu không phải lệnh chart.
+    """
+    text = text.strip()
+
+    # Bắt buộc phải bắt đầu bằng dấu /
+    if not text.startswith('/'):
+        return None
+
+    # Bỏ dấu / ở đầu, tách các từ
+    body  = text[1:].strip()
+    parts = body.split()
+
+    if not parts:
+        return None
+
+    first = parts[0].lower()
+
+    # Cú pháp: /chart HPG hoặc /c HPG
+    if first in ('chart', 'c'):
+        symbols = parts[1:]
+
+    # Cú pháp: / HPG (first là mã cổ phiếu, không phải từ khóa lệnh khác)
+    elif first not in ('scan', 'help', 's', 'h'):
+        symbols = parts  # toàn bộ là mã cổ phiếu
+
+    else:
+        return None
+
+    # Lọc: chỉ giữ lại chuỗi có vẻ là mã cổ phiếu (2–5 ký tự chữ/số)
+    symbols = [s.upper() for s in symbols if 1 <= len(s) <= 5 and s.isalnum()]
+
+    return symbols if symbols else None
+
+
+# =============================================================================
+# BƯỚC 8C: HÀM GỬI CHART THEO YÊU CẦU (ON-DEMAND)
+# =============================================================================
+def fetch_and_send_chart(symbol, chat_id):
+    """Kéo data, vẽ chart Daily + Weekly, gửi về đúng chat_id yêu cầu."""
+    symbol  = symbol.upper().strip()
+    url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        quote  = Quote(symbol=symbol, source='KBS')
+        df_raw = quote.history(length='1000', interval='1D')
+
+        if df_raw is None or len(df_raw) < 60:
+            requests.post(url_msg, data={
+                'chat_id':    chat_id,
+                'text':       f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
+                'parse_mode': 'HTML'
+            })
+            return
+
+        df_raw['time'] = pd.to_datetime(df_raw['time'])
+        df_raw.set_index('time', inplace=True)
+        df_raw.columns = [c.lower() for c in df_raw.columns]
+
+        df_calc     = compute_indicators(df_raw)
+        today       = df_calc.iloc[-1]
+        now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
+        signal_type = detect_signal(df_calc, now_time) or "ON-DEMAND"
+        date_str    = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+        pct         = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
+        change      = today['close'] - df_calc['close'].iloc[-2]
+        vol_vs_prev  = (today['volume'] - df_calc['volume'].iloc[-2]) / df_calc['volume'].iloc[-2] * 100
+        vol_vs_vma50 = (today['volume'] - today['VMA50']) / today['VMA50'] * 100 if today['VMA50'] > 0 else 0
+
+        link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
+        link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
+        link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
+        link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
+        link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
+
+        msg = (
+            f"📊 #{symbol}  {date_str}\n"
+            f"Sig: {signal_type}\n"
+            f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+            f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
+            f"<a href='{link_vnd_detail}'>⚖️</a> "
+            f"<a href='{link_vnd_news}'>🗞️</a> "
+            f"<a href='{link_vietstock}'>📈</a> "
+            f"<a href='{link_vnd_summary}'>📄</a> "
+            f"<a href='{link_24h_money}'>📄</a>"
+        )
+
+        df_plot_d = df_calc.tail(250).copy()
+        img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=False)
+
+        df_weekly  = build_weekly_df(df_raw)
+        df_plot_w  = df_weekly.tail(150).copy()
+        today_w    = df_plot_w.iloc[-1]
+        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
+
+        _send_chart_to_chat(msg, [img_daily, img_weekly], chat_id)
+
+    except Exception as e:
+        requests.post(url_msg, data={
+            'chat_id':    chat_id,
+            'text':       f"❌ Lỗi lấy dữ liệu <b>{symbol}</b>: {e}",
+            'parse_mode': 'HTML'
+        })
+
+
+def _send_chart_to_chat(msg, image_paths, chat_id):
+    """Gửi album ảnh vào chat_id chỉ định."""
+    url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
+    try:
+        if len(image_paths) == 1:
+            with open(image_paths[0], 'rb') as f:
+                requests.post(url_photo, data={
+                    'chat_id': chat_id, 'caption': msg or '', 'parse_mode': 'HTML'
+                }, files={'photo': f})
+        else:
+            files = {}
+            media = []
+            for i, path in enumerate(image_paths):
+                key        = f"photo{i}"
+                files[key] = open(path, 'rb')
+                item       = {"type": "photo", "media": f"attach://{key}"}
+                if i == 0 and msg:
+                    item["caption"]    = msg
+                    item["parse_mode"] = "HTML"
+                media.append(item)
+            try:
+                requests.post(url_album, data={
+                    'chat_id': chat_id,
+                    'media':   json.dumps(media),
+                }, files=files)
+            finally:
+                for f in files.values(): f.close()
+    except Exception as e:
+        print(f"  ❌ Lỗi gửi chart on-demand: {e}")
+    finally:
+        for path in image_paths:
+            if os.path.exists(path): os.remove(path)
+
+
+# =============================================================================
+# BƯỚC 8D: TELEGRAM LISTENER — Lắng nghe lệnh 24/7
+# =============================================================================
+def telegram_listener():
+    """
+    Long-polling Telegram: nhận lệnh từ Group hoặc Private Chat với Bot.
+    Chạy 24/7 — không bị giới hạn giờ giao dịch.
+
+    Cú pháp lệnh chart được hỗ trợ:
+      /HPG
+      /c HPG
+      /chart HPG
+      /HPG VNM FPT    (nhiều mã, tối đa 5)
+
+    Lệnh khác:
+      /scan  hoặc  /s  → tín hiệu hôm nay
+      /help  hoặc  /h  → danh sách lệnh
+    """
+    offset  = 0
+    url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    print("🎧 Telegram Listener đã khởi động — nhận lệnh từ Group & Private Chat 24/7...")
+
+    while True:
+        try:
+            resp = requests.get(url_upd, params={
+                'offset': offset, 'timeout': 30, 'allowed_updates': ['message']
+            }, timeout=35)
+            data = resp.json()
+
+            for update in data.get('result', []):
+                offset  = update['update_id'] + 1
+                msg_obj = update.get('message', {})
+                text    = msg_obj.get('text', '').strip()
+                chat_id = msg_obj.get('chat', {}).get('id')
+
+                if not text or not chat_id:
+                    continue
+
+                # Bảo mật: chỉ phản hồi Group và Private Chat của bạn
+                if str(chat_id) not in ALLOWED_CHATS:
+                    continue
+
+                text_lower = text.lower().strip()
+
+                # ── Lệnh /scan hoặc /s ──────────────────────────────────
+                if text_lower in ('/scan', '/s') or text_lower.startswith(('/scan ', '/s ')):
+                    if alerted_today:
+                        lines = [f"{SIGNAL_EMOJI.get(v,'📌')} #{k}: {v}"
+                                 for k, v in alerted_today.items()]
+                        reply = "📋 <b>Tín hiệu hôm nay:</b>\n" + "\n".join(lines)
+                    else:
+                        reply = "📋 Chưa có tín hiệu nào hôm nay."
+                    requests.post(url_msg, data={
+                        'chat_id': chat_id, 'text': reply, 'parse_mode': 'HTML'
+                    })
+
+                # ── Lệnh /help hoặc /h ──────────────────────────────────
+                elif text_lower in ('/help', '/h') or text_lower.startswith(('/help ', '/h ')):
+                    requests.post(url_msg, data={
+                        'chat_id':    chat_id,
+                        'parse_mode': 'HTML',
+                        'text': (
+                            "🤖 <b>Lệnh hỗ trợ:</b>\n\n"
+                            "<b>Xem chart:</b>\n"
+                            "/HPG\n"
+                            "/c HPG\n"
+                            "/chart HPG\n"
+                            "/HPG VNM FPT  (nhiều mã, tối đa 5)\n\n"
+                            "<b>Khác:</b>\n"
+                            "/scan  hoặc  /s  — Tín hiệu hôm nay\n"
+                            "/help  hoặc  /h  — Trợ giúp"
+                        )
+                    })
+
+                # ── Lệnh chart — parse nhiều cú pháp ────────────────────
+                else:
+                    symbols = parse_chart_command(text)
+                    if symbols:
+                        for sym in symbols[:5]:  # tối đa 5 mã/lần
+                            print(f"  📥 Nhận lệnh chart {sym} — chat_id: {chat_id}")
+                            threading.Thread(
+                                target=fetch_and_send_chart,
+                                args=(sym, chat_id),
+                                daemon=True
+                            ).start()
+                            time.sleep(0.5)
+
+        except requests.exceptions.Timeout:
+            continue
+        except Exception as e:
+            print(f"  ❌ Listener lỗi: {e}")
+            time.sleep(5)
+
+
+# =============================================================================
+# BƯỚC 9: KHỞI ĐỘNG — Auto-scanner + Telegram Listener chạy song song
 # =============================================================================
 alerted_today = {}
 last_run_date = datetime.now(TZ_VN).date()
 
+# Listener chạy trong thread riêng — 24/7, không bị dừng bởi giờ giao dịch
+listener_thread = threading.Thread(target=telegram_listener, daemon=True)
+listener_thread.start()
+
 print("\n" + "="*60)
-print("⚙️  AUTO-SCANNER ĐÃ KÍCH HOẠT")
-print(f"   Danh sách: {len(symbols_to_scan)} mã")
+print("⚙️  AUTO-SCANNER + TELEGRAM LISTENER ĐÃ KÍCH HOẠT")
+print(f"   Danh sách  : {len(symbols_to_scan)} mã")
 print(f"   Chu kỳ quét: {SCAN_INTERVAL_SEC} giây")
-print(f"   Giờ hoạt động: 09:00–11:30 | 13:00–15:00")
+print(f"   Tín hiệu   → Channel/Group: {TELEGRAM_CHAT_ID}")
+print(f"   Lệnh chart : /HPG | /c HPG | /chart HPG")
+print(f"   Lệnh khác  : /scan (/s) | /help (/h)")
+print(f"   Nhận lệnh  : Group + Private Chat (24/7)")
 print("="*60)
 
 while True:
@@ -564,14 +804,14 @@ while True:
         last_run_date = current_date
         print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
 
-    is_morning   = 85000 <= now_time <= 113500
+    is_morning   = 85000 <= now_time <= 113000
     is_afternoon = 130000 <= now_time <= 150000
 
     if not (is_morning or is_afternoon):
         if   now_time < 85000:  next_open = "09:00"
         elif now_time < 130000: next_open = "13:00"
         else:                   next_open = "09:00 ngày mai"
-        print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Ngủ {SCAN_INTERVAL_SEC}s...")
+        print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener vẫn chạy.")
         time.sleep(SCAN_INTERVAL_SEC)
         continue
 
@@ -592,4 +832,3 @@ while True:
 
     print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
     time.sleep(SCAN_INTERVAL_SEC)
-
