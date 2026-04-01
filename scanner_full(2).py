@@ -189,12 +189,12 @@ cache_lock = threading.Lock()          # bảo vệ khi listener và scanner cù
 
 # ─── CỘT CẦN LẤY TỪ price_board ────────────────────────────────────────────
 # Tên cột thực tế của Trading.price_board() — kiểm tra lại nếu vnstock update
-PB_SYMBOL   = 'ticker'        # hoặc 'symbol' tuỳ version
-PB_OPEN     = 'open'
-PB_HIGH     = 'high'
-PB_LOW      = 'low'
-PB_CLOSE    = 'match_price'   # giá khớp gần nhất / giá hiện tại
-PB_VOLUME   = 'total_volume'  # khối lượng tích luỹ trong ngày
+PB_SYMBOL   = 'symbol'        # hoặc 'symbol' tuỳ version
+PB_OPEN     = 'open_price'
+PB_HIGH     = 'high_price'
+PB_LOW      = 'low_price'
+PB_CLOSE    = 'close_price'   # giá khớp gần nhất / giá hiện tại
+PB_VOLUME   = 'total_trades'  # khối lượng tích luỹ trong ngày
 
 def load_history_for_symbol(symbol: str, current_date: date) -> pd.DataFrame | None:
     """Lấy lịch sử 1 mã, trả về DataFrame OHLCV (chưa tính chỉ báo)."""
