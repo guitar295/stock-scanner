@@ -11,6 +11,7 @@ Xem log real-time (Ctrl+C để thoát)
 ```docker logs --tail 20 scanner  # Xem 20 dòng log gần nhất```
 
 
+
 # PHẦN 1: Tạo file trên GitHub
 
 ## 1.1 — Tạo repo mới
@@ -257,3 +258,64 @@ Tóm tắt 3 lệnh VPS cần nhớ
 bashdocker logs -f scanner      # Xem log real-time
 docker restart scanner      # Khởi động lại không cần rebuild
 update-scanner              # Cập nhật code mới từ GitHub
+
+
+
+
+# Xoá và làm lại :
+
+Để đảm bảo môi trường trên VPS Oracle Ubuntu trở lại trạng thái "sạch" hoàn toàn như lúc chưa cài đặt dự án, giúp bạn thực hiện lại từ đầu mà không gặp xung đột dữ liệu cũ, tôi đề xuất quy trình 4 bước xử lý triệt để như sau:
+
+Bước 1: Dừng và xóa bỏ Container
+
+Việc này sẽ ngắt tiến trình đang chạy ngầm và giải phóng tên định danh scanner.
+
+Bash
+```
+docker stop scanner && docker rm scanner
+```
+Bước 2: Xóa bỏ Docker Image
+
+Xóa bản đóng gói (Image) để đảm bảo khi bạn làm lại, hệ thống sẽ phải build lại từ đầu thay vì dùng bản cache cũ.
+
+Bash
+```
+docker rmi stock-scanner
+```
+(Nếu lệnh này báo lỗi do có nhiều image trùng tên, bạn có thể dùng docker rmi -f stock-scanner để cưỡng ép xóa).
+
+Bước 3: Xóa thư mục dự án và dữ liệu nhạy cảm
+
+Lệnh này sẽ xóa toàn bộ thư mục ~/scanner, bao gồm cả mã nguồn, Dockerfile và quan trọng nhất là tệp cấu hình bí mật .env.
+
+Bash
+```
+rm -rf ~/scanner
+```
+Bước 4: Dọn dẹp tài nguyên Docker dư thừa (Tùy chọn nhưng khuyến nghị)
+
+Để đảm bảo không còn "rác" hệ thống (các layer build lỗi hoặc volume không tên), hãy chạy lệnh dọn dẹp hệ thống Docker:
+
+Bash
+```
+docker system prune -f
+```
+BÁO CÁO XÁC NHẬN TRẠNG THÁI SẠCH
+
+Sau khi chạy xong các lệnh trên, bạn hãy chạy lệnh kiểm tra cuối cùng:
+
+Kiểm tra Docker: ```docker ps -a``` (Danh sách phải trống hoặc không có mã scanner).
+
+Kiểm tra Image: ```docker images``` (Không còn stock-scanner).
+
+Kiểm tra Thư mục: ```ls ~/scanner``` (Hệ thống phải báo: No such file or directory).
+
+Lưu ý tham mưu: Trước khi thực hiện Bước 3, hãy đảm bảo bạn đã lưu lại các API Key trong tệp .env ở một nơi an toàn (như Notepad trên máy tính) nếu bạn không còn bản lưu nào khác, vì sau khi xóa sẽ không thể khôi phục lại từ VPS.
+
+Giờ đây, hệ thống của bạn đã sẵn sàng để thực hiện lại PHẦN 2 trong hướng dẫn của bạn. Khởi động lại bằng lệnh:
+
+Bash
+```
+mkdir -p ~/scanner && cd ~/scanner
+```
+
