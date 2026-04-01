@@ -216,6 +216,10 @@ Sửa nội dung → nhấn "Commit changes"
 
 ## Bước B — Trên VPS, chạy đúng 1 lệnh này:
 
+Để đảm bảo không còn "rác" hệ thống (các layer build lỗi hoặc volume không tên), hãy chạy lệnh dọn dẹp hệ thống Docker:
+```
+docker system prune -f
+```
 bash // Chú ý sửa link file tải trước khi chạy
 ```
 cd ~/scanner && \
