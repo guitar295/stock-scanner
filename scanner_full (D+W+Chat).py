@@ -37,6 +37,9 @@ TELEGRAM_CHAT_ID   = os.environ.get('TELEGRAM_CHAT_ID')
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
+# Danh sách chat được phép ra lệnh cho bot
+ALLOWED_CHATS = {str(TELEGRAM_CHAT_ID), str(MY_PERSONAL_CHAT_ID)}
+
 register_user(VNSTOCK_API)
 
 # =============================================================================
