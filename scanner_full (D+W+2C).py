@@ -35,6 +35,7 @@ TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
+DATA_SOURCE = 'VCI'
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
@@ -124,7 +125,7 @@ def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=Non
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
-listing     = Listing(source='VCI')
+listing     = Listing(source=DATA_SOURCE)
 df_listing  = listing.all_symbols()
 col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
 all_symbols = df_listing[col_name].dropna().unique().tolist()
@@ -438,7 +439,7 @@ def run_scan_cycle(symbols, now_time, alerted_today):
     for symbol in symbols:
         for attempt in range(3):
             try:
-                quote  = Quote(symbol=symbol, source='VCI')
+                quote  = Quote(symbol=symbol, source=DATA_SOURCE)
                 df_raw = quote.history(length='1000', interval='1D')
 
                 if df_raw is None or len(df_raw) < 200:
@@ -591,7 +592,7 @@ def fetch_and_send_chart(symbol, chat_id):
     symbol  = symbol.upper().strip()
     url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        quote  = Quote(symbol=symbol, source='VCI')
+        quote  = Quote(symbol=symbol, source=DATA_SOURCE)
         df_raw = quote.history(length='1000', interval='1D')
 
         if df_raw is None or len(df_raw) < 60:
@@ -623,7 +624,7 @@ def fetch_and_send_chart(symbol, chat_id):
         link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
 
         msg = (
-            f"📊 #{symbol}  {date_str}\n"
+            f"#{symbol}  {date_str}\n"
             f"Sig: {signal_type}\n"
             f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
             f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
