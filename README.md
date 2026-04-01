@@ -164,6 +164,7 @@ TELEGRAM_CHAT_ID=-100....
 MY_PERSONAL_CHAT_ID = ...
 ```
 Nhấn Ctrl+X → Y → Enter để lưu.
+Nhấn Ctrl+S → Ctrl+X
 
 Kiểm tra kết quả:
 ```
