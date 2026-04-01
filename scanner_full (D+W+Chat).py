@@ -617,7 +617,7 @@ def fetch_and_send_chart(symbol, chat_id):
         link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
 
         msg = (
-            f"📊 #{symbol}  {date_str}\n"
+            f"#{symbol}  {date_str}\n"
             f"Sig: {signal_type}\n"
             f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
             f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
