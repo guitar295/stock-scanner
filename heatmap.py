@@ -21,7 +21,7 @@ from vnstock import Trading, register_user
 
 # ── SỬA 2 DÒNG NÀY ─────────────────────────────────────────────
 VNSTOCK_API_KEY    = "vnstock_a9d67f9dca5fd7d8c9716f4357a33565"
-TELEGRAM_BOT_TOKEN = "8719403978:AAHcKO4mM_SL70sraENl5DRiFHUjh0R7pO4"
+TELEGRAM_BOT_TOKEN = "......"
 # ────────────────────────────────────────────────────────────────
 
 TZ_VN = pytz.timezone("Asia/Ho_Chi_Minh")
