@@ -177,8 +177,9 @@ cat ~/scanner/.env
 bash
 ```
 cd ~/scanner
-docker build -t stock-scanner .  // phải có dấu chấm để build từ thư mục hiện tại
+docker build -t stock-scanner . 
 ```
+Chú ý: phải có dấu chấm để build từ thư mục hiện tại
 Chờ 3–5 phút. Thành công khi thấy dòng cuối:
 
 Successfully tagged stock-scanner:latest
