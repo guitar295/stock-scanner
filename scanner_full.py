@@ -55,7 +55,7 @@ TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
-DATA_SOURCE        = 'VCI'
+DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
