@@ -7,6 +7,15 @@ Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoà
 KIẾN TRÚC 2 BƯỚC:
   Bước 1: Load lịch sử 1 lần → cache vào dict  (trước giờ GD hoặc lúc khởi động)
   Bước 2: Mỗi chu kỳ scan chỉ gọi price_board 1 request → ghép vào cache → detect
+
+LỆNH TELEGRAM HỖ TRỢ:
+  /c HPG        → chart HPG
+  /c HPG VNM    → chart nhiều mã (tối đa 5)
+  /chart HPG    → như /c
+  /HPG          → chart HPG (không dấu cách)
+  / HPG         → chart HPG (có dấu cách)
+  /s            → tín hiệu hôm nay
+  /help         → trợ giúp
 =============================================================================
 """
 
@@ -26,6 +35,7 @@ import time
 import mplfinance as mpf
 import matplotlib.pyplot as plt
 import os
+import re
 from datetime import datetime, date
 import pytz
 import json
@@ -39,11 +49,10 @@ TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
-DATA_SOURCE = 'VCI'
+DATA_SOURCE        = 'VCI'
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
-# Nguồn price_board — KBS hỗ trợ tốt nhất cho realtime
 PRICE_BOARD_SOURCE = 'KBS'
 
 ALLOWED_CHATS = {str(TELEGRAM_CHAT_ID), str(MY_PERSONAL_CHAT_ID), '1207484510'}
@@ -167,34 +176,28 @@ def compute_indicators(df):
     rs       = avg_gain / avg_loss.replace(0, np.nan)
     df['RSI14'] = 100 - (100 / (1 + rs))
 
-    exp12             = df['close'].ewm(span=12, adjust=False).mean()
-    exp26             = df['close'].ewm(span=26, adjust=False).mean()
-    df['MACD']        = exp12 - exp26
-    df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    exp12                  = df['close'].ewm(span=12, adjust=False).mean()
+    exp26                  = df['close'].ewm(span=26, adjust=False).mean()
+    df['MACD']             = exp12 - exp26
+    df['MACD_Signal']      = df['MACD'].ewm(span=9, adjust=False).mean()
     df['MACD_Hist_origin'] = df['MACD'] - df['MACD_Signal']
-    df['MACD_Hist'] = df['MACD_Hist_origin'] * 3
-    df['A']           = df['close'].pct_change()
+    df['MACD_Hist']        = df['MACD_Hist_origin'] * 3
+    df['A']                = df['close'].pct_change()
     return df
 
 # =============================================================================
-# BƯỚC 5B: ═══ CACHE LỊCH SỬ ══════════════════════════════════════════════
-#
-#   history_cache[symbol] = DataFrame (cột OHLCV, index datetime, KHÔNG tính
-#                           chỉ báo — sẽ tính khi ghép nến realtime vào)
-#   cache_date            = ngày load cache (để biết khi nào cần reload)
+# BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
 history_cache: dict[str, pd.DataFrame] = {}
 cache_date: date | None = None
-cache_lock = threading.Lock()          # bảo vệ khi listener và scanner cùng đọc
+cache_lock = threading.Lock()
 
-# ─── CỘT CẦN LẤY TỪ price_board ────────────────────────────────────────────
-# Tên cột thực tế của Trading.price_board() — kiểm tra lại nếu vnstock update
-PB_SYMBOL   = 'symbol'        # hoặc 'symbol' tuỳ version
-PB_OPEN     = 'open_price'
-PB_HIGH     = 'high_price'
-PB_LOW      = 'low_price'
-PB_CLOSE    = 'close_price'   # giá khớp gần nhất / giá hiện tại
-PB_VOLUME   = 'total_trades'  # khối lượng tích luỹ trong ngày
+PB_SYMBOL  = 'symbol'
+PB_OPEN    = 'open_price'
+PB_HIGH    = 'high_price'
+PB_LOW     = 'low_price'
+PB_CLOSE   = 'close_price'
+PB_VOLUME  = 'total_trades'
 
 def load_history_for_symbol(symbol: str, current_date: date) -> pd.DataFrame | None:
     """Lấy lịch sử 1 mã, trả về DataFrame OHLCV (chưa tính chỉ báo)."""
@@ -207,7 +210,6 @@ def load_history_for_symbol(symbol: str, current_date: date) -> pd.DataFrame | N
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
-            # Giữ lại đến cuối ngày hôm qua (không lấy nến hôm nay vào cache)
             df_raw = df_raw[df_raw.index.date < current_date]
             return df_raw[['open','high','low','close','volume']].copy()
         except Exception as e:
@@ -219,10 +221,7 @@ def load_history_for_symbol(symbol: str, current_date: date) -> pd.DataFrame | N
 
 
 def build_history_cache(symbols: list[str], current_date: date):
-    """
-    Bước 1: Tải lịch sử toàn bộ danh mục và lưu vào history_cache.
-    Gọi 1 lần trước giờ GD hoặc khi khởi động.
-    """
+    """Tải lịch sử toàn bộ danh mục và lưu vào history_cache."""
     global cache_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã...")
@@ -236,7 +235,7 @@ def build_history_cache(symbols: list[str], current_date: date):
         if i % 20 == 0:
             ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
             print(f"  [{ts2}] Đã load {i}/{len(symbols)} mã...")
-        time.sleep(0.3)   # lịch sự với server
+        time.sleep(0.3)
     with cache_lock:
         cache_date = current_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
@@ -244,10 +243,7 @@ def build_history_cache(symbols: list[str], current_date: date):
 
 
 def get_price_board(symbols: list[str]) -> pd.DataFrame | None:
-    """
-    Bước 2a: Lấy snapshot realtime cho toàn bộ danh mục qua price_board.
-    Trả về DataFrame với index là ticker, các cột: open/high/low/close/volume.
-    """
+    """Lấy snapshot realtime toàn bộ danh mục qua price_board — 1 request duy nhất."""
     try:
         trading = Trading(source=PRICE_BOARD_SOURCE)
         df_pb   = trading.price_board(symbols)
@@ -255,17 +251,15 @@ def get_price_board(symbols: list[str]) -> pd.DataFrame | None:
             return None
         df_pb.columns = [c.lower() for c in df_pb.columns]
 
-        # Chuẩn hoá tên cột về open/high/low/close/volume
         rename_map = {}
-        if PB_CLOSE   in df_pb.columns: rename_map[PB_CLOSE]   = 'close'
-        if PB_VOLUME  in df_pb.columns: rename_map[PB_VOLUME]  = 'volume'
-        if PB_OPEN    in df_pb.columns: rename_map[PB_OPEN]    = 'open'
-        if PB_HIGH    in df_pb.columns: rename_map[PB_HIGH]    = 'high'
-        if PB_LOW     in df_pb.columns: rename_map[PB_LOW]     = 'low'
-        if PB_SYMBOL  in df_pb.columns: rename_map[PB_SYMBOL]  = 'symbol'
+        if PB_CLOSE  in df_pb.columns: rename_map[PB_CLOSE]  = 'close'
+        if PB_VOLUME in df_pb.columns: rename_map[PB_VOLUME] = 'volume'
+        if PB_OPEN   in df_pb.columns: rename_map[PB_OPEN]   = 'open'
+        if PB_HIGH   in df_pb.columns: rename_map[PB_HIGH]   = 'high'
+        if PB_LOW    in df_pb.columns: rename_map[PB_LOW]    = 'low'
+        if PB_SYMBOL in df_pb.columns: rename_map[PB_SYMBOL] = 'symbol'
         df_pb.rename(columns=rename_map, inplace=True)
 
-        # Đặt symbol làm index để tra nhanh
         if 'symbol' in df_pb.columns:
             df_pb.set_index('symbol', inplace=True)
         return df_pb
@@ -276,27 +270,29 @@ def get_price_board(symbols: list[str]) -> pd.DataFrame | None:
 
 def merge_realtime_row(df_hist: pd.DataFrame, pb_row: pd.Series,
                        current_date: date) -> pd.DataFrame:
-    """
-    Ghép 1 nến realtime (từ price_board) vào cuối DataFrame lịch sử.
-    Nếu ngày hôm nay đã có nến (do cache cũ) thì thay thế, không thêm trùng.
-    """
+    """Ghép 1 nến realtime vào cuối DataFrame lịch sử, kèm sanity check OHLC."""
     today_ts = pd.Timestamp(current_date)
 
+    close  = float(pb_row.get('close',  np.nan))
+    open_  = float(pb_row.get('open',   close))
+    high   = float(pb_row.get('high',   close))
+    low    = float(pb_row.get('low',    close))
+    volume = float(pb_row.get('volume', np.nan))
+
+    high = max(high, open_, close)
+    low  = min(low,  open_, close)
+
     new_row = pd.DataFrame([{
-        'open':   float(pb_row.get('open',   pb_row.get('close', np.nan))),
-        'high':   float(pb_row.get('high',   pb_row.get('close', np.nan))),
-        'low':    float(pb_row.get('low',    pb_row.get('close', np.nan))),
-        'close':  float(pb_row.get('close',  np.nan)),
-        'volume': float(pb_row.get('volume', np.nan)),
+        'open': open_, 'high': high, 'low': low,
+        'close': close, 'volume': volume,
     }], index=[today_ts])
 
-    # Xoá nến hôm nay nếu đã tồn tại (tránh trùng)
     df_hist = df_hist[df_hist.index.date < current_date]
     return pd.concat([df_hist, new_row])
 
 
 # =============================================================================
-# BƯỚC 6: CÁC HÀM ĐIỀU KIỆN TÍN HIỆU (GIỮ NGUYÊN)
+# BƯỚC 6: CÁC HÀM ĐIỀU KIỆN TÍN HIỆU
 # =============================================================================
 def calc_pocket_pivot_vol(df):
     V = df['volume']
@@ -325,11 +321,11 @@ def calc_break_vol(df):
 
 def calc_wedging(df):
     H, L, C, O, A = df['high'], df['low'], df['close'], df['open'], df['A']
-    range5       = ref(hhv(H,5),1) - ref(llv(L,5),1)
-    llv5_1       = ref(llv(L,5),1)
-    range_close5 = ref(hhv(C,5),1) - ref(llv(C,5),1)
-    cond_narrow  = range5 / llv5_1 < 0.05
-    cond_semi    = (range5 / llv5_1 < 0.06) & (range_close5 / llv5_1 < 0.02)
+    range5        = ref(hhv(H,5),1) - ref(llv(L,5),1)
+    llv5_1        = ref(llv(L,5),1)
+    range_close5  = ref(hhv(C,5),1) - ref(llv(C,5),1)
+    cond_narrow   = range5 / llv5_1 < 0.05
+    cond_semi     = (range5 / llv5_1 < 0.06) & (range_close5 / llv5_1 < 0.02)
     ma_a3_1 = ref(A.rolling(3).mean(), 1)
     ma_a2_1 = ref(A.rolling(2).mean(), 1)
     two_green = (
@@ -459,7 +455,7 @@ def detect_signal(df, now_time):
     return None
 
 # =============================================================================
-# BƯỚC 7: VẼ BIỂU ĐỒ (GIỮ NGUYÊN)
+# BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True):
     is_daily = (timeframe == 'Daily')
@@ -479,13 +475,13 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
                   for _, r in df_plot.iterrows()]
 
     apds = [
-        mpf.make_addplot(df_plot['EMA10'],     color='red',    width=0.6),
-        mpf.make_addplot(df_plot['EMA20'],     color='green',  width=0.6),
-        mpf.make_addplot(df_plot['EMA50'],     color='purple', width=0.6),
-        mpf.make_addplot(df_plot['volume'],    type='bar', panel=1, color=colors_vol,  alpha=1.0),
-        mpf.make_addplot(df_plot['MACD_Hist'], type='bar', panel=2, color=macd_colors, secondary_y=False),
-        mpf.make_addplot(df_plot['MACD'],      panel=2, color='blue',   width=0.6, secondary_y=False),
-        mpf.make_addplot(df_plot['MACD_Signal'],panel=2,color='orange', width=0.6, secondary_y=False),
+        mpf.make_addplot(df_plot['EMA10'],      color='red',    width=0.6),
+        mpf.make_addplot(df_plot['EMA20'],      color='green',  width=0.6),
+        mpf.make_addplot(df_plot['EMA50'],      color='purple', width=0.6),
+        mpf.make_addplot(df_plot['volume'],     type='bar', panel=1, color=colors_vol,  alpha=1.0),
+        mpf.make_addplot(df_plot['MACD_Hist'],  type='bar', panel=2, color=macd_colors, secondary_y=False),
+        mpf.make_addplot(df_plot['MACD'],       panel=2, color='blue',   width=0.6, secondary_y=False),
+        mpf.make_addplot(df_plot['MACD_Signal'],panel=2, color='orange', width=0.6, secondary_y=False),
     ]
 
     if is_daily:
@@ -498,7 +494,8 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     fig, axlist = mpf.plot(
         df_plot, type='candle', volume=False, addplot=apds,
         style=custom_style, savefig=dict(fname=img_name, dpi=150),
-        figratio=(12,9), returnfig=True, show_nontrading=False, tight_layout=True
+        figratio=(16, 9),
+        returnfig=True, show_nontrading=False, tight_layout=True
     )
     ax_price = axlist[0]
     ax_price.yaxis.set_label_position("right"); ax_price.yaxis.tick_right()
@@ -545,23 +542,17 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     return img_name
 
 # =============================================================================
-# BƯỚC 8: HÀM QUÉT 1 CHU KỲ — ĐÃ TỐI ƯU VỚI PRICE_BOARD
+# BƯỚC 8: HÀM QUÉT 1 CHU KỲ — TỐI ƯU VỚI PRICE_BOARD
 # =============================================================================
 SIGNAL_RANK  = {'PRE-BREAK': 1, 'POCKET PIVOT': 2, 'BREAKOUT': 3}
 SIGNAL_EMOJI = {'BREAKOUT': '🟢', 'POCKET PIVOT': '🟡', 'PRE-BREAK': '🟣'}
 
 def run_scan_cycle(symbols: list[str], now_time: int, alerted_today: dict):
-    """
-    Bước 2 của kiến trúc 2 bước:
-      1. Gọi price_board 1 lần cho toàn bộ danh mục  (1 request duy nhất)
-      2. Với mỗi mã: ghép nến realtime vào cache lịch sử → detect signal → gửi alert
-    """
     new_signals  = []
     current_date = datetime.now(TZ_VN).date()
     date_str     = datetime.now(TZ_VN).strftime('%d/%m/%Y')
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
 
-    # ── Lấy snapshot realtime toàn bộ danh mục — 1 request duy nhất ──────────
     print(f"  [{ts}] Gọi price_board cho {len(symbols)} mã...")
     df_pb = get_price_board(symbols)
     if df_pb is None:
@@ -573,30 +564,23 @@ def run_scan_cycle(symbols: list[str], now_time: int, alerted_today: dict):
 
     for symbol in symbols:
         try:
-            # Lấy cache lịch sử
             with cache_lock:
                 df_hist = history_cache.get(symbol)
 
             if df_hist is None or len(df_hist) < 60:
                 continue
 
-            # Lấy dòng realtime của mã này từ price_board
             if symbol not in df_pb.index:
                 continue
             pb_row = df_pb.loc[symbol]
 
-            # Kiểm tra giá hợp lệ
             close_val = pb_row.get('close', np.nan)
             if pd.isna(close_val) or float(close_val) <= 0:
                 continue
 
-            # Ghép nến realtime vào lịch sử
             df_merged = merge_realtime_row(df_hist, pb_row, current_date)
-
-            # Giới hạn 1000 nến để không nặng bộ nhớ
             df_merged = df_merged.tail(1000)
 
-            # Detect signal
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
                 continue
@@ -609,12 +593,11 @@ def run_scan_cycle(symbols: list[str], now_time: int, alerted_today: dict):
             alerted_today[symbol] = signal_type
             new_signals.append(symbol)
 
-            # Tính chỉ báo đầy đủ cho chart (dùng df đã merged + indicators)
-            df_calc     = compute_indicators(df_merged)
-            today       = df_calc.iloc[-1]
-            pct         = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
-            change      = today['close'] - df_calc['close'].iloc[-2]
-            emoji       = SIGNAL_EMOJI.get(signal_type, '📌')
+            df_calc      = compute_indicators(df_merged)
+            today        = df_calc.iloc[-1]
+            pct          = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
+            change       = today['close'] - df_calc['close'].iloc[-2]
+            emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
             vol_vs_prev  = (today['volume'] - df_calc['volume'].iloc[-2]) / df_calc['volume'].iloc[-2] * 100
             vol_vs_vma50 = (today['volume'] - today['VMA50']) / today['VMA50'] * 100 if today['VMA50'] > 0 else 0
 
@@ -640,7 +623,7 @@ def run_scan_cycle(symbols: list[str], now_time: int, alerted_today: dict):
             img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=True)
 
             df_weekly  = build_weekly_df(df_merged)
-            df_plot_w  = df_weekly.tail(150).copy()
+            df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
             img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
 
@@ -653,33 +636,61 @@ def run_scan_cycle(symbols: list[str], now_time: int, alerted_today: dict):
     return new_signals
 
 # =============================================================================
-# BƯỚC 8B: HÀM PARSE LỆNH CHART (GIỮ NGUYÊN)
+# BƯỚC 8B: HÀM PARSE LỆNH CHART — HỖ TRỢ NHIỀU CÚ PHÁP
 # =============================================================================
-def parse_chart_command(text):
+_RESERVED_KEYWORDS = {'s', 'help', 'h', 'scan', 'c', 'chart'}
+
+def parse_chart_command(text: str) -> list[str] | None:
+    """
+    Nhận dạng lệnh chart theo nhiều cú pháp, trả về list mã hoặc None.
+      /c HPG
+      /chart HPG VNM
+      /HPG             (không dấu cách)
+      / HPG            (có dấu cách)
+      / HPG VNM        (có dấu cách, nhiều mã)
+    """
     text = text.strip()
     if not text.startswith('/'):
         return None
-    body  = text[1:].strip()
-    parts = body.split()
-    if not parts:
-        return None
-    first = parts[0].lower()
-    if first in ('chart', 'c'):
-        symbols = parts[1:]
-    elif first not in ('scan', 'help', 's', 'h'):
-        symbols = parts
-    else:
-        return None
-    symbols = [s.upper() for s in symbols if 1 <= len(s) <= 5 and s.isalnum()]
-    return symbols if symbols else None
+
+    body = text[1:]  # bỏ dấu /
+
+    # Cú pháp 1: /c MÃ... hoặc /chart MÃ...
+    m = re.match(r'^(c|chart)\s+(.+)$', body, re.IGNORECASE)
+    if m:
+        return _filter_symbols(m.group(2).split())
+
+    # Cú pháp 2: / MÃ... (có dấu cách sau slash)
+    if body.startswith(' '):
+        return _filter_symbols(body.strip().split())
+
+    # Cú pháp 3: /MÃ (không dấu cách, 1 mã duy nhất)
+    parts = body.strip().split()
+    if len(parts) == 1:
+        candidate = parts[0].upper()
+        if candidate.lower() not in _RESERVED_KEYWORDS and _is_valid_symbol(candidate):
+            return [candidate]
+
+    return None
+
+
+def _is_valid_symbol(s: str) -> bool:
+    return bool(re.match(r'^[A-Z0-9]{1,5}$', s.upper())) and s.lower() not in _RESERVED_KEYWORDS
+
+
+def _filter_symbols(raw_list: list[str]) -> list[str] | None:
+    result = [s.upper() for s in raw_list if _is_valid_symbol(s)]
+    return result if result else None
+
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND (GIỮ NGUYÊN)
+# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
-    """Kéo data, vẽ chart Daily + Weekly, gửi về đúng chat_id yêu cầu."""
-    symbol  = symbol.upper().strip()
-    url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    thread_id = threading.current_thread().ident
+    symbol    = symbol.upper().strip()
+    url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol}")
     try:
         quote  = Quote(symbol=symbol, source=DATA_SOURCE)
         df_raw = quote.history(length='1000', interval='1D')
@@ -696,13 +707,13 @@ def fetch_and_send_chart(symbol, chat_id):
         df_raw.set_index('time', inplace=True)
         df_raw.columns = [c.lower() for c in df_raw.columns]
 
-        df_calc     = compute_indicators(df_raw)
-        today       = df_calc.iloc[-1]
-        now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-        signal_type = detect_signal(df_calc, now_time) or "ON-DEMAND"
-        date_str    = datetime.now(TZ_VN).strftime('%d/%m/%Y')
-        pct         = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
-        change      = today['close'] - df_calc['close'].iloc[-2]
+        df_calc      = compute_indicators(df_raw)
+        today        = df_calc.iloc[-1]
+        now_time     = int(datetime.now(TZ_VN).strftime("%H%M%S"))
+        signal_type  = detect_signal(df_calc, now_time) or "ON-DEMAND"
+        date_str     = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+        pct          = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
+        change       = today['close'] - df_calc['close'].iloc[-2]
         vol_vs_prev  = (today['volume'] - df_calc['volume'].iloc[-2]) / df_calc['volume'].iloc[-2] * 100
         vol_vs_vma50 = (today['volume'] - today['VMA50']) / today['VMA50'] * 100 if today['VMA50'] > 0 else 0
 
@@ -728,13 +739,16 @@ def fetch_and_send_chart(symbol, chat_id):
         img_daily = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=False)
 
         df_weekly  = build_weekly_df(df_raw)
-        df_plot_w  = df_weekly.tail(150).copy()
+        df_plot_w  = df_weekly.tail(200).copy()
         today_w    = df_plot_w.iloc[-1]
         img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
 
+        print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi chart")
         _send_chart_to_chat(msg, [img_daily, img_weekly], chat_id)
+        print(f"  🧵 [{thread_id}] {symbol} — đã gửi xong")
 
     except Exception as e:
+        print(f"  🧵 [{thread_id}] {symbol} — LỖI: {e}")
         requests.post(url_msg, data={
             'chat_id':    chat_id,
             'text':       f"❌ Lỗi lấy dữ liệu <b>{symbol}</b>: {e}",
@@ -743,14 +757,15 @@ def fetch_and_send_chart(symbol, chat_id):
 
 
 def _send_chart_to_chat(msg, image_paths, chat_id):
-    """Gửi album ảnh kèm caption vào chat_id chỉ định."""
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
     try:
         if len(image_paths) == 1:
             with open(image_paths[0], 'rb') as f:
                 requests.post(url_photo, data={
-                    'chat_id': chat_id, 'caption': msg or '', 'parse_mode': 'HTML'
+                    'chat_id':    chat_id,
+                    'caption':    msg or '',
+                    'parse_mode': 'HTML',
                 }, files={'photo': f})
         else:
             files = {}
@@ -777,37 +792,79 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
             if os.path.exists(path): os.remove(path)
 
 # =============================================================================
-# BƯỚC 8D: TELEGRAM LISTENER (GIỮ NGUYÊN)
+# BƯỚC 8D: TELEGRAM LISTENER — FIX RACE CONDITION + DUPLICATE + COLAB RE-RUN
 # =============================================================================
-def telegram_listener():
-    offset  = 0
+def telegram_listener(stop_event: threading.Event):
+    """
+    Long-polling listener.
+    stop_event: gọi stop_event.set() từ bên ngoài để dừng an toàn,
+                dùng khi chạy lại cell trên Colab tránh lỗi 409 Conflict.
+    """
     url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
     url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-    processed_ids     = set()
-    MAX_PROCESSED_IDS = 50
+    # Khởi tạo offset từ update mới nhất — bỏ qua toàn bộ tin nhắn cũ
+    try:
+        resp    = requests.get(url_upd, params={'offset': -1, 'limit': 1}, timeout=10)
+        results = resp.json().get('result', [])
+        offset  = (results[-1]['update_id'] + 1) if results else 0
+        print(f"🎧 Telegram Listener khởi động — offset={offset}")
+    except Exception as e:
+        offset = 0
+        print(f"🎧 Telegram Listener khởi động — offset=0 (lỗi: {e})")
 
-    print("🎧 Telegram Listener đã khởi động — nhận lệnh từ Group & Private Chat 24/7...")
+    # processed_ids: dict {update_id → timestamp} tự dọn sau 5 phút
+    processed_ids: dict[int, float] = {}
+    PROCESSED_TTL = 300
 
-    while True:
+    print(f"🎧 Listener sẵn sàng | chat được phép: {ALLOWED_CHATS}")
+
+    while not stop_event.is_set():
         try:
             resp = requests.get(url_upd, params={
-                'offset': offset, 'timeout': 30, 'allowed_updates': ['message']
+                'offset':          offset,
+                'timeout':         30,
+                'allowed_updates': ['message'],
             }, timeout=35)
-            data = resp.json()
 
-            for update in data.get('result', []):
+            # Kiểm tra stop ngay sau khi long-poll kết thúc
+            if stop_event.is_set():
+                break
+
+            if resp.status_code == 409:
+                print("  ⚠️ HTTP 409 Conflict — có instance khác đang chạy! Đợi 15s...")
+                time.sleep(15)
+                continue
+            elif resp.status_code != 200:
+                print(f"  ⚠️ getUpdates HTTP {resp.status_code} — thử lại sau 5s")
+                time.sleep(5)
+                continue
+
+            updates = resp.json().get('result', [])
+            if not updates:
+                continue
+
+            # Dọn processed_ids hết hạn
+            now_ts  = time.time()
+            expired = [uid for uid, ts in processed_ids.items()
+                       if now_ts - ts > PROCESSED_TTL]
+            for uid in expired:
+                del processed_ids[uid]
+
+            for update in updates:
                 update_id = update['update_id']
 
-                if update_id in processed_ids:
+                # Advance offset — chỉ tăng, không bao giờ giảm
+                if update_id >= offset:
                     offset = update_id + 1
+
+                # Chống duplicate tuyệt đối
+                if update_id in processed_ids:
+                    print(f"  ⚠️ Bỏ qua duplicate update_id={update_id}")
                     continue
+                processed_ids[update_id] = time.time()
 
-                processed_ids.add(update_id)
-                offset = update_id + 1
-
-                if len(processed_ids) > MAX_PROCESSED_IDS:
-                    processed_ids.clear()
+                print(f"  📨 Xử lý update_id={update_id} | offset mới={offset}")
 
                 msg_obj = update.get('message', {})
                 text    = msg_obj.get('text', '').strip()
@@ -815,13 +872,14 @@ def telegram_listener():
 
                 if not text or not chat_id:
                     continue
-
                 if str(chat_id) not in ALLOWED_CHATS:
+                    print(f"  🚫 chat_id {chat_id} không được phép")
                     continue
 
                 text_lower = text.lower().strip()
 
-                if text_lower in ('/scan', '/s') or text_lower.startswith(('/scan ', '/s ')):
+                # Lệnh /s
+                if text_lower == '/s' or text_lower.startswith('/s '):
                     if alerted_today:
                         lines = [f"{SIGNAL_EMOJI.get(v,'📌')} #{k}: {v}"
                                  for k, v in alerted_today.items()]
@@ -832,49 +890,76 @@ def telegram_listener():
                         'chat_id': chat_id, 'text': reply, 'parse_mode': 'HTML'
                     })
 
-                elif text_lower in ('/help', '/h') or text_lower.startswith(('/help ', '/h ')):
+                # Lệnh /help
+                elif text_lower == '/help' or text_lower.startswith('/help '):
                     requests.post(url_msg, data={
                         'chat_id':    chat_id,
                         'parse_mode': 'HTML',
                         'text': (
                             "🤖 <b>Lệnh hỗ trợ:</b>\n\n"
-                            "<b>Xem chart:</b>\n"
-                            "/HPG\n"
+                            "<b>Xem chart (các cú pháp đều hợp lệ):</b>\n"
                             "/c HPG\n"
                             "/chart HPG\n"
-                            "/HPG VNM FPT  (nhiều mã, tối đa 5)\n\n"
+                            "/HPG\n"
+                            "/ HPG\n"
+                            "/c HPG VNM FPT  (nhiều mã, tối đa 5)\n\n"
                             "<b>Khác:</b>\n"
-                            "/scan  hoặc  /s  — Tín hiệu hôm nay\n"
-                            "/help  hoặc  /h  — Trợ giúp"
+                            "/s  — Tín hiệu hôm nay\n"
+                            "/help  — Trợ giúp"
                         )
                     })
 
+                # Lệnh chart
                 else:
                     symbols = parse_chart_command(text)
                     if symbols:
+                        print(f"  🔍 {text!r} → {symbols} | update_id={update_id}")
                         for sym in symbols[:5]:
-                            print(f"  📥 Nhận lệnh chart {sym} — chat_id: {chat_id}")
+                            print(f"  📥 Chart {sym} → chat_id={chat_id}")
                             threading.Thread(
                                 target=fetch_and_send_chart,
                                 args=(sym, chat_id),
                                 daemon=True
                             ).start()
-                            time.sleep(0.5)
+                            time.sleep(0.3)
 
         except requests.exceptions.Timeout:
             continue
+        except requests.exceptions.ConnectionError as e:
+            if stop_event.is_set():
+                break
+            print(f"  ❌ Connection error: {e} — thử lại sau 10s")
+            time.sleep(10)
         except Exception as e:
+            if stop_event.is_set():
+                break
             print(f"  ❌ Listener lỗi: {e}")
             time.sleep(5)
 
+    print("🛑 Listener đã dừng.")
+
 # =============================================================================
-# BƯỚC 9: KHỞI ĐỘNG
+# BƯỚC 9: KHỞI ĐỘNG — TỰ DỪNG LISTENER CŨ KHI CHẠY LẠI CELL TRÊN COLAB
 # =============================================================================
+
+# Dừng listener cũ nếu đang tồn tại — tránh 409 Conflict khi chạy lại cell
+try:
+    _stop_listener.set()
+    print("⏹️  Dừng listener cũ — đợi 3s...")
+    time.sleep(3)
+except NameError:
+    pass  # Lần chạy đầu tiên, chưa có _stop_listener → bỏ qua
+
 alerted_today = {}
 last_run_date = datetime.now(TZ_VN).date()
 
-# ── Listener chạy 24/7 trong thread riêng ────────────────────────────────────
-listener_thread = threading.Thread(target=telegram_listener, daemon=True)
+# Tạo stop_event mới và khởi động listener
+_stop_listener  = threading.Event()
+listener_thread = threading.Thread(
+    target=telegram_listener,
+    args=(_stop_listener,),
+    daemon=True
+)
 listener_thread.start()
 
 print("\n" + "="*60)
@@ -882,36 +967,34 @@ print("⚙️  AUTO-SCANNER + TELEGRAM LISTENER ĐÃ KÍCH HOẠT")
 print(f"   Danh sách  : {len(symbols_to_scan)} mã")
 print(f"   Chu kỳ quét: {SCAN_INTERVAL_SEC} giây")
 print(f"   Tín hiệu   → Channel/Group: {TELEGRAM_CHAT_ID}")
-print(f"   Lệnh chart : /HPG | /c HPG | /chart HPG")
-print(f"   Lệnh khác  : /scan (/s) | /help (/h)")
+print(f"   Lệnh chart : /c HPG | /chart HPG | /HPG | / HPG")
+print(f"   Lệnh khác  : /s | /help")
 print(f"   Nhận lệnh  : Group + Private Chat (24/7)")
 print("="*60)
 
-# ── BƯỚC 1: Load cache lịch sử ngay khi khởi động ───────────────────────────
+# Load cache lịch sử ngay khi khởi động
 print("\n🔧 Đang load cache lịch sử lần đầu...")
 build_history_cache(symbols_to_scan, last_run_date)
 
-# ── Vòng lặp chính ───────────────────────────────────────────────────────────
+# Vòng lặp chính
 while True:
     now_obj      = datetime.now(TZ_VN)
     current_date = now_obj.date()
     now_time     = int(now_obj.strftime("%H%M%S"))
     ts           = now_obj.strftime("%H:%M:%S")
 
-    # Ngày mới: reset alert + reload cache lịch sử
+    # Ngày mới: reset alert + reload cache
     if current_date > last_run_date:
         alerted_today.clear()
         last_run_date = current_date
-        print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Đã reset bộ nhớ tín hiệu.")
+        print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
         print("🔧 Reload cache lịch sử cho ngày mới...")
         build_history_cache(symbols_to_scan, current_date)
 
-    # ── Ngoài giờ giao dịch: build/cập nhật cache nếu chưa có ───────────────
     is_morning   = 85000 <= now_time <= 113000
     is_afternoon = 130000 <= now_time <= 150000
 
     if not (is_morning or is_afternoon):
-        # Nếu cache chưa load hôm nay thì load luôn
         with cache_lock:
             cache_ok = (cache_date == current_date and len(history_cache) > 0)
         if not cache_ok:
@@ -925,7 +1008,6 @@ while True:
         time.sleep(SCAN_INTERVAL_SEC)
         continue
 
-    # ── Đảm bảo cache đã load trước khi scan ─────────────────────────────────
     with cache_lock:
         cache_ok = (cache_date == current_date and len(history_cache) > 0)
     if not cache_ok:
