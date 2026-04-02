@@ -237,7 +237,7 @@ def _hmap_col_height(groups):
     return h + HMAP_MARGIN
 
 def fetch_heatmap_data() -> dict:
-    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiet ke theo du lieu tra ve tư KBS, neu dung VCI phai tim cach sua du lieu dau vao)."""
+    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiết kế theo data output của KBS)."""
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
                   | set(TRADING_STOCKS_POOL))
