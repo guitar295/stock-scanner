@@ -141,7 +141,7 @@ def _hmap_fg(bg):
     return (30,30,30) if lum > 160 else (15,15,15)
 
 HMAP_CELL_W      = 162
-HMAP_CELL_H      = 30          # tăng từ 26 → 30 để chứa font lớn hơn
+HMAP_CELL_H      = 26
 HMAP_COL_GAP     = 4
 HMAP_COL_W       = HMAP_CELL_W + HMAP_COL_GAP
 HMAP_MARGIN      = 5
@@ -172,16 +172,13 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
         draw.line([x0, y0+r, x0, y1-r], fill=outline, width=lw)
         draw.line([x1, y0+r, x1, y1-r], fill=outline, width=lw)
 
-# =============================================================================
-# SỬA 1/2: _hmap_load_fonts — tăng size để bold hiển thị rõ
-# =============================================================================
 def _hmap_load_fonts():
     """
-    f_title  : bold 14  — tiêu đề thanh trên
-    f_hdr    : bold 12  — tên ngành (BOLD, tăng từ 10→12)
-    f_sym    : bold 12  — mã cổ phiếu (BOLD, tăng từ 10→12)
-    f_data   : regular 11 — giá và %giá (regular, tăng từ 9→11)
-    f_sector : bold 12  — % trung bình ngành (tăng từ 11→12)
+    f_title  : bold 13  — tiêu đề thanh trên
+    f_hdr    : bold 10  — tên ngành (BOLD theo yêu cầu)
+    f_sym    : bold 10  — mã cổ phiếu (BOLD theo yêu cầu)
+    f_data   : regular 9 — giá và %giá (regular, giữ nguyên code gốc)
+    f_sector : bold 11  — % trung bình ngành
     """
     bold_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -196,23 +193,18 @@ def _hmap_load_fonts():
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
     try:
-        f_title  = ImageFont.truetype(bold, 14)        # tiêu đề — bold 14
-        f_hdr    = ImageFont.truetype(bold, 12)        # tên ngành — BOLD 12
-        f_sym    = ImageFont.truetype(bold, 12)        # mã CP — BOLD 12
-        f_data   = ImageFont.truetype(reg or bold, 11) # giá, % — regular 11
-        f_sector = ImageFont.truetype(bold, 12)        # % ngành — bold 12
+        f_title  = ImageFont.truetype(bold, 13)       # tiêu đề
+        f_hdr    = ImageFont.truetype(bold, 10)       # tên ngành — BOLD
+        f_sym    = ImageFont.truetype(bold, 10)       # mã cổ phiếu — BOLD
+        f_data   = ImageFont.truetype(reg or bold, 9) # giá, % — regular
+        f_sector = ImageFont.truetype(bold, 11)       # % ngành — bold
         return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
         return d, d, d, d, d
 
-# =============================================================================
-# SỬA 2/2: _hmap_draw_stock_cell — định dạng giá 4 chữ số tổng cộng
-# Giá < 100  → xx.xx  (2 số nguyên + 2 thập phân = 4 chữ số, ví dụ: 22.22)
-# Giá >= 100 → xxx.x  (3 số nguyên + 1 thập phân = 4 chữ số, ví dụ: 111.1)
-# =============================================================================
 def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
-    """Mã cổ phiếu: stroke_width=1 để bold rõ | Giá: 4 chữ số | %: regular"""
+    """Mã cổ phiếu: BOLD (f_sym) | Giá: regular 2 số TP (f_data) | %: regular (f_data)"""
     bg = _hmap_cell_color(pct)
     fg = _hmap_fg(bg)
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
@@ -220,36 +212,30 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
     w1 = int(HMAP_CELL_W * 0.35)
     w2 = int(HMAP_CELL_W * 0.30)
     w3 = HMAP_CELL_W - w1 - w2
-    ty = y + (HMAP_CELL_H - 2) // 2 - 6
-    price_str = f"{price:.2f}" if price < 100 else f"{price:.1f}"
+    ty = y + (HMAP_CELL_H - 2) // 2 - 5
 
-    def dc(txt, fnt, bx, bw, use_stroke=False):
+    def dc(txt, fnt, bx, bw):
         bb = draw.textbbox((0, 0), txt, font=fnt)
-        tx = bx + (bw - (bb[2] - bb[0])) // 2
-        if use_stroke:
-            draw.text((tx, ty), txt, font=fnt, fill=fg, stroke_width=1, stroke_fill=fg)
-        else:
-            draw.text((tx, ty), txt, font=fnt, fill=fg)
+        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
 
-    dc(sym,             f_sym,  x,        w1, use_stroke=True)   # mã CP — đậm rõ
-    dc(price_str,       f_data, x + w1,   w2)                    # giá — regular
-    dc(f"{pct:+.1f}%", f_data, x+w1+w2,  w3)                    # % — regular
+    dc(sym,                                                    f_sym,  x,       w1)  # BOLD
+    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
+    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)  # regular
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
-    """Tên ngành: stroke_width=1 để bold rõ | % TB ngành: stroke_width=1 màu"""
+    """Tên ngành: BOLD (f_hdr) | % TB ngành: bold màu (f_sector)"""
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
     _hmap_rounded_rect(draw, x, y, x1, y1, HMAP_RADIUS,
                        fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
     w1 = int(HMAP_CELL_W * 0.65)
     w2 = HMAP_CELL_W - w1
-    ty = y + (HMAP_CELL_H - 2) // 2 - 6
+    ty = y + (HMAP_CELL_H - 2) // 2 - 5
 
     def dc(txt, fnt, bx, bw, color):
         bb = draw.textbbox((0, 0), txt, font=fnt)
-        tx = bx + (bw - (bb[2] - bb[0])) // 2
-        draw.text((tx, ty), txt, font=fnt, fill=color, stroke_width=1, stroke_fill=color)
+        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=color)
 
-    dc(name, f_hdr, x, w1, HMAP_HDR_FG)  # tên ngành — đậm rõ
+    dc(name, f_hdr, x, w1, HMAP_HDR_FG)  # tên ngành — BOLD
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
     dc(f"{avg_pct:+.2f}%", f_sector, x + w1, w2, fg_s)
 
@@ -276,7 +262,7 @@ def fetch_heatmap_data() -> dict:
         if df is not None and not df.empty:
             for _, row in df.iterrows():
                 sym   = str(row.get("symbol", "")).strip()
-                close = float(row.get("close_price", 0) or 0) / 1000   # KBS trả đơn vị đồng → chia 1000 thành nghìn đồng
+                close = float(row.get("close_price", 0) or 0) / 1000
                 ref_p = float(row.get("reference_price", 0) or 0) / 1000
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
                 result[sym] = {"price": close, "pct": pct}
