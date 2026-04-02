@@ -5,3 +5,4 @@ mplfinance
 pytz
 numpy
 matplotlib
+pillow
