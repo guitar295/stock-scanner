@@ -55,7 +55,7 @@ TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
-DATA_SOURCE        = 'KBS'
+DATA_SOURCE        = 'VCI'
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
@@ -66,7 +66,6 @@ register_user(VNSTOCK_API)
 # =============================================================================
 # BƯỚC 2B: CẤU HÌNH HEATMAP
 # =============================================================================
-
 TRADING_STOCKS_POOL = [
     "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
     "CCL","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM",
@@ -93,13 +92,13 @@ HEATMAP_COLUMNS = [
         {"name": "DAU KHI",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET"]},
     ]},
     {"col": 3, "groups": [
-        {"name": "CHUNG KHOAN","symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
-        {"name": "XAY DUNG",   "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
+        {"name": "CHUNG KHOAN", "symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
+        {"name": "XAY DUNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
     ]},
     {"col": 4, "groups": [
-        {"name": "BAT DONG SAN","symbols": ["IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
-        {"name": "PHAN BON",    "symbols": ["BFC","DCM","DPM"]},
-        {"name": "THEP",        "symbols": ["HPG","HSG","NKG"]},
+        {"name": "BAT DONG SAN", "symbols": ["IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
+        {"name": "PHAN BON",     "symbols": ["BFC","DCM","DPM"]},
+        {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
     ]},
     {"col": 5, "groups": [
         {"name": "BAN LE",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW"]},
@@ -116,7 +115,7 @@ HEATMAP_COLUMNS = [
         {"name": "MIA DUONG",  "symbols": ["LSS","SBT","QNS"]},
     ]},
     {"col": 7, "groups": [
-        {"name": "DAU TU CONG","symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
+        {"name": "DAU TU CONG", "symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
     ]},
 ]
 
@@ -141,14 +140,14 @@ def _hmap_fg(bg):
     lum = 0.299*bg[0] + 0.587*bg[1] + 0.114*bg[2]
     return (30,30,30) if lum > 160 else (15,15,15)
 
-HMAP_CELL_W   = 162
-HMAP_CELL_H   = 26
-HMAP_COL_GAP  = 4
-HMAP_COL_W    = HMAP_CELL_W + HMAP_COL_GAP
-HMAP_MARGIN   = 5
-HMAP_TOP_BAR  = 32
-HMAP_RADIUS   = 5
-HMAP_BG       = (252,252,252)
+HMAP_CELL_W      = 162
+HMAP_CELL_H      = 26
+HMAP_COL_GAP     = 4
+HMAP_COL_W       = HMAP_CELL_W + HMAP_COL_GAP
+HMAP_MARGIN      = 5
+HMAP_TOP_BAR     = 32
+HMAP_RADIUS      = 5
+HMAP_BG          = (252,252,252)
 HMAP_HDR_FILL    = (220,228,250)
 HMAP_HDR_OUTLINE = (160,180,230)
 HMAP_HDR_FG      = (25,55,150)
@@ -161,19 +160,26 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
     draw.rectangle([x0, y0+r, x1, y1-r], fill=fill)
     draw.pieslice([x0, y0, x0+2*r, y0+2*r], 180, 270, fill=fill)
     draw.pieslice([x1-2*r, y0, x1, y0+2*r], 270, 360, fill=fill)
-    draw.pieslice([x0, y1-2*r, x0+2*r, y1], 90, 180, fill=fill)
-    draw.pieslice([x1-2*r, y1-2*r, x1, y1], 0, 90, fill=fill)
+    draw.pieslice([x0, y1-2*r, x0+2*r, y1], 90,  180, fill=fill)
+    draw.pieslice([x1-2*r, y1-2*r, x1, y1], 0,    90, fill=fill)
     if outline:
         draw.arc([x0, y0, x0+2*r, y0+2*r], 180, 270, fill=outline, width=lw)
         draw.arc([x1-2*r, y0, x1, y0+2*r], 270, 360, fill=outline, width=lw)
-        draw.arc([x0, y1-2*r, x0+2*r, y1], 90, 180, fill=outline, width=lw)
-        draw.arc([x1-2*r, y1-2*r, x1, y1], 0, 90, fill=outline, width=lw)
+        draw.arc([x0, y1-2*r, x0+2*r, y1], 90,  180, fill=outline, width=lw)
+        draw.arc([x1-2*r, y1-2*r, x1, y1], 0,    90, fill=outline, width=lw)
         draw.line([x0+r, y0, x1-r, y0], fill=outline, width=lw)
         draw.line([x0+r, y1, x1-r, y1], fill=outline, width=lw)
         draw.line([x0, y0+r, x0, y1-r], fill=outline, width=lw)
         draw.line([x1, y0+r, x1, y1-r], fill=outline, width=lw)
 
 def _hmap_load_fonts():
+    """
+    f_title  : bold 13  — tiêu đề thanh trên
+    f_hdr    : bold 10  — tên ngành (BOLD theo yêu cầu)
+    f_sym    : bold 10  — mã cổ phiếu (BOLD theo yêu cầu)
+    f_data   : regular 9 — giá và %giá (regular, giữ nguyên code gốc)
+    f_sector : bold 11  — % trung bình ngành
+    """
     bold_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
@@ -187,48 +193,55 @@ def _hmap_load_fonts():
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
     try:
-        return (
-            ImageFont.truetype(bold, 13),
-            ImageFont.truetype(bold, 10),
-            ImageFont.truetype(bold, 10),
-            ImageFont.truetype(reg or bold, 9),
-            ImageFont.truetype(bold, 11),
-        )
+        f_title  = ImageFont.truetype(bold, 13)       # tiêu đề
+        f_hdr    = ImageFont.truetype(bold, 10)       # tên ngành — BOLD
+        f_sym    = ImageFont.truetype(bold, 10)       # mã cổ phiếu — BOLD
+        f_data   = ImageFont.truetype(reg or bold, 9) # giá, % — regular
+        f_sector = ImageFont.truetype(bold, 11)       # % ngành — bold
+        return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
         return d, d, d, d, d
 
 def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
+    """Mã cổ phiếu: BOLD (f_sym) | Giá: regular 2 số TP (f_data) | %: regular (f_data)"""
     bg = _hmap_cell_color(pct)
     fg = _hmap_fg(bg)
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
     _hmap_rounded_rect(draw, x, y, x1, y1, HMAP_RADIUS, fill=bg, outline=(200,205,215), lw=1)
-    w1, w2 = int(HMAP_CELL_W*0.35), int(HMAP_CELL_W*0.30)
+    w1 = int(HMAP_CELL_W * 0.35)
+    w2 = int(HMAP_CELL_W * 0.30)
     w3 = HMAP_CELL_W - w1 - w2
-    ty = y + (HMAP_CELL_H-2)//2 - 5
+    ty = y + (HMAP_CELL_H - 2) // 2 - 5
+
     def dc(txt, fnt, bx, bw):
-        bb = draw.textbbox((0,0), txt, font=fnt)
-        draw.text((bx+(bw-(bb[2]-bb[0]))//2, ty), txt, font=fnt, fill=fg)
-    dc(sym, f_sym, x, w1)
-    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}", f_data, x+w1, w2)
-    dc(f"{pct:+.1f}%", f_data, x+w1+w2, w3)
+        bb = draw.textbbox((0, 0), txt, font=fnt)
+        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
+
+    dc(sym,                                                    f_sym,  x,       w1)  # BOLD
+    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
+    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)  # regular
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
+    """Tên ngành: BOLD (f_hdr) | % TB ngành: bold màu (f_sector)"""
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
-    _hmap_rounded_rect(draw, x, y, x1, y1, HMAP_RADIUS, fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
-    w1 = int(HMAP_CELL_W*0.65)
+    _hmap_rounded_rect(draw, x, y, x1, y1, HMAP_RADIUS,
+                       fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
+    w1 = int(HMAP_CELL_W * 0.65)
     w2 = HMAP_CELL_W - w1
-    ty = y + (HMAP_CELL_H-2)//2 - 5
+    ty = y + (HMAP_CELL_H - 2) // 2 - 5
+
     def dc(txt, fnt, bx, bw, color):
-        bb = draw.textbbox((0,0), txt, font=fnt)
-        draw.text((bx+(bw-(bb[2]-bb[0]))//2, ty), txt, font=fnt, fill=color)
-    dc(name, f_hdr, x, w1, HMAP_HDR_FG)
+        bb = draw.textbbox((0, 0), txt, font=fnt)
+        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=color)
+
+    dc(name, f_hdr, x, w1, HMAP_HDR_FG)  # tên ngành — BOLD
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
-    dc(f"{avg_pct:+.2f}%", f_sector, x+w1, w2, fg_s)
+    dc(f"{avg_pct:+.2f}%", f_sector, x + w1, w2, fg_s)
 
 def _hmap_avg_pct(syms, data):
     vals = [data[s]["pct"] for s in syms if s in data]
-    return round(sum(vals)/len(vals), 2) if vals else 0.0
+    return round(sum(vals) / len(vals), 2) if vals else 0.0
 
 def _hmap_col_height(groups):
     h = HMAP_TOP_BAR + HMAP_MARGIN
@@ -237,7 +250,7 @@ def _hmap_col_height(groups):
     return h + HMAP_MARGIN
 
 def fetch_heatmap_data() -> dict:
-    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiết kế theo data output của KBS)."""
+    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (VCI)."""
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
                   | set(TRADING_STOCKS_POOL))
@@ -248,10 +261,10 @@ def fetch_heatmap_data() -> dict:
         df = engine.price_board(need)
         if df is not None and not df.empty:
             for _, row in df.iterrows():
-                sym   = str(row.get("symbol","")).strip()
+                sym   = str(row.get("symbol", "")).strip()
                 close = float(row.get("close_price", 0) or 0)
                 ref_p = float(row.get("reference_price", 0) or 0)
-                pct   = round((close - ref_p)/ref_p*100, 2) if ref_p > 0 else 0.0
+                pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
                 result[sym] = {"price": close, "pct": pct}
     except Exception as e:
         print(f"  [{ts}] ❌ Heatmap API lỗi: {e}")
@@ -261,16 +274,18 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
     """Vẽ heatmap PIL và trả về đường dẫn ảnh tạm."""
     f_title, f_hdr, f_sym, f_data, f_sector = _hmap_load_fonts()
 
-    max_rows = max(sum(len(g["symbols"]) for g in c["groups"]) for c in HEATMAP_COLUMNS)
+    max_rows   = max(sum(len(g["symbols"]) for g in c["groups"]) for c in HEATMAP_COLUMNS)
     ts_display = sorted(
         [s for s in TRADING_STOCKS_POOL if s in data],
         key=lambda s: data[s]["pct"], reverse=True
     )[:max_rows]
 
-    def srt(syms): return sorted(syms, key=lambda s: data.get(s,{}).get("pct",0), reverse=True)
+    def srt(syms):
+        return sorted(syms, key=lambda s: data.get(s, {}).get("pct", 0), reverse=True)
 
     col0     = {"col": 0, "groups": [{"name": "TRADING STOCKS", "symbols": ts_display}]}
     all_cols = [col0] + HEATMAP_COLUMNS
+
     all_sorted = []
     for cd in all_cols:
         all_sorted.append([{"name": g["name"], "symbols": srt(g["symbols"])} for g in cd["groups"]])
@@ -281,12 +296,13 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
     img  = Image.new("RGB", (IMG_W, IMG_H), HMAP_BG)
     draw = ImageDraw.Draw(img)
 
-    _hmap_rounded_rect(draw, 0, 0, IMG_W-1, HMAP_TOP_BAR, 0,
+    _hmap_rounded_rect(draw, 0, 0, IMG_W - 1, HMAP_TOP_BAR, 0,
                        fill=(238,242,255), outline=(180,195,235), lw=1)
-    draw.text((HMAP_MARGIN+5, 9), f"MARKET MAP   {timestamp}", font=f_title, fill=(15,35,115))
+    draw.text((HMAP_MARGIN + 5, 9), f"MARKET MAP   {timestamp}",
+              font=f_title, fill=(15,35,115))
     legend = "  Ma | Gia | %Gia"
-    bb = draw.textbbox((0,0), legend, font=f_data)
-    draw.text((IMG_W-(bb[2]-bb[0])-8, 11), legend, font=f_data, fill=(100,110,140))
+    bb = draw.textbbox((0, 0), legend, font=f_data)
+    draw.text((IMG_W - (bb[2] - bb[0]) - 8, 11), legend, font=f_data, fill=(100,110,140))
 
     for idx, cd in enumerate(all_cols):
         cx = cd["col"] * HMAP_COL_W + HMAP_MARGIN
@@ -298,11 +314,11 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
             for sym in g["symbols"]:
                 info = data.get(sym, {})
                 _hmap_draw_stock_cell(draw, cx, y, sym,
-                                      info.get("price",0.0), info.get("pct",0.0),
+                                      info.get("price", 0.0), info.get("pct", 0.0),
                                       f_sym, f_data)
                 y += HMAP_CELL_H
 
-    draw.rectangle([0, 0, IMG_W-1, IMG_H-1], outline=(200,210,230), width=1)
+    draw.rectangle([0, 0, IMG_W - 1, IMG_H - 1], outline=(200,210,230), width=1)
 
     fd, path = tempfile.mkstemp(suffix='_heatmap.png')
     os.close(fd)
@@ -316,7 +332,6 @@ def handle_heatmap_command(chat_id):
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     url_act   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction"
-
     try:
         requests.post(url_act, data={"chat_id": chat_id, "action": "upload_photo"}, timeout=5)
         requests.post(url_msg, data={
@@ -325,7 +340,8 @@ def handle_heatmap_command(chat_id):
         })
         data = fetch_heatmap_data()
         if not data:
-            requests.post(url_msg, data={"chat_id": chat_id, "text": "❌ Không lấy được dữ liệu heatmap. Thử lại sau."})
+            requests.post(url_msg, data={"chat_id": chat_id,
+                                         "text": "❌ Không lấy được dữ liệu heatmap. Thử lại sau."})
             return
         ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
         path   = build_heatmap_image(data, ts_str)
@@ -421,9 +437,9 @@ print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to
 # =============================================================================
 # BƯỚC 5: HÀM TÍNH CHỈ BÁO
 # =============================================================================
-def ref(series, n):   return series.shift(n)
-def hhv(series, n):   return series.rolling(n).max()
-def llv(series, n):   return series.rolling(n).min()
+def ref(series, n):  return series.shift(n)
+def hhv(series, n):  return series.rolling(n).max()
+def llv(series, n):  return series.rolling(n).min()
 
 def compute_indicators(df):
     df = df.copy()
@@ -440,7 +456,7 @@ def compute_indicators(df):
     avg_gain = gain.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
     rs       = avg_gain / avg_loss.replace(0, np.nan)
-    df['RSI14'] = 100 - (100/(1+rs))
+    df['RSI14'] = 100 - (100 / (1 + rs))
 
     exp12 = df['close'].ewm(span=12, adjust=False).mean()
     exp26 = df['close'].ewm(span=26, adjust=False).mean()
@@ -455,8 +471,8 @@ def compute_indicators(df):
 # BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
 history_cache: dict = {}
-cache_date = None
-cache_lock = threading.Lock()
+cache_date          = None
+cache_lock          = threading.Lock()
 
 def load_history_for_symbol(symbol: str, current_date: date):
     for attempt in range(3):
@@ -509,7 +525,8 @@ def fetch_today_bar(symbol: str, current_date: date):
             high   = float(row.get('high',   close))
             low    = float(row.get('low',    close))
             volume = float(row.get('volume', np.nan))
-            high = max(high, open_, close); low = min(low, open_, close)
+            high = max(high, open_, close)
+            low  = min(low,  open_, close)
             return pd.Series({'open':open_,'high':high,'low':low,'close':close,'volume':volume},
                              name=pd.Timestamp(current_date))
         except Exception as e:
@@ -528,7 +545,7 @@ def merge_today_bar(df_hist, today_bar, current_date: date):
 # =============================================================================
 def calc_pocket_pivot_vol(df):
     V = df['volume']; C = df['close']
-    def down_vol(lv, lc, lcp): return ref(V,lv).where(ref(C,lc)<=ref(C,lcp), 0)
+    def down_vol(lv, lc, lcp): return ref(V,lv).where(ref(C,lc) <= ref(C,lcp), 0)
     return (
         (V>down_vol(1,1,2))&(V>down_vol(2,2,3))&(V>down_vol(3,3,4))&
         (V>down_vol(4,4,5))&(V>down_vol(5,5,6))&(V>down_vol(6,6,7))&
@@ -554,7 +571,8 @@ def calc_wedging(df):
     range_close5 = ref(hhv(C,5),1) - ref(llv(C,5),1)
     cond_narrow  = range5/llv5_1 < 0.05
     cond_semi    = (range5/llv5_1<0.06)&(range_close5/llv5_1<0.02)
-    ma_a3_1 = ref(A.rolling(3).mean(),1); ma_a2_1 = ref(A.rolling(2).mean(),1)
+    ma_a3_1 = ref(A.rolling(3).mean(),1)
+    ma_a2_1 = ref(A.rolling(2).mean(),1)
     two_green = (
         (ma_a2_1>0.015)&((O-ref(C,1))>=0)&((ref(O,1)-ref(C,2))>=0)&
         ((ref(O,2)-ref(C,3))>=0)&(ref(C,3)>ref(C,4))&(ref(C,1)>ref(O,1))&
@@ -618,7 +636,8 @@ def calc_break_price(df):
     return c1&c2&c3&c4&c5&c6&c7&c8&c9&c10&c11&box1&box2&box3&wedging
 
 def calc_prebreak_vol(df, now_time):
-    V   = df['volume']; V1 = ref(V,1); V2 = ref(V,2)
+    V   = df['volume']
+    V1  = ref(V,1); V2 = ref(V,2)
     pct = (df['close']-ref(df['close'],1))/ref(df['close'],1)
     def make_cond(vma_n, v_lo_mult, big_vma, big_v2):
         normal = (
@@ -675,7 +694,7 @@ def detect_signal(df, now_time):
 # BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True):
-    is_daily = (timeframe == 'Daily')
+    is_daily  = (timeframe == 'Daily')
     date_str  = datetime.now(TZ_VN).strftime('%d/%m/%Y')
     prev_close = df_plot['close'].iloc[-2]
     pct        = (today['close'] - prev_close) / prev_close * 100
@@ -724,15 +743,19 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
             xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
             ha='center', va='top', color='DeepPink', fontsize=12)
 
-    title_str = (
-        f"{symbol} [{'D' if is_daily else 'W'}] {date_str}  |  "
-        f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
-        f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)\n\n"
-        f"{signal_type}" if is_daily else
-        f"{symbol} [W] {date_str}  | "
-        f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
-        f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
-    )
+    if is_daily:
+        title_str = (
+            f"{symbol} [D] {date_str}  |  "
+            f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
+            f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%) \n\n"
+            f"{signal_type}"
+        )
+    else:
+        title_str = (
+            f"{symbol} [W] {date_str}  | "
+            f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
+            f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
+        )
     ax_price.set_title(title_str, loc='left', fontsize=11)
 
     if len(axlist) > 4:
@@ -775,7 +798,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if today_bar is None: continue
             if pd.isna(today_bar['close']) or float(today_bar['close']) <= 0: continue
 
-            df_merged = merge_today_bar(df_hist, today_bar, current_date)
+            df_merged   = merge_today_bar(df_hist, today_bar, current_date)
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
                 time.sleep(0.3); continue
@@ -938,16 +961,21 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
     try:
         if len(image_paths) == 1:
             with open(image_paths[0], 'rb') as f:
-                requests.post(url_photo, data={'chat_id':chat_id,'caption':msg or '','parse_mode':'HTML'}, files={'photo':f})
+                requests.post(url_photo, data={
+                    'chat_id': chat_id, 'caption': msg or '', 'parse_mode': 'HTML'
+                }, files={'photo': f})
         else:
             files, media = {}, []
             for i, path in enumerate(image_paths):
                 key = f"photo{i}"; files[key] = open(path, 'rb')
                 item = {"type":"photo","media":f"attach://{key}"}
-                if i == 0 and msg: item["caption"] = msg; item["parse_mode"] = "HTML"
+                if i == 0 and msg:
+                    item["caption"] = msg; item["parse_mode"] = "HTML"
                 media.append(item)
             try:
-                requests.post(url_album, data={'chat_id':chat_id,'media':json.dumps(media)}, files=files)
+                requests.post(url_album, data={
+                    'chat_id': chat_id, 'media': json.dumps(media)
+                }, files=files)
             finally:
                 for fh in files.values(): fh.close()
     except Exception as e:
@@ -957,7 +985,7 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
             if os.path.exists(path): os.remove(path)
 
 # =============================================================================
-# BƯỚC 8D: TELEGRAM LISTENER — có xử lý lệnh /h và /heatmap
+# BƯỚC 8D: TELEGRAM LISTENER
 # =============================================================================
 def telegram_listener(stop_event: threading.Event):
     url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
@@ -1018,11 +1046,14 @@ def telegram_listener(stop_event: threading.Event):
                 # ── /s — tín hiệu hôm nay ────────────────────────────────
                 if text_lower == '/s' or text_lower.startswith('/s '):
                     if alerted_today:
-                        lines = [f"{SIGNAL_EMOJI.get(v,'📌')} #{k}: {v}" for k,v in alerted_today.items()]
+                        lines = [f"{SIGNAL_EMOJI.get(v,'📌')} #{k}: {v}"
+                                 for k,v in alerted_today.items()]
                         reply = "📋 <b>Tín hiệu hôm nay:</b>\n" + "\n".join(lines)
                     else:
                         reply = "📋 Chưa có tín hiệu nào hôm nay."
-                    requests.post(url_msg, data={'chat_id':chat_id,'text':reply,'parse_mode':'HTML'})
+                    requests.post(url_msg, data={
+                        'chat_id': chat_id, 'text': reply, 'parse_mode': 'HTML'
+                    })
 
                 # ── /h hoặc /heatmap — market heatmap ────────────────────
                 elif text_lower in ('/h', '/heatmap'):
@@ -1083,8 +1114,10 @@ try:
     print("⏹️  Đang dừng listener cũ...")
     if 'listener_thread' in dir() and listener_thread.is_alive():
         listener_thread.join(timeout=8)
-        if listener_thread.is_alive(): print("  ⚠️ Listener cũ chưa dừng hẳn (timeout), tiếp tục...")
-        else: print("  ✅ Listener cũ đã dừng hẳn.")
+        if listener_thread.is_alive():
+            print("  ⚠️ Listener cũ chưa dừng hẳn (timeout), tiếp tục...")
+        else:
+            print("  ✅ Listener cũ đã dừng hẳn.")
     time.sleep(1)
 except NameError:
     pass
@@ -1098,13 +1131,13 @@ listener_thread.start()
 
 print("\n" + "="*60)
 print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER ĐÃ KÍCH HOẠT")
-print(f"   Danh sách  : {len(symbols_to_scan)} mã")
-print(f"   Chu kỳ quét: {SCAN_INTERVAL_SEC} giây")
-print(f"   Tín hiệu   → Channel/Group: {TELEGRAM_CHAT_ID}")
-print(f"   Lệnh chart : /c HPG | /chart HPG | /HPG | / HPG")
+print(f"   Danh sách   : {len(symbols_to_scan)} mã")
+print(f"   Chu kỳ quét : {SCAN_INTERVAL_SEC} giây")
+print(f"   Tín hiệu    → Channel/Group: {TELEGRAM_CHAT_ID}")
+print(f"   Lệnh chart  : /c HPG | /chart HPG | /HPG | / HPG")
 print(f"   Lệnh heatmap: /h | /heatmap")
-print(f"   Lệnh khác  : /s | /help")
-print(f"   Nhận lệnh  : Group + Private Chat (24/7)")
+print(f"   Lệnh khác   : /s | /help")
+print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
 print("="*60)
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
@@ -1153,8 +1186,10 @@ while True:
 
     new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
 
-    if new_signals: print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
-    else: print(f"[{ts}] Không có tín hiệu mới.")
+    if new_signals:
+        print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
+    else:
+        print(f"[{ts}] Không có tín hiệu mới.")
 
     if alerted_today:
         summary_str = " | ".join([f"{k}:{v}" for k,v in alerted_today.items()])
