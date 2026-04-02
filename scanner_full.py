@@ -55,7 +55,7 @@ TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
-DATA_SOURCE        = 'VCI'
+DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
@@ -250,7 +250,7 @@ def _hmap_col_height(groups):
     return h + HMAP_MARGIN
 
 def fetch_heatmap_data() -> dict:
-    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (VCI)."""
+    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiết kế dựa trên data output của KBS)."""
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
                   | set(TRADING_STOCKS_POOL))
