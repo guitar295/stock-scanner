@@ -55,7 +55,6 @@ TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
-# Heatmap chỉ lấy được dữ liệu từ KBS
 DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -211,7 +210,7 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
         bb = draw.textbbox((0,0), txt, font=fnt)
         draw.text((bx+(bw-(bb[2]-bb[0]))//2, ty), txt, font=fnt, fill=fg)
     dc(sym, f_sym, x, w1)
-    dc(f"{price:,.1f}" if price < 100 else f"{price:,.0f}", f_data, x+w1, w2)
+    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}", f_data, x+w1, w2)
     dc(f"{pct:+.1f}%", f_data, x+w1+w2, w3)
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
@@ -238,7 +237,7 @@ def _hmap_col_height(groups):
     return h + HMAP_MARGIN
 
 def fetch_heatmap_data() -> dict:
-    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiết kế cho nguồn data KBS,)."""
+    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiet ke theo du lieu tra ve tư KBS, neu dung VCI phai tim cach sua du lieu dau vao)."""
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
                   | set(TRADING_STOCKS_POOL))
