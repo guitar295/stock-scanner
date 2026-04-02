@@ -40,6 +40,7 @@ mplfinance
 pytz
 numpy
 matplotlib
+pillow
 ```
 Nhấn "Commit changes" → "Commit changes" (xanh lá) để lưu.
 
