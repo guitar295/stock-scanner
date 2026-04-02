@@ -141,7 +141,7 @@ def _hmap_fg(bg):
     return (30,30,30) if lum > 160 else (15,15,15)
 
 HMAP_CELL_W      = 162
-HMAP_CELL_H      = 26
+HMAP_CELL_H      = 30          # tăng từ 26 → 30 để chứa font lớn hơn
 HMAP_COL_GAP     = 4
 HMAP_COL_W       = HMAP_CELL_W + HMAP_COL_GAP
 HMAP_MARGIN      = 5
@@ -172,13 +172,16 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
         draw.line([x0, y0+r, x0, y1-r], fill=outline, width=lw)
         draw.line([x1, y0+r, x1, y1-r], fill=outline, width=lw)
 
+# =============================================================================
+# SỬA 1/2: _hmap_load_fonts — tăng size để bold hiển thị rõ
+# =============================================================================
 def _hmap_load_fonts():
     """
-    f_title  : bold 13  — tiêu đề thanh trên
-    f_hdr    : bold 10  — tên ngành (BOLD theo yêu cầu)
-    f_sym    : bold 10  — mã cổ phiếu (BOLD theo yêu cầu)
-    f_data   : regular 9 — giá và %giá (regular, giữ nguyên code gốc)
-    f_sector : bold 11  — % trung bình ngành
+    f_title  : bold 14  — tiêu đề thanh trên
+    f_hdr    : bold 12  — tên ngành (BOLD, tăng từ 10→12)
+    f_sym    : bold 12  — mã cổ phiếu (BOLD, tăng từ 10→12)
+    f_data   : regular 11 — giá và %giá (regular, tăng từ 9→11)
+    f_sector : bold 12  — % trung bình ngành (tăng từ 11→12)
     """
     bold_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -193,18 +196,23 @@ def _hmap_load_fonts():
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
     try:
-        f_title  = ImageFont.truetype(bold, 13)       # tiêu đề
-        f_hdr    = ImageFont.truetype(bold, 10)       # tên ngành — BOLD
-        f_sym    = ImageFont.truetype(bold, 50)       # mã cổ phiếu — BOLD
-        f_data   = ImageFont.truetype(reg or bold, 9) # giá, % — regular
-        f_sector = ImageFont.truetype(bold, 11)       # % ngành — bold
+        f_title  = ImageFont.truetype(bold, 14)        # tiêu đề — bold 14
+        f_hdr    = ImageFont.truetype(bold, 12)        # tên ngành — BOLD 12
+        f_sym    = ImageFont.truetype(bold, 12)        # mã CP — BOLD 12
+        f_data   = ImageFont.truetype(reg or bold, 11) # giá, % — regular 11
+        f_sector = ImageFont.truetype(bold, 12)        # % ngành — bold 12
         return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
         return d, d, d, d, d
 
+# =============================================================================
+# SỬA 2/2: _hmap_draw_stock_cell — định dạng giá 4 chữ số tổng cộng
+# Giá < 100  → xx.xx  (2 số nguyên + 2 thập phân = 4 chữ số, ví dụ: 22.22)
+# Giá >= 100 → xxx.x  (3 số nguyên + 1 thập phân = 4 chữ số, ví dụ: 111.1)
+# =============================================================================
 def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
-    """Mã cổ phiếu: BOLD (f_sym) | Giá: regular 2 số TP (f_data) | %: regular (f_data)"""
+    """Mã cổ phiếu: BOLD (f_sym) | Giá: 4 chữ số tổng (f_data) | %: regular (f_data)"""
     bg = _hmap_cell_color(pct)
     fg = _hmap_fg(bg)
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
@@ -212,15 +220,20 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
     w1 = int(HMAP_CELL_W * 0.35)
     w2 = int(HMAP_CELL_W * 0.30)
     w3 = HMAP_CELL_W - w1 - w2
-    ty = y + (HMAP_CELL_H - 2) // 2 - 5
+    ty = y + (HMAP_CELL_H - 2) // 2 - 6
+
+    # Định dạng giá: 4 chữ số tổng cộng
+    # Giá < 100  → 2 số thập phân (vd: 22.22)
+    # Giá >= 100 → 1 số thập phân (vd: 111.1)
+    price_str = f"{price:.2f}" if price < 100 else f"{price:.1f}"
 
     def dc(txt, fnt, bx, bw):
         bb = draw.textbbox((0, 0), txt, font=fnt)
         draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
 
-    dc(sym,                                                    f_sym,  x,       w1)  # BOLD
-    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
-    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)  # regular
+    dc(sym,              f_sym,  x,        w1)   # mã CP — BOLD
+    dc(price_str,        f_data, x + w1,   w2)   # giá — 4 chữ số
+    dc(f"{pct:+.1f}%",  f_data, x+w1+w2,  w3)   # % thay đổi
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
     """Tên ngành: BOLD (f_hdr) | % TB ngành: bold màu (f_sector)"""
@@ -229,7 +242,7 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
                        fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
     w1 = int(HMAP_CELL_W * 0.65)
     w2 = HMAP_CELL_W - w1
-    ty = y + (HMAP_CELL_H - 2) // 2 - 5
+    ty = y + (HMAP_CELL_H - 2) // 2 - 6
 
     def dc(txt, fnt, bx, bw, color):
         bb = draw.textbbox((0, 0), txt, font=fnt)
