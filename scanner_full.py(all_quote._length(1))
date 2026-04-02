@@ -262,8 +262,8 @@ def fetch_heatmap_data() -> dict:
         if df is not None and not df.empty:
             for _, row in df.iterrows():
                 sym   = str(row.get("symbol", "")).strip()
-                close = float(row.get("close_price", 0) or 0)
-                ref_p = float(row.get("reference_price", 0) or 0)
+                close = float(row.get("close_price", 0) or 0) / 1000
+                ref_p = float(row.get("reference_price", 0) or 0) / 1000
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
                 result[sym] = {"price": close, "pct": pct}
     except Exception as e:
