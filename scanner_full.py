@@ -212,7 +212,7 @@ def _hmap_load_fonts():
 # Giá >= 100 → xxx.x  (3 số nguyên + 1 thập phân = 4 chữ số, ví dụ: 111.1)
 # =============================================================================
 def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
-    """Mã cổ phiếu: BOLD (f_sym) | Giá: 4 chữ số tổng (f_data) | %: regular (f_data)"""
+    """Mã cổ phiếu: stroke_width=1 để bold rõ | Giá: 4 chữ số | %: regular"""
     bg = _hmap_cell_color(pct)
     fg = _hmap_fg(bg)
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
@@ -221,22 +221,22 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
     w2 = int(HMAP_CELL_W * 0.30)
     w3 = HMAP_CELL_W - w1 - w2
     ty = y + (HMAP_CELL_H - 2) // 2 - 6
-
-    # Định dạng giá: 4 chữ số tổng cộng
-    # Giá < 100  → 2 số thập phân (vd: 22.22)
-    # Giá >= 100 → 1 số thập phân (vd: 111.1)
     price_str = f"{price:.2f}" if price < 100 else f"{price:.1f}"
 
-    def dc(txt, fnt, bx, bw):
+    def dc(txt, fnt, bx, bw, use_stroke=False):
         bb = draw.textbbox((0, 0), txt, font=fnt)
-        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
+        tx = bx + (bw - (bb[2] - bb[0])) // 2
+        if use_stroke:
+            draw.text((tx, ty), txt, font=fnt, fill=fg, stroke_width=1, stroke_fill=fg)
+        else:
+            draw.text((tx, ty), txt, font=fnt, fill=fg)
 
-    dc(sym,              f_sym,  x,        w1)   # mã CP — BOLD
-    dc(price_str,        f_data, x + w1,   w2)   # giá — 4 chữ số
-    dc(f"{pct:+.1f}%",  f_data, x+w1+w2,  w3)   # % thay đổi
+    dc(sym,             f_sym,  x,        w1, use_stroke=True)   # mã CP — đậm rõ
+    dc(price_str,       f_data, x + w1,   w2)                    # giá — regular
+    dc(f"{pct:+.1f}%", f_data, x+w1+w2,  w3)                    # % — regular
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
-    """Tên ngành: BOLD (f_hdr) | % TB ngành: bold màu (f_sector)"""
+    """Tên ngành: stroke_width=1 để bold rõ | % TB ngành: stroke_width=1 màu"""
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
     _hmap_rounded_rect(draw, x, y, x1, y1, HMAP_RADIUS,
                        fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
@@ -246,9 +246,10 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
 
     def dc(txt, fnt, bx, bw, color):
         bb = draw.textbbox((0, 0), txt, font=fnt)
-        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=color)
+        tx = bx + (bw - (bb[2] - bb[0])) // 2
+        draw.text((tx, ty), txt, font=fnt, fill=color, stroke_width=1, stroke_fill=color)
 
-    dc(name, f_hdr, x, w1, HMAP_HDR_FG)  # tên ngành — BOLD
+    dc(name, f_hdr, x, w1, HMAP_HDR_FG)  # tên ngành — đậm rõ
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
     dc(f"{avg_pct:+.2f}%", f_sector, x + w1, w2, fg_s)
 
@@ -275,8 +276,8 @@ def fetch_heatmap_data() -> dict:
         if df is not None and not df.empty:
             for _, row in df.iterrows():
                 sym   = str(row.get("symbol", "")).strip()
-                close = float(row.get("close_price", 0) or 0)
-                ref_p = float(row.get("reference_price", 0) or 0)
+                close = float(row.get("close_price", 0) or 0) / 1000   # KBS trả đơn vị đồng → chia 1000 thành nghìn đồng
+                ref_p = float(row.get("reference_price", 0) or 0) / 1000
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
                 result[sym] = {"price": close, "pct": pct}
     except Exception as e:
