@@ -219,7 +219,7 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
         draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
 
     dc(sym,                                                    f_sym,  x,       w1)  # BOLD
-    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
+    dc(f"{price:,.1f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
     dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)  # regular
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
