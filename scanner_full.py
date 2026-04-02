@@ -195,7 +195,7 @@ def _hmap_load_fonts():
     try:
         f_title  = ImageFont.truetype(bold, 13)       # tiêu đề
         f_hdr    = ImageFont.truetype(bold, 10)       # tên ngành — BOLD
-        f_sym    = ImageFont.truetype(bold, 10)       # mã cổ phiếu — BOLD
+        f_sym    = ImageFont.truetype(bold, 50)       # mã cổ phiếu — BOLD
         f_data   = ImageFont.truetype(reg or bold, 9) # giá, % — regular
         f_sector = ImageFont.truetype(bold, 11)       # % ngành — bold
         return f_title, f_hdr, f_sym, f_data, f_sector
@@ -219,7 +219,7 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
         draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
 
     dc(sym,                                                    f_sym,  x,       w1)  # BOLD
-    dc(f"{price:,.1f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
+    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
     dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)  # regular
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
