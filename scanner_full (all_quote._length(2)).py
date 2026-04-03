@@ -5,32 +5,11 @@ Pocket Pivot / Breakout / Pre-Break / BottomFish / BottomBreakP / MA_Cross
 Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoài giờ
 + HEATMAP BOT (lệnh /h hoặc /heatmap)
 + CHỈ SỐ: VNINDEX, VN30 (lệnh /VNINDEX, /VN30, /c VNINDEX ...)
++ CHART 15 PHÚT: gửi kèm tín hiệu, on-demand, và khi nhấn nút /s
 
 KIẾN TRÚC 2 BƯỚC:
   Bước 1: Load lịch sử 1 lần → cache vào dict  (trước giờ GD hoặc lúc khởi động)
   Bước 2: Mỗi chu kỳ scan chỉ gọi Quote.history(length=2) → ghép vào cache → detect
-
-LỆNH TELEGRAM HỖ TRỢ:
-  /c HPG        → chart HPG
-  /c HPG VNM    → chart nhiều mã (tối đa 5)
-  /chart HPG    → như /c
-  /HPG          → chart HPG (không dấu cách)
-  / HPG         → chart HPG (có dấu cách)
-  /VNINDEX      → chart chỉ số VNINDEX
-  /VN30         → chart chỉ số VN30
-  /s            → tín hiệu hôm nay
-  /h            → heatmap thị trường
-  /heatmap      → heatmap thị trường
-  /help         → trợ giúp
-
-THAY ĐỔI SO VỚI PHIÊN BẢN CŨ:
-  - Thêm hỗ trợ chart chỉ số: VNINDEX, VN30, HNX, UPCOM, VN100, HNXINDEX
-  - Thêm 3 tín hiệu mới: BOTTOMFISH, BOTTOMBREAKP, MA_CROSS
-  - draw_chart: date_str lấy từ index cây nến cuối của df_plot (không dùng datetime.now)
-  - fetch_and_send_chart: date_str lấy từ index cây nến cuối của df_calc
-  - fetch_heatmap_data: timestamp parse bằng float() thay vì isinstance check,
-    tránh lỗi 01/01/1970 khi val là string dạng "1768552349519"
-  - handle_heatmap_command: nhận (data, ts_str) tuple từ fetch_heatmap_data
 =============================================================================
 """
 
@@ -78,8 +57,6 @@ register_user(VNSTOCK_API)
 # =============================================================================
 # BƯỚC 2A: DANH SÁCH CHỈ SỐ HỖ TRỢ
 # =============================================================================
-# Mapping tên người dùng gõ → symbol thực tế trên vnstock
-# Các chỉ số này được xử lý riêng: không quét tín hiệu, chỉ vẽ chart on-demand
 INDEX_SYMBOL_MAP = {
     'VNINDEX':   'VNINDEX',
     'VN30':      'VN30',
@@ -87,7 +64,7 @@ INDEX_SYMBOL_MAP = {
     'HNXINDEX':  'HNXINDEX',
     'UPCOM':     'UPCOM',
     'VN100':     'VN100',
-    'VN30F1M':   'VN30F1M',   # Hợp đồng tương lai VN30
+    'VN30F1M':   'VN30F1M',
 }
 INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 
@@ -270,8 +247,6 @@ def _hmap_col_height(groups):
 
 # =============================================================================
 # HEATMAP: fetch + build
-# FIX: parse timestamp bằng float() thay vì isinstance — tránh lỗi 01/01/1970
-#      khi KBS trả val dạng string "1768552349519"
 # =============================================================================
 def fetch_heatmap_data() -> tuple:
     engine = Trading(source=DATA_SOURCE)
@@ -300,10 +275,8 @@ def fetch_heatmap_data() -> tuple:
                         elif val_num > 1_000_000_000:
                             data_time = datetime.fromtimestamp(val_num, tz=TZ_VN)
                         else:
-                            print(f"  [{ts_log}] ⚠️  time value không hợp lệ: {val_num}")
                             data_time = None
-                    except (TypeError, ValueError, OSError) as te:
-                        print(f"  [{ts_log}] ⚠️  Không parse được time '{val}': {te}")
+                    except (TypeError, ValueError, OSError):
                         data_time = None
 
             for _, row in df.iterrows():
@@ -501,14 +474,13 @@ def hhv(series, n):  return series.rolling(n).max()
 def llv(series, n):  return series.rolling(n).min()
 
 def cross_above(s1, s2):
-    """Trả về Series bool: s1 cắt lên s2 (hôm nay s1>=s2, hôm qua s1<s2)."""
     return (s1 >= s2) & (s1.shift(1) < s2.shift(1))
 
 def compute_indicators(df):
     df = df.copy()
     for n in [2,3,5,10,15,20,30,50,200]:
         df[f'MA{n}']  = df['close'].rolling(n).mean()
-    for n in [10,20,30,50]:
+    for n in [10,20,30,50,200]:
         df[f'EMA{n}'] = df['close'].ewm(span=n, adjust=False).mean()
     for n in [2,3,5,10,15,20,30,50]:
         df[f'VMA{n}'] = df['volume'].rolling(n).mean()
@@ -592,11 +564,8 @@ def fetch_today_bar(symbol: str, current_date: date):
             low    = float(row.get('low',    close))
             volume = float(row.get('volume', np.nan))
 
-            if pd.isna(close) or close <= 0:
-                return None
-
-            if pd.isna(volume) or volume < 100:
-                return None
+            if pd.isna(close) or close <= 0: return None
+            if pd.isna(volume) or volume < 100: return None
 
             prev_rows = df_raw[df_raw.index.date < current_date]
             if not prev_rows.empty:
@@ -608,10 +577,8 @@ def fetch_today_bar(symbol: str, current_date: date):
                 prev_low    = float(prev.get('low',    np.nan))
 
                 ohlcv_clone = (
-                    close  == prev_close  and
-                    open_  == prev_open   and
-                    high   == prev_high   and
-                    low    == prev_low    and
+                    close  == prev_close  and open_  == prev_open  and
+                    high   == prev_high   and low    == prev_low   and
                     volume == prev_volume
                 )
                 if ohlcv_clone:
@@ -649,7 +616,6 @@ def merge_today_bar(df_hist, today_bar, current_date: date):
 # BƯỚC 5C: HÀM TIỆN ÍCH — LẤY DATE_STR TỪ INDEX CÂY NẾN CUỐI
 # =============================================================================
 def _date_str_from_df(df: pd.DataFrame) -> str:
-    """Trả về chuỗi 'dd/mm/yyyy' từ index (Timestamp) của cây nến cuối cùng."""
     last_ts = pd.Timestamp(df.index[-1])
     if last_ts.tzinfo is None:
         last_ts = last_ts.tz_localize('Asia/Ho_Chi_Minh')
@@ -659,38 +625,53 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
 # BƯỚC 5D: HÀM LẤY DỮ LIỆU CHỈ SỐ (VNINDEX, VN30, ...)
 # =============================================================================
 def fetch_index_history(symbol: str) -> pd.DataFrame | None:
-    """
-    Lấy lịch sử chỉ số (VNINDEX, VN30, ...) qua Quote.
-    Một số data source trả về điểm số ở cột 'close' — không cần chia 1000.
-    Trả về DataFrame chuẩn (open/high/low/close/volume) hoặc None nếu lỗi.
-    """
     for attempt in range(3):
         try:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
             df_raw = quote.history(length='1000', interval='1D')
-            if df_raw is None or df_raw.empty:
-                return None
+            if df_raw is None or df_raw.empty: return None
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
-
-            # Đảm bảo có đủ cột OHLCV
             for col in ['open','high','low','close']:
-                if col not in df_raw.columns:
-                    df_raw[col] = np.nan
-            if 'volume' not in df_raw.columns:
-                df_raw['volume'] = 0
-
+                if col not in df_raw.columns: df_raw[col] = np.nan
+            if 'volume' not in df_raw.columns: df_raw['volume'] = 0
             df_raw = df_raw[['open','high','low','close','volume']].copy()
             df_raw = df_raw.dropna(subset=['close'])
-            if len(df_raw) < 10:
-                return None
+            if len(df_raw) < 10: return None
             return df_raw
         except Exception as e:
-            if attempt < 2:
-                time.sleep(2)
-            else:
-                print(f"    ❌ fetch_index_history {symbol}: {e}")
+            if attempt < 2: time.sleep(2)
+            else: print(f"    ❌ fetch_index_history {symbol}: {e}")
+    return None
+
+# =============================================================================
+# BƯỚC 5E: HÀM LẤY DỮ LIỆU 15 PHÚT  ← MỚI
+# =============================================================================
+def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
+    """
+    Lấy dữ liệu nến 15 phút. Fetch mỗi lần gọi, không cache.
+    Trả về DataFrame chuẩn (open/high/low/close/volume) với chỉ báo đã tính,
+    hoặc None nếu không có dữ liệu.
+    """
+    for attempt in range(3):
+        try:
+            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
+            df_raw = quote.history(length='200', interval='15m')
+            if df_raw is None or df_raw.empty: return None
+            df_raw['time'] = pd.to_datetime(df_raw['time'])
+            df_raw.set_index('time', inplace=True)
+            df_raw.columns = [c.lower() for c in df_raw.columns]
+            for col in ['open','high','low','close']:
+                if col not in df_raw.columns: df_raw[col] = np.nan
+            if 'volume' not in df_raw.columns: df_raw['volume'] = 0
+            df_raw = df_raw[['open','high','low','close','volume']].copy()
+            df_raw = df_raw.dropna(subset=['close'])
+            if len(df_raw) < 10: return None
+            return compute_indicators(df_raw)
+        except Exception as e:
+            if attempt < 2: time.sleep(2)
+            else: print(f"    ❌ fetch_intraday_15m {symbol}: {e}")
     return None
 
 # =============================================================================
@@ -823,142 +804,77 @@ def calc_liquidity(df):
 # =============================================================================
 # BƯỚC 6B: CÁC TÍN HIỆU MỚI
 # =============================================================================
-
 def calc_bottomfish(df):
-    """
-    BOTTOMFISH: RSI(14) cắt lên 29 hoặc 30, kết hợp vùng dao động đủ rộng và thanh khoản.
-    Tương đương:
-        (Cross(r,29) OR Cross(r,30))
-        AND (HHV(H,30)-LLV(L,30))/LLV(L,30) >= 0.2
-        AND C >= 5
-        AND V*C > 2_000_000
-        AND MA(V,5)*MA(C,5) > 3_000_000  ...  MA(V,50) >= 50_000
-    """
     C, V = df['close'], df['volume']
     r    = df['RSI14']
     H, L = df['high'], df['low']
-
-    # RSI cắt lên 29 hoặc 30 (cross_above)
     rsi_cross = cross_above(r, pd.Series(29, index=r.index)) | \
                 cross_above(r, pd.Series(30, index=r.index))
-
-    # Biên độ vùng 30 phiên >= 20%
-    range30 = (hhv(H, 30) - llv(L, 30)) / llv(L, 30)
+    range30    = (hhv(H, 30) - llv(L, 30)) / llv(L, 30)
     cond_range = range30 >= 0.2
-
-    # Thanh khoản
     liq = (
-        (C >= 5) &
-        (C * V > 2_000_000) &
+        (C >= 5) & (C * V > 2_000_000) &
         (df['MA5']  * df['VMA5']  > 3_000_000) &
         (df['MA10'] * df['VMA10'] > 3_000_000) &
         (df['MA15'] * df['VMA15'] > 3_000_000) &
-        (df['VMA30'] >= 50_000) &
-        (df['VMA20'] >= 50_000) &
-        (df['VMA10'] >= 50_000) &
-        (df['VMA50'] >= 50_000)
+        (df['VMA30'] >= 50_000) & (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) & (df['VMA50'] >= 50_000)
     )
-
     return rsi_cross & cond_range & liq
 
-
 def calc_bottombreakp(df):
-    """
-    BOTTOMBREAKP: Bứt phá đáy — RSI vừa cắt lên 29 (hôm nay hoặc hôm qua),
-    nến tăng mạnh, khối lượng breakout, vùng dao động rộng.
-    """
     C, O, H, L, V = df['close'], df['open'], df['high'], df['low'], df['volume']
     r = df['RSI14']
-
-    # RSI cắt lên 29 hôm nay hoặc hôm qua
     rsi_cross_today = cross_above(r, pd.Series(29, index=r.index))
     rsi_cross_prev  = cross_above(r.shift(1), pd.Series(29, index=r.index))
-    rsi_cond = rsi_cross_today | rsi_cross_prev
-
-    # Nến tăng mạnh (High close bar)
-    high_close_bar = (
+    rsi_cond        = rsi_cross_today | rsi_cross_prev
+    high_close_bar  = (
         ((C > (H + L) / 2) & (C >= O)) |
         (((O - ref(C, 1)) / ref(C, 1) > 0.02) & ((C - ref(C, 1)) / ref(C, 1) > 0.02))
     )
-
-    # Râu nến không quá dài
-    short_wick = (
+    short_wick  = (
         ((H - C) / C < 0.02) |
         (((H - C) / C >= 0.02) & ((C - O) / O >= 1.1 * (H - C) / C))
     )
-
-    # Điều kiện giá
-    price_cond = (
-        (C >= 1.015 * ref(C, 1)) &
-        (C > (ref(L, 1) + ref(H, 1)) / 2)
-    )
-
-    # Biên độ vùng 30 phiên >= 20%
-    range30    = (hhv(H, 30) - llv(L, 30)) / llv(L, 30)
-    cond_range = range30 >= 0.2
-
-    # Khối lượng breakout (dùng lại calc_break_vol)
-    bvol = calc_break_vol(df)
-
-    # Thanh khoản
+    price_cond  = (C >= 1.015 * ref(C, 1)) & (C > (ref(L, 1) + ref(H, 1)) / 2)
+    range30     = (hhv(H, 30) - llv(L, 30)) / llv(L, 30)
+    cond_range  = range30 >= 0.2
+    bvol        = calc_break_vol(df)
     liq = (
-        (C >= 5) &
-        (C * V > 3_000_000) &
+        (C >= 5) & (C * V > 3_000_000) &
         (df['MA5']  * df['VMA5']  > 3_000_000) &
         (df['MA10'] * df['VMA10'] > 3_000_000) &
         (df['MA15'] * df['VMA15'] > 3_000_000) &
-        (df['VMA30'] >= 50_000) &
-        (df['VMA20'] >= 50_000) &
-        (df['VMA10'] >= 50_000) &
-        (df['VMA50'] >= 50_000)
+        (df['VMA30'] >= 50_000) & (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) & (df['VMA50'] >= 50_000)
     )
-
-    bottombreakprice = rsi_cond & high_close_bar & short_wick & price_cond & cond_range
-    return bottombreakprice & bvol & liq
-
+    return rsi_cond & high_close_bar & short_wick & price_cond & cond_range & bvol & liq
 
 def calc_ma_cross(df):
-    """
-    MA_CROSS: MA10 cắt lên MA20/MA30/MA50, tất cả MA trên MA200, giá gần MA30.
-    """
     C, V = df['close'], df['volume']
-
-    # MA10 cắt lên MA20, MA30 hoặc MA50
-    cross_10_20 = cross_above(df['MA10'], df['MA20'])
-    cross_10_30 = cross_above(df['MA10'], df['MA30'])
-    cross_10_50 = cross_above(df['MA10'], df['MA50'])
-    ma_cross_cond = cross_10_20 | cross_10_30 | cross_10_50
-
-    # MA nằm trên MA200
+    ma_cross_cond = (
+        cross_above(df['MA10'], df['MA20']) |
+        cross_above(df['MA10'], df['MA30']) |
+        cross_above(df['MA10'], df['MA50'])
+    )
     ma_above_200 = (
         (df['MA10'] > df['MA200']) &
         (df['MA30'] > df['MA200']) &
         (df['MA50'] > df['MA200'])
     )
-
-    # Giá trong vùng hợp lý so với MA30
-    price_cond = (
-        (C > df['MA30']) &
-        (C <= 1.07 * df['MA30'])
-    )
-
-    # Thanh khoản
+    price_cond = (C > df['MA30']) & (C <= 1.07 * df['MA30'])
     liq = (
-        (C >= 5) &
-        (C * V > 2_000_000) &
+        (C >= 5) & (C * V > 2_000_000) &
         (df['MA5']  * df['VMA5']  > 3_000_000) &
         (df['MA10'] * df['VMA10'] > 3_000_000) &
         (df['MA15'] * df['VMA15'] > 3_000_000) &
-        (df['VMA30'] >= 50_000) &
-        (df['VMA20'] >= 50_000) &
-        (df['VMA10'] >= 50_000) &
-        (df['VMA50'] >= 50_000)
+        (df['VMA30'] >= 50_000) & (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) & (df['VMA50'] >= 50_000)
     )
-
     return ma_cross_cond & ma_above_200 & price_cond & liq
 
 # =============================================================================
-# BƯỚC 6C: HÀM DETECT_SIGNAL (bổ sung 3 tín hiệu mới)
+# BƯỚC 6C: HÀM DETECT_SIGNAL
 # =============================================================================
 def detect_signal(df, now_time):
     df = compute_indicators(df)
@@ -971,7 +887,6 @@ def detect_signal(df, now_time):
     ma10_ok     = df['MA10'] >= 0.8*ref(df['MA10'],1)
     pre_vol     = calc_prebreak_vol(df, now_time)
 
-    # Tín hiệu chính (ưu tiên cao nhất)
     is_breakout = (break_price & break_vol & liq).iloc[-1]
     is_pocket   = (pprice & (pvol | break_vol) & liq & ma10_ok).iloc[-1]
     is_prebreak = (
@@ -979,8 +894,6 @@ def detect_signal(df, now_time):
         not is_breakout and not is_pocket and
         (91700 < now_time < 150000)
     )
-
-    # Tín hiệu mới (ưu tiên thấp hơn, chỉ phát khi không có tín hiệu chính)
     is_bottombreakp = calc_bottombreakp(df).iloc[-1]
     is_bottomfish   = calc_bottomfish(df).iloc[-1]
     is_ma_cross     = calc_ma_cross(df).iloc[-1]
@@ -995,9 +908,12 @@ def detect_signal(df, now_time):
 
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
+# Hỗ trợ timeframe: 'Daily' [D], 'Weekly' [W], '15m' [15m]
 # =============================================================================
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None):
     is_daily  = (timeframe == 'Daily')
+    is_weekly = (timeframe == 'Weekly')
+    is_15m    = (timeframe == '15m')
 
     if date_str is None:
         date_str = _date_str_from_df(df_plot)
@@ -1024,8 +940,11 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
         mpf.make_addplot(df_plot['MACD'],        panel=2, color='blue',   width=0.6, secondary_y=False),
         mpf.make_addplot(df_plot['MACD_Signal'], panel=2, color='orange', width=0.6, secondary_y=False),
     ]
+  
     if is_daily:
-        apds.append(mpf.make_addplot(df_plot['MA200'], color='brown', width=0.6))
+      apds.append(mpf.make_addplot(df_plot['MA200'],  color='brown', width=0.6))
+    if is_15m:
+      apds.append(mpf.make_addplot(df_plot['EMA200'], color='brown', width=0.6))
 
     mc           = mpf.make_marketcolors(up='#26A69A',down='#EF5350',edge='inherit',wick='inherit',alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles',marketcolors=mc,gridstyle='',facecolor='white')
@@ -1049,19 +968,35 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
             xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
             ha='center', va='top', color='DeepPink', fontsize=12)
 
+    # ── Title theo timeframe ──────────────────────────────────────────────
     if is_daily:
+        tf_label = '[D]'
         title_str = (
-            f"{symbol} [D] {date_str}  |  "
+            f"{symbol} {tf_label} {date_str}  |  "
             f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
             f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%) \n\n"
             f"{signal_type}"
         )
-    else:
+    elif is_weekly:
+        tf_label = '[W]'
         title_str = (
-            f"{symbol} [W] {date_str}  | "
+            f"{symbol} {tf_label} {date_str}  | "
             f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
             f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
         )
+    else:  # 15m
+        tf_label = '[15m]'
+        # date_str cho 15m: lấy cả giờ phút từ index nến cuối
+        last_ts = pd.Timestamp(df_plot.index[-1])
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.tz_localize('Asia/Ho_Chi_Minh')
+        date_str_15m = last_ts.strftime('%d/%m/%Y %H:%M')
+        title_str = (
+            f"{symbol} {tf_label} {date_str_15m}  | "
+            f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
+            f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
+        )
+
     ax_price.set_title(title_str, loc='left', fontsize=11)
 
     if len(axlist) > 4:
@@ -1081,6 +1016,23 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     fig.savefig(img_name, bbox_inches='tight', pad_inches=0.15, dpi=150)
     plt.close('all')
     return img_name
+
+
+def _build_15m_chart(symbol: str, signal_type: str) -> str | None:
+    """
+    Fetch 15m và vẽ chart. Trả về đường dẫn ảnh hoặc None nếu không có dữ liệu.
+    Số bar = 200 (giống Weekly). Kích thước chart giống Weekly.
+    """
+    df_15m = fetch_intraday_15m(symbol)
+    if df_15m is None or len(df_15m) < 2:
+        print(f"  ⚠️  {symbol}: không có dữ liệu 15m")
+        return None
+    today_15m    = df_15m.iloc[-1]
+    date_str_15m = _date_str_from_df(df_15m)
+    return draw_chart(
+        df_15m.tail(200).copy(), symbol, signal_type, today_15m,
+        timeframe='15m', add_arrow=False, date_str=date_str_15m
+    )
 
 # =============================================================================
 # BƯỚC 8: HÀM QUÉT 1 CHU KỲ
@@ -1156,9 +1108,12 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
                 f"<a href='{link_24h_money}'>📄</a>"
             )
 
+            # ── Vẽ Daily ─────────────────────────────────────────────────
             df_plot_d  = df_calc.tail(250).copy()
             img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
                                     timeframe='Daily', add_arrow=True, date_str=date_str)
+
+            # ── Vẽ Weekly ─────────────────────────────────────────────────
             df_weekly  = build_weekly_df(df_merged)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
@@ -1166,8 +1121,15 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                     timeframe='Weekly', add_arrow=False, date_str=date_str_w)
 
+            # ── Vẽ 15m ───────────────────────────────────────────────────
+            img_15m    = _build_15m_chart(symbol, signal_type)
+
+            image_paths = [img_daily, img_weekly]
+            if img_15m:
+                image_paths.append(img_15m)
+
             notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
-            send_telegram_signal(msg, image_paths=[img_daily, img_weekly], notify_text=notify_text)
+            send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
 
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
@@ -1177,31 +1139,22 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
 
 # =============================================================================
 # BƯỚC 8B: PARSE LỆNH CHART
-# Mở rộng: nhận diện chỉ số (VNINDEX, VN30, ...) dù là reserved keyword
 # =============================================================================
 _RESERVED_KEYWORDS = {'s','help','h','scan','c','chart','heatmap'}
 
 def parse_chart_command(text: str):
-    """
-    Phân tích lệnh chart từ tin nhắn Telegram.
-    Trả về list symbol (có thể là mã CK lẫn chỉ số) hoặc None nếu không phải lệnh chart.
-    """
     text = text.strip()
     if not text.startswith('/'): return None
     body = text[1:]
 
-    # /c VNINDEX hoặc /chart VN30 HPG
     m = re.match(r'^(c|chart)\s+(.+)$', body, re.IGNORECASE)
     if m: return _filter_symbols(m.group(2).split())
 
-    # / VNINDEX (có khoảng trắng sau /)
     if body.startswith(' '): return _filter_symbols(body.strip().split())
 
-    # /VNINDEX hoặc /HPG (không khoảng trắng)
     parts = body.strip().split()
     if len(parts) == 1:
         candidate = parts[0].upper()
-        # Chỉ số được ưu tiên nhận diện trước khi kiểm tra reserved keyword
         if candidate in INDEX_SYMBOLS:
             return [candidate]
         if candidate.lower() not in _RESERVED_KEYWORDS and _is_valid_symbol(candidate):
@@ -1209,7 +1162,6 @@ def parse_chart_command(text: str):
     return None
 
 def _is_valid_symbol(s: str) -> bool:
-    """Hợp lệ: 1–7 ký tự chữ số/chữ cái, không phải reserved (trừ chỉ số)."""
     s_upper = s.upper()
     if s_upper in INDEX_SYMBOLS:
         return True
@@ -1220,7 +1172,7 @@ def _filter_symbols(raw_list: list):
     return result if result else None
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND (hỗ trợ cả chỉ số)
+# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND (hỗ trợ cả chỉ số + 15m)
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
@@ -1234,19 +1186,16 @@ def fetch_and_send_chart(symbol, chat_id):
 
         # ── Lấy dữ liệu ─────────────────────────────────────────────────
         if is_index:
-            # Chỉ số: luôn fetch thẳng, không dùng cache cổ phiếu
             df_raw = fetch_index_history(symbol)
             if df_raw is None or len(df_raw) < 10:
                 requests.post(url_msg, data={
                     'chat_id': chat_id,
-                    'text': f"❌ Không tìm thấy dữ liệu chỉ số <b>{symbol}</b>. "
-                            f"Hãy kiểm tra tên chỉ số (VD: VNINDEX, VN30, HNX, UPCOM).",
+                    'text': f"❌ Không tìm thấy dữ liệu chỉ số <b>{symbol}</b>.",
                     'parse_mode': 'HTML'
                 })
                 return
-           
+            # fetch_index_history đã bao gồm nến hôm nay — không cần fetch thêm
         else:
-            # Cổ phiếu thường: ưu tiên cache
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is not None and len(df_hist) >= 60:
                 today_bar = fetch_today_bar(symbol, current_date)
@@ -1271,11 +1220,10 @@ def fetch_and_send_chart(symbol, chat_id):
                 df_raw.columns = [c.lower() for c in df_raw.columns]
 
         # ── Tính chỉ báo ─────────────────────────────────────────────────
-        df_calc     = compute_indicators(df_raw)
-        today       = df_calc.iloc[-1]
-        now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
+        df_calc  = compute_indicators(df_raw)
+        today    = df_calc.iloc[-1]
+        now_time = int(datetime.now(TZ_VN).strftime("%H%M%S"))
 
-        # Chỉ số không detect tín hiệu mua — chỉ vẽ chart
         if is_index:
             signal_type = "INDEX"
         else:
@@ -1287,7 +1235,6 @@ def fetch_and_send_chart(symbol, chat_id):
         vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
         vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
-        # Chỉ số: không thêm link tổng quan CK
         if is_index:
             msg = (
                 f"#{symbol}  {date_str}\n"
@@ -1312,9 +1259,12 @@ def fetch_and_send_chart(symbol, chat_id):
                 f"<a href='{link_24h_money}'>📄</a>"
             )
 
+        # ── Vẽ Daily ─────────────────────────────────────────────────────
         df_plot_d  = df_calc.tail(250).copy()
         img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
                                 timeframe='Daily', add_arrow=False, date_str=date_str)
+
+        # ── Vẽ Weekly ─────────────────────────────────────────────────────
         df_weekly  = build_weekly_df(df_raw)
         df_plot_w  = df_weekly.tail(200).copy()
         today_w    = df_plot_w.iloc[-1]
@@ -1322,8 +1272,15 @@ def fetch_and_send_chart(symbol, chat_id):
         img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                 timeframe='Weekly', add_arrow=False, date_str=date_str_w)
 
-        print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi chart")
-        _send_chart_to_chat(msg, [img_daily, img_weekly], chat_id)
+        # ── Vẽ 15m (chỉ cho cổ phiếu, không cho chỉ số) ─────────────────
+        image_paths = [img_daily, img_weekly]
+        if not is_index:
+            img_15m = _build_15m_chart(symbol, signal_type)
+            if img_15m:
+                image_paths.append(img_15m)
+
+        print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi {len(image_paths)} chart")
+        _send_chart_to_chat(msg, image_paths, chat_id)
         print(f"  🧵 [{thread_id}] {symbol} — đã gửi xong")
 
     except Exception as e:
@@ -1386,9 +1343,10 @@ def telegram_listener(stop_event: threading.Event):
     while not stop_event.is_set():
         try:
             resp = requests.get(url_upd, params={
-                'offset': offset, 'timeout': 30, 'allowed_updates': ['message', 'callback_query'],
+                'offset': offset, 'timeout': 30,
+                'allowed_updates': ['message', 'callback_query'],
             }, timeout=35)
-          
+
             if stop_event.is_set(): break
 
             if resp.status_code == 409:
@@ -1413,7 +1371,7 @@ def telegram_listener(stop_event: threading.Event):
                 processed_ids[update_id] = time.time()
                 print(f"  📨 Xử lý update_id={update_id} | offset mới={offset}")
 
-                # ── Xử lý callback_query (nhấn nút)
+                # ── Xử lý callback_query (nhấn nút) ──────────────────────
                 callback = update.get('callback_query', {})
                 if callback:
                     cb_id      = callback.get('id')
@@ -1431,20 +1389,19 @@ def telegram_listener(stop_event: threading.Event):
                             args=(sym, cb_chat_id),
                             daemon=True
                         ).start()
-                    continue  
-                
-                # ── Xử lý message thông thường
+                    continue
+
+                # ── Xử lý message thông thường ───────────────────────────
                 msg_obj = update.get('message', {})
                 text    = msg_obj.get('text', '').strip()
                 chat_id = msg_obj.get('chat', {}).get('id')
                 if not text or not chat_id: continue
-              
                 if str(chat_id) not in ALLOWED_CHATS:
                     print(f"  🚫 chat_id {chat_id} không được phép"); continue
 
                 text_lower = text.lower().strip()
 
-               # ── /s — tín hiệu hôm nay ────────────────────────────────
+                # ── /s — tín hiệu hôm nay ────────────────────────────────
                 if text_lower == '/s' or text_lower.startswith('/s '):
                     if alerted_today:
                         buttons = []
@@ -1457,7 +1414,7 @@ def telegram_listener(stop_event: threading.Event):
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
                         buttons = []
-                
+
                     payload = {
                         'chat_id':    chat_id,
                         'text':       reply,
@@ -1467,7 +1424,7 @@ def telegram_listener(stop_event: threading.Event):
                         payload['reply_markup'] = json.dumps({"inline_keyboard": buttons})
                     requests.post(url_msg, data=payload)
 
-                # ── /h hoặc /heatmap — market heatmap ────────────────────
+                # ── /h hoặc /heatmap ──────────────────────────────────────
                 elif text_lower in ('/h', '/heatmap'):
                     print(f"  🗺  Lệnh heatmap từ chat_id={chat_id}")
                     threading.Thread(
@@ -1486,16 +1443,16 @@ def telegram_listener(stop_event: threading.Event):
                             "/c HPG\n/chart HPG\n/HPG\n/ HPG\n"
                             "/c HPG VNM FPT  (nhiều mã, tối đa 5)\n\n"
                             "<b>Xem chart chỉ số:</b>\n"
-                            "/VNINDEX  /VN30  /HNX  /UPCOM  /VN100\n"
-                            "/c VNINDEX VN30  (nhiều chỉ số)\n\n"
+                            "/VNINDEX  /VN30  /HNX  /UPCOM  /VN100\n\n"
                             "<b>Heatmap thị trường:</b>\n"
                             "/h  hoặc  /heatmap\n\n"
                             "<b>Khác:</b>\n"
-                            "/s  — Tín hiệu hôm nay\n"
+                            "/s  — Tín hiệu hôm nay (nhấn nút để xem chart)\n"
                             "/help  — Trợ giúp\n\n"
                             "<b>Tín hiệu hỗ trợ:</b>\n"
                             "🟢 BREAKOUT  🟡 POCKET PIVOT  🟣 PRE-BREAK\n"
-                            "🔵 BOTTOMBREAKP  🟠 BOTTOMFISH  ⚪ MA_CROSS"
+                            "🔵 BOTTOMBREAKP  🟠 BOTTOMFISH  ⚪ MA_CROSS\n\n"
+                            "<b>Chart gửi kèm:</b> Daily [D] + Weekly [W] + 15 phút [15m]"
                         )
                     })
 
@@ -1556,6 +1513,7 @@ print(f"   Lệnh chart  : /c HPG | /chart HPG | /HPG | / HPG")
 print(f"   Lệnh chỉ số : /VNINDEX | /VN30 | /HNX | /UPCOM | /VN100")
 print(f"   Lệnh heatmap: /h | /heatmap")
 print(f"   Lệnh khác   : /s | /help")
+print(f"   Chart gửi   : Daily [D] + Weekly [W] + 15 phút [15m]")
 print(f"   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
 print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
 print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
@@ -1580,7 +1538,7 @@ while True:
         print("🔧 Reload cache lịch sử cho ngày mới...")
         build_history_cache(symbols_to_scan, current_date)
 
-    is_morning   = 85000 <= now_time <= 113000
+    is_morning   = 85500 <= now_time <= 113000
     is_afternoon = 130000 <= now_time <= 150000
 
     if not (is_morning or is_afternoon):
