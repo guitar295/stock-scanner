@@ -573,26 +573,84 @@ def build_history_cache(symbols: list, current_date: date):
     print(f"✅ [{ts}] Cache hoàn tất: {loaded}/{len(symbols)} mã có dữ liệu.")
 
 def fetch_today_bar(symbol: str, current_date: date):
+    """Lấy nến ngày hôm nay. Trả về None nếu dữ liệu rác hoặc chưa có khớp lệnh thực.
+
+    Các lớp lọc (theo thứ tự):
+      1. Không có dòng ngày hôm nay              → None
+      2. close NaN hoặc <= 0                     → None  (giá rác / chưa có)
+      3. volume NaN hoặc <= 0                    → None  (chưa có khớp lệnh)
+      4. volume < 100 cổ phiếu (< 1 lô chuẩn)   → None  (khớp lệnh bất thường)
+      5. OHLC == nhau hết + volume == prev_vol   → None  (API copy y hệt phiên trước)
+      6. close == prev_close AND volume==prev_vol → None  (dữ liệu bị nhân bản)
+    """
     for attempt in range(3):
         try:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1', interval='1D')
+            # length='2' để lấy thêm nến liền trước — dùng so sánh chống nhân bản
+            df_raw = quote.history(length='2', interval='1D')
             if df_raw is None or df_raw.empty: return None
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
+
             today_rows = df_raw[df_raw.index.date == current_date]
             if today_rows.empty: return None
+
             row    = today_rows.iloc[-1]
             close  = float(row.get('close',  np.nan))
             open_  = float(row.get('open',   close))
             high   = float(row.get('high',   close))
             low    = float(row.get('low',    close))
             volume = float(row.get('volume', np.nan))
+
+            # ── Lớp 2: giá rác ──────────────────────────────────────────
+            if pd.isna(close) or close <= 0:
+                return None
+
+            # ── Lớp 3 & 4: volume rác ───────────────────────────────────
+            if pd.isna(volume) or volume < 100:
+                return None
+
+            # ── Lớp 5 & 6: so sánh với nến liền trước ──────────────────
+            prev_rows = df_raw[df_raw.index.date < current_date]
+            if not prev_rows.empty:
+                prev = prev_rows.iloc[-1]
+                prev_close  = float(prev.get('close',  np.nan))
+                prev_volume = float(prev.get('volume', np.nan))
+                prev_open   = float(prev.get('open',   np.nan))
+                prev_high   = float(prev.get('high',   np.nan))
+                prev_low    = float(prev.get('low',    np.nan))
+
+                # OHLCV y hệt phiên trước → API nhân bản dữ liệu
+                ohlcv_clone = (
+                    close  == prev_close  and
+                    open_  == prev_open   and
+                    high   == prev_high   and
+                    low    == prev_low    and
+                    volume == prev_volume
+                )
+                if ohlcv_clone:
+                    print(f"    ⚠️  {symbol}: today_bar OHLCV = phiên trước → bỏ qua")
+                    return None
+
+                # close & volume bằng phiên trước (dấu hiệu copy dữ liệu)
+                price_vol_clone = (
+                    not pd.isna(prev_close)  and close  == prev_close and
+                    not pd.isna(prev_volume) and volume == prev_volume
+                )
+                if price_vol_clone:
+                    print(f"    ⚠️  {symbol}: close+volume = phiên trước → bỏ qua")
+                    return None
+
+            # ── Sửa OHLC nếu không nhất quán (high/low bị đảo) ─────────
             high = max(high, open_, close)
             low  = min(low,  open_, close)
-            return pd.Series({'open':open_,'high':high,'low':low,'close':close,'volume':volume},
-                             name=pd.Timestamp(current_date))
+
+            return pd.Series(
+                {'open': open_, 'high': high, 'low': low, 'close': close, 'volume': volume},
+                name=pd.Timestamp(current_date)
+            )
+
         except Exception as e:
             if attempt < 2: time.sleep(2)
             else: print(f"    ❌ fetch_today_bar {symbol}: {e}")
@@ -876,8 +934,9 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if df_hist is None or len(df_hist) < 60: continue
 
             today_bar = fetch_today_bar(symbol, current_date)
+            # fetch_today_bar đã lọc đầy đủ (close=0, volume=0, clone phiên trước...)
+            # → None nghĩa là chưa có dữ liệu hợp lệ, bỏ qua mã này
             if today_bar is None: continue
-            if pd.isna(today_bar['close']) or float(today_bar['close']) <= 0: continue
 
             df_merged   = merge_today_bar(df_hist, today_bar, current_date)
             signal_type = detect_signal(df_merged, now_time)
@@ -980,21 +1039,14 @@ def fetch_and_send_chart(symbol, chat_id):
 
         if df_hist is not None and len(df_hist) >= 60:
             today_bar = fetch_today_bar(symbol, current_date)
-            # Validate today_bar: chỉ merge khi close > 0 VÀ volume > 0
-            # Nếu rác hoặc chưa có dữ liệu → vẽ lịch sử thuần, cây nến cuối = ngày GD trước
-            today_bar_valid = (
-                today_bar is not None
-                and not pd.isna(today_bar['close'])
-                and float(today_bar['close']) > 0
-                and not pd.isna(today_bar['volume'])
-                and float(today_bar['volume']) > 0
-            )
-            if today_bar_valid:
+            # fetch_today_bar đã lọc đầy đủ → None = chưa có / dữ liệu rác
+            # → vẽ bằng lịch sử thuần, cây nến cuối = ngày giao dịch trước
+            if today_bar is not None:
                 df_raw = merge_today_bar(df_hist, today_bar, current_date)
             else:
                 df_raw = df_hist.copy()
                 ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
-                print(f"  [{ts_log}] ⚠️  {symbol}: today_bar rác/chưa có → dùng lịch sử thuần")
+                print(f"  [{ts_log}] ⚠️  {symbol}: chưa có nến hôm nay → vẽ lịch sử thuần")
         else:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
             df_raw = quote.history(length='1000', interval='1D')
