@@ -480,7 +480,7 @@ def compute_indicators(df):
     df = df.copy()
     for n in [2,3,5,10,15,20,30,50,200]:
         df[f'MA{n}']  = df['close'].rolling(n).mean()
-    for n in [10,20,30,50]:
+    for n in [10,20,30,50,200]:
         df[f'EMA{n}'] = df['close'].ewm(span=n, adjust=False).mean()
     for n in [2,3,5,10,15,20,30,50]:
         df[f'VMA{n}'] = df['volume'].rolling(n).mean()
@@ -940,8 +940,11 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
         mpf.make_addplot(df_plot['MACD'],        panel=2, color='blue',   width=0.6, secondary_y=False),
         mpf.make_addplot(df_plot['MACD_Signal'], panel=2, color='orange', width=0.6, secondary_y=False),
     ]
-    if is_daily or is_15m:
-        apds.append(mpf.make_addplot(df_plot['MA200'], color='brown', width=0.6))
+  
+    if is_daily:
+      apds.append(mpf.make_addplot(df_plot['MA200'],  color='brown', width=0.6))
+    if is_15m:
+      apds.append(mpf.make_addplot(df_plot['EMA200'], color='brown', width=0.6))
 
     mc           = mpf.make_marketcolors(up='#26A69A',down='#EF5350',edge='inherit',wick='inherit',alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles',marketcolors=mc,gridstyle='',facecolor='white')
