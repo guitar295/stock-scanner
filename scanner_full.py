@@ -1,13 +1,13 @@
 """
 =============================================================================
-SCANNER TÍN HIỆU MUA CỔ PHIẾU — PHIÊN BẢN TỐI ƯU (CACHE + QUOTE length=1)
+SCANNER TÍN HIỆU MUA CỔ PHIẾU — PHIÊN BẢN TỐI ƯU (CACHE + QUOTE length=2)
 Pocket Pivot / Breakout / Pre-Break
 Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoài giờ
 + HEATMAP BOT (lệnh /h hoặc /heatmap)
 
 KIẾN TRÚC 2 BƯỚC:
   Bước 1: Load lịch sử 1 lần → cache vào dict  (trước giờ GD hoặc lúc khởi động)
-  Bước 2: Mỗi chu kỳ scan chỉ gọi Quote.history(length=1) → ghép vào cache → detect
+  Bước 2: Mỗi chu kỳ scan chỉ gọi Quote.history(length=2) → ghép vào cache → detect
 
 LỆNH TELEGRAM HỖ TRỢ:
   /c HPG        → chart HPG
@@ -926,7 +926,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
     new_signals  = []
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=1)...")
+    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=2)...")
 
     for symbol in symbols:
         try:
@@ -1340,7 +1340,7 @@ while True:
         build_history_cache(symbols_to_scan, current_date)
 
     print(f"\n{'='*60}")
-    print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=1)")
+    print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
     print(f"{'='*60}")
 
     new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
