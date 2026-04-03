@@ -1,9 +1,10 @@
 """
 =============================================================================
 SCANNER TÍN HIỆU MUA CỔ PHIẾU — PHIÊN BẢN TỐI ƯU (CACHE + QUOTE length=2)
-Pocket Pivot / Breakout / Pre-Break
+Pocket Pivot / Breakout / Pre-Break / BottomFish / BottomBreakP / MA_Cross
 Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoài giờ
 + HEATMAP BOT (lệnh /h hoặc /heatmap)
++ CHỈ SỐ: VNINDEX, VN30 (lệnh /VNINDEX, /VN30, /c VNINDEX ...)
 
 KIẾN TRÚC 2 BƯỚC:
   Bước 1: Load lịch sử 1 lần → cache vào dict  (trước giờ GD hoặc lúc khởi động)
@@ -15,12 +16,16 @@ LỆNH TELEGRAM HỖ TRỢ:
   /chart HPG    → như /c
   /HPG          → chart HPG (không dấu cách)
   / HPG         → chart HPG (có dấu cách)
+  /VNINDEX      → chart chỉ số VNINDEX
+  /VN30         → chart chỉ số VN30
   /s            → tín hiệu hôm nay
   /h            → heatmap thị trường
   /heatmap      → heatmap thị trường
   /help         → trợ giúp
 
-SỬA ĐỔI:
+THAY ĐỔI SO VỚI PHIÊN BẢN CŨ:
+  - Thêm hỗ trợ chart chỉ số: VNINDEX, VN30, HNX, UPCOM, VN100, HNXINDEX
+  - Thêm 3 tín hiệu mới: BOTTOMFISH, BOTTOMBREAKP, MA_CROSS
   - draw_chart: date_str lấy từ index cây nến cuối của df_plot (không dùng datetime.now)
   - fetch_and_send_chart: date_str lấy từ index cây nến cuối của df_calc
   - fetch_heatmap_data: timestamp parse bằng float() thay vì isinstance check,
@@ -69,6 +74,22 @@ TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 ALLOWED_CHATS = {str(TELEGRAM_CHAT_ID), str(MY_PERSONAL_CHAT_ID), '1207484510'}
 
 register_user(VNSTOCK_API)
+
+# =============================================================================
+# BƯỚC 2A: DANH SÁCH CHỈ SỐ HỖ TRỢ
+# =============================================================================
+# Mapping tên người dùng gõ → symbol thực tế trên vnstock
+# Các chỉ số này được xử lý riêng: không quét tín hiệu, chỉ vẽ chart on-demand
+INDEX_SYMBOL_MAP = {
+    'VNINDEX':   'VNINDEX',
+    'VN30':      'VN30',
+    'HNX':       'HNX',
+    'HNXINDEX':  'HNXINDEX',
+    'UPCOM':     'UPCOM',
+    'VN100':     'VN100',
+    'VN30F1M':   'VN30F1M',   # Hợp đồng tương lai VN30
+}
+INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 
 # =============================================================================
 # BƯỚC 2B: CẤU HÌNH HEATMAP
@@ -253,11 +274,6 @@ def _hmap_col_height(groups):
 #      khi KBS trả val dạng string "1768552349519"
 # =============================================================================
 def fetch_heatmap_data() -> tuple:
-    """Lấy bảng giá cho heatmap.
-    Trả về tuple (data_dict, timestamp_str).
-    timestamp_str lấy từ trường 'time' của price_board (Unix ms).
-    Nếu không có hoặc lỗi thì fallback về datetime.now(TZ_VN).
-    """
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
                   | set(TRADING_STOCKS_POOL))
@@ -268,8 +284,6 @@ def fetch_heatmap_data() -> tuple:
     try:
         df = engine.price_board(need)
         if df is not None and not df.empty:
-
-            # ── Xác định cột thời gian ───────────────────────────────────
             time_col = next(
                 (c for c in df.columns
                  if c.lower() in ('time', 'trading_date', 'date', 'timestamp', 'last_time')),
@@ -280,25 +294,18 @@ def fetch_heatmap_data() -> tuple:
                 if not raw_times.empty:
                     val = raw_times.iloc[-1]
                     try:
-                        # Ép float trước — xử lý cả str "1768552349519" lẫn int/float
-                        # Tránh lỗi 01/01/1970 do isinstance(str_val, (int,float)) = False
                         val_num = float(val)
-
                         if val_num > 1_000_000_000_000:
-                            # Unix milliseconds (e.g. 1768552349519)
                             data_time = datetime.fromtimestamp(val_num / 1000, tz=TZ_VN)
                         elif val_num > 1_000_000_000:
-                            # Unix seconds
                             data_time = datetime.fromtimestamp(val_num, tz=TZ_VN)
                         else:
                             print(f"  [{ts_log}] ⚠️  time value không hợp lệ: {val_num}")
                             data_time = None
-
                     except (TypeError, ValueError, OSError) as te:
                         print(f"  [{ts_log}] ⚠️  Không parse được time '{val}': {te}")
                         data_time = None
 
-            # ── Đọc giá và % thay đổi ───────────────────────────────────
             for _, row in df.iterrows():
                 sym   = str(row.get("symbol", "")).strip()
                 if not sym: continue
@@ -312,7 +319,6 @@ def fetch_heatmap_data() -> tuple:
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
 
-    # Fallback nếu không lấy được time từ data
     if data_time is None:
         data_time = datetime.now(TZ_VN)
         print(f"  [{ts_log}] ⚠️  Heatmap: dùng fallback timestamp = now()")
@@ -322,7 +328,6 @@ def fetch_heatmap_data() -> tuple:
 
 
 def build_heatmap_image(data: dict, timestamp: str) -> str:
-    """Vẽ heatmap PIL và trả về đường dẫn ảnh tạm."""
     f_title, f_hdr, f_sym, f_data, f_sector = _hmap_load_fonts()
 
     max_rows   = max(sum(len(g["symbols"]) for g in c["groups"]) for c in HEATMAP_COLUMNS)
@@ -380,7 +385,6 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
 
 
 def handle_heatmap_command(chat_id):
-    """Xử lý lệnh /h hoặc /heatmap — chạy trong thread riêng."""
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     url_act   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction"
@@ -495,6 +499,10 @@ print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to
 def ref(series, n):  return series.shift(n)
 def hhv(series, n):  return series.rolling(n).max()
 def llv(series, n):  return series.rolling(n).min()
+
+def cross_above(s1, s2):
+    """Trả về Series bool: s1 cắt lên s2 (hôm nay s1>=s2, hôm qua s1<s2)."""
+    return (s1 >= s2) & (s1.shift(1) < s2.shift(1))
 
 def compute_indicators(df):
     df = df.copy()
@@ -648,6 +656,44 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
     return last_ts.strftime('%d/%m/%Y')
 
 # =============================================================================
+# BƯỚC 5D: HÀM LẤY DỮ LIỆU CHỈ SỐ (VNINDEX, VN30, ...)
+# =============================================================================
+def fetch_index_history(symbol: str) -> pd.DataFrame | None:
+    """
+    Lấy lịch sử chỉ số (VNINDEX, VN30, ...) qua Quote.
+    Một số data source trả về điểm số ở cột 'close' — không cần chia 1000.
+    Trả về DataFrame chuẩn (open/high/low/close/volume) hoặc None nếu lỗi.
+    """
+    for attempt in range(3):
+        try:
+            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
+            df_raw = quote.history(length='1000', interval='1D')
+            if df_raw is None or df_raw.empty:
+                return None
+            df_raw['time'] = pd.to_datetime(df_raw['time'])
+            df_raw.set_index('time', inplace=True)
+            df_raw.columns = [c.lower() for c in df_raw.columns]
+
+            # Đảm bảo có đủ cột OHLCV
+            for col in ['open','high','low','close']:
+                if col not in df_raw.columns:
+                    df_raw[col] = np.nan
+            if 'volume' not in df_raw.columns:
+                df_raw['volume'] = 0
+
+            df_raw = df_raw[['open','high','low','close','volume']].copy()
+            df_raw = df_raw.dropna(subset=['close'])
+            if len(df_raw) < 10:
+                return None
+            return df_raw
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+            else:
+                print(f"    ❌ fetch_index_history {symbol}: {e}")
+    return None
+
+# =============================================================================
 # BƯỚC 6: CÁC HÀM ĐIỀU KIỆN TÍN HIỆU
 # =============================================================================
 def calc_pocket_pivot_vol(df):
@@ -774,6 +820,146 @@ def calc_liquidity(df):
         (df['VMA30']>=50_000)&(df['VMA50']>=50_000)
     )
 
+# =============================================================================
+# BƯỚC 6B: CÁC TÍN HIỆU MỚI
+# =============================================================================
+
+def calc_bottomfish(df):
+    """
+    BOTTOMFISH: RSI(14) cắt lên 29 hoặc 30, kết hợp vùng dao động đủ rộng và thanh khoản.
+    Tương đương:
+        (Cross(r,29) OR Cross(r,30))
+        AND (HHV(H,30)-LLV(L,30))/LLV(L,30) >= 0.2
+        AND C >= 5
+        AND V*C > 2_000_000
+        AND MA(V,5)*MA(C,5) > 3_000_000  ...  MA(V,50) >= 50_000
+    """
+    C, V = df['close'], df['volume']
+    r    = df['RSI14']
+    H, L = df['high'], df['low']
+
+    # RSI cắt lên 29 hoặc 30 (cross_above)
+    rsi_cross = cross_above(r, pd.Series(29, index=r.index)) | \
+                cross_above(r, pd.Series(30, index=r.index))
+
+    # Biên độ vùng 30 phiên >= 20%
+    range30 = (hhv(H, 30) - llv(L, 30)) / llv(L, 30)
+    cond_range = range30 >= 0.2
+
+    # Thanh khoản
+    liq = (
+        (C >= 5) &
+        (C * V > 2_000_000) &
+        (df['MA5']  * df['VMA5']  > 3_000_000) &
+        (df['MA10'] * df['VMA10'] > 3_000_000) &
+        (df['MA15'] * df['VMA15'] > 3_000_000) &
+        (df['VMA30'] >= 50_000) &
+        (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) &
+        (df['VMA50'] >= 50_000)
+    )
+
+    return rsi_cross & cond_range & liq
+
+
+def calc_bottombreakp(df):
+    """
+    BOTTOMBREAKP: Bứt phá đáy — RSI vừa cắt lên 29 (hôm nay hoặc hôm qua),
+    nến tăng mạnh, khối lượng breakout, vùng dao động rộng.
+    """
+    C, O, H, L, V = df['close'], df['open'], df['high'], df['low'], df['volume']
+    r = df['RSI14']
+
+    # RSI cắt lên 29 hôm nay hoặc hôm qua
+    rsi_cross_today = cross_above(r, pd.Series(29, index=r.index))
+    rsi_cross_prev  = cross_above(r.shift(1), pd.Series(29, index=r.index))
+    rsi_cond = rsi_cross_today | rsi_cross_prev
+
+    # Nến tăng mạnh (High close bar)
+    high_close_bar = (
+        ((C > (H + L) / 2) & (C >= O)) |
+        (((O - ref(C, 1)) / ref(C, 1) > 0.02) & ((C - ref(C, 1)) / ref(C, 1) > 0.02))
+    )
+
+    # Râu nến không quá dài
+    short_wick = (
+        ((H - C) / C < 0.02) |
+        (((H - C) / C >= 0.02) & ((C - O) / O >= 1.1 * (H - C) / C))
+    )
+
+    # Điều kiện giá
+    price_cond = (
+        (C >= 1.015 * ref(C, 1)) &
+        (C > (ref(L, 1) + ref(H, 1)) / 2)
+    )
+
+    # Biên độ vùng 30 phiên >= 20%
+    range30    = (hhv(H, 30) - llv(L, 30)) / llv(L, 30)
+    cond_range = range30 >= 0.2
+
+    # Khối lượng breakout (dùng lại calc_break_vol)
+    bvol = calc_break_vol(df)
+
+    # Thanh khoản
+    liq = (
+        (C >= 5) &
+        (C * V > 3_000_000) &
+        (df['MA5']  * df['VMA5']  > 3_000_000) &
+        (df['MA10'] * df['VMA10'] > 3_000_000) &
+        (df['MA15'] * df['VMA15'] > 3_000_000) &
+        (df['VMA30'] >= 50_000) &
+        (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) &
+        (df['VMA50'] >= 50_000)
+    )
+
+    bottombreakprice = rsi_cond & high_close_bar & short_wick & price_cond & cond_range
+    return bottombreakprice & bvol & liq
+
+
+def calc_ma_cross(df):
+    """
+    MA_CROSS: MA10 cắt lên MA20/MA30/MA50, tất cả MA trên MA200, giá gần MA30.
+    """
+    C, V = df['close'], df['volume']
+
+    # MA10 cắt lên MA20, MA30 hoặc MA50
+    cross_10_20 = cross_above(df['MA10'], df['MA20'])
+    cross_10_30 = cross_above(df['MA10'], df['MA30'])
+    cross_10_50 = cross_above(df['MA10'], df['MA50'])
+    ma_cross_cond = cross_10_20 | cross_10_30 | cross_10_50
+
+    # MA nằm trên MA200
+    ma_above_200 = (
+        (df['MA10'] > df['MA200']) &
+        (df['MA30'] > df['MA200']) &
+        (df['MA50'] > df['MA200'])
+    )
+
+    # Giá trong vùng hợp lý so với MA30
+    price_cond = (
+        (C > df['MA30']) &
+        (C <= 1.07 * df['MA30'])
+    )
+
+    # Thanh khoản
+    liq = (
+        (C >= 5) &
+        (C * V > 2_000_000) &
+        (df['MA5']  * df['VMA5']  > 3_000_000) &
+        (df['MA10'] * df['VMA10'] > 3_000_000) &
+        (df['MA15'] * df['VMA15'] > 3_000_000) &
+        (df['VMA30'] >= 50_000) &
+        (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) &
+        (df['VMA50'] >= 50_000)
+    )
+
+    return ma_cross_cond & ma_above_200 & price_cond & liq
+
+# =============================================================================
+# BƯỚC 6C: HÀM DETECT_SIGNAL (bổ sung 3 tín hiệu mới)
+# =============================================================================
 def detect_signal(df, now_time):
     df = compute_indicators(df)
     if len(df) < 60: return None
@@ -785,16 +971,26 @@ def detect_signal(df, now_time):
     ma10_ok     = df['MA10'] >= 0.8*ref(df['MA10'],1)
     pre_vol     = calc_prebreak_vol(df, now_time)
 
-    is_breakout = (break_price&break_vol&liq).iloc[-1]
-    is_pocket   = (pprice&(pvol|break_vol)&liq&ma10_ok).iloc[-1]
+    # Tín hiệu chính (ưu tiên cao nhất)
+    is_breakout = (break_price & break_vol & liq).iloc[-1]
+    is_pocket   = (pprice & (pvol | break_vol) & liq & ma10_ok).iloc[-1]
     is_prebreak = (
-        ((break_price|pprice)&pre_vol&liq).iloc[-1] and
+        ((break_price | pprice) & pre_vol & liq).iloc[-1] and
         not is_breakout and not is_pocket and
         (91700 < now_time < 150000)
     )
-    if is_breakout: return 'BREAKOUT'
-    if is_pocket:   return 'POCKET PIVOT'
-    if is_prebreak: return 'PRE-BREAK'
+
+    # Tín hiệu mới (ưu tiên thấp hơn, chỉ phát khi không có tín hiệu chính)
+    is_bottombreakp = calc_bottombreakp(df).iloc[-1]
+    is_bottomfish   = calc_bottomfish(df).iloc[-1]
+    is_ma_cross     = calc_ma_cross(df).iloc[-1]
+
+    if is_breakout:     return 'BREAKOUT'
+    if is_pocket:       return 'POCKET PIVOT'
+    if is_prebreak:     return 'PRE-BREAK'
+    if is_bottombreakp: return 'BOTTOMBREAKP'
+    if is_ma_cross:     return 'MA_CROSS'
+    if is_bottomfish:   return 'BOTTOMFISH'
     return None
 
 # =============================================================================
@@ -889,8 +1085,22 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
 # =============================================================================
 # BƯỚC 8: HÀM QUÉT 1 CHU KỲ
 # =============================================================================
-SIGNAL_RANK  = {'PRE-BREAK':1, 'POCKET PIVOT':2, 'BREAKOUT':3}
-SIGNAL_EMOJI = {'BREAKOUT':'🟢', 'POCKET PIVOT':'🟡', 'PRE-BREAK':'🟣'}
+SIGNAL_RANK  = {
+    'PRE-BREAK':    1,
+    'BOTTOMFISH':   2,
+    'MA_CROSS':     3,
+    'BOTTOMBREAKP': 4,
+    'POCKET PIVOT': 5,
+    'BREAKOUT':     6,
+}
+SIGNAL_EMOJI = {
+    'BREAKOUT':     '🟢',
+    'POCKET PIVOT': '🟡',
+    'PRE-BREAK':    '🟣',
+    'BOTTOMFISH':   '🟠',
+    'BOTTOMBREAKP': '🔵',
+    'MA_CROSS':     '⚪',
+}
 
 def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
     new_signals  = []
@@ -967,92 +1177,140 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
 
 # =============================================================================
 # BƯỚC 8B: PARSE LỆNH CHART
+# Mở rộng: nhận diện chỉ số (VNINDEX, VN30, ...) dù là reserved keyword
 # =============================================================================
 _RESERVED_KEYWORDS = {'s','help','h','scan','c','chart','heatmap'}
 
 def parse_chart_command(text: str):
+    """
+    Phân tích lệnh chart từ tin nhắn Telegram.
+    Trả về list symbol (có thể là mã CK lẫn chỉ số) hoặc None nếu không phải lệnh chart.
+    """
     text = text.strip()
     if not text.startswith('/'): return None
     body = text[1:]
+
+    # /c VNINDEX hoặc /chart VN30 HPG
     m = re.match(r'^(c|chart)\s+(.+)$', body, re.IGNORECASE)
     if m: return _filter_symbols(m.group(2).split())
+
+    # / VNINDEX (có khoảng trắng sau /)
     if body.startswith(' '): return _filter_symbols(body.strip().split())
+
+    # /VNINDEX hoặc /HPG (không khoảng trắng)
     parts = body.strip().split()
     if len(parts) == 1:
         candidate = parts[0].upper()
+        # Chỉ số được ưu tiên nhận diện trước khi kiểm tra reserved keyword
+        if candidate in INDEX_SYMBOLS:
+            return [candidate]
         if candidate.lower() not in _RESERVED_KEYWORDS and _is_valid_symbol(candidate):
             return [candidate]
     return None
 
 def _is_valid_symbol(s: str) -> bool:
-    return bool(re.match(r'^[A-Z0-9]{1,5}$', s.upper())) and s.lower() not in _RESERVED_KEYWORDS
+    """Hợp lệ: 1–7 ký tự chữ số/chữ cái, không phải reserved (trừ chỉ số)."""
+    s_upper = s.upper()
+    if s_upper in INDEX_SYMBOLS:
+        return True
+    return bool(re.match(r'^[A-Z0-9]{1,5}$', s_upper)) and s.lower() not in _RESERVED_KEYWORDS
 
 def _filter_symbols(raw_list: list):
     result = [s.upper() for s in raw_list if _is_valid_symbol(s)]
     return result if result else None
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND
+# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND (hỗ trợ cả chỉ số)
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
     symbol    = symbol.upper().strip()
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol}")
+    is_index  = symbol in INDEX_SYMBOLS
+    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol} (index={is_index})")
+
     try:
         current_date = datetime.now(TZ_VN).date()
-        with cache_lock: df_hist = history_cache.get(symbol)
 
-        if df_hist is not None and len(df_hist) >= 60:
-            today_bar = fetch_today_bar(symbol, current_date)
-            if today_bar is not None:
-                df_raw = merge_today_bar(df_hist, today_bar, current_date)
-            else:
-                df_raw = df_hist.copy()
-                ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
-                print(f"  [{ts_log}] ⚠️  {symbol}: chưa có nến hôm nay → vẽ lịch sử thuần")
-        else:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1000', interval='1D')
-            if df_raw is None or len(df_raw) < 60:
+        # ── Lấy dữ liệu ─────────────────────────────────────────────────
+        if is_index:
+            # Chỉ số: luôn fetch thẳng, không dùng cache cổ phiếu
+            df_raw = fetch_index_history(symbol)
+            if df_raw is None or len(df_raw) < 10:
                 requests.post(url_msg, data={
                     'chat_id': chat_id,
-                    'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
+                    'text': f"❌ Không tìm thấy dữ liệu chỉ số <b>{symbol}</b>. "
+                            f"Hãy kiểm tra tên chỉ số (VD: VNINDEX, VN30, HNX, UPCOM).",
                     'parse_mode': 'HTML'
                 })
                 return
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
+           
+        else:
+            # Cổ phiếu thường: ưu tiên cache
+            with cache_lock: df_hist = history_cache.get(symbol)
+            if df_hist is not None and len(df_hist) >= 60:
+                today_bar = fetch_today_bar(symbol, current_date)
+                if today_bar is not None:
+                    df_raw = merge_today_bar(df_hist, today_bar, current_date)
+                else:
+                    df_raw = df_hist.copy()
+                    ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
+                    print(f"  [{ts_log}] ⚠️  {symbol}: chưa có nến hôm nay → vẽ lịch sử thuần")
+            else:
+                quote  = Quote(symbol=symbol, source=DATA_SOURCE)
+                df_raw = quote.history(length='1000', interval='1D')
+                if df_raw is None or len(df_raw) < 60:
+                    requests.post(url_msg, data={
+                        'chat_id': chat_id,
+                        'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
+                        'parse_mode': 'HTML'
+                    })
+                    return
+                df_raw['time'] = pd.to_datetime(df_raw['time'])
+                df_raw.set_index('time', inplace=True)
+                df_raw.columns = [c.lower() for c in df_raw.columns]
 
+        # ── Tính chỉ báo ─────────────────────────────────────────────────
         df_calc     = compute_indicators(df_raw)
         today       = df_calc.iloc[-1]
         now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-        signal_type = detect_signal(df_raw, now_time) or "ON-DEMAND"
-        date_str     = _date_str_from_df(df_calc)
 
+        # Chỉ số không detect tín hiệu mua — chỉ vẽ chart
+        if is_index:
+            signal_type = "INDEX"
+        else:
+            signal_type = detect_signal(df_raw, now_time) or "ON-DEMAND"
+
+        date_str     = _date_str_from_df(df_calc)
         pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
         change       = today['close'] - df_calc['close'].iloc[-2]
         vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
         vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
-        link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
-        link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
-        link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
-        link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
-        link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
-
-        msg = (
-            f"#{symbol}  {date_str}\n"
-            f"Sig: {signal_type}\n"
-            f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
-            f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
-            f"<a href='{link_vnd_detail}'>⚖️</a> "
-            f"<a href='{link_vnd_news}'>🗞️</a> "
-            f"<a href='{link_vietstock}'>📈</a> "
-            f"<a href='{link_vnd_summary}'>📄</a> "
-            f"<a href='{link_24h_money}'>📄</a>"
-        )
+        # Chỉ số: không thêm link tổng quan CK
+        if is_index:
+            msg = (
+                f"#{symbol}  {date_str}\n"
+                f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+                f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%"
+            )
+        else:
+            link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
+            link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
+            link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
+            link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
+            link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
+            msg = (
+                f"#{symbol}  {date_str}\n"
+                f"Sig: {signal_type}\n"
+                f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+                f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
+                f"<a href='{link_vnd_detail}'>⚖️</a> "
+                f"<a href='{link_vnd_news}'>🗞️</a> "
+                f"<a href='{link_vietstock}'>📈</a> "
+                f"<a href='{link_vnd_summary}'>📄</a> "
+                f"<a href='{link_24h_money}'>📄</a>"
+            )
 
         df_plot_d  = df_calc.tail(250).copy()
         img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
@@ -1191,14 +1449,20 @@ def telegram_listener(stop_event: threading.Event):
                         'chat_id': chat_id, 'parse_mode': 'HTML',
                         'text': (
                             "🤖 <b>Lệnh hỗ trợ:</b>\n\n"
-                            "<b>Xem chart:</b>\n"
+                            "<b>Xem chart cổ phiếu:</b>\n"
                             "/c HPG\n/chart HPG\n/HPG\n/ HPG\n"
                             "/c HPG VNM FPT  (nhiều mã, tối đa 5)\n\n"
+                            "<b>Xem chart chỉ số:</b>\n"
+                            "/VNINDEX  /VN30  /HNX  /UPCOM  /VN100\n"
+                            "/c VNINDEX VN30  (nhiều chỉ số)\n\n"
                             "<b>Heatmap thị trường:</b>\n"
                             "/h  hoặc  /heatmap\n\n"
                             "<b>Khác:</b>\n"
                             "/s  — Tín hiệu hôm nay\n"
-                            "/help  — Trợ giúp"
+                            "/help  — Trợ giúp\n\n"
+                            "<b>Tín hiệu hỗ trợ:</b>\n"
+                            "🟢 BREAKOUT  🟡 POCKET PIVOT  🟣 PRE-BREAK\n"
+                            "🔵 BOTTOMBREAKP  🟠 BOTTOMFISH  ⚪ MA_CROSS"
                         )
                     })
 
@@ -1256,8 +1520,11 @@ print(f"   Danh sách   : {len(symbols_to_scan)} mã")
 print(f"   Chu kỳ quét : {SCAN_INTERVAL_SEC} giây")
 print(f"   Tín hiệu    → Channel/Group: {TELEGRAM_CHAT_ID}")
 print(f"   Lệnh chart  : /c HPG | /chart HPG | /HPG | / HPG")
+print(f"   Lệnh chỉ số : /VNINDEX | /VN30 | /HNX | /UPCOM | /VN100")
 print(f"   Lệnh heatmap: /h | /heatmap")
 print(f"   Lệnh khác   : /s | /help")
+print(f"   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
+print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
 print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
 print("="*60)
 
