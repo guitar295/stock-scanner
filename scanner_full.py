@@ -1290,7 +1290,7 @@ def fetch_and_send_chart(symbol, chat_id):
         # Chỉ số: không thêm link tổng quan CK
         if is_index:
             msg = (
-                f"📊 #{symbol}  {date_str}\n"
+                f"#{symbol}  {date_str}\n"
                 f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
                 f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%"
             )
