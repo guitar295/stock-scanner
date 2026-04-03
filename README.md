@@ -233,7 +233,6 @@ docker build -t stock-scanner . && \
 docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env stock-scanner && \
 echo "✅ Cập nhật hoàn tất!" && \
 docker logs --tail 20 scanner
-docker system prune -f
 ```
 Lệnh này tự động làm 6 việc theo thứ tự:
 
