@@ -23,8 +23,8 @@ LỆNH TELEGRAM HỖ TRỢ:
 SỬA ĐỔI:
   - draw_chart: date_str lấy từ index cây nến cuối của df_plot (không dùng datetime.now)
   - fetch_and_send_chart: date_str lấy từ index cây nến cuối của df_calc
-  - fetch_heatmap_data: timestamp lấy từ trường 'time' (Unix ms) của price_board,
-    fallback về datetime.now() nếu không có
+  - fetch_heatmap_data: timestamp parse bằng float() thay vì isinstance check,
+    tránh lỗi 01/01/1970 khi val là string dạng "1768552349519"
   - handle_heatmap_command: nhận (data, ts_str) tuple từ fetch_heatmap_data
 =============================================================================
 """
@@ -180,13 +180,6 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
         draw.line([x1, y0+r, x1, y1-r], fill=outline, width=lw)
 
 def _hmap_load_fonts():
-    """
-    f_title  : bold 13  — tiêu đề thanh trên
-    f_hdr    : bold 10  — tên ngành (BOLD theo yêu cầu)
-    f_sym    : bold 10  — mã cổ phiếu (BOLD theo yêu cầu)
-    f_data   : regular 9 — giá và %giá (regular, giữ nguyên code gốc)
-    f_sector : bold 11  — % trung bình ngành
-    """
     bold_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
@@ -200,18 +193,17 @@ def _hmap_load_fonts():
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
     try:
-        f_title  = ImageFont.truetype(bold, 13)       # tiêu đề
-        f_hdr    = ImageFont.truetype(bold, 10)       # tên ngành — BOLD
-        f_sym    = ImageFont.truetype(bold, 10)       # mã cổ phiếu — BOLD
-        f_data   = ImageFont.truetype(reg or bold, 9) # giá, % — regular
-        f_sector = ImageFont.truetype(bold, 11)       # % ngành — bold
+        f_title  = ImageFont.truetype(bold, 13)
+        f_hdr    = ImageFont.truetype(bold, 10)
+        f_sym    = ImageFont.truetype(bold, 10)
+        f_data   = ImageFont.truetype(reg or bold, 9)
+        f_sector = ImageFont.truetype(bold, 11)
         return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
         return d, d, d, d, d
 
 def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
-    """Mã cổ phiếu: BOLD (f_sym) | Giá: regular 2 số TP (f_data) | %: regular (f_data)"""
     bg = _hmap_cell_color(pct)
     fg = _hmap_fg(bg)
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
@@ -225,12 +217,11 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
         bb = draw.textbbox((0, 0), txt, font=fnt)
         draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
 
-    dc(sym,                                                    f_sym,  x,       w1)  # BOLD
-    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
-    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)  # regular
+    dc(sym,                                                    f_sym,  x,       w1)
+    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)
+    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
-    """Tên ngành: BOLD (f_hdr) | % TB ngành: bold màu (f_sector)"""
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
     _hmap_rounded_rect(draw, x, y, x1, y1, HMAP_RADIUS,
                        fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
@@ -242,7 +233,7 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
         bb = draw.textbbox((0, 0), txt, font=fnt)
         draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=color)
 
-    dc(name, f_hdr, x, w1, HMAP_HDR_FG)  # tên ngành — BOLD
+    dc(name, f_hdr, x, w1, HMAP_HDR_FG)
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
     dc(f"{avg_pct:+.2f}%", f_sector, x + w1, w2, fg_s)
 
@@ -257,7 +248,9 @@ def _hmap_col_height(groups):
     return h + HMAP_MARGIN
 
 # =============================================================================
-# HEATMAP: fetch + build — TIMESTAMP LẤY TỪ DATA (price_board trả về Unix ms)
+# HEATMAP: fetch + build
+# FIX: parse timestamp bằng float() thay vì isinstance — tránh lỗi 01/01/1970
+#      khi KBS trả val dạng string "1768552349519"
 # =============================================================================
 def fetch_heatmap_data() -> tuple:
     """Lấy bảng giá cho heatmap.
@@ -271,13 +264,12 @@ def fetch_heatmap_data() -> tuple:
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã...")
     result    = {}
-    data_time = None   # sẽ lấy từ trường time của price_board
+    data_time = None
     try:
         df = engine.price_board(need)
         if df is not None and not df.empty:
+
             # ── Xác định cột thời gian ───────────────────────────────────
-            # price_board của KBS thường trả về cột tên 'time' dạng Unix ms
-            # Thử lần lượt các tên cột phổ biến
             time_col = next(
                 (c for c in df.columns
                  if c.lower() in ('time', 'trading_date', 'date', 'timestamp', 'last_time')),
@@ -288,19 +280,22 @@ def fetch_heatmap_data() -> tuple:
                 if not raw_times.empty:
                     val = raw_times.iloc[-1]
                     try:
-                        if isinstance(val, (int, float)) and val > 1_000_000_000_000:
+                        # Ép float trước — xử lý cả str "1768552349519" lẫn int/float
+                        # Tránh lỗi 01/01/1970 do isinstance(str_val, (int,float)) = False
+                        val_num = float(val)
+
+                        if val_num > 1_000_000_000_000:
                             # Unix milliseconds (e.g. 1768552349519)
-                            data_time = datetime.fromtimestamp(val / 1000, tz=TZ_VN)
-                        elif isinstance(val, (int, float)) and val > 1_000_000_000:
+                            data_time = datetime.fromtimestamp(val_num / 1000, tz=TZ_VN)
+                        elif val_num > 1_000_000_000:
                             # Unix seconds
-                            data_time = datetime.fromtimestamp(val, tz=TZ_VN)
+                            data_time = datetime.fromtimestamp(val_num, tz=TZ_VN)
                         else:
-                            data_time = pd.Timestamp(val)
-                            if data_time.tzinfo is None:
-                                data_time = data_time.tz_localize('Asia/Ho_Chi_Minh')
-                            data_time = data_time.to_pydatetime()
-                    except Exception as te:
-                        print(f"  [{ts_log}] ⚠️  Heatmap: không parse được time '{val}': {te}")
+                            print(f"  [{ts_log}] ⚠️  time value không hợp lệ: {val_num}")
+                            data_time = None
+
+                    except (TypeError, ValueError, OSError) as te:
+                        print(f"  [{ts_log}] ⚠️  Không parse được time '{val}': {te}")
                         data_time = None
 
             # ── Đọc giá và % thay đổi ───────────────────────────────────
@@ -309,8 +304,6 @@ def fetch_heatmap_data() -> tuple:
                 if not sym: continue
                 close = float(row.get("close_price", 0) or 0) / 1000
                 ref_p = float(row.get("reference_price", 0) or 0) / 1000
-                # Nếu close_price = 0 (ngày mới chưa có dữ liệu) → dùng reference_price
-                # để heatmap vẫn hiển thị giá đúng và % = 0 thay vì giá 0 gây lỗi
                 if close <= 0 and ref_p > 0:
                     close = ref_p
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
@@ -319,7 +312,7 @@ def fetch_heatmap_data() -> tuple:
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
 
-    # Fallback: nếu không lấy được time từ data thì dùng datetime.now()
+    # Fallback nếu không lấy được time từ data
     if data_time is None:
         data_time = datetime.now(TZ_VN)
         print(f"  [{ts_log}] ⚠️  Heatmap: dùng fallback timestamp = now()")
@@ -398,7 +391,6 @@ def handle_heatmap_command(chat_id):
             "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 15–30 giây..."
         })
 
-        # ── fetch_heatmap_data trả về (data_dict, ts_str) ──────────────
         data, ts_str = fetch_heatmap_data()
 
         if not data:
@@ -406,7 +398,6 @@ def handle_heatmap_command(chat_id):
                                          "text": "❌ Không lấy được dữ liệu heatmap. Thử lại sau."})
             return
 
-        # ts_str đã là thời gian theo data (hoặc fallback now())
         path = build_heatmap_image(data, ts_str)
 
         with open(path, "rb") as f:
@@ -573,20 +564,10 @@ def build_history_cache(symbols: list, current_date: date):
     print(f"✅ [{ts}] Cache hoàn tất: {loaded}/{len(symbols)} mã có dữ liệu.")
 
 def fetch_today_bar(symbol: str, current_date: date):
-    """Lấy nến ngày hôm nay. Trả về None nếu dữ liệu rác hoặc chưa có khớp lệnh thực.
-
-    Các lớp lọc (theo thứ tự):
-      1. Không có dòng ngày hôm nay              → None
-      2. close NaN hoặc <= 0                     → None  (giá rác / chưa có)
-      3. volume NaN hoặc <= 0                    → None  (chưa có khớp lệnh)
-      4. volume < 100 cổ phiếu (< 1 lô chuẩn)   → None  (khớp lệnh bất thường)
-      5. OHLC == nhau hết + volume == prev_vol   → None  (API copy y hệt phiên trước)
-      6. close == prev_close AND volume==prev_vol → None  (dữ liệu bị nhân bản)
-    """
+    """Lấy nến ngày hôm nay. Trả về None nếu dữ liệu rác hoặc chưa có khớp lệnh thực."""
     for attempt in range(3):
         try:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            # length='2' để lấy thêm nến liền trước — dùng so sánh chống nhân bản
             df_raw = quote.history(length='2', interval='1D')
             if df_raw is None or df_raw.empty: return None
             df_raw['time'] = pd.to_datetime(df_raw['time'])
@@ -603,15 +584,12 @@ def fetch_today_bar(symbol: str, current_date: date):
             low    = float(row.get('low',    close))
             volume = float(row.get('volume', np.nan))
 
-            # ── Lớp 2: giá rác ──────────────────────────────────────────
             if pd.isna(close) or close <= 0:
                 return None
 
-            # ── Lớp 3 & 4: volume rác ───────────────────────────────────
             if pd.isna(volume) or volume < 100:
                 return None
 
-            # ── Lớp 5 & 6: so sánh với nến liền trước ──────────────────
             prev_rows = df_raw[df_raw.index.date < current_date]
             if not prev_rows.empty:
                 prev = prev_rows.iloc[-1]
@@ -621,7 +599,6 @@ def fetch_today_bar(symbol: str, current_date: date):
                 prev_high   = float(prev.get('high',   np.nan))
                 prev_low    = float(prev.get('low',    np.nan))
 
-                # OHLCV y hệt phiên trước → API nhân bản dữ liệu
                 ohlcv_clone = (
                     close  == prev_close  and
                     open_  == prev_open   and
@@ -633,7 +610,6 @@ def fetch_today_bar(symbol: str, current_date: date):
                     print(f"    ⚠️  {symbol}: today_bar OHLCV = phiên trước → bỏ qua")
                     return None
 
-                # close & volume bằng phiên trước (dấu hiệu copy dữ liệu)
                 price_vol_clone = (
                     not pd.isna(prev_close)  and close  == prev_close and
                     not pd.isna(prev_volume) and volume == prev_volume
@@ -642,7 +618,6 @@ def fetch_today_bar(symbol: str, current_date: date):
                     print(f"    ⚠️  {symbol}: close+volume = phiên trước → bỏ qua")
                     return None
 
-            # ── Sửa OHLC nếu không nhất quán (high/low bị đảo) ─────────
             high = max(high, open_, close)
             low  = min(low,  open_, close)
 
@@ -666,9 +641,7 @@ def merge_today_bar(df_hist, today_bar, current_date: date):
 # BƯỚC 5C: HÀM TIỆN ÍCH — LẤY DATE_STR TỪ INDEX CÂY NẾN CUỐI
 # =============================================================================
 def _date_str_from_df(df: pd.DataFrame) -> str:
-    """Trả về chuỗi 'dd/mm/yyyy' từ index (Timestamp) của cây nến cuối cùng.
-    Không bao giờ dùng datetime.now() — đảm bảo đúng kể cả ngoài giờ giao dịch.
-    """
+    """Trả về chuỗi 'dd/mm/yyyy' từ index (Timestamp) của cây nến cuối cùng."""
     last_ts = pd.Timestamp(df.index[-1])
     if last_ts.tzinfo is None:
         last_ts = last_ts.tz_localize('Asia/Ho_Chi_Minh')
@@ -826,13 +799,10 @@ def detect_signal(df, now_time):
 
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
-# Tham số date_str: nếu None thì tự lấy từ index cây nến cuối của df_plot
-# → KHÔNG BAO GIỜ dùng datetime.now() trong hàm này
 # =============================================================================
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None):
     is_daily  = (timeframe == 'Daily')
 
-    # ── Lấy date_str từ index cây nến cuối — không phụ thuộc giờ hệ thống ──
     if date_str is None:
         date_str = _date_str_from_df(df_plot)
 
@@ -934,8 +904,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if df_hist is None or len(df_hist) < 60: continue
 
             today_bar = fetch_today_bar(symbol, current_date)
-            # fetch_today_bar đã lọc đầy đủ (close=0, volume=0, clone phiên trước...)
-            # → None nghĩa là chưa có dữ liệu hợp lệ, bỏ qua mã này
             if today_bar is None: continue
 
             df_merged   = merge_today_bar(df_hist, today_bar, current_date)
@@ -953,7 +921,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
 
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
-            # date_str từ index cây nến cuối
             date_str     = _date_str_from_df(df_calc)
             pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
             change       = today['close'] - df_calc['close'].iloc[-2]
@@ -1026,7 +993,6 @@ def _filter_symbols(raw_list: list):
 
 # =============================================================================
 # BƯỚC 8C: HÀM GỬI CHART ON-DEMAND
-# date_str lấy từ index cây nến cuối của df_calc — không dùng datetime.now()
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
@@ -1039,8 +1005,6 @@ def fetch_and_send_chart(symbol, chat_id):
 
         if df_hist is not None and len(df_hist) >= 60:
             today_bar = fetch_today_bar(symbol, current_date)
-            # fetch_today_bar đã lọc đầy đủ → None = chưa có / dữ liệu rác
-            # → vẽ bằng lịch sử thuần, cây nến cuối = ngày giao dịch trước
             if today_bar is not None:
                 df_raw = merge_today_bar(df_hist, today_bar, current_date)
             else:
@@ -1065,8 +1029,6 @@ def fetch_and_send_chart(symbol, chat_id):
         today       = df_calc.iloc[-1]
         now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
         signal_type = detect_signal(df_raw, now_time) or "ON-DEMAND"
-
-        # ── date_str từ index cây nến cuối — không phụ thuộc giờ hệ thống ──
         date_str     = _date_str_from_df(df_calc)
 
         pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
