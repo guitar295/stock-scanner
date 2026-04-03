@@ -256,13 +256,60 @@ def _hmap_col_height(groups):
 # ✅ SỬA: fetch_heatmap_data trả về (dict, data_time)
 #    data_time lấy từ cột thời gian trong dữ liệu API, không dùng datetime.now()
 # =============================================================================
+def _parse_heatmap_timestamp(df) -> str:
+    """
+    Trích xuất timestamp từ price_board DataFrame của KBS.
+    KBS trả về tên cột dạng 'time1768552349519' — Unix milliseconds nằm trong TÊN CỘT.
+    Cần duyệt tên cột, tìm cột có dạng 'time' + <13 chữ số>, parse phần số đó.
+    Trả về chuỗi "DD/MM/YYYY" theo TZ_VN, hoặc "" nếu không parse được.
+    """
+    import re as _re
+    if df is None or df.empty:
+        return ""
+
+    # ── Ưu tiên: tên cột khớp pattern 'time' + đúng 13 chữ số (Unix ms) ──────
+    # VD: cột tên = 'time1768552349519'
+    for col in df.columns:
+        col_str = str(col)
+        m = _re.fullmatch(r'time(\d{13})', col_str, _re.IGNORECASE)
+        if m:
+            ms = int(m.group(1))
+            try:
+                dt_utc = datetime.utcfromtimestamp(ms / 1000).replace(tzinfo=pytz.utc)
+                dt_vn  = dt_utc.astimezone(TZ_VN)
+                ts_str = dt_vn.strftime("%d/%m/%Y")
+                print(f"    🕐 Heatmap timestamp từ tên cột '{col_str}': {ts_str}")
+                return ts_str
+            except Exception:
+                pass
+
+    # ── Fallback: cột có giá trị là Unix ms (13 chữ số) ─────────────────────
+    for col in df.columns:
+        raw_val = df[col].dropna()
+        if raw_val.empty:
+            continue
+        val = raw_val.iloc[0]
+        try:
+            ms = int(float(val))
+            if 1_000_000_000_000 <= ms <= 9_999_999_999_999:   # đúng 13 chữ số Unix ms
+                dt_utc = datetime.utcfromtimestamp(ms / 1000).replace(tzinfo=pytz.utc)
+                dt_vn  = dt_utc.astimezone(TZ_VN)
+                ts_str = dt_vn.strftime("%d/%m/%Y")
+                print(f"    🕐 Heatmap timestamp từ giá trị cột '{col}': {ts_str}")
+                return ts_str
+        except (ValueError, TypeError, OSError):
+            pass
+
+    return ""
+
+
 def fetch_heatmap_data() -> tuple:
     """
     Lấy bảng giá cho heatmap.
     Trả về: (data_dict, data_time_str)
-      - data_dict   : {symbol: {"price": float, "pct": float}}
+      - data_dict    : {symbol: {"price": float, "pct": float}}
       - data_time_str: timestamp lấy từ dữ liệu thực tế (format "HH:MM  DD/MM/YYYY")
-                       fallback về datetime.now() nếu API không có cột thời gian
+                       fallback về datetime.now() nếu không parse được
     """
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
@@ -270,24 +317,15 @@ def fetch_heatmap_data() -> tuple:
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts}] 🗺  Heatmap: tải {len(need)} mã...")
     result    = {}
-    data_time = ""   # timestamp từ dữ liệu thực tế
+    data_time = ""
     try:
         df = engine.price_board(need)
         if df is not None and not df.empty:
-            # ── Lấy timestamp từ cột thời gian của bảng giá ──────────────
-            time_col = next(
-                (c for c in df.columns if 'time' in c.lower() or 'date' in c.lower()),
-                None
-            )
-            if time_col:
-                raw_t = pd.to_datetime(df[time_col].dropna().iloc[-1], errors='coerce')
-                if pd.notna(raw_t):
-                    raw_t_vn = (
-                        raw_t.tz_localize('Asia/Ho_Chi_Minh')
-                        if raw_t.tzinfo is None
-                        else raw_t.astimezone(TZ_VN)
-                    )
-                    data_time = raw_t_vn.strftime("%H:%M  %d/%m/%Y")
+            # In tên cột để debug nếu cần
+            print(f"    📋 Columns: {list(df.columns)}")
+
+            # ── Parse timestamp từ dữ liệu ───────────────────────────────
+            data_time = _parse_heatmap_timestamp(df)
 
             # ── Parse từng dòng ──────────────────────────────────────────
             for _, row in df.iterrows():
@@ -300,9 +338,10 @@ def fetch_heatmap_data() -> tuple:
     except Exception as e:
         print(f"  [{ts}] ❌ Heatmap API lỗi: {e}")
 
-    # ── Fallback: API không có cột thời gian → dùng datetime.now() ───────
+    # ── Fallback: không parse được → dùng datetime.now() ─────────────────
     if not data_time:
         data_time = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
+        print(f"    🕐 Heatmap timestamp fallback (now): {data_time}")
 
     return result, data_time
 
@@ -744,7 +783,8 @@ def detect_signal(df, now_time):
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True):
     is_daily  = (timeframe == 'Daily')
 
-    # ✅ Lấy ngày từ dòng cuối của df_plot — đúng với dữ liệu thực tế
+    # ✅ Lấy ngày từ index cuối của df_plot (ngày của dữ liệu thực tế)
+    # Caller phải đảm bảo df_plot.index[-1] là ngày đúng với dữ liệu
     last_date = pd.Timestamp(df_plot.index[-1])
     date_str  = last_date.strftime('%d/%m/%Y')
 
@@ -965,9 +1005,18 @@ def fetch_and_send_chart(symbol, chat_id):
         now_time     = int(datetime.now(TZ_VN).strftime("%H%M%S"))
         signal_type  = detect_signal(df_raw, now_time) or "ON-DEMAND"
 
-        # ✅ date_str lấy từ index cuối của df_calc, không dùng datetime.now()
-        last_date = pd.Timestamp(df_calc.index[-1])
-        date_str  = last_date.strftime('%d/%m/%Y')
+        # ✅ Lấy date_str từ dữ liệu thực tế, không dùng current_date:
+        #    - Có today_bar → dùng today_bar.name (index thực từ API)
+        #    - Không có today_bar → dùng index cuối của df_hist (ngày GD cuối cùng có dữ liệu)
+        #    Tránh dùng df_calc.index[-1] vì merge_today_bar gán pd.Timestamp(current_date)
+        #    là ngày hôm nay, sẽ sai khi dữ liệu chưa cập nhật
+        if today_bar is not None:
+            data_date = pd.Timestamp(today_bar.name)
+        elif df_hist is not None and len(df_hist) > 0:
+            data_date = pd.Timestamp(df_hist.index[-1])
+        else:
+            data_date = pd.Timestamp(df_calc.index[-1])
+        date_str = data_date.strftime('%d/%m/%Y')
 
         pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
         change       = today['close'] - df_calc['close'].iloc[-2]
@@ -992,7 +1041,14 @@ def fetch_and_send_chart(symbol, chat_id):
             f"<a href='{link_24h_money}'>📄</a>"
         )
 
-        df_plot_d  = df_calc.tail(250).copy()
+        # ✅ Sửa index cuối của df_plot_d về data_date đúng (ngày dữ liệu thực tế)
+        #    tránh trường hợp merge_today_bar gán current_date làm index
+        #    khiến chart title hiển thị ngày hôm nay thay vì ngày của dữ liệu
+        df_plot_d = df_calc.tail(250).copy()
+        if df_plot_d.index[-1] != data_date:
+            new_index = df_plot_d.index[:-1].tolist() + [data_date]
+            df_plot_d.index = pd.DatetimeIndex(new_index)
+
         img_daily  = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=False)
         df_weekly  = build_weekly_df(df_raw)
         df_plot_w  = df_weekly.tail(200).copy()
