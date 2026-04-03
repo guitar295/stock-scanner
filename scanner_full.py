@@ -657,7 +657,7 @@ def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='200', interval='15')
+            df_raw = quote.history(length='200', interval='15m')
             if df_raw is None or df_raw.empty: return None
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
