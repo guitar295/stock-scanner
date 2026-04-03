@@ -19,6 +19,13 @@ LỆNH TELEGRAM HỖ TRỢ:
   /h            → heatmap thị trường
   /heatmap      → heatmap thị trường
   /help         → trợ giúp
+
+SỬA ĐỔI:
+  - draw_chart: date_str lấy từ index cây nến cuối của df_plot (không dùng datetime.now)
+  - fetch_and_send_chart: date_str lấy từ index cây nến cuối của df_calc
+  - fetch_heatmap_data: timestamp lấy từ trường 'time' (Unix ms) của price_board,
+    fallback về datetime.now() nếu không có
+  - handle_heatmap_command: nhận (data, ts_str) tuple từ fetch_heatmap_data
 =============================================================================
 """
 
@@ -249,26 +256,77 @@ def _hmap_col_height(groups):
         h += (1 + len(g["symbols"])) * HMAP_CELL_H
     return h + HMAP_MARGIN
 
-def fetch_heatmap_data() -> dict:
-    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiết kế dựa trên data output của KBS)."""
+# =============================================================================
+# HEATMAP: fetch + build — TIMESTAMP LẤY TỪ DATA (price_board trả về Unix ms)
+# =============================================================================
+def fetch_heatmap_data() -> tuple:
+    """Lấy bảng giá cho heatmap.
+    Trả về tuple (data_dict, timestamp_str).
+    timestamp_str lấy từ trường 'time' của price_board (Unix ms).
+    Nếu không có hoặc lỗi thì fallback về datetime.now(TZ_VN).
+    """
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
                   | set(TRADING_STOCKS_POOL))
-    ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] 🗺  Heatmap: tải {len(need)} mã...")
-    result = {}
+    ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
+    print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã...")
+    result    = {}
+    data_time = None   # sẽ lấy từ trường time của price_board
     try:
         df = engine.price_board(need)
         if df is not None and not df.empty:
+            # ── Xác định cột thời gian ───────────────────────────────────
+            # price_board của KBS thường trả về cột tên 'time' dạng Unix ms
+            # Thử lần lượt các tên cột phổ biến
+            time_col = next(
+                (c for c in df.columns
+                 if c.lower() in ('time', 'trading_date', 'date', 'timestamp', 'last_time')),
+                None
+            )
+            if time_col:
+                raw_times = df[time_col].dropna()
+                if not raw_times.empty:
+                    val = raw_times.iloc[-1]
+                    try:
+                        if isinstance(val, (int, float)) and val > 1_000_000_000_000:
+                            # Unix milliseconds (e.g. 1768552349519)
+                            data_time = datetime.fromtimestamp(val / 1000, tz=TZ_VN)
+                        elif isinstance(val, (int, float)) and val > 1_000_000_000:
+                            # Unix seconds
+                            data_time = datetime.fromtimestamp(val, tz=TZ_VN)
+                        else:
+                            data_time = pd.Timestamp(val)
+                            if data_time.tzinfo is None:
+                                data_time = data_time.tz_localize('Asia/Ho_Chi_Minh')
+                            data_time = data_time.to_pydatetime()
+                    except Exception as te:
+                        print(f"  [{ts_log}] ⚠️  Heatmap: không parse được time '{val}': {te}")
+                        data_time = None
+
+            # ── Đọc giá và % thay đổi ───────────────────────────────────
             for _, row in df.iterrows():
                 sym   = str(row.get("symbol", "")).strip()
+                if not sym: continue
                 close = float(row.get("close_price", 0) or 0) / 1000
                 ref_p = float(row.get("reference_price", 0) or 0) / 1000
+                # Nếu close_price = 0 (ngày mới chưa có dữ liệu) → dùng reference_price
+                # để heatmap vẫn hiển thị giá đúng và % = 0 thay vì giá 0 gây lỗi
+                if close <= 0 and ref_p > 0:
+                    close = ref_p
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
                 result[sym] = {"price": close, "pct": pct}
+
     except Exception as e:
-        print(f"  [{ts}] ❌ Heatmap API lỗi: {e}")
-    return result
+        print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
+
+    # Fallback: nếu không lấy được time từ data thì dùng datetime.now()
+    if data_time is None:
+        data_time = datetime.now(TZ_VN)
+        print(f"  [{ts_log}] ⚠️  Heatmap: dùng fallback timestamp = now()")
+
+    ts_str = data_time.strftime("%H:%M  %d/%m/%Y")
+    return result, ts_str
+
 
 def build_heatmap_image(data: dict, timestamp: str) -> str:
     """Vẽ heatmap PIL và trả về đường dẫn ảnh tạm."""
@@ -323,9 +381,10 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
     fd, path = tempfile.mkstemp(suffix='_heatmap.png')
     os.close(fd)
     img.save(path, "PNG", optimize=True)
-    ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] 🗺  Heatmap: ảnh {IMG_W}x{IMG_H}px → {path}")
+    ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
+    print(f"  [{ts_log}] 🗺  Heatmap: ảnh {IMG_W}x{IMG_H}px → {path}")
     return path
+
 
 def handle_heatmap_command(chat_id):
     """Xử lý lệnh /h hoặc /heatmap — chạy trong thread riêng."""
@@ -338,13 +397,18 @@ def handle_heatmap_command(chat_id):
             "chat_id": chat_id,
             "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 15–30 giây..."
         })
-        data = fetch_heatmap_data()
+
+        # ── fetch_heatmap_data trả về (data_dict, ts_str) ──────────────
+        data, ts_str = fetch_heatmap_data()
+
         if not data:
             requests.post(url_msg, data={"chat_id": chat_id,
                                          "text": "❌ Không lấy được dữ liệu heatmap. Thử lại sau."})
             return
-        ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
-        path   = build_heatmap_image(data, ts_str)
+
+        # ts_str đã là thời gian theo data (hoặc fallback now())
+        path = build_heatmap_image(data, ts_str)
+
         with open(path, "rb") as f:
             r = requests.post(url_photo, data={
                 "chat_id":    chat_id,
@@ -352,11 +416,11 @@ def handle_heatmap_command(chat_id):
                 "parse_mode": "HTML",
             }, files={"photo": f}, timeout=60)
         if os.path.exists(path): os.remove(path)
-        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [{ts}] 🗺  Heatmap gửi {'OK' if r.status_code == 200 else 'THẤT BẠI'} → chat_id={chat_id}")
+        ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [{ts_log}] 🗺  Heatmap gửi {'OK' if r.status_code == 200 else 'THẤT BẠI'} → chat_id={chat_id}")
     except Exception as e:
-        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [{ts}] ❌ handle_heatmap_command lỗi: {e}")
+        ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [{ts_log}] ❌ handle_heatmap_command lỗi: {e}")
         requests.post(url_msg, data={"chat_id": chat_id, "text": f"❌ Lỗi heatmap: {e}"})
 
 # =============================================================================
@@ -541,6 +605,18 @@ def merge_today_bar(df_hist, today_bar, current_date: date):
     return pd.concat([df_hist, new_row])
 
 # =============================================================================
+# BƯỚC 5C: HÀM TIỆN ÍCH — LẤY DATE_STR TỪ INDEX CÂY NẾN CUỐI
+# =============================================================================
+def _date_str_from_df(df: pd.DataFrame) -> str:
+    """Trả về chuỗi 'dd/mm/yyyy' từ index (Timestamp) của cây nến cuối cùng.
+    Không bao giờ dùng datetime.now() — đảm bảo đúng kể cả ngoài giờ giao dịch.
+    """
+    last_ts = pd.Timestamp(df.index[-1])
+    if last_ts.tzinfo is None:
+        last_ts = last_ts.tz_localize('Asia/Ho_Chi_Minh')
+    return last_ts.strftime('%d/%m/%Y')
+
+# =============================================================================
 # BƯỚC 6: CÁC HÀM ĐIỀU KIỆN TÍN HIỆU
 # =============================================================================
 def calc_pocket_pivot_vol(df):
@@ -692,10 +768,16 @@ def detect_signal(df, now_time):
 
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
+# Tham số date_str: nếu None thì tự lấy từ index cây nến cuối của df_plot
+# → KHÔNG BAO GIỜ dùng datetime.now() trong hàm này
 # =============================================================================
-def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True):
+def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None):
     is_daily  = (timeframe == 'Daily')
-    date_str  = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+
+    # ── Lấy date_str từ index cây nến cuối — không phụ thuộc giờ hệ thống ──
+    if date_str is None:
+        date_str = _date_str_from_df(df_plot)
+
     prev_close = df_plot['close'].iloc[-2]
     pct        = (today['close'] - prev_close) / prev_close * 100
 
@@ -785,7 +867,6 @@ SIGNAL_EMOJI = {'BREAKOUT':'🟢', 'POCKET PIVOT':'🟡', 'PRE-BREAK':'🟣'}
 def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
     new_signals  = []
     current_date = datetime.now(TZ_VN).date()
-    date_str     = datetime.now(TZ_VN).strftime('%d/%m/%Y')
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=1)...")
 
@@ -813,6 +894,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
 
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
+            # date_str từ index cây nến cuối
+            date_str     = _date_str_from_df(df_calc)
             pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
             change       = today['close'] - df_calc['close'].iloc[-2]
             emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
@@ -838,11 +921,14 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             )
 
             df_plot_d  = df_calc.tail(250).copy()
-            img_daily  = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=True)
+            img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
+                                    timeframe='Daily', add_arrow=True, date_str=date_str)
             df_weekly  = build_weekly_df(df_merged)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
-            img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
+            date_str_w = _date_str_from_df(df_plot_w)
+            img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
+                                    timeframe='Weekly', add_arrow=False, date_str=date_str_w)
 
             notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
             send_telegram_signal(msg, image_paths=[img_daily, img_weekly], notify_text=notify_text)
@@ -881,6 +967,7 @@ def _filter_symbols(raw_list: list):
 
 # =============================================================================
 # BƯỚC 8C: HÀM GỬI CHART ON-DEMAND
+# date_str lấy từ index cây nến cuối của df_calc — không dùng datetime.now()
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
@@ -893,7 +980,21 @@ def fetch_and_send_chart(symbol, chat_id):
 
         if df_hist is not None and len(df_hist) >= 60:
             today_bar = fetch_today_bar(symbol, current_date)
-            df_raw    = merge_today_bar(df_hist, today_bar, current_date) if today_bar is not None else df_hist.copy()
+            # Validate today_bar: chỉ merge khi close > 0 VÀ volume > 0
+            # Nếu rác hoặc chưa có dữ liệu → vẽ lịch sử thuần, cây nến cuối = ngày GD trước
+            today_bar_valid = (
+                today_bar is not None
+                and not pd.isna(today_bar['close'])
+                and float(today_bar['close']) > 0
+                and not pd.isna(today_bar['volume'])
+                and float(today_bar['volume']) > 0
+            )
+            if today_bar_valid:
+                df_raw = merge_today_bar(df_hist, today_bar, current_date)
+            else:
+                df_raw = df_hist.copy()
+                ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
+                print(f"  [{ts_log}] ⚠️  {symbol}: today_bar rác/chưa có → dùng lịch sử thuần")
         else:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
             df_raw = quote.history(length='1000', interval='1D')
@@ -908,11 +1009,14 @@ def fetch_and_send_chart(symbol, chat_id):
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
 
-        df_calc      = compute_indicators(df_raw)
-        today        = df_calc.iloc[-1]
-        now_time     = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-        signal_type  = detect_signal(df_raw, now_time) or "ON-DEMAND"
-        date_str     = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+        df_calc     = compute_indicators(df_raw)
+        today       = df_calc.iloc[-1]
+        now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
+        signal_type = detect_signal(df_raw, now_time) or "ON-DEMAND"
+
+        # ── date_str từ index cây nến cuối — không phụ thuộc giờ hệ thống ──
+        date_str     = _date_str_from_df(df_calc)
+
         pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
         change       = today['close'] - df_calc['close'].iloc[-2]
         vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
@@ -937,11 +1041,14 @@ def fetch_and_send_chart(symbol, chat_id):
         )
 
         df_plot_d  = df_calc.tail(250).copy()
-        img_daily  = draw_chart(df_plot_d, symbol, signal_type, today, timeframe='Daily', add_arrow=False)
+        img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
+                                timeframe='Daily', add_arrow=False, date_str=date_str)
         df_weekly  = build_weekly_df(df_raw)
         df_plot_w  = df_weekly.tail(200).copy()
         today_w    = df_plot_w.iloc[-1]
-        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, timeframe='Weekly', add_arrow=False)
+        date_str_w = _date_str_from_df(df_plot_w)
+        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
+                                timeframe='Weekly', add_arrow=False, date_str=date_str_w)
 
         print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi chart")
         _send_chart_to_chat(msg, [img_daily, img_weekly], chat_id)
