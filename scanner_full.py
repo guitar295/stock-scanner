@@ -940,7 +940,7 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
         mpf.make_addplot(df_plot['MACD'],        panel=2, color='blue',   width=0.6, secondary_y=False),
         mpf.make_addplot(df_plot['MACD_Signal'], panel=2, color='orange', width=0.6, secondary_y=False),
     ]
-    if is_daily or is_15m or is_weekly:
+    if is_daily or is_15m:
         apds.append(mpf.make_addplot(df_plot['MA200'], color='brown', width=0.6))
 
     mc           = mpf.make_marketcolors(up='#26A69A',down='#EF5350',edge='inherit',wick='inherit',alpha=1.0)
