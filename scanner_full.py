@@ -19,6 +19,11 @@ LỆNH TELEGRAM HỖ TRỢ:
   /h            → heatmap thị trường
   /heatmap      → heatmap thị trường
   /help         → trợ giúp
+
+SỬA ĐỔI:
+  - draw_chart    : date_str lấy từ df_plot.index[-1] thay vì datetime.now()
+  - fetch_heatmap_data : trả về (dict, data_time) — timestamp từ dữ liệu thực tế
+  - handle_heatmap_command : dùng data_time từ dữ liệu thay vì datetime.now()
 =============================================================================
 """
 
@@ -175,9 +180,9 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
 def _hmap_load_fonts():
     """
     f_title  : bold 13  — tiêu đề thanh trên
-    f_hdr    : bold 10  — tên ngành (BOLD theo yêu cầu)
-    f_sym    : bold 10  — mã cổ phiếu (BOLD theo yêu cầu)
-    f_data   : regular 9 — giá và %giá (regular, giữ nguyên code gốc)
+    f_hdr    : bold 10  — tên ngành (BOLD)
+    f_sym    : bold 10  — mã cổ phiếu (BOLD)
+    f_data   : regular 9 — giá và %giá (regular)
     f_sector : bold 11  — % trung bình ngành
     """
     bold_paths = [
@@ -193,18 +198,17 @@ def _hmap_load_fonts():
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
     try:
-        f_title  = ImageFont.truetype(bold, 13)       # tiêu đề
-        f_hdr    = ImageFont.truetype(bold, 10)       # tên ngành — BOLD
-        f_sym    = ImageFont.truetype(bold, 10)       # mã cổ phiếu — BOLD
-        f_data   = ImageFont.truetype(reg or bold, 9) # giá, % — regular
-        f_sector = ImageFont.truetype(bold, 11)       # % ngành — bold
+        f_title  = ImageFont.truetype(bold, 13)
+        f_hdr    = ImageFont.truetype(bold, 10)
+        f_sym    = ImageFont.truetype(bold, 10)
+        f_data   = ImageFont.truetype(reg or bold, 9)
+        f_sector = ImageFont.truetype(bold, 11)
         return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
         return d, d, d, d, d
 
 def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
-    """Mã cổ phiếu: BOLD (f_sym) | Giá: regular 2 số TP (f_data) | %: regular (f_data)"""
     bg = _hmap_cell_color(pct)
     fg = _hmap_fg(bg)
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
@@ -218,12 +222,11 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
         bb = draw.textbbox((0, 0), txt, font=fnt)
         draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
 
-    dc(sym,                                                    f_sym,  x,       w1)  # BOLD
-    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)  # regular, 2 TP
-    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)  # regular
+    dc(sym,                                                    f_sym,  x,       w1)
+    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)
+    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
-    """Tên ngành: BOLD (f_hdr) | % TB ngành: bold màu (f_sector)"""
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
     _hmap_rounded_rect(draw, x, y, x1, y1, HMAP_RADIUS,
                        fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
@@ -235,7 +238,7 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
         bb = draw.textbbox((0, 0), txt, font=fnt)
         draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=color)
 
-    dc(name, f_hdr, x, w1, HMAP_HDR_FG)  # tên ngành — BOLD
+    dc(name, f_hdr, x, w1, HMAP_HDR_FG)
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
     dc(f"{avg_pct:+.2f}%", f_sector, x + w1, w2, fg_s)
 
@@ -249,26 +252,60 @@ def _hmap_col_height(groups):
         h += (1 + len(g["symbols"])) * HMAP_CELL_H
     return h + HMAP_MARGIN
 
-def fetch_heatmap_data() -> dict:
-    """Lấy bảng giá cho heatmap — dùng chung DATA_SOURCE (heatmap thiết kế dựa trên data output của KBS)."""
+# =============================================================================
+# ✅ SỬA: fetch_heatmap_data trả về (dict, data_time)
+#    data_time lấy từ cột thời gian trong dữ liệu API, không dùng datetime.now()
+# =============================================================================
+def fetch_heatmap_data() -> tuple:
+    """
+    Lấy bảng giá cho heatmap.
+    Trả về: (data_dict, data_time_str)
+      - data_dict   : {symbol: {"price": float, "pct": float}}
+      - data_time_str: timestamp lấy từ dữ liệu thực tế (format "HH:MM  DD/MM/YYYY")
+                       fallback về datetime.now() nếu API không có cột thời gian
+    """
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
                   | set(TRADING_STOCKS_POOL))
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts}] 🗺  Heatmap: tải {len(need)} mã...")
-    result = {}
+    result    = {}
+    data_time = ""   # timestamp từ dữ liệu thực tế
     try:
         df = engine.price_board(need)
         if df is not None and not df.empty:
+            # ── Lấy timestamp từ cột thời gian của bảng giá ──────────────
+            time_col = next(
+                (c for c in df.columns if 'time' in c.lower() or 'date' in c.lower()),
+                None
+            )
+            if time_col:
+                raw_t = pd.to_datetime(df[time_col].dropna().iloc[-1], errors='coerce')
+                if pd.notna(raw_t):
+                    raw_t_vn = (
+                        raw_t.tz_localize('Asia/Ho_Chi_Minh')
+                        if raw_t.tzinfo is None
+                        else raw_t.astimezone(TZ_VN)
+                    )
+                    data_time = raw_t_vn.strftime("%H:%M  %d/%m/%Y")
+
+            # ── Parse từng dòng ──────────────────────────────────────────
             for _, row in df.iterrows():
                 sym   = str(row.get("symbol", "")).strip()
                 close = float(row.get("close_price", 0) or 0) / 1000
                 ref_p = float(row.get("reference_price", 0) or 0) / 1000
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
                 result[sym] = {"price": close, "pct": pct}
+
     except Exception as e:
         print(f"  [{ts}] ❌ Heatmap API lỗi: {e}")
-    return result
+
+    # ── Fallback: API không có cột thời gian → dùng datetime.now() ───────
+    if not data_time:
+        data_time = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
+
+    return result, data_time
+
 
 def build_heatmap_image(data: dict, timestamp: str) -> str:
     """Vẽ heatmap PIL và trả về đường dẫn ảnh tạm."""
@@ -327,6 +364,10 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
     print(f"  [{ts}] 🗺  Heatmap: ảnh {IMG_W}x{IMG_H}px → {path}")
     return path
 
+
+# =============================================================================
+# ✅ SỬA: handle_heatmap_command dùng data_time từ fetch_heatmap_data()
+# =============================================================================
 def handle_heatmap_command(chat_id):
     """Xử lý lệnh /h hoặc /heatmap — chạy trong thread riêng."""
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -338,17 +379,23 @@ def handle_heatmap_command(chat_id):
             "chat_id": chat_id,
             "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 15–30 giây..."
         })
-        data = fetch_heatmap_data()
+
+        # ✅ Nhận data_time từ dữ liệu thực tế, không dùng datetime.now()
+        data, data_time = fetch_heatmap_data()
+
         if not data:
             requests.post(url_msg, data={"chat_id": chat_id,
                                          "text": "❌ Không lấy được dữ liệu heatmap. Thử lại sau."})
             return
-        ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
-        path   = build_heatmap_image(data, ts_str)
+
+        # ✅ Truyền data_time (từ dữ liệu) vào build_heatmap_image
+        path = build_heatmap_image(data, data_time)
+
         with open(path, "rb") as f:
             r = requests.post(url_photo, data={
                 "chat_id":    chat_id,
-                "caption":    f"<b>MARKET MAP</b>  {ts_str}",
+                # ✅ Caption cũng dùng data_time từ dữ liệu
+                "caption":    f"<b>MARKET MAP</b>  {data_time}",
                 "parse_mode": "HTML",
             }, files={"photo": f}, timeout=60)
         if os.path.exists(path): os.remove(path)
@@ -692,10 +739,15 @@ def detect_signal(df, now_time):
 
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
+# ✅ SỬA: date_str lấy từ df_plot.index[-1] thay vì datetime.now(TZ_VN)
 # =============================================================================
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True):
     is_daily  = (timeframe == 'Daily')
-    date_str  = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+
+    # ✅ Lấy ngày từ dòng cuối của df_plot — đúng với dữ liệu thực tế
+    last_date = pd.Timestamp(df_plot.index[-1])
+    date_str  = last_date.strftime('%d/%m/%Y')
+
     prev_close = df_plot['close'].iloc[-2]
     pct        = (today['close'] - prev_close) / prev_close * 100
 
@@ -912,7 +964,11 @@ def fetch_and_send_chart(symbol, chat_id):
         today        = df_calc.iloc[-1]
         now_time     = int(datetime.now(TZ_VN).strftime("%H%M%S"))
         signal_type  = detect_signal(df_raw, now_time) or "ON-DEMAND"
-        date_str     = datetime.now(TZ_VN).strftime('%d/%m/%Y')
+
+        # ✅ date_str lấy từ index cuối của df_calc, không dùng datetime.now()
+        last_date = pd.Timestamp(df_calc.index[-1])
+        date_str  = last_date.strftime('%d/%m/%Y')
+
         pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
         change       = today['close'] - df_calc['close'].iloc[-2]
         vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
