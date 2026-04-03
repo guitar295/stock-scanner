@@ -1244,10 +1244,7 @@ def fetch_and_send_chart(symbol, chat_id):
                     'parse_mode': 'HTML'
                 })
                 return
-            # Thêm nến hôm nay nếu có
-            today_bar = fetch_today_bar(symbol, current_date)
-            if today_bar is not None:
-                df_raw = merge_today_bar(df_raw, today_bar, current_date)
+           
         else:
             # Cổ phiếu thường: ưu tiên cache
             with cache_lock: df_hist = history_cache.get(symbol)
