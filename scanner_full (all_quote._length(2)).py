@@ -1386,9 +1386,9 @@ def telegram_listener(stop_event: threading.Event):
     while not stop_event.is_set():
         try:
             resp = requests.get(url_upd, params={
-                'offset': offset, 'timeout': 30, 'allowed_updates': ['message'],
+                'offset': offset, 'timeout': 30, 'allowed_updates': ['message', 'callback_query'],
             }, timeout=35)
-
+          
             if stop_event.is_set(): break
 
             if resp.status_code == 409:
@@ -1413,26 +1413,59 @@ def telegram_listener(stop_event: threading.Event):
                 processed_ids[update_id] = time.time()
                 print(f"  📨 Xử lý update_id={update_id} | offset mới={offset}")
 
+                # ── Xử lý callback_query (nhấn nút)
+                callback = update.get('callback_query', {})
+                if callback:
+                    cb_id      = callback.get('id')
+                    cb_data    = callback.get('data', '')
+                    cb_chat_id = callback.get('message', {}).get('chat', {}).get('id')
+                    requests.post(
+                        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
+                        data={'callback_query_id': cb_id}
+                    )
+                    if str(cb_chat_id) in ALLOWED_CHATS and cb_data.startswith('chart_'):
+                        sym = cb_data.replace('chart_', '').upper()
+                        print(f"  📥 Callback chart {sym} → chat_id={cb_chat_id}")
+                        threading.Thread(
+                            target=fetch_and_send_chart,
+                            args=(sym, cb_chat_id),
+                            daemon=True
+                        ).start()
+                    continue  
+                
+                # ── Xử lý message thông thường
                 msg_obj = update.get('message', {})
                 text    = msg_obj.get('text', '').strip()
                 chat_id = msg_obj.get('chat', {}).get('id')
                 if not text or not chat_id: continue
+              
                 if str(chat_id) not in ALLOWED_CHATS:
                     print(f"  🚫 chat_id {chat_id} không được phép"); continue
 
                 text_lower = text.lower().strip()
 
-                # ── /s — tín hiệu hôm nay ────────────────────────────────
+               # ── /s — tín hiệu hôm nay ────────────────────────────────
                 if text_lower == '/s' or text_lower.startswith('/s '):
                     if alerted_today:
-                        lines = [f"{SIGNAL_EMOJI.get(v,'📌')} #{k}: {v}"
-                                 for k,v in alerted_today.items()]
-                        reply = "📋 <b>Tín hiệu hôm nay:</b>\n" + "\n".join(lines)
+                        buttons = []
+                        for k, v in alerted_today.items():
+                            emoji = SIGNAL_EMOJI.get(v, '📌')
+                            buttons.append([
+                                {"text": f"{emoji} #{k}: {v}", "callback_data": f"chart_{k}"},
+                            ])
+                        reply = "📋 <b>Tín hiệu hôm nay:</b>"
                     else:
-                        reply = "📋 Chưa có tín hiệu nào hôm nay."
-                    requests.post(url_msg, data={
-                        'chat_id': chat_id, 'text': reply, 'parse_mode': 'HTML'
-                    })
+                        reply   = "📋 Chưa có tín hiệu nào hôm nay."
+                        buttons = []
+                
+                    payload = {
+                        'chat_id':    chat_id,
+                        'text':       reply,
+                        'parse_mode': 'HTML',
+                    }
+                    if buttons:
+                        payload['reply_markup'] = json.dumps({"inline_keyboard": buttons})
+                    requests.post(url_msg, data=payload)
 
                 # ── /h hoặc /heatmap — market heatmap ────────────────────
                 elif text_lower in ('/h', '/heatmap'):
