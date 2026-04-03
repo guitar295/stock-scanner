@@ -1470,8 +1470,8 @@ def telegram_listener(stop_event: threading.Event):
                         payload['reply_markup'] = json.dumps({"inline_keyboard": buttons})
                     requests.post(url_msg, data=payload)
 
-                # ── /h hoặc /heatmap ──────────────────────────────────────
-                elif text_lower in ('/h', '/heatmap'):
+                # ── /h hoặc /heatmap hoặc / h ────────────────────────────────
+                elif text_lower in ('/h', '/heatmap', '/ h', '/ heatmap'):
                     print(f"  🗺  Lệnh heatmap từ chat_id={chat_id} ({reason})")
                     threading.Thread(
                         target=handle_heatmap_command,
