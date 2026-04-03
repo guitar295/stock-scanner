@@ -1462,7 +1462,7 @@ def telegram_listener(stop_event: threading.Event):
                             "/help  — Trợ giúp\n\n"
                             "<b>Tín hiệu hỗ trợ:</b>\n"
                             "🟢 BREAKOUT  🟡 POCKET PIVOT  🟣 PRE-BREAK\n"
-                            "🟠 BOTTOMBREAKP  🔵 BOTTOMFISH  ⚪ MA_CROSS"
+                            "🔵 BOTTOMBREAKP  🟠 BOTTOMFISH  ⚪ MA_CROSS"
                         )
                     })
 
