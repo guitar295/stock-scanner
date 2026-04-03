@@ -1448,18 +1448,12 @@ def telegram_listener(stop_event: threading.Event):
                 if text_lower == '/s' or text_lower.startswith('/s '):
                     if alerted_today:
                         buttons = []
-                        # Tìm độ dài chuỗi dài nhất
-                        max_len = max(len(f"#{k}: {v}") for k, v in alerted_today.items())
-                    
                         for k, v in alerted_today.items():
-                            emoji   = SIGNAL_EMOJI.get(v, '📌')
-                            content = f"#{k}: {v}"
-                            padding = "\u00A0" * (max_len - len(content)) * 3  # \u00A0 = non-breaking space
+                            emoji = SIGNAL_EMOJI.get(v, '📌')
                             buttons.append([
-                                {"text": f"{emoji} {content}{padding}", "callback_data": f"chart_{k}"},
+                                {"text": f"{emoji} #{k}: {v}", "callback_data": f"chart_{k}"},
                             ])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
-                    
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
                         buttons = []
@@ -1587,7 +1581,7 @@ while True:
         build_history_cache(symbols_to_scan, current_date)
 
     is_morning   = 85000 <= now_time <= 113000
-    is_afternoon = 130000 <= now_time <= 150000
+    is_afternoon = 130000 <= now_time <= 160000
 
     if not (is_morning or is_afternoon):
         with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
