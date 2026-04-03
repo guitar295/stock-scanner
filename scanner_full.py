@@ -1448,12 +1448,18 @@ def telegram_listener(stop_event: threading.Event):
                 if text_lower == '/s' or text_lower.startswith('/s '):
                     if alerted_today:
                         buttons = []
+                        # Tìm độ dài chuỗi dài nhất
+                        max_len = max(len(f"#{k}: {v}") for k, v in alerted_today.items())
+                    
                         for k, v in alerted_today.items():
-                            emoji = SIGNAL_EMOJI.get(v, '📌')
+                            emoji   = SIGNAL_EMOJI.get(v, '📌')
+                            content = f"#{k}: {v}"
+                            padding = "\u00A0" * (max_len - len(content)) * 3  # \u00A0 = non-breaking space
                             buttons.append([
-                                {"text": f"{emoji} #{k}: {v}", "callback_data": f"chart_{k}"},
+                                {"text": f"{emoji} {content}{padding}", "callback_data": f"chart_{k}"},
                             ])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
+                    
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
                         buttons = []
