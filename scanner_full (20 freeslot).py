@@ -6,10 +6,7 @@ Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoà
 + HEATMAP BOT (lệnh /h hoặc /heatmap)
 + CHỈ SỐ: VNINDEX, VN30 (lệnh /VNINDEX, /VN30, /c VNINDEX ...)
 + CHART 15 PHÚT: gửi kèm tín hiệu, on-demand, và khi nhấn nút /s
-
-KIẾN TRÚC 2 BƯỚC:
-  Bước 1: Load lịch sử 1 lần → cache vào dict  (trước giờ GD hoặc lúc khởi động)
-  Bước 2: Mỗi chu kỳ scan chỉ gọi Quote.history(length=2) → ghép vào cache → detect
++ PHÂN QUYỀN: VIP (toàn quyền) / Free (tối đa 20 slot đồng thời, TTL 30 phút)
 =============================================================================
 """
 
@@ -39,7 +36,7 @@ import math
 from PIL import Image, ImageDraw, ImageFont
 
 # =============================================================================
-# BƯỚC 2: CẤU HÌNH (dùng chung cho cả scanner và heatmap)
+# BƯỚC 2: CẤU HÌNH
 # =============================================================================
 VNSTOCK_API         = os.environ.get('VNSTOCK_API')
 TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -50,12 +47,68 @@ DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
-ALLOWED_CHATS = {str(TELEGRAM_CHAT_ID), str(MY_PERSONAL_CHAT_ID), '1207484510'}
-
 register_user(VNSTOCK_API)
 
 # =============================================================================
-# BƯỚC 2A: DANH SÁCH CHỈ SỐ HỖ TRỢ
+# BƯỚC 2A: PHÂN QUYỀN VIP / FREE SLOT
+# =============================================================================
+# VIP: toàn quyền, không giới hạn, /s xem được tín hiệu
+VIP_CHAT_IDS = {
+    str(TELEGRAM_CHAT_ID),
+    str(MY_PERSONAL_CHAT_ID),
+    '1207484510',
+}
+
+# Free slot: tối đa 20 người cùng lúc, TTL 30 phút không nhắn → hết slot
+FREE_CHAT_LIMIT = 20
+SESSION_TTL     = 1800   # 30 phút (giây)
+free_sessions: dict = {}  # {chat_id: last_seen (time.time())}
+free_lock = threading.Lock()
+
+def is_vip(chat_id: str) -> bool:
+    """Kiểm tra có phải VIP không."""
+    return chat_id in VIP_CHAT_IDS
+
+def is_allowed(chat_id: str) -> tuple[bool, str]:
+    """
+    Kiểm tra chat_id có được phép tương tác không.
+    Trả về (allowed: bool, reason: str).
+
+    Logic:
+    - VIP → luôn được phép
+    - Free:
+        + Đã có session còn hạn → gia hạn TTL, cho phép
+        + Chưa có session + còn slot → tạo session mới, cho phép
+        + Chưa có session + hết slot → từ chối
+    """
+    if is_vip(chat_id):
+        return True, 'vip'
+
+    now = time.time()
+    with free_lock:
+        # Dọn session hết hạn (TTL)
+        expired = [k for k, v in free_sessions.items() if now - v > SESSION_TTL]
+        for k in expired:
+            del free_sessions[k]
+            print(f"  🔄 Free slot hết hạn: {k} → giải phóng ({len(free_sessions)}/{FREE_CHAT_LIMIT})")
+
+        # Đã có session còn hạn → gia hạn
+        if chat_id in free_sessions:
+            free_sessions[chat_id] = now
+            return True, 'free_existing'
+
+        # Chưa có → kiểm tra còn slot
+        if len(free_sessions) < FREE_CHAT_LIMIT:
+            free_sessions[chat_id] = now
+            print(f"  ✅ Free slot mới: {chat_id} ({len(free_sessions)}/{FREE_CHAT_LIMIT})")
+            return True, 'free_new'
+
+        # Hết slot
+        print(f"  🚫 Free slot đầy: {chat_id} bị từ chối ({FREE_CHAT_LIMIT}/{FREE_CHAT_LIMIT})")
+        return False, 'full'
+
+# =============================================================================
+# BƯỚC 2B: DANH SÁCH CHỈ SỐ HỖ TRỢ
 # =============================================================================
 INDEX_SYMBOL_MAP = {
     'VNINDEX':   'VNINDEX',
@@ -69,7 +122,7 @@ INDEX_SYMBOL_MAP = {
 INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 
 # =============================================================================
-# BƯỚC 2B: CẤU HÌNH HEATMAP
+# BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
 TRADING_STOCKS_POOL = [
     "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
@@ -367,16 +420,12 @@ def handle_heatmap_command(chat_id):
             "chat_id": chat_id,
             "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 15–30 giây..."
         })
-
         data, ts_str = fetch_heatmap_data()
-
         if not data:
             requests.post(url_msg, data={"chat_id": chat_id,
                                          "text": "❌ Không lấy được dữ liệu heatmap. Thử lại sau."})
             return
-
         path = build_heatmap_image(data, ts_str)
-
         with open(path, "rb") as f:
             r = requests.post(url_photo, data={
                 "chat_id":    chat_id,
@@ -544,7 +593,6 @@ def build_history_cache(symbols: list, current_date: date):
     print(f"✅ [{ts}] Cache hoàn tất: {loaded}/{len(symbols)} mã có dữ liệu.")
 
 def fetch_today_bar(symbol: str, current_date: date):
-    """Lấy nến ngày hôm nay. Trả về None nếu dữ liệu rác hoặc chưa có khớp lệnh thực."""
     for attempt in range(3):
         try:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
@@ -600,7 +648,6 @@ def fetch_today_bar(symbol: str, current_date: date):
                 {'open': open_, 'high': high, 'low': low, 'close': close, 'volume': volume},
                 name=pd.Timestamp(current_date)
             )
-
         except Exception as e:
             if attempt < 2: time.sleep(2)
             else: print(f"    ❌ fetch_today_bar {symbol}: {e}")
@@ -613,7 +660,7 @@ def merge_today_bar(df_hist, today_bar, current_date: date):
     return pd.concat([df_hist, new_row])
 
 # =============================================================================
-# BƯỚC 5C: HÀM TIỆN ÍCH — LẤY DATE_STR TỪ INDEX CÂY NẾN CUỐI
+# BƯỚC 5C: HÀM TIỆN ÍCH
 # =============================================================================
 def _date_str_from_df(df: pd.DataFrame) -> str:
     last_ts = pd.Timestamp(df.index[-1])
@@ -622,7 +669,7 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
     return last_ts.strftime('%d/%m/%Y')
 
 # =============================================================================
-# BƯỚC 5D: HÀM LẤY DỮ LIỆU CHỈ SỐ (VNINDEX, VN30, ...)
+# BƯỚC 5D: HÀM LẤY DỮ LIỆU CHỈ SỐ
 # =============================================================================
 def fetch_index_history(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
@@ -646,14 +693,9 @@ def fetch_index_history(symbol: str) -> pd.DataFrame | None:
     return None
 
 # =============================================================================
-# BƯỚC 5E: HÀM LẤY DỮ LIỆU 15 PHÚT  ← MỚI
+# BƯỚC 5E: HÀM LẤY DỮ LIỆU 15 PHÚT
 # =============================================================================
 def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
-    """
-    Lấy dữ liệu nến 15 phút. Fetch mỗi lần gọi, không cache.
-    Trả về DataFrame chuẩn (open/high/low/close/volume) với chỉ báo đã tính,
-    hoặc None nếu không có dữ liệu.
-    """
     for attempt in range(3):
         try:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
@@ -908,7 +950,6 @@ def detect_signal(df, now_time):
 
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
-# Hỗ trợ timeframe: 'Daily' [D], 'Weekly' [W], '15m' [15m]
 # =============================================================================
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None):
     is_daily  = (timeframe == 'Daily')
@@ -940,11 +981,11 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
         mpf.make_addplot(df_plot['MACD'],        panel=2, color='blue',   width=0.6, secondary_y=False),
         mpf.make_addplot(df_plot['MACD_Signal'], panel=2, color='orange', width=0.6, secondary_y=False),
     ]
-  
+
     if is_daily:
-      apds.append(mpf.make_addplot(df_plot['MA200'],  color='brown', width=0.6))
+        apds.append(mpf.make_addplot(df_plot['MA200'],  color='brown', width=0.6))
     if is_15m:
-      apds.append(mpf.make_addplot(df_plot['EMA200'], color='brown', width=0.6))
+        apds.append(mpf.make_addplot(df_plot['EMA200'], color='brown', width=0.6))
 
     mc           = mpf.make_marketcolors(up='#26A69A',down='#EF5350',edge='inherit',wick='inherit',alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles',marketcolors=mc,gridstyle='',facecolor='white')
@@ -968,31 +1009,26 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
             xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
             ha='center', va='top', color='DeepPink', fontsize=12)
 
-    # ── Title theo timeframe ──────────────────────────────────────────────
     if is_daily:
-        tf_label = '[D]'
         title_str = (
-            f"{symbol} {tf_label} {date_str}  |  "
+            f"{symbol} [D] {date_str}  |  "
             f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
             f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%) \n\n"
             f"{signal_type}"
         )
     elif is_weekly:
-        tf_label = '[W]'
         title_str = (
-            f"{symbol} {tf_label} {date_str}  | "
+            f"{symbol} [W] {date_str}  | "
             f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
             f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
         )
     else:  # 15m
-        tf_label = '[15m]'
-        # date_str cho 15m: lấy cả giờ phút từ index nến cuối
         last_ts = pd.Timestamp(df_plot.index[-1])
         if last_ts.tzinfo is None:
             last_ts = last_ts.tz_localize('Asia/Ho_Chi_Minh')
         date_str_15m = last_ts.strftime('%d/%m/%Y %H:%M')
         title_str = (
-            f"{symbol} {tf_label} {date_str_15m}  | "
+            f"{symbol} [15m] {date_str_15m}  | "
             f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
             f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
         )
@@ -1003,7 +1039,14 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
         ax_macd = axlist[4]
         ax_macd.yaxis.set_ticks([]); ax_macd.yaxis.set_ticklabels([])
         m_vals = pd.concat([df_plot['MACD'],df_plot['MACD_Signal'],df_plot['MACD_Hist']]).dropna()
-        abs_m  = max(abs(m_vals.min()),abs(m_vals.max())) if len(m_vals) > 0 else 1
+        if len(m_vals) == 0 or m_vals.empty:
+            abs_m = 1
+        else:
+            try:
+                abs_m = max(abs(m_vals.min()), abs(m_vals.max()))
+                if abs_m == 0 or np.isnan(abs_m): abs_m = 1
+            except Exception:
+                abs_m = 1
         ax_macd.set_ylim(-abs_m*0.8, abs_m*1.2)
         for spine in ['top','right','left','bottom']: ax_macd.spines[spine].set_visible(False)
 
@@ -1019,10 +1062,6 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
 
 
 def _build_15m_chart(symbol: str, signal_type: str) -> str | None:
-    """
-    Fetch 15m và vẽ chart. Trả về đường dẫn ảnh hoặc None nếu không có dữ liệu.
-    Số bar = 200 (giống Weekly). Kích thước chart giống Weekly.
-    """
     df_15m = fetch_intraday_15m(symbol)
     if df_15m is None or len(df_15m) < 2:
         print(f"  ⚠️  {symbol}: không có dữ liệu 15m")
@@ -1108,25 +1147,19 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
                 f"<a href='{link_24h_money}'>📄</a>"
             )
 
-            # ── Vẽ Daily ─────────────────────────────────────────────────
             df_plot_d  = df_calc.tail(250).copy()
             img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
                                     timeframe='Daily', add_arrow=True, date_str=date_str)
-
-            # ── Vẽ Weekly ─────────────────────────────────────────────────
             df_weekly  = build_weekly_df(df_merged)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
             date_str_w = _date_str_from_df(df_plot_w)
             img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                     timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-
-            # ── Vẽ 15m ───────────────────────────────────────────────────
             img_15m    = _build_15m_chart(symbol, signal_type)
 
             image_paths = [img_daily, img_weekly]
-            if img_15m:
-                image_paths.append(img_15m)
+            if img_15m: image_paths.append(img_15m)
 
             notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
             send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
@@ -1172,7 +1205,7 @@ def _filter_symbols(raw_list: list):
     return result if result else None
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND (hỗ trợ cả chỉ số + 15m)
+# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
@@ -1184,7 +1217,6 @@ def fetch_and_send_chart(symbol, chat_id):
     try:
         current_date = datetime.now(TZ_VN).date()
 
-        # ── Lấy dữ liệu ─────────────────────────────────────────────────
         if is_index:
             df_raw = fetch_index_history(symbol)
             if df_raw is None or len(df_raw) < 10:
@@ -1194,7 +1226,6 @@ def fetch_and_send_chart(symbol, chat_id):
                     'parse_mode': 'HTML'
                 })
                 return
-            # fetch_index_history đã bao gồm nến hôm nay — không cần fetch thêm
         else:
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is not None and len(df_hist) >= 60:
@@ -1219,7 +1250,6 @@ def fetch_and_send_chart(symbol, chat_id):
                 df_raw.set_index('time', inplace=True)
                 df_raw.columns = [c.lower() for c in df_raw.columns]
 
-        # ── Tính chỉ báo ─────────────────────────────────────────────────
         df_calc  = compute_indicators(df_raw)
         today    = df_calc.iloc[-1]
         now_time = int(datetime.now(TZ_VN).strftime("%H%M%S"))
@@ -1259,12 +1289,9 @@ def fetch_and_send_chart(symbol, chat_id):
                 f"<a href='{link_24h_money}'>📄</a>"
             )
 
-        # ── Vẽ Daily ─────────────────────────────────────────────────────
         df_plot_d  = df_calc.tail(250).copy()
         img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
                                 timeframe='Daily', add_arrow=False, date_str=date_str)
-
-        # ── Vẽ Weekly ─────────────────────────────────────────────────────
         df_weekly  = build_weekly_df(df_raw)
         df_plot_w  = df_weekly.tail(200).copy()
         today_w    = df_plot_w.iloc[-1]
@@ -1272,12 +1299,10 @@ def fetch_and_send_chart(symbol, chat_id):
         img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                 timeframe='Weekly', add_arrow=False, date_str=date_str_w)
 
-        # ── Vẽ 15m (chỉ cho cổ phiếu, không cho chỉ số) ─────────────────
         image_paths = [img_daily, img_weekly]
         if not is_index:
             img_15m = _build_15m_chart(symbol, signal_type)
-            if img_15m:
-                image_paths.append(img_15m)
+            if img_15m: image_paths.append(img_15m)
 
         print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi {len(image_paths)} chart")
         _send_chart_to_chat(msg, image_paths, chat_id)
@@ -1338,7 +1363,7 @@ def telegram_listener(stop_event: threading.Event):
 
     processed_ids: dict = {}
     PROCESSED_TTL = 300
-    print(f"🎧 Listener sẵn sàng | chat được phép: {ALLOWED_CHATS}")
+    print(f"🎧 Listener sẵn sàng | VIP: {VIP_CHAT_IDS} | Free slot: {FREE_CHAT_LIMIT}")
 
     while not stop_event.is_set():
         try:
@@ -1376,14 +1401,15 @@ def telegram_listener(stop_event: threading.Event):
                 if callback:
                     cb_id      = callback.get('id')
                     cb_data    = callback.get('data', '')
-                    cb_chat_id = callback.get('message', {}).get('chat', {}).get('id')
+                    cb_chat_id = str(callback.get('message', {}).get('chat', {}).get('id', ''))
                     requests.post(
                         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
                         data={'callback_query_id': cb_id}
                     )
-                    if str(cb_chat_id) in ALLOWED_CHATS and cb_data.startswith('chart_'):
+                    allowed, reason = is_allowed(cb_chat_id)
+                    if allowed and cb_data.startswith('chart_'):
                         sym = cb_data.replace('chart_', '').upper()
-                        print(f"  📥 Callback chart {sym} → chat_id={cb_chat_id}")
+                        print(f"  📥 Callback chart {sym} → chat_id={cb_chat_id} ({reason})")
                         threading.Thread(
                             target=fetch_and_send_chart,
                             args=(sym, cb_chat_id),
@@ -1394,15 +1420,35 @@ def telegram_listener(stop_event: threading.Event):
                 # ── Xử lý message thông thường ───────────────────────────
                 msg_obj = update.get('message', {})
                 text    = msg_obj.get('text', '').strip()
-                chat_id = msg_obj.get('chat', {}).get('id')
+                chat_id = str(msg_obj.get('chat', {}).get('id', ''))
                 if not text or not chat_id: continue
-                if str(chat_id) not in ALLOWED_CHATS:
-                    print(f"  🚫 chat_id {chat_id} không được phép"); continue
+
+                # ── Kiểm tra quyền truy cập ───────────────────────────────
+                allowed, reason = is_allowed(chat_id)
+                if not allowed:
+                    requests.post(url_msg, data={
+                        'chat_id':    chat_id,
+                        'parse_mode': 'HTML',
+                        'text': (
+                            "⚠️ Bot đang phục vụ tối đa <b>20 người</b> cùng lúc.\n"
+                            "Hiện tại đã đầy slot. Vui lòng thử lại sau ít phút.\n"
+                            "Slot tự động giải phóng sau <b>30 phút</b> không hoạt động."
+                        )
+                    })
+                    continue
 
                 text_lower = text.lower().strip()
 
-                # ── /s — tín hiệu hôm nay ────────────────────────────────
+                # ── /s — chỉ VIP mới xem được tín hiệu ──────────────────
                 if text_lower == '/s' or text_lower.startswith('/s '):
+                    if not is_vip(chat_id):
+                        requests.post(url_msg, data={
+                            'chat_id':    chat_id,
+                            'parse_mode': 'HTML',
+                            'text':       '🔒 Lệnh <b>/s</b> chỉ dành cho thành viên VIP.'
+                        })
+                        continue
+
                     if alerted_today:
                         buttons = []
                         for k, v in alerted_today.items():
@@ -1426,7 +1472,7 @@ def telegram_listener(stop_event: threading.Event):
 
                 # ── /h hoặc /heatmap ──────────────────────────────────────
                 elif text_lower in ('/h', '/heatmap'):
-                    print(f"  🗺  Lệnh heatmap từ chat_id={chat_id}")
+                    print(f"  🗺  Lệnh heatmap từ chat_id={chat_id} ({reason})")
                     threading.Thread(
                         target=handle_heatmap_command,
                         args=(chat_id,),
@@ -1435,6 +1481,7 @@ def telegram_listener(stop_event: threading.Event):
 
                 # ── /help ─────────────────────────────────────────────────
                 elif text_lower == '/help' or text_lower.startswith('/help '):
+                    vip_note = "\n\n🔒 <b>Chỉ VIP:</b> /s — Tín hiệu hôm nay" if not is_vip(chat_id) else ""
                     requests.post(url_msg, data={
                         'chat_id': chat_id, 'parse_mode': 'HTML',
                         'text': (
@@ -1447,12 +1494,10 @@ def telegram_listener(stop_event: threading.Event):
                             "<b>Heatmap thị trường:</b>\n"
                             "/h  hoặc  /heatmap\n\n"
                             "<b>Khác:</b>\n"
-                            "/s  — Tín hiệu hôm nay (nhấn nút để xem chart)\n"
+                            "/s  — Tín hiệu hôm nay (VIP)\n"
                             "/help  — Trợ giúp\n\n"
-                            "<b>Tín hiệu hỗ trợ:</b>\n"
-                            "🟢 BREAKOUT  🟡 POCKET PIVOT  🟣 PRE-BREAK\n"
-                            "🔵 BOTTOMBREAKP  🟠 BOTTOMFISH  ⚪ MA_CROSS\n\n"
                             "<b>Chart gửi kèm:</b> Daily [D] + Weekly [W] + 15 phút [15m]"
+                            f"{vip_note}"
                         )
                     })
 
@@ -1460,7 +1505,7 @@ def telegram_listener(stop_event: threading.Event):
                 else:
                     symbols = parse_chart_command(text)
                     if symbols:
-                        print(f"  🔍 {text!r} → {symbols} | update_id={update_id}")
+                        print(f"  🔍 {text!r} → {symbols} | update_id={update_id} ({reason})")
                         for sym in symbols[:5]:
                             print(f"  📥 Chart {sym} → chat_id={chat_id}")
                             threading.Thread(
@@ -1512,7 +1557,8 @@ print(f"   Tín hiệu    → Channel/Group: {TELEGRAM_CHAT_ID}")
 print(f"   Lệnh chart  : /c HPG | /chart HPG | /HPG | / HPG")
 print(f"   Lệnh chỉ số : /VNINDEX | /VN30 | /HNX | /UPCOM | /VN100")
 print(f"   Lệnh heatmap: /h | /heatmap")
-print(f"   Lệnh khác   : /s | /help")
+print(f"   Lệnh khác   : /s (VIP) | /help")
+print(f"   Phân quyền  : VIP (toàn quyền) | Free (tối đa {FREE_CHAT_LIMIT} slot, TTL 30p)")
 print(f"   Chart gửi   : Daily [D] + Weekly [W] + 15 phút [15m]")
 print(f"   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
 print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
