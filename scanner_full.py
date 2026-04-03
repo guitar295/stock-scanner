@@ -60,7 +60,7 @@ VIP_CHAT_IDS = {
 }
 
 # Free slot: tối đa 20 người cùng lúc, TTL 30 phút không nhắn → hết slot
-FREE_CHAT_LIMIT = 20
+FREE_CHAT_LIMIT = 10
 SESSION_TTL     = 1800   # 30 phút (giây)
 free_sessions: dict = {}  # {chat_id: last_seen (time.time())}
 free_lock = threading.Lock()
