@@ -210,21 +210,6 @@ header h1 {
 /* LAYOUT */
 .container { padding:20px 24px; display:flex; flex-direction:column; gap:20px; }
 
-/* STATS */
-.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-.stat-card {
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:8px; padding:14px 18px;
-  display:flex; flex-direction:column; gap:4px;
-  box-shadow:0 1px 3px rgba(0,0,0,0.04);
-}
-.stat-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
-.stat-value { font-size:28px; font-weight:700; font-family:var(--font-ui); }
-.stat-value.green { color:#1b7f4f; }
-.stat-value.blue  { color:var(--accent); }
-.stat-value.gold  { color:#e65100; }
-.stat-value.teal  { color:var(--accent2); font-size:16px; }
-
 /* PANEL */
 .panel {
   background:var(--surface); border:1px solid var(--border);
@@ -253,12 +238,18 @@ header h1 {
   animation:fadeIn 0.3s ease;
 }
 @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
-.signal-row:hover { background:#eef4ff; border-color:rgba(21,101,192,0.3); box-shadow:0 2px 8px rgba(21,101,192,0.08); }
+.signal-row:hover {
+  background:#eef4ff; border-color:rgba(21,101,192,0.3);
+  box-shadow:0 2px 8px rgba(21,101,192,0.08);
+}
 .signal-row:hover .sig-sym { color:var(--accent); }
 .sig-emoji { font-size:14px; text-align:center; }
 .sig-sym   { font-weight:700; color:var(--text); font-size:13px; transition:color 0.15s; }
 .sig-type  { font-size:11px; color:var(--muted); }
-.sig-badge { font-size:10px; font-weight:700; padding:3px 8px; border-radius:4px; text-align:center; letter-spacing:0.5px; }
+.sig-badge {
+  font-size:10px; font-weight:700; padding:3px 8px;
+  border-radius:4px; text-align:center; letter-spacing:0.5px;
+}
 .badge-BREAKOUT     { background:#e8f5e9; color:#1b7f4f; border:1px solid #a5d6a7; }
 .badge-POCKET       { background:#fff8e1; color:#e65100; border:1px solid #ffcc80; }
 .badge-PREBREAK     { background:#ede7f6; color:#5e35b1; border:1px solid #ce93d8; }
@@ -268,51 +259,61 @@ header h1 {
 .empty-state { text-align:center; padding:40px 20px; color:var(--muted); font-size:12px; }
 .empty-state .big { font-size:32px; margin-bottom:8px; }
 
-/* HEATMAP GRID */
-.heatmap-wrap {
-  overflow-x:auto; padding-bottom:8px;
+/* HEATMAP */
+.heatmap-outer {
+  overflow-x:auto; padding-bottom:6px;
 }
-.heatmap-wrap::-webkit-scrollbar { height:4px; }
-.heatmap-wrap::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.heatmap-outer::-webkit-scrollbar { height:5px; }
+.heatmap-outer::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
 
+/* Grid: mỗi cột là 1 flex-col, các cột xếp ngang */
 .heatmap-grid {
-  display:flex; gap:6px; align-items:flex-start;
+  display:inline-flex;
+  flex-direction:row;
+  gap:5px;
+  align-items:flex-start;
   min-width:max-content;
 }
 
-.hmap-col { display:flex; flex-direction:column; gap:10px; width:160px; flex-shrink:0; }
+.hmap-col {
+  display:flex; flex-direction:column;
+  gap:5px; width:158px; flex-shrink:0;
+}
 
 .hmap-group { display:flex; flex-direction:column; gap:2px; }
 
-.hmap-group-header {
+/* Header nhóm ngành — khớp màu scanner: HMAP_HDR_FILL=(220,228,250) */
+.hmap-group-hdr {
   display:flex; align-items:center; justify-content:space-between;
-  padding:4px 8px; border-radius:4px;
-  background:#e8edf5; border:1px solid #c8d3e8;
+  padding:3px 7px; border-radius:4px;
+  background:rgb(220,228,250); border:1px solid rgb(160,180,230);
   font-family:var(--font-ui); font-size:9px; font-weight:700;
-  text-transform:uppercase; letter-spacing:0.8px;
-  color:#1a3a6b;
+  text-transform:uppercase; letter-spacing:0.5px;
+  color:rgb(25,55,150);
+  white-space:nowrap; overflow:hidden;
 }
-.hmap-group-pct { font-size:9px; font-weight:700; }
-.hmap-group-pct.pos { color:#1b7f4f; }
-.hmap-group-pct.neg { color:#c62828; }
-.hmap-group-pct.zero{ color:var(--muted); }
+.hmap-hdr-pct { font-size:9px; font-weight:700; flex-shrink:0; margin-left:4px; }
+.hmap-hdr-pct.pos { color:rgb(30,140,40); }
+.hmap-hdr-pct.neg { color:rgb(190,30,30); }
+.hmap-hdr-pct.zero{ color:rgb(120,120,30); }
 
+/* Cell mã — height khớp scanner HMAP_CELL_H=26 */
 .hmap-cell {
   display:flex; align-items:center; justify-content:space-between;
-  padding:4px 7px; border-radius:4px;
-  cursor:pointer; transition:filter 0.12s, transform 0.12s;
-  border:1px solid rgba(0,0,0,0.06);
-  font-size:10px;
+  padding:0 7px; height:24px; border-radius:4px;
+  cursor:pointer; border:1px solid rgba(0,0,0,0.07);
+  transition:filter 0.12s, transform 0.1s;
+  overflow:hidden;
 }
-.hmap-cell:hover { filter:brightness(0.92); transform:scale(1.02); }
-.hmap-cell-sym { font-weight:700; font-size:10px; }
-.hmap-cell-pct { font-size:9px; opacity:0.85; }
-
-/* màu cell theo % — dùng inline style từ JS */
+.hmap-cell:hover { filter:brightness(0.88); transform:scale(1.025); z-index:1; }
+.hmap-cell-left  { display:flex; flex-direction:column; }
+.hmap-cell-sym   { font-size:10px; font-weight:700; line-height:1.1; }
+.hmap-cell-price { font-size:8px; opacity:0.75; line-height:1; }
+.hmap-cell-pct   { font-size:10px; font-weight:700; }
 
 /* REFRESH BAR */
 .refresh-bar {
-  height:2px; background:linear-gradient(90deg, var(--accent), var(--accent2));
+  height:2px; background:linear-gradient(90deg,var(--accent),var(--accent2));
   width:0%; transition:width 30s linear;
 }
 
@@ -336,7 +337,10 @@ header h1 {
   padding:12px 18px; border-bottom:1px solid var(--border);
   background:#f7f9fc; flex-shrink:0;
 }
-.popup-title { font-family:var(--font-ui); font-size:15px; font-weight:800; color:var(--accent); letter-spacing:1px; }
+.popup-title {
+  font-family:var(--font-ui); font-size:15px; font-weight:800;
+  color:var(--accent); letter-spacing:1px;
+}
 .popup-actions { display:flex; gap:10px; align-items:center; }
 .btn-open {
   font-size:11px; font-family:var(--font-mono);
@@ -362,7 +366,6 @@ footer {
 }
 
 @media(max-width:768px) {
-  .stats-row { grid-template-columns:1fr 1fr; }
   .popup-box { width:99vw; height:93vh; border-radius:8px; }
 }
 </style>
@@ -381,27 +384,7 @@ footer {
 
 <div class="container">
 
-  <!-- STATS -->
-  <div class="stats-row">
-    <div class="stat-card">
-      <span class="stat-label">Tín hiệu hôm nay</span>
-      <span class="stat-value green" id="stat-signals">—</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">Mã trong cache</span>
-      <span class="stat-value blue" id="stat-cache">—</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">BREAKOUT / PIVOT</span>
-      <span class="stat-value gold" id="stat-top">—</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">Cập nhật lúc</span>
-      <span class="stat-value teal" id="stat-time">—</span>
-    </div>
-  </div>
-
-  <!-- TÍN HIỆU -->
+  <!-- TÍN HIỆU HÔM NAY -->
   <div class="panel">
     <div class="panel-header">
       <span class="panel-title">Tín hiệu hôm nay</span>
@@ -420,8 +403,8 @@ footer {
       <span class="panel-title">Heatmap thị trường</span>
       <span class="panel-meta" id="hmap-ts">Click mã để xem chart</span>
     </div>
-    <div class="panel-body" style="padding:12px 8px;">
-      <div class="heatmap-wrap">
+    <div class="panel-body" style="padding:10px 8px;">
+      <div class="heatmap-outer">
         <div class="heatmap-grid" id="heatmap-grid">
           <div class="empty-state"><div class="big">🗺</div><div>Đang tải...</div></div>
         </div>
@@ -448,7 +431,7 @@ footer {
 </div>
 
 <script>
-// ── CẤU TRÚC HEATMAP — khớp với HEATMAP_COLUMNS trong scanner ─────────────
+// ── CẤU TRÚC HEATMAP — khớp 1:1 với HEATMAP_COLUMNS trong scanner ────────
 const HEATMAP_COLUMNS = [
   { col:1, groups:[
     { name:"VN30", symbols:[
@@ -489,23 +472,36 @@ const HEATMAP_COLUMNS = [
   ]},
 ];
 
-// ── MÀU CELL THEO % ──────────────────────────────────────────────────────
-function cellStyle(pct) {
-  if      (pct >=  6.5) return { bg:'#e879b8', fg:'#2d0020' };  // trần
-  else if (pct >=  4.0) return { bg:'#4caf50', fg:'#fff' };     // xanh đậm
-  else if (pct >=  2.0) return { bg:'#81c784', fg:'#1a3a1a' };  // xanh vừa
-  else if (pct >   0.0) return { bg:'#c8e6c9', fg:'#1a3a1a' };  // xanh nhạt
-  else if (pct ==  0.0) return { bg:'#fff9c4', fg:'#5a5000' };  // TC vàng
-  else if (pct >= -2.0) return { bg:'#ffcdd2', fg:'#3a0010' };  // đỏ nhạt
-  else if (pct >= -4.0) return { bg:'#e57373', fg:'#fff' };     // đỏ vừa
-  else if (pct >= -6.5) return { bg:'#c62828', fg:'#fff' };     // đỏ đậm
-  else                  return { bg:'#00bcd4', fg:'#002a30' };  // sàn cyan
-}
+// ── MÀU CELL — khớp 1:1 HMAP_COLORS trong scanner ────────────────────────
+// HMAP_COLORS dùng RGB tuple → chuyển sang CSS rgb()
+// _hmap_cell_color logic:
+//   pct >= 6.5  → tran  (250,170,225)
+//   pct >= 4.0  → xd    (160,220,170)
+//   pct >= 2.0  → xv    (195,235,200)
+//   pct >  0.0  → xn    (225,245,228)
+//   pct == 0.0  → tc    (245,245,200)
+//   pct >= -2.0 → dn    (255,220,210)
+//   pct >= -4.0 → dv    (250,185,175)
+//   pct >= -6.5 → dd    (240,150,145)
+//   else        → san   (175,250,255)
+//
+// _hmap_fg: lum = 0.299*R + 0.587*G + 0.114*B
+//   lum > 160 → fg (30,30,30) else (15,15,15)
 
-function groupHeaderStyle(pct) {
-  if (pct > 0.1)  return 'pos';
-  if (pct < -0.1) return 'neg';
-  return 'zero';
+function cellColor(pct) {
+  let r, g, b;
+  if      (pct >=  6.5) { r=250; g=170; b=225; }
+  else if (pct >=  4.0) { r=160; g=220; b=170; }
+  else if (pct >=  2.0) { r=195; g=235; b=200; }
+  else if (pct >   0.0) { r=225; g=245; b=228; }
+  else if (pct ===  0.0){ r=245; g=245; b=200; }
+  else if (pct >= -2.0) { r=255; g=220; b=210; }
+  else if (pct >= -4.0) { r=250; g=185; b=175; }
+  else if (pct >= -6.5) { r=240; g=150; b=145; }
+  else                  { r=175; g=250; b=255; }
+  const lum = 0.299*r + 0.587*g + 0.114*b;
+  const fg  = lum > 160 ? 'rgb(30,30,30)' : 'rgb(15,15,15)';
+  return { bg:`rgb(${r},${g},${b})`, fg };
 }
 
 function avgPct(symbols, data) {
@@ -516,38 +512,44 @@ function avgPct(symbols, data) {
 // ── RENDER HEATMAP ────────────────────────────────────────────────────────
 function renderHeatmap(data) {
   const grid = document.getElementById('heatmap-grid');
-  if (!data || Object.keys(data).length === 0) {
+  if (!data || !Object.keys(data).length) {
     grid.innerHTML = '<div class="empty-state"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';
     return;
   }
 
   grid.innerHTML = HEATMAP_COLUMNS.map(colDef => {
     const groupsHtml = colDef.groups.map(g => {
-      const avg    = avgPct(g.symbols, data);
-      const avgCls = groupHeaderStyle(avg);
-      const sign   = avg >= 0 ? '+' : '';
+      const avg  = avgPct(g.symbols, data);
+      const sign = avg >= 0 ? '+' : '';
+      const cls  = avg > 0.05 ? 'pos' : avg < -0.05 ? 'neg' : 'zero';
 
       const cellsHtml = g.symbols.map(sym => {
-        const info = data[sym] || {};
-        const pct  = info.pct || 0;
-        const { bg, fg } = cellStyle(pct);
-        const sign = pct >= 0 ? '+' : '';
-        return `<div class="hmap-cell"
-                     style="background:${bg}; color:${fg};"
-                     onclick="openChart('${sym}')"
-                     title="${sym}: ${sign}${pct.toFixed(2)}%  |  Giá: ${(info.price||0).toFixed(2)}">
-          <span class="hmap-cell-sym">${sym}</span>
-          <span class="hmap-cell-pct">${sign}${pct.toFixed(1)}%</span>
-        </div>`;
+        const info  = data[sym] || {};
+        const pct   = typeof info.pct === 'number' ? info.pct : 0;
+        const price = typeof info.price === 'number' ? info.price.toFixed(2) : '—';
+        const { bg, fg } = cellColor(pct);
+        const psign = pct >= 0 ? '+' : '';
+        return `
+          <div class="hmap-cell"
+               style="background:${bg}; color:${fg};"
+               onclick="openChart('${sym}')"
+               title="${sym} | Giá: ${price} | ${psign}${pct.toFixed(2)}%">
+            <div class="hmap-cell-left">
+              <span class="hmap-cell-sym">${sym}</span>
+              <span class="hmap-cell-price">${price}</span>
+            </div>
+            <span class="hmap-cell-pct">${psign}${pct.toFixed(1)}%</span>
+          </div>`;
       }).join('');
 
-      return `<div class="hmap-group">
-        <div class="hmap-group-header">
-          <span>${g.name}</span>
-          <span class="hmap-group-pct ${avgCls}">${sign}${avg.toFixed(1)}%</span>
-        </div>
-        ${cellsHtml}
-      </div>`;
+      return `
+        <div class="hmap-group">
+          <div class="hmap-group-hdr">
+            <span style="overflow:hidden;text-overflow:ellipsis;">${g.name}</span>
+            <span class="hmap-hdr-pct ${cls}">${sign}${avg.toFixed(1)}%</span>
+          </div>
+          ${cellsHtml}
+        </div>`;
     }).join('');
 
     return `<div class="hmap-col">${groupsHtml}</div>`;
@@ -557,9 +559,9 @@ function renderHeatmap(data) {
 // ── POPUP ─────────────────────────────────────────────────────────────────
 function openChart(sym) {
   const url = `https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}`;
-  document.getElementById('popup-title').textContent  = `📈 ${sym}`;
-  document.getElementById('popup-open-link').href     = url;
-  document.getElementById('popup-iframe').src         = url;
+  document.getElementById('popup-title').textContent = `📈 ${sym}`;
+  document.getElementById('popup-open-link').href    = url;
+  document.getElementById('popup-iframe').src        = url;
   document.getElementById('popup-overlay').classList.add('active');
   document.body.style.overflow = 'hidden';
 }
@@ -571,16 +573,15 @@ function closePopup() {
 document.getElementById('popup-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('popup-overlay')) closePopup();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closePopup(); });
+document.addEventListener('keydown', e => { if (e.key==='Escape') closePopup(); });
 
 // ── CLOCK ─────────────────────────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
   document.getElementById('clock').textContent =
-    now.toLocaleTimeString('vi-VN',{hour12:false}) + ' ' +
-    now.toLocaleDateString('vi-VN');
+    now.toLocaleTimeString('vi-VN',{hour12:false})+' '+now.toLocaleDateString('vi-VN');
 }
-setInterval(updateClock, 1000); updateClock();
+setInterval(updateClock,1000); updateClock();
 
 // ── BADGE ─────────────────────────────────────────────────────────────────
 function badgeClass(sig) {
@@ -588,7 +589,7 @@ function badgeClass(sig) {
     'BREAKOUT':'badge-BREAKOUT','POCKET PIVOT':'badge-POCKET',
     'PRE-BREAK':'badge-PREBREAK','BOTTOMBREAKP':'badge-BOTTOMBREAKP',
     'BOTTOMFISH':'badge-BOTTOMFISH','MA_CROSS':'badge-MA_CROSS',
-  })[sig] || 'badge-MA_CROSS';
+  })[sig]||'badge-MA_CROSS';
 }
 
 // ── FETCH SIGNALS ─────────────────────────────────────────────────────────
@@ -596,12 +597,7 @@ async function fetchSignals() {
   try {
     const r = await fetch('/api/signals');
     const j = await r.json();
-    document.getElementById('stat-signals').textContent = j.count;
-    document.getElementById('stat-time').textContent    = j.updated_at;
-    document.getElementById('sig-meta').textContent     = `${j.updated_at} • click để xem chart`;
-    const top = j.signals.filter(s => s.signal==='BREAKOUT'||s.signal==='POCKET PIVOT').length;
-    document.getElementById('stat-top').textContent = top || '—';
-
+    document.getElementById('sig-meta').textContent = `${j.updated_at} • click để xem chart`;
     const list = document.getElementById('signal-list');
     if (!j.signals.length) {
       list.innerHTML = `<div class="empty-state"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>`;
@@ -625,36 +621,25 @@ async function fetchHeatmap() {
     const r = await fetch('/api/heatmap');
     const j = await r.json();
     document.getElementById('hmap-ts').textContent =
-      (j.timestamp||'') + ' • click để xem chart';
-    renderHeatmap(j.data || {});
-  } catch(e) { console.error(e); }
-}
-
-// ── FETCH CACHE ───────────────────────────────────────────────────────────
-async function fetchCacheInfo() {
-  try {
-    const r = await fetch('/api/cache_info');
-    const j = await r.json();
-    document.getElementById('stat-cache').textContent = j.total_symbols;
+      (j.timestamp||'')+' • click để xem chart';
+    renderHeatmap(j.data||{});
   } catch(e) { console.error(e); }
 }
 
 // ── REFRESH BAR ───────────────────────────────────────────────────────────
 function startRefreshBar() {
   const bar = document.getElementById('rbar');
-  bar.style.transition = 'none'; bar.style.width = '0%';
-  setTimeout(() => { bar.style.transition = 'width 30s linear'; bar.style.width = '100%'; }, 50);
+  bar.style.transition='none'; bar.style.width='0%';
+  setTimeout(()=>{ bar.style.transition='width 30s linear'; bar.style.width='100%'; },50);
 }
-
 async function refresh() {
   startRefreshBar();
-  await Promise.all([fetchSignals(), fetchCacheInfo()]);
+  await fetchSignals();
 }
 async function refreshAll() {
   startRefreshBar();
-  await Promise.all([fetchSignals(), fetchHeatmap(), fetchCacheInfo()]);
+  await Promise.all([fetchSignals(), fetchHeatmap()]);
 }
-
 refreshAll();
 setInterval(refresh,      30_000);
 setInterval(fetchHeatmap, 120_000);
