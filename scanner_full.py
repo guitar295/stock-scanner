@@ -747,7 +747,6 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
     Dùng cho on-demand chart và button tín hiệu hôm nay.
     - Lấy toàn bộ lịch sử (length=1000)
     - Không filter ngày → lấy nến mới nhất server có
-    - Merge nến hôm nay nếu đang trong giờ giao dịch
     """
     for attempt in range(3):
         try:
