@@ -229,7 +229,7 @@ cd ~/scanner && \
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
 docker stop scanner && \
 docker rm scanner && \
-docker build -t stock-scanner . && \
+docker build --no-cache -t stock-scanner . && \
 docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env stock-scanner && \
 echo "✅ Cập nhật hoàn tất!" && \
 docker logs --tail 20 scanner
