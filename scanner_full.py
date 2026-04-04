@@ -34,6 +34,7 @@ import json
 import threading
 import math
 from PIL import Image, ImageDraw, ImageFont
+from dashboard_server import start_dashboard
 
 # =============================================================================
 # BƯỚC 2: CẤU HÌNH
@@ -1580,6 +1581,16 @@ last_run_date = datetime.now(TZ_VN).date()
 _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
 listener_thread.start()
+
+start_dashboard(
+    alerted_today_ref = lambda: alerted_today,
+    history_cache_ref = lambda: history_cache,
+    cache_lock_ref    = cache_lock,
+    fetch_heatmap_fn  = fetch_heatmap_data,
+    signal_emoji_ref  = SIGNAL_EMOJI,
+    signal_rank_ref   = SIGNAL_RANK,
+    port              = 8080,
+)
 
 print("\n" + "="*60)
 print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER ĐÃ KÍCH HOẠT")
