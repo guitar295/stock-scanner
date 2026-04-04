@@ -1589,7 +1589,7 @@ start_dashboard(
     fetch_heatmap_fn  = fetch_heatmap_data,
     signal_emoji_ref  = SIGNAL_EMOJI,
     signal_rank_ref   = SIGNAL_RANK,
-    port              = 8080,
+    port              = 8888,
 )
 
 print("\n" + "="*60)
