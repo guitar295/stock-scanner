@@ -569,18 +569,11 @@ def build_history_cache(symbols: list, current_date: date):
 # =============================================================================
 # BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
 # =============================================================================
-# Mã đại diện dùng để kiểm tra cache
 CACHE_CHECK_SYMBOL = 'HPG'
 
 def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
-    """
-    Kiểm tra nhanh cache bằng 1 mã đại diện.
-    Nếu cache stale → rebuild toàn bộ.
-    Trả về True nếu cache OK, False nếu đã rebuild.
-    """
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
 
-    # Lấy mã đại diện — ưu tiên HPG, fallback mã đầu tiên trong cache
     with cache_lock:
         check_sym = CACHE_CHECK_SYMBOL if CACHE_CHECK_SYMBOL in history_cache else (
             next(iter(history_cache), None)
@@ -593,16 +586,13 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         return False
 
     cache_last = sample_df.index[-1].date()
-
-    # Tính ngày giao dịch gần nhất (lùi 1 BDay từ current_date)
-    prev_bday = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
+    prev_bday  = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
 
     print(f"  [{ts}] 🔍 Cache check [{check_sym}]: nến cuối = {cache_last} | kỳ vọng ≥ {prev_bday}")
 
     if cache_last < prev_bday:
         print(f"  [{ts}] ⚠️  Cache STALE ({cache_last} < {prev_bday}) → Rebuild ngay...")
         build_history_cache(symbols, current_date)
-        # Kiểm tra lại sau rebuild
         with cache_lock:
             sample_df2 = history_cache.get(check_sym)
         if sample_df2 is not None:
@@ -747,6 +737,7 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
     Dùng cho on-demand chart và button tín hiệu hôm nay.
     - Lấy toàn bộ lịch sử (length=1000)
     - Không filter ngày → lấy nến mới nhất server có
+    - Bỏ nến hôm nay nếu volume < 100 (chưa giao dịch / ngày nghỉ)
     """
     for attempt in range(3):
         try:
@@ -1283,7 +1274,6 @@ def fetch_and_send_chart(symbol, chat_id):
                 })
                 return
         else:
-            # ── FETCH FRESH HOÀN TOÀN, KHÔNG DÙNG CACHE ──────────────
             ts_log   = datetime.now(TZ_VN).strftime('%H:%M:%S')
             df_raw   = fetch_fresh_for_chart(symbol, current_date)
             if df_raw is not None:
@@ -1442,7 +1432,6 @@ def telegram_listener(stop_event: threading.Event):
                 processed_ids[update_id] = time.time()
                 print(f"  📨 Xử lý update_id={update_id} | offset mới={offset}")
 
-                # ── Xử lý callback_query (nhấn nút) ──────────────────────
                 callback = update.get('callback_query', {})
                 if callback:
                     cb_id      = callback.get('id')
@@ -1456,7 +1445,6 @@ def telegram_listener(stop_event: threading.Event):
                     if allowed and cb_data.startswith('chart_'):
                         sym = cb_data.replace('chart_', '').upper()
                         print(f"  📥 Callback chart {sym} → chat_id={cb_chat_id} ({reason})")
-                        # ── Dùng fetch_fresh (không cache) khi nhấn button ──
                         threading.Thread(
                             target=fetch_and_send_chart,
                             args=(sym, cb_chat_id),
@@ -1464,7 +1452,6 @@ def telegram_listener(stop_event: threading.Event):
                         ).start()
                     continue
 
-                # ── Xử lý message thông thường ───────────────────────────
                 msg_obj = update.get('message', {})
                 text    = msg_obj.get('text', '').strip()
                 chat_id = str(msg_obj.get('chat', {}).get('id', ''))
@@ -1472,11 +1459,9 @@ def telegram_listener(stop_event: threading.Event):
 
                 text_lower = text.lower().strip()
 
-                # ── /start — bỏ qua, không xử lý ─────────────────────────
                 if text_lower == '/start':
                     continue
 
-                # ── Kiểm tra quyền truy cập ───────────────────────────────
                 allowed, reason = is_allowed(chat_id)
                 if not allowed:
                     requests.post(url_msg, data={
@@ -1490,7 +1475,6 @@ def telegram_listener(stop_event: threading.Event):
                     })
                     continue
 
-                # ── /s — chỉ VIP mới xem được tín hiệu ──────────────────
                 if text_lower == '/s' or text_lower.startswith('/s '):
                     if not is_vip(chat_id):
                         requests.post(url_msg, data={
@@ -1521,7 +1505,6 @@ def telegram_listener(stop_event: threading.Event):
                         payload['reply_markup'] = json.dumps({"inline_keyboard": buttons})
                     requests.post(url_msg, data=payload)
 
-                # ── /h hoặc /heatmap ─────────────────────────────────────
                 elif text_lower in ('/h', '/heatmap', '/ h', '/ heatmap'):
                     print(f"  🗺  Lệnh heatmap từ chat_id={chat_id} ({reason})")
                     threading.Thread(
@@ -1530,7 +1513,6 @@ def telegram_listener(stop_event: threading.Event):
                         daemon=True
                     ).start()
 
-                # ── /help ─────────────────────────────────────────────────
                 elif text_lower == '/help' or text_lower.startswith('/help '):
                     vip_note = "\n\n🔒 <b>Chỉ VIP:</b> /s — Tín hiệu hôm nay" if not is_vip(chat_id) else ""
                     requests.post(url_msg, data={
@@ -1552,7 +1534,6 @@ def telegram_listener(stop_event: threading.Event):
                         )
                     })
 
-                # ── chart on-demand ───────────────────────────────────────
                 else:
                     symbols = parse_chart_command(text)
                     if symbols:
@@ -1616,6 +1597,7 @@ print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
 print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
 print(f"   Cache check : Tự động trước mỗi chu kỳ quét")
 print(f"   On-demand   : Fetch fresh, không phụ thuộc cache")
+print(f"   Nghỉ quét   : Thứ 7 và Chủ nhật")  # <-- thêm dòng này
 print("="*60)
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
@@ -1625,56 +1607,69 @@ build_history_cache(symbols_to_scan, last_run_date)
 # VÒNG LẶP CHÍNH
 # =============================================================================
 while True:
-    now_obj      = datetime.now(TZ_VN)
-    current_date = now_obj.date()
-    now_time     = int(now_obj.strftime("%H%M%S"))
-    ts           = now_obj.strftime("%H:%M:%S")
+    try:
+        now_obj      = datetime.now(TZ_VN)
+        current_date = now_obj.date()
+        now_time     = int(now_obj.strftime("%H%M%S"))
+        ts           = now_obj.strftime("%H:%M:%S")
+        weekday      = now_obj.weekday()  # 0=Thứ 2 ... 4=Thứ 6, 5=Thứ 7, 6=Chủ nhật
 
-    if current_date > last_run_date:
-        alerted_today.clear()
-        last_run_date = current_date
-        print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
-        print("🔧 Reload cache lịch sử cho ngày mới...")
-        build_history_cache(symbols_to_scan, current_date)
+        # ── BỎ QUA THỨ 7 VÀ CHỦ NHẬT ────────────────────────────────────────
+        if weekday >= 5:
+            day_name = "Thứ 7" if weekday == 5 else "Chủ nhật"
+            print(f"[{ts}] 📅 {day_name} — không quét. Listener vẫn chạy.")
+            time.sleep(SCAN_INTERVAL_SEC)
+            continue
 
-    is_morning   = 85500 <= now_time <= 113000
-    is_afternoon = 130000 <= now_time <= 150000
-
-    if not (is_morning or is_afternoon):
-        with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
-        if not cache_ok:
-            print(f"[{ts}] Cache chưa có — tải lịch sử trước giờ giao dịch...")
+        if current_date > last_run_date:
+            alerted_today.clear()
+            last_run_date = current_date
+            print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
+            print("🔧 Reload cache lịch sử cho ngày mới...")
             build_history_cache(symbols_to_scan, current_date)
 
-        if   now_time < 85000:  next_open = "09:00"
-        elif now_time < 130000: next_open = "13:00"
-        else:                   next_open = "09:00 ngày mai"
-        print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener vẫn chạy.")
+        is_morning   = 85500 <= now_time <= 113000
+        is_afternoon = 130000 <= now_time <= 150000
+
+        if not (is_morning or is_afternoon):
+            with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
+            if not cache_ok:
+                print(f"[{ts}] Cache chưa có — tải lịch sử trước giờ giao dịch...")
+                build_history_cache(symbols_to_scan, current_date)
+
+            if   now_time < 85000:  next_open = "09:00"
+            elif now_time < 130000: next_open = "13:00"
+            else:                   next_open = "09:00 ngày mai"
+            print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener vẫn chạy.")
+            time.sleep(SCAN_INTERVAL_SEC)
+            continue
+
+        with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
+        if not cache_ok:
+            print(f"[{ts}] ⚠️  Cache chưa sẵn sàng — đang load...")
+            build_history_cache(symbols_to_scan, current_date)
+
+        check_and_rebuild_cache_if_stale(symbols_to_scan, current_date)
+
+        print(f"\n{'='*60}")
+        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
+        print(f"{'='*60}")
+
+        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
+
+        if new_signals:
+            print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
+        else:
+            print(f"[{ts}] Không có tín hiệu mới.")
+
+        if alerted_today:
+            summary_str = " | ".join([f"{k}:{v}" for k,v in alerted_today.items()])
+            print(f"   📋 Đã báo hôm nay: {summary_str}")
+
+        print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
         time.sleep(SCAN_INTERVAL_SEC)
-        continue
 
-    with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
-    if not cache_ok:
-        print(f"[{ts}] ⚠️  Cache chưa sẵn sàng — đang load...")
-        build_history_cache(symbols_to_scan, current_date)
-
-    # ── KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT ─────────────────────────────
-    check_and_rebuild_cache_if_stale(symbols_to_scan, current_date)
-
-    print(f"\n{'='*60}")
-    print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
-    print(f"{'='*60}")
-
-    new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
-
-    if new_signals:
-        print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
-    else:
-        print(f"[{ts}] Không có tín hiệu mới.")
-
-    if alerted_today:
-        summary_str = " | ".join([f"{k}:{v}" for k,v in alerted_today.items()])
-        print(f"   📋 Đã báo hôm nay: {summary_str}")
-
-    print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
-    time.sleep(SCAN_INTERVAL_SEC)
+    except Exception as e:
+        ts = datetime.now(TZ_VN).strftime("%H:%M:%S")
+        print(f"[{ts}] ❌ Lỗi vòng lặp chính: {e}")
+        time.sleep(10)
