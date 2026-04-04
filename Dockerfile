@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY scanner_full.py .
 
+COPY dashboard_server.py .
+
 ENV MPLBACKEND=Agg
 
 CMD ["python", "-u", "scanner_full.py"]
