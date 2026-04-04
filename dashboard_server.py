@@ -1,12 +1,26 @@
 """
 =============================================================================
 DASHBOARD SERVER — Tích hợp vào scanner bot
+Thêm vào cuối BƯỚC 1 (IMPORT):
+    from dashboard_server import start_dashboard
+
+Thêm vào BƯỚC 9 (sau khi khởi động listener):
+    start_dashboard(
+        alerted_today_ref  = lambda: alerted_today,
+        history_cache_ref  = lambda: history_cache,
+        cache_lock_ref     = cache_lock,
+        fetch_heatmap_fn   = fetch_heatmap_data,
+        signal_emoji_ref   = SIGNAL_EMOJI,
+        signal_rank_ref    = SIGNAL_RANK,
+        port               = 8888,
+    )
+
+Truy cập: http://YOUR_VPS_IP:8888
 =============================================================================
 """
 
 from flask import Flask, jsonify, Response
 import threading
-import json
 import time
 from datetime import datetime
 import pytz
@@ -21,9 +35,10 @@ _fetch_heatmap_fn   = None
 _signal_emoji       = {}
 _signal_rank        = {}
 
-_heatmap_cache      = {"data": {}, "ts": "", "updated_at": 0}
-_heatmap_lock       = threading.Lock()
-HEATMAP_TTL_SEC     = 120
+_heatmap_cache  = {"data": {}, "ts": "", "updated_at": 0}
+_heatmap_lock   = threading.Lock()
+HEATMAP_TTL_SEC = 120   # heatmap gọi API tối đa 1 lần / 2 phút
+SIGNAL_TTL_SEC  = 30    # tín hiệu đọc RAM mỗi 30 giây
 
 # =============================================================================
 # API ENDPOINTS
@@ -35,10 +50,10 @@ def api_signals():
     result  = []
     for sym, sig in alerted.items():
         result.append({
-            "symbol":  sym,
-            "signal":  sig,
-            "emoji":   _signal_emoji.get(sig, "📌"),
-            "rank":    _signal_rank.get(sig, 0),
+            "symbol": sym,
+            "signal": sig,
+            "emoji":  _signal_emoji.get(sig, "📌"),
+            "rank":   _signal_rank.get(sig, 0),
         })
     result.sort(key=lambda x: x["rank"], reverse=True)
     return jsonify({
@@ -89,11 +104,20 @@ def api_cache_info():
 
 @app.route("/api/status")
 def api_status():
-    cache  = _get_history_cache() if _get_history_cache else {}
+    cache = _get_history_cache() if _get_history_cache else {}
     return jsonify({
         "status":        "running",
         "cache_symbols": len(cache),
         "server_time":   datetime.now(TZ_VN).strftime("%H:%M:%S %d/%m/%Y"),
+    })
+
+
+@app.route("/api/config")
+def api_config():
+    """Trả về TTL config để frontend hiển thị footer đúng."""
+    return jsonify({
+        "signal_ttl_sec":  SIGNAL_TTL_SEC,
+        "heatmap_ttl_sec": HEATMAP_TTL_SEC,
     })
 
 
@@ -113,7 +137,7 @@ def start_dashboard(
     fetch_heatmap_fn,
     signal_emoji_ref,
     signal_rank_ref,
-    port=8080,
+    port=8888,
 ):
     global _get_alerted_today, _get_history_cache, _cache_lock
     global _fetch_heatmap_fn, _signal_emoji, _signal_rank
@@ -127,363 +151,311 @@ def start_dashboard(
 
     def _run():
         import logging
-        log = logging.getLogger('werkzeug')
-        log.setLevel(logging.ERROR)
+        logging.getLogger('werkzeug').setLevel(logging.ERROR)
         app.run(host="0.0.0.0", port=port, threaded=True, use_reloader=False)
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
+    threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard khởi động tại http://0.0.0.0:{port}")
+    print(f"   Tín hiệu refresh : {SIGNAL_TTL_SEC}s (đọc RAM, không gọi API)")
+    print(f"   Heatmap refresh  : {HEATMAP_TTL_SEC}s (gọi API, chỉ khi có người mở dashboard)")
 
 
 # =============================================================================
-# HTML DASHBOARD
+# HTML DASHBOARD — Light Mode
 # =============================================================================
 
-DASHBOARD_HTML = """<!DOCTYPE html>
+DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Scanner Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
+/* ── LIGHT THEME ─────────────────────────────────────────────────────────── */
 :root {
-  --bg:      #0d1117;
-  --surface: #161b22;
-  --surface2:#1c2330;
-  --border:  #30363d;
-  --accent:  #58a6ff;
-  --accent2: #3fb950;
-  --accent3: #f78166;
-  --text:    #e6edf3;
-  --muted:   #7d8590;
-  --font-mono:'IBM Plex Mono', monospace;
-  --font-ui:  'Barlow Condensed', sans-serif;
+  --bg:      #f4f6fb;
+  --surface: #ffffff;
+  --surf2:   #f0f3f9;
+  --border:  #dde3ee;
+  --accent:  #1a56db;
+  --green:   #0e9f6e;
+  --red:     #e02424;
+  --text:    #111827;
+  --muted:   #6b7280;
+  --shadow:  rgba(0,0,0,0.07);
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-ui:   'Barlow Condensed', sans-serif;
 }
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-  background:var(--bg); color:var(--text);
-  font-family:var(--font-mono); font-size:13px;
-  min-height:100vh; overflow-x:hidden;
-}
-
-/* SCANLINES OVERLAY */
-body::before {
-  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
-  background: repeating-linear-gradient(
-    0deg, transparent, transparent 2px,
-    rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
-  );
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:var(--font-mono);font-size:13px;
+  min-height:100vh;
 }
 
-/* HEADER */
-header {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:12px 24px; border-bottom:1px solid var(--border);
-  background:var(--surface); position:sticky; top:0; z-index:100;
-  box-shadow:0 1px 12px rgba(0,0,0,0.4);
+/* ── REFRESH BAR ─────────────────────────────────────────────────────────── */
+#rbar{
+  height:2px;
+  background:linear-gradient(90deg,var(--accent),var(--green));
+  width:0%;position:fixed;top:0;left:0;z-index:200;
 }
-header h1 {
-  font-family:var(--font-ui); font-size:20px; font-weight:800;
-  letter-spacing:3px; color:var(--accent); text-transform:uppercase;
+
+/* ── HEADER ──────────────────────────────────────────────────────────────── */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 22px;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:100;
+  box-shadow:0 1px 6px var(--shadow);
 }
-.header-right { display:flex; gap:20px; align-items:center; }
-#clock { color:var(--muted); font-size:11px; font-family:var(--font-mono); }
-.dot-live {
-  width:8px; height:8px; border-radius:50%;
-  background:var(--accent2); box-shadow:0 0 10px rgba(63,185,80,0.6);
+header h1{
+  font-family:var(--font-ui);font-size:19px;font-weight:800;
+  letter-spacing:2.5px;color:var(--accent);text-transform:uppercase;
+}
+.hdr-right{display:flex;gap:18px;align-items:center}
+#clock{color:var(--muted);font-size:11px}
+.dot-live{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);
   animation:pulse 2s ease-in-out infinite;
 }
-@keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 10px rgba(63,185,80,0.6)} 50%{opacity:0.4;box-shadow:none} }
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* LAYOUT */
-.container { padding:16px 20px; display:flex; flex-direction:column; gap:16px; position:relative; z-index:1; }
+/* ── LAYOUT ──────────────────────────────────────────────────────────────── */
+.wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 
-/* PANEL */
-.panel {
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:8px; overflow:hidden;
+/* ── PANEL ───────────────────────────────────────────────────────────────── */
+.panel{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow);
 }
-.panel-header {
-  padding:10px 16px; border-bottom:1px solid var(--border);
-  display:flex; align-items:center; justify-content:space-between;
-  background:var(--surface2);
+.panel-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border);
 }
-.panel-title {
-  font-family:var(--font-ui); font-size:13px; font-weight:800;
-  text-transform:uppercase; letter-spacing:2px; color:var(--accent);
+.panel-title{
+  font-family:var(--font-ui);font-size:12px;font-weight:800;
+  text-transform:uppercase;letter-spacing:2px;color:var(--accent);
 }
-.panel-meta { font-size:10px; color:var(--muted); }
-.panel-body { padding:12px 16px; }
+.panel-meta{font-size:10px;color:var(--muted)}
+.panel-body{padding:12px 14px}
 
-/* SIGNAL LIST */
-.signal-list { display:flex; flex-direction:column; gap:3px; }
-.signal-row {
-  display:grid; grid-template-columns:28px 68px 1fr 100px;
-  align-items:center; padding:7px 10px;
-  border-radius:5px; border:1px solid var(--border);
-  cursor:pointer; transition:all 0.15s;
-  animation:fadeIn 0.3s ease; background:var(--surface2);
+/* ── SIGNAL LIST ─────────────────────────────────────────────────────────── */
+.sig-list{display:flex;flex-direction:column;gap:3px}
+.sig-row{
+  display:grid;grid-template-columns:28px 68px 1fr 106px;
+  align-items:center;padding:7px 10px;
+  border-radius:5px;border:1px solid var(--border);
+  cursor:pointer;transition:all .15s;
+  animation:fadeIn .3s ease;background:var(--surface);
 }
-@keyframes fadeIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:none} }
-.signal-row:hover {
-  background:rgba(88,166,255,0.08); border-color:rgba(88,166,255,0.35);
-  box-shadow:0 0 12px rgba(88,166,255,0.08);
-}
-.signal-row:hover .sig-sym { color:var(--accent); }
-.sig-emoji { font-size:14px; text-align:center; }
-.sig-sym   { font-weight:700; color:var(--text); font-size:13px; transition:color 0.15s; }
-.sig-type  { font-size:11px; color:var(--muted); }
-.sig-badge {
-  font-size:10px; font-weight:700; padding:3px 8px;
-  border-radius:4px; text-align:center; letter-spacing:0.5px;
+@keyframes fadeIn{from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:none}}
+.sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
+.sig-row:hover .s-sym{color:var(--accent)}
+.s-emoji{font-size:14px;text-align:center}
+.s-sym{font-weight:700;font-size:13px;transition:color .15s}
+.s-type{font-size:11px;color:var(--muted)}
+.s-badge{
+  font-size:10px;font-weight:700;padding:3px 7px;
+  border-radius:4px;text-align:center;letter-spacing:.4px;
   font-family:var(--font-ui);
 }
-.badge-BREAKOUT     { background:rgba(63,185,80,0.15);  color:#3fb950; border:1px solid rgba(63,185,80,0.3); }
-.badge-POCKET       { background:rgba(210,153,34,0.15); color:#e3b341; border:1px solid rgba(210,153,34,0.3); }
-.badge-PREBREAK     { background:rgba(163,113,247,0.15);color:#a371f7; border:1px solid rgba(163,113,247,0.3); }
-.badge-BOTTOMBREAKP { background:rgba(88,166,255,0.15); color:#58a6ff; border:1px solid rgba(88,166,255,0.3); }
-.badge-BOTTOMFISH   { background:rgba(247,129,102,0.15);color:#f78166; border:1px solid rgba(247,129,102,0.3); }
-.badge-MA_CROSS     { background:rgba(125,133,144,0.15);color:#7d8590; border:1px solid rgba(125,133,144,0.3); }
-.empty-state { text-align:center; padding:40px 20px; color:var(--muted); font-size:12px; }
-.empty-state .big { font-size:32px; margin-bottom:8px; }
+.b-BREAKOUT    {background:#dcfce7;color:#15803d;border:1px solid #86efac}
+.b-POCKET      {background:#fef9c3;color:#854d0e;border:1px solid #fde047}
+.b-PREBREAK    {background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
+.b-BBREAKP     {background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
+.b-BFISH       {background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
+.b-MACROSS     {background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
+.empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px}
+.empty .big{font-size:30px;margin-bottom:8px}
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   HEATMAP — layout khớp 100% scanner Python
-   Mỗi cột (col 0..7) xếp ngang, mỗi group trong cột xếp dọc.
-   Mỗi cell: 3 phần căn giữa = [SYM | GIÁ | %]
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ── HEATMAP ─────────────────────────────────────────────────────────────── */
+.hmap-outer{overflow-x:auto;padding-bottom:4px}
+.hmap-outer::-webkit-scrollbar{height:4px}
+.hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
-.heatmap-outer {
-  overflow-x:auto; padding-bottom:6px;
+/* Tất cả cột xếp ngang */
+.hmap-row{
+  display:inline-flex;flex-direction:row;
+  gap:4px;align-items:flex-start;
+  min-width:max-content;padding:2px;
 }
-.heatmap-outer::-webkit-scrollbar { height:5px; }
-.heatmap-outer::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+/* Mỗi cột = 162px, khớp HMAP_CELL_W scanner */
+.hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
+.hmap-group{display:flex;flex-direction:column;gap:2px;margin-bottom:3px}
 
-/* Row ngoài cùng chứa tất cả các cột xếp ngang */
-.hmap-row {
-  display:inline-flex;
-  flex-direction:row;
-  gap:4px;                /* HMAP_COL_GAP = 4px */
-  align-items:flex-start;
-  min-width:max-content;
-  padding:2px;
-}
-
-/* Mỗi cột */
-.hmap-col {
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  width:162px;            /* HMAP_CELL_W = 162px */
-  flex-shrink:0;
-}
-
-/* Group = header + cells */
-.hmap-group {
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  margin-bottom:3px;
-}
-
-/* Header nhóm ngành */
-.hmap-group-hdr {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:0 7px;
-  height:24px;                /* HMAP_CELL_H ≈ 26px */
-  border-radius:4px;
-  background:rgb(34,42,62);
-  border:1px solid rgb(50,65,110);
+/* Header nhóm ngành — khớp màu scanner HMAP_HDR_FILL=(220,228,250) */
+.hmap-ghdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 7px;height:24px;border-radius:4px;
+  background:rgb(220,228,250);border:1px solid rgb(160,180,230);
   overflow:hidden;
 }
-.hmap-hdr-name {
-  font-family:var(--font-ui);
-  font-size:10px; font-weight:700;
-  text-transform:uppercase; letter-spacing:0.8px;
-  color:rgb(140,170,240);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+.hmap-gname{
+  font-family:var(--font-ui);font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.hmap-hdr-pct {
+.hmap-gavg{font-family:var(--font-mono);font-size:9px;font-weight:700;flex-shrink:0;margin-left:4px}
+.hmap-gavg.pos{color:rgb(22,120,40)}
+.hmap-gavg.neg{color:rgb(185,25,25)}
+.hmap-gavg.zer{color:rgb(110,105,20)}
+
+/* Cell — 3 phần grid căn giữa [SYM 56px][GIÁ 48px][% auto]
+   khớp w1=int(162*.35)=56, w2=int(162*.30)=48, w3=58 */
+.hmap-cell{
+  display:grid;grid-template-columns:56px 48px 1fr;
+  align-items:center;height:24px;border-radius:4px;
+  cursor:pointer;border:1px solid rgba(0,0,0,.1);
+  transition:filter .12s,transform .1s,box-shadow .12s;
+  overflow:hidden;
+}
+.hmap-cell:hover{filter:brightness(.88);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.hmap-cell > span{
+  display:flex;align-items:center;justify-content:center;
+  height:100%;overflow:hidden;white-space:nowrap;
   font-family:var(--font-mono);
-  font-size:9px; font-weight:700;
-  flex-shrink:0; margin-left:4px;
-  white-space:nowrap;
 }
-.hmap-hdr-pct.pos { color:rgb(80,210,110); }
-.hmap-hdr-pct.neg { color:rgb(240,80,80); }
-.hmap-hdr-pct.zero{ color:rgb(200,180,60); }
+.hc-sym  {font-size:10px;font-weight:700}
+.hc-price{font-size:8.5px;opacity:.82}
+.hc-pct  {font-size:9.5px;font-weight:700}
 
-/* Cell mã cổ phiếu
-   3 phần xếp ngang BẰNG NHAU, đều căn giữa:
-   [SYM 35%] [GIÁ 32%] [% 33%]
-   Khớp w1/w2/w3 trong scanner:
-     w1 = int(162*0.35) = 56
-     w2 = int(162*0.30) = 48
-     w3 = 162-56-48 = 58
-*/
-.hmap-cell {
-  display:grid;
-  grid-template-columns:56px 48px 1fr;  /* w1 w2 w3 */
-  align-items:center;
-  height:24px;                           /* HMAP_CELL_H-2 */
-  border-radius:4px;
-  cursor:pointer;
-  border:1px solid rgba(0,0,0,0.12);
-  transition:filter 0.12s, transform 0.1s, box-shadow 0.12s;
-  overflow:hidden;
+/* ── POPUP ───────────────────────────────────────────────────────────────── */
+.overlay{
+  display:none;position:fixed;inset:0;z-index:9999;
+  background:rgba(17,24,39,.5);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;
 }
-.hmap-cell:hover {
-  filter:brightness(1.18);
-  transform:scale(1.035);
-  z-index:2;
-  box-shadow:0 2px 10px rgba(0,0,0,0.5);
+.overlay.on{display:flex}
+.pbox{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);
+  width:95vw;max-width:1440px;height:90vh;
+  display:flex;flex-direction:column;overflow:hidden;
+  animation:popIn .2s ease;
 }
-/* Mỗi ô con căn giữa */
-.hmap-cell > span {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  height:100%;
-  font-size:9.5px;
+@keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
+
+.phdr{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  padding:9px 14px;gap:8px;
+  background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.ptitle{
+  font-family:var(--font-ui);font-size:17px;font-weight:800;
+  color:var(--accent);letter-spacing:1.5px;flex-shrink:0;
+}
+
+/* Tab chọn: TradingView | 24HMoney */
+.ctabs{display:flex;gap:2px;align-items:flex-end}
+.ctab{
+  font-size:11px;font-family:var(--font-mono);font-weight:600;
+  padding:5px 13px;border-radius:5px 5px 0 0;
+  border:1px solid var(--border);border-bottom:2px solid transparent;
+  background:var(--bg);color:var(--muted);cursor:pointer;
+  transition:all .15s;
+}
+.ctab.on{
+  background:var(--surface);color:var(--accent);
+  border-color:var(--border);border-bottom-color:var(--accent);
   font-weight:700;
-  font-family:var(--font-mono);
-  white-space:nowrap;
-  overflow:hidden;
 }
-.hmap-sym  { font-size:10px; font-weight:700; letter-spacing:0.2px; }
-.hmap-price{ font-size:9px;  font-weight:400; opacity:0.88; }
-.hmap-pct  { font-size:9.5px; font-weight:700; }
+.ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 
-/* POPUP */
-.popup-overlay {
-  display:none; position:fixed; inset:0; z-index:9999;
-  background:rgba(0,0,0,0.75); backdrop-filter:blur(4px);
-  align-items:center; justify-content:center;
+/* Timeframe buttons */
+.tfg{display:flex;gap:3px;align-items:center}
+.tf-lbl{font-size:10px;color:var(--muted);margin-right:2px}
+.tfbtn{
+  font-size:10px;font-family:var(--font-mono);font-weight:700;
+  padding:4px 10px;border-radius:4px;
+  border:1px solid var(--border);background:var(--bg);
+  color:var(--muted);cursor:pointer;transition:all .15s;
 }
-.popup-overlay.active { display:flex; }
-.popup-box {
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:10px; box-shadow:0 16px 60px rgba(0,0,0,0.6);
-  width:94vw; max-width:1400px; height:88vh;
-  display:flex; flex-direction:column; overflow:hidden;
-  animation:popIn 0.2s ease;
-}
-@keyframes popIn { from{opacity:0;transform:scale(0.96) translateY(16px)} to{opacity:1;transform:none} }
-.popup-header {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:10px 16px; border-bottom:1px solid var(--border);
-  background:var(--surface2); flex-shrink:0;
-}
-.popup-title {
-  font-family:var(--font-ui); font-size:16px; font-weight:800;
-  color:var(--accent); letter-spacing:1.5px;
-}
-.popup-actions { display:flex; gap:10px; align-items:center; }
+.tfbtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tfbtn:hover:not(.on){border-color:var(--accent);color:var(--accent)}
 
-/* Nút chọn exchange */
-.exchange-tabs { display:flex; gap:4px; }
-.ex-btn {
-  font-size:10px; font-family:var(--font-mono); font-weight:700;
-  padding:4px 10px; border-radius:4px; border:1px solid var(--border);
-  background:var(--bg); color:var(--muted); cursor:pointer;
-  transition:all 0.15s; letter-spacing:0.5px;
+/* Exchange tabs */
+.exg{display:flex;gap:3px;align-items:center}
+.ex-lbl{font-size:10px;color:var(--muted);margin-right:2px}
+.exbtn{
+  font-size:10px;font-family:var(--font-mono);font-weight:700;
+  padding:4px 9px;border-radius:4px;
+  border:1px solid var(--border);background:var(--bg);
+  color:var(--muted);cursor:pointer;transition:all .15s;
 }
-.ex-btn.active { background:var(--accent); color:#0d1117; border-color:var(--accent); }
-.ex-btn:hover:not(.active) { border-color:var(--accent); color:var(--accent); }
+.exbtn.on{background:#475569;color:#fff;border-color:#475569}
+.exbtn:hover:not(.on){border-color:#475569;color:#475569}
 
-.btn-open {
-  font-size:11px; font-family:var(--font-mono); font-weight:600;
-  padding:5px 12px; border-radius:5px;
-  background:transparent; color:var(--accent);
-  border:1px solid var(--accent); cursor:pointer;
-  text-decoration:none; transition:all 0.15s;
+.closebtn{
+  width:28px;height:28px;border-radius:50%;
+  border:1px solid var(--border);background:var(--bg);
+  color:var(--muted);font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;flex-shrink:0;
 }
-.btn-open:hover { background:var(--accent); color:#0d1117; }
-.btn-close {
-  width:28px; height:28px; border-radius:50%;
-  border:1px solid var(--border); background:var(--bg);
-  color:var(--muted); font-size:16px; cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
-  transition:all 0.15s;
-}
-.btn-close:hover { background:var(--accent3); color:#0d1117; border-color:var(--accent3); }
+.closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
 
-/* TradingView widget container */
-.popup-tv-container {
-  flex:1; width:100%; position:relative; background:#131722;
-  overflow:hidden;
-}
-.popup-tv-container iframe {
-  width:100%; height:100%; border:none; display:block;
+/* Tab content */
+.pbody{flex:1;overflow:hidden;position:relative;border-top:1px solid var(--border)}
+.tpanel{position:absolute;inset:0;display:none}
+.tpanel.on{display:block}
+.tpanel iframe{width:100%;height:100%;border:none;display:block}
+
+/* ── FOOTER ──────────────────────────────────────────────────────────────── */
+footer{
+  text-align:center;padding:9px;color:var(--muted);font-size:10px;
+  border-top:1px solid var(--border);background:var(--surface);
 }
 
-/* REFRESH BAR */
-.refresh-bar {
-  height:2px;
-  background:linear-gradient(90deg, var(--accent), var(--accent2), var(--accent3));
-  width:0%; position:fixed; top:0; left:0; z-index:200;
-}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
-/* FOOTER */
-footer {
-  text-align:center; padding:10px; color:var(--muted); font-size:10px;
-  border-top:1px solid var(--border); background:var(--surface);
-  position:relative; z-index:1;
-}
-
-/* Scrollbar global */
-::-webkit-scrollbar { width:5px; height:5px; }
-::-webkit-scrollbar-track { background:var(--bg); }
-::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
-::-webkit-scrollbar-thumb:hover { background:var(--muted); }
-
-@media(max-width:768px) {
-  .popup-box { width:99vw; height:93vh; border-radius:6px; }
-  header h1 { font-size:15px; letter-spacing:1px; }
+@media(max-width:768px){
+  .pbox{width:99vw;height:94vh;border-radius:6px}
+  header h1{font-size:15px;letter-spacing:1px}
 }
 </style>
 </head>
 <body>
 
-<div class="refresh-bar" id="rbar"></div>
+<div id="rbar"></div>
 
 <header>
   <h1>⚡ Scanner Dashboard</h1>
-  <div class="header-right">
+  <div class="hdr-right">
     <div class="dot-live"></div>
     <span id="clock">--:--:--</span>
   </div>
 </header>
 
-<div class="container">
+<div class="wrap">
 
-  <!-- TÍN HIỆU HÔM NAY -->
+  <!-- TÍN HIỆU -->
   <div class="panel">
-    <div class="panel-header">
+    <div class="panel-hdr">
       <span class="panel-title">Tín hiệu hôm nay</span>
-      <span class="panel-meta" id="sig-meta">Click mã để xem chart</span>
+      <span class="panel-meta" id="sig-meta">Đang tải...</span>
     </div>
     <div class="panel-body">
-      <div class="signal-list" id="signal-list">
-        <div class="empty-state"><div class="big">📡</div><div>Đang tải...</div></div>
+      <div class="sig-list" id="sig-list">
+        <div class="empty"><div class="big">📡</div><div>Đang tải...</div></div>
       </div>
     </div>
   </div>
 
   <!-- HEATMAP -->
   <div class="panel">
-    <div class="panel-header">
+    <div class="panel-hdr">
       <span class="panel-title">Heatmap thị trường</span>
-      <span class="panel-meta" id="hmap-ts">Click mã để xem chart</span>
+      <span class="panel-meta" id="hmap-ts">Đang tải...</span>
     </div>
-    <div class="panel-body" style="padding:8px;">
-      <div class="heatmap-outer">
-        <div class="hmap-row" id="heatmap-grid">
-          <div class="empty-state"><div class="big">🗺</div><div>Đang tải heatmap...</div></div>
+    <div class="panel-body" style="padding:8px">
+      <div class="hmap-outer">
+        <div class="hmap-row" id="hmap-grid">
+          <div class="empty"><div class="big">🗺</div><div>Đang tải...</div></div>
         </div>
       </div>
     </div>
@@ -491,75 +463,118 @@ footer {
 
 </div>
 
-<footer>Scanner Bot Dashboard • Tự động làm mới 30s/2p • TradingView chart với EMA 10/20/50/200 + MACD</footer>
+<footer id="footer-txt">Scanner Bot Dashboard</footer>
 
-<!-- POPUP CHART TRADINGVIEW -->
-<div class="popup-overlay" id="popup-overlay">
-  <div class="popup-box">
-    <div class="popup-header">
-      <span class="popup-title" id="popup-title">Chart</span>
-      <div class="popup-actions">
-        <div class="exchange-tabs">
-          <button class="ex-btn active" id="ex-hose" onclick="setExchange('HOSE')">HOSE</button>
-          <button class="ex-btn" id="ex-hnx"  onclick="setExchange('HNX')">HNX</button>
-          <button class="ex-btn" id="ex-upcom" onclick="setExchange('UPCOM')">UPCOM</button>
-        </div>
-        <a class="btn-open" id="popup-open-link" href="#" target="_blank">↗ TradingView</a>
-        <button class="btn-close" onclick="closePopup()">✕</button>
+<!-- ══════════════════════════════════════════════════════════
+     POPUP CHART
+══════════════════════════════════════════════════════════ -->
+<div class="overlay" id="overlay">
+  <div class="pbox">
+
+    <div class="phdr">
+      <!-- Tiêu đề mã -->
+      <span class="ptitle" id="ptitle">Chart</span>
+
+      <!-- Tab chọn nội dung -->
+      <div class="ctabs">
+        <button class="ctab on"  id="ctab-tv"  onclick="switchTab('tv')">📈 TradingView</button>
+        <button class="ctab"     id="ctab-24h" onclick="switchTab('24h')">📰 24HMoney</button>
+      </div>
+
+      <!-- Timeframe (chỉ hiện ở tab TV) -->
+      <div class="tfg" id="tfg">
+        <span class="tf-lbl">Khung:</span>
+        <button class="tfbtn"    id="tf-15" onclick="setTF('15')">15m</button>
+        <button class="tfbtn on" id="tf-D"  onclick="setTF('D')">Daily</button>
+        <button class="tfbtn"    id="tf-W"  onclick="setTF('W')">Weekly</button>
+      </div>
+
+      <!-- Exchange (chỉ hiện ở tab TV) -->
+      <div class="exg" id="exg">
+        <span class="ex-lbl">Sàn:</span>
+        <button class="exbtn on" id="ex-HOSE"  onclick="setEx('HOSE')">HOSE</button>
+        <button class="exbtn"    id="ex-HNX"   onclick="setEx('HNX')">HNX</button>
+        <button class="exbtn"    id="ex-UPCOM" onclick="setEx('UPCOM')">UPCOM</button>
+      </div>
+
+      <button class="closebtn" onclick="closePopup()">✕</button>
+    </div>
+
+    <div class="pbody">
+      <!-- Tab TradingView -->
+      <div class="tpanel on" id="panel-tv">
+        <div id="tv-container" style="width:100%;height:100%;background:#fff"></div>
+      </div>
+      <!-- Tab 24HMoney -->
+      <div class="tpanel" id="panel-24h">
+        <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
       </div>
     </div>
-    <div class="popup-tv-container" id="tv-container"></div>
+
   </div>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-// CẤU TRÚC HEATMAP — khớp 1:1 với HEATMAP_COLUMNS trong scanner Python
-// col 0 = Trading Stocks (tạo động từ data)
-// col 1..7 = các cột ngành cố định
+// CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-const HEATMAP_COLUMNS = [
-  { col:1, groups:[
-    { name:"VN30", symbols:[
+let SIG_TTL  = 30;
+let HMAP_TTL = 120;
+
+async function loadConfig() {
+  try {
+    const j = await fetch('/api/config').then(r=>r.json());
+    SIG_TTL  = j.signal_ttl_sec  || 30;
+    HMAP_TTL = j.heatmap_ttl_sec || 120;
+  } catch(e) {}
+  document.getElementById('footer-txt').textContent =
+    `Scanner Bot Dashboard  •  Tín hiệu tự động làm mới sau ${SIG_TTL}s  •  Heatmap tự động làm mới sau ${HMAP_TTL}s`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HEATMAP CONFIG — khớp 1:1 scanner Python
+// ═══════════════════════════════════════════════════════════════════════════
+const HMAP_COLS = [
+  { groups:[
+    { name:"VN30", syms:[
       "FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ",
       "BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN",
       "SSI","ACB","BVH","GVR","TPB",
     ]},
   ]},
-  { col:2, groups:[
-    { name:"NGAN HANG", symbols:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"] },
-    { name:"DAU KHI",   symbols:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"] },
+  { groups:[
+    { name:"NGAN HANG", syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"] },
+    { name:"DAU KHI",   syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"] },
   ]},
-  { col:3, groups:[
-    { name:"CHUNG KHOAN", symbols:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"] },
-    { name:"XAY DUNG",    symbols:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"] },
+  { groups:[
+    { name:"CHUNG KHOAN", syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"] },
+    { name:"XAY DUNG",    syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"] },
   ]},
-  { col:4, groups:[
-    { name:"BAT DONG SAN", symbols:["IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"] },
-    { name:"PHAN BON",     symbols:["BFC","DCM","DPM"] },
-    { name:"THEP",         symbols:["HPG","HSG","NKG"] },
+  { groups:[
+    { name:"BAT DONG SAN", syms:["IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"] },
+    { name:"PHAN BON",     syms:["BFC","DCM","DPM"] },
+    { name:"THEP",         syms:["HPG","HSG","NKG"] },
   ]},
-  { col:5, groups:[
-    { name:"BAN LE",    symbols:["MSN","FPT","FRT","MWG","PNJ","DGW"] },
-    { name:"THUY SAN",  symbols:["ANV","FMC","CMX","VHC","IDI"] },
-    { name:"CANG BIEN", symbols:["HAH","GMD","SGP","VSC"] },
-    { name:"CAO SU",    symbols:["GVR","DPR","DRI","PHR","DRC"] },
-    { name:"NHUA",      symbols:["AAA","BMP","NTP"] },
+  { groups:[
+    { name:"BAN LE",    syms:["MSN","FPT","FRT","MWG","PNJ","DGW"] },
+    { name:"THUY SAN",  syms:["ANV","FMC","CMX","VHC","IDI"] },
+    { name:"CANG BIEN", syms:["HAH","GMD","SGP","VSC"] },
+    { name:"CAO SU",    syms:["GVR","DPR","DRI","PHR","DRC"] },
+    { name:"NHUA",      syms:["AAA","BMP","NTP"] },
   ]},
-  { col:6, groups:[
-    { name:"DIEN NUOC",  symbols:["NT2","PC1","GEG","GEX","POW","TDM","BWE"] },
-    { name:"DET MAY",    symbols:["TCM","TNG","VGT","MSH"] },
-    { name:"HANG KHONG", symbols:["NCT","ACV","AST","HVN","SCS","VJC"] },
-    { name:"BAO HIEM",   symbols:["BMI","MIG","BVH"] },
-    { name:"MIA DUONG",  symbols:["LSS","SBT","QNS"] },
+  { groups:[
+    { name:"DIEN NUOC",  syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"] },
+    { name:"DET MAY",    syms:["TCM","TNG","VGT","MSH"] },
+    { name:"HANG KHONG", syms:["NCT","ACV","AST","HVN","SCS","VJC"] },
+    { name:"BAO HIEM",   syms:["BMI","MIG","BVH"] },
+    { name:"MIA DUONG",  syms:["LSS","SBT","QNS"] },
   ]},
-  { col:7, groups:[
-    { name:"DAU TU CONG", symbols:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"] },
+  { groups:[
+    { name:"DAU TU CONG", syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"] },
   ]},
 ];
 
-// Pool Trading Stocks (col 0)
-const TRADING_STOCKS_POOL = [
+const TS_POOL = [
   "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
   "CCL","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM",
   "DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS",
@@ -572,296 +587,280 @@ const TRADING_STOCKS_POOL = [
   "VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE",
 ];
 
-// ═══════════════════════════════════════════════════════════════════════════
-// MÀU CELL — khớp 1:1 _hmap_cell_color() trong scanner Python
-// ═══════════════════════════════════════════════════════════════════════════
+// Màu cell — khớp _hmap_cell_color() Python
 function cellStyle(pct) {
-  let r, g, b;
-  if      (pct >=  6.5) { r=250; g=170; b=225; }   // tran (trần)
-  else if (pct >=  4.0) { r=160; g=220; b=170; }   // xd
-  else if (pct >=  2.0) { r=195; g=235; b=200; }   // xv
-  else if (pct >   0.0) { r=225; g=245; b=228; }   // xn
-  else if (pct === 0.0) { r=245; g=245; b=200; }   // tc (tham chiếu)
-  else if (pct >= -2.0) { r=255; g=220; b=210; }   // dn
-  else if (pct >= -4.0) { r=250; g=185; b=175; }   // dv
-  else if (pct >= -6.5) { r=240; g=150; b=145; }   // dd
-  else                  { r=175; g=250; b=255; }   // san (sàn)
-
-  // _hmap_fg: lum > 160 → (30,30,30) else (15,15,15)
-  const lum = 0.299*r + 0.587*g + 0.114*b;
-  const fg  = lum > 160 ? 'rgb(30,30,30)' : 'rgb(15,15,15)';
-  return { bg:`rgb(${r},${g},${b})`, fg };
+  let r,g,b;
+  if      (pct >=  6.5){r=250;g=170;b=225}
+  else if (pct >=  4.0){r=160;g=220;b=170}
+  else if (pct >=  2.0){r=195;g=235;b=200}
+  else if (pct >   0.0){r=225;g=245;b=228}
+  else if (pct === 0.0){r=245;g=245;b=200}
+  else if (pct >= -2.0){r=255;g=220;b=210}
+  else if (pct >= -4.0){r=250;g=185;b=175}
+  else if (pct >= -6.5){r=240;g=150;b=145}
+  else                 {r=175;g=250;b=255}
+  const lum=.299*r+.587*g+.114*b;
+  return {bg:`rgb(${r},${g},${b})`, fg:lum>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
 
-// Tính avg pct của một nhóm
-function avgPct(symbols, data) {
-  const vals = symbols.filter(s => data[s] !== undefined).map(s => data[s].pct || 0);
-  return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
+function avgPct(syms,data){
+  const v=syms.filter(s=>data[s]).map(s=>data[s].pct||0);
+  return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
+}
+function sortDesc(syms,data){
+  return [...syms].sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0));
+}
+function fmtP(p){
+  if(!p||p<=0)return'—';
+  return p<100?p.toFixed(2):Math.round(p).toLocaleString('vi-VN');
 }
 
-// Sắp xếp symbols theo pct cao → thấp (khớp scanner srt())
-function sortByPct(symbols, data) {
-  return [...symbols].sort((a, b) => {
-    const pa = (data[a]||{}).pct||0;
-    const pb = (data[b]||{}).pct||0;
-    return pb - pa;
-  });
+function mkCell(sym,data){
+  const d=data[sym]||{};
+  const pct=typeof d.pct==='number'?d.pct:0;
+  const price=typeof d.price==='number'?d.price:0;
+  const {bg,fg}=cellStyle(pct);
+  const sign=pct>=0?'+':'';
+  return `<div class="hmap-cell" style="background:${bg};color:${fg};"
+    onclick="openChart('${sym}')"
+    title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%">
+    <span class="hc-sym">${sym}</span>
+    <span class="hc-price">${fmtP(price)}</span>
+    <span class="hc-pct">${sign}${pct.toFixed(1)}%</span>
+  </div>`;
 }
 
-// Format giá: < 100 → 2 chữ số thập phân, >= 100 → 0 chữ số (khớp scanner)
-function fmtPrice(price) {
-  if (!price || price <= 0) return '—';
-  return price < 100 ? price.toFixed(2) : Math.round(price).toLocaleString('vi-VN');
+function mkGroup(name,syms,data){
+  const sorted=sortDesc(syms,data);
+  const avg=avgPct(syms,data);
+  const sign=avg>=0?'+':'';
+  const cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
+  return `<div class="hmap-group">
+    <div class="hmap-ghdr">
+      <span class="hmap-gname">${name}</span>
+      <span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span>
+    </div>
+    ${sorted.map(s=>mkCell(s,data)).join('')}
+  </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// RENDER HEATMAP
-// Cột 0 = Trading Stocks (sorted top N by |pct|, hiển thị theo pct desc)
-// Cột 1..7 = từ HEATMAP_COLUMNS, mỗi group sort pct desc
-// ═══════════════════════════════════════════════════════════════════════════
-function renderHeatmap(data) {
-  const grid = document.getElementById('heatmap-grid');
-  if (!data || !Object.keys(data).length) {
-    grid.innerHTML = '<div class="empty-state"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';
+function renderHeatmap(data){
+  const grid=document.getElementById('hmap-grid');
+  if(!data||!Object.keys(data).length){
+    grid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';
     return;
   }
-
-  // Tính maxRows để biết col 0 hiển thị bao nhiêu mã
-  const maxGroupRows = Math.max(...HEATMAP_COLUMNS.map(cd =>
-    cd.groups.reduce((s,g) => s + g.symbols.length, 0)
+  // Tính maxRows để biết col-0 hiển thị bao nhiêu mã
+  const maxRows=Math.max(...HMAP_COLS.map(cd=>
+    cd.groups.reduce((s,g)=>s+g.syms.length,0)
   ));
-
-  // Col 0: Trading Stocks — filter pool có data, sort pct desc, lấy maxRows
-  const tsSymbols = TRADING_STOCKS_POOL
-    .filter(s => data[s] !== undefined)
-    .sort((a,b) => (data[b]||{}).pct - (data[a]||{}).pct)
-    .slice(0, maxGroupRows);
-
-  function buildCell(sym, clk) {
-    const info  = data[sym] || {};
-    const pct   = typeof info.pct   === 'number' ? info.pct   : 0;
-    const price = typeof info.price === 'number' ? info.price : 0;
-    const { bg, fg } = cellStyle(pct);
-    const psign = pct >= 0 ? '+' : '';
-    const priceStr = fmtPrice(price);
-    return `
-      <div class="hmap-cell"
-           style="background:${bg};color:${fg};"
-           onclick="openChart('${sym}')"
-           title="${sym}  Giá: ${priceStr}  ${psign}${pct.toFixed(2)}%">
-        <span class="hmap-sym">${sym}</span>
-        <span class="hmap-price">${priceStr}</span>
-        <span class="hmap-pct">${psign}${pct.toFixed(1)}%</span>
-      </div>`;
-  }
-
-  function buildGroup(g, data) {
-    const sorted = sortByPct(g.symbols, data);
-    const avg    = avgPct(g.symbols, data);
-    const sign   = avg >= 0 ? '+' : '';
-    const cls    = avg > 0.05 ? 'pos' : avg < -0.05 ? 'neg' : 'zero';
-    const cells  = sorted.map(sym => buildCell(sym)).join('');
-    return `
-      <div class="hmap-group">
-        <div class="hmap-group-hdr">
-          <span class="hmap-hdr-name">${g.name}</span>
-          <span class="hmap-hdr-pct ${cls}">${sign}${avg.toFixed(1)}%</span>
-        </div>
-        ${cells}
-      </div>`;
-  }
-
-  // Cột 0: Trading Stocks
-  const tsGroup = { name: "TRADING STOCKS", symbols: tsSymbols };
-  let colsHtml = `<div class="hmap-col">${buildGroup(tsGroup, data)}</div>`;
-
-  // Cột 1..7: từ HEATMAP_COLUMNS
-  for (const colDef of HEATMAP_COLUMNS) {
-    const groupsHtml = colDef.groups.map(g => buildGroup(g, data)).join('');
-    colsHtml += `<div class="hmap-col">${groupsHtml}</div>`;
-  }
-
-  grid.innerHTML = colsHtml;
+  // Col-0: Trading Stocks sorted desc, top maxRows
+  const tsSyms=TS_POOL
+    .filter(s=>data[s]!==undefined)
+    .sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0))
+    .slice(0,maxRows);
+  const col0=`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,data)}</div>`;
+  const rest=HMAP_COLS.map(cd=>
+    `<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,data)).join('')}</div>`
+  ).join('');
+  grid.innerHTML=col0+rest;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TRADINGVIEW CHART POPUP
-// Tích hợp EMA 10/20/50/200 + MACD sẵn trong widget
+// POPUP STATE
 // ═══════════════════════════════════════════════════════════════════════════
-let _currentSym   = '';
-let _currentExch  = 'HOSE';
+let _sym='', _ex='HOSE', _tf='D', _tab='tv', _tvScriptLoaded=false;
 
-function buildTVWidget(sym, exchange) {
-  // Ticker TradingView: HOSE:HPG, HNX:SHB, UPCOM:OIL
-  const ticker = `${exchange}:${sym}`;
-  const openUrl = `https://www.tradingview.com/chart/?symbol=${ticker}`;
-  document.getElementById('popup-open-link').href = openUrl;
+// Studies: EMA10 đỏ, EMA20 xanh đậm, EMA50 tím, MA200 nâu, MACD
+const TV_STUDIES=[
+  {id:"MAExp@tv-basicstudies",   inputs:{length:10},  override:{"Plot.color":"#e53935","Plot.linewidth":1}},
+  {id:"MAExp@tv-basicstudies",   inputs:{length:20},  override:{"Plot.color":"#2e7d32","Plot.linewidth":1}},
+  {id:"MAExp@tv-basicstudies",   inputs:{length:50},  override:{"Plot.color":"#7b1fa2","Plot.linewidth":1}},
+  {id:"MASimple@tv-basicstudies",inputs:{length:200}, override:{"Plot.color":"#6d4c41","Plot.linewidth":1}},
+  {id:"MACD@tv-basicstudies",    inputs:{fast_length:12,slow_length:26,signal_smoothing:9}},
+];
 
-  // Cấu hình studies: EMA 10, 20, 50, 200 + MACD
-  const studies = [
-    { id:"MAExp@tv-basicstudies", inputs:{ length:10  }, override:{ "Plot.color":"#ef5350", "Plot.linewidth":1 } },
-    { id:"MAExp@tv-basicstudies", inputs:{ length:20  }, override:{ "Plot.color":"#26a69a", "Plot.linewidth":1 } },
-    { id:"MAExp@tv-basicstudies", inputs:{ length:50  }, override:{ "Plot.color":"#ab47bc", "Plot.linewidth":1 } },
-    { id:"MAExp@tv-basicstudies", inputs:{ length:200 }, override:{ "Plot.color":"#795548", "Plot.linewidth":1 } },
-    { id:"MACD@tv-basicstudies",  inputs:{ fast_length:12, slow_length:26, signal_smoothing:9 } },
-  ];
+const TF_MAP={'15':'15','D':'D','W':'W'};
 
-  const cfg = {
-    autosize:     true,
-    symbol:       ticker,
-    interval:     "D",
-    timezone:     "Asia/Ho_Chi_Minh",
-    theme:        "dark",
-    style:        "1",           // candlestick
-    locale:       "vi_VN",
-    toolbar_bg:   "#131722",
-    enable_publishing: false,
-    hide_top_toolbar:  false,
-    hide_legend:       false,
-    save_image:        false,
-    studies:      studies,
-    container_id: "tv_widget_inner",
+function buildTV(){
+  const ticker=`${_ex}:${_sym}`;
+  const container=document.getElementById('tv-container');
+  container.innerHTML='';
+
+  const cfg={
+    autosize:true,
+    symbol:ticker,
+    interval:TF_MAP[_tf]||'D',
+    timezone:"Asia/Ho_Chi_Minh",
+    theme:"light",
+    style:"1",
+    locale:"vi_VN",
+    enable_publishing:false,
+    hide_top_toolbar:false,
+    hide_legend:false,
+    save_image:true,
+    studies:TV_STUDIES,
+    container_id:"tv-container",
+    favorites:{intervals:["15","D","W"]},
   };
 
-  const container = document.getElementById('tv-container');
-  container.innerHTML = `<div id="tv_widget_inner" style="width:100%;height:100%;"></div>`;
+  function init(){ new window.TradingView.widget(cfg); }
 
-  // Load TradingView widget script
-  const script = document.createElement('script');
-  script.src   = 'https://s3.tradingview.com/tv.js';
-  script.async = true;
-  script.onload = () => {
-    if (window.TradingView) {
-      new TradingView.widget(cfg);
-    }
-  };
-  // Nếu TradingView đã load rồi thì khởi tạo ngay
-  if (window.TradingView) {
-    new TradingView.widget(cfg);
+  if(window.TradingView){
+    init();
+  } else if(!_tvScriptLoaded){
+    _tvScriptLoaded=true;
+    const sc=document.createElement('script');
+    sc.src='https://s3.tradingview.com/tv.js';
+    sc.async=true;
+    sc.onload=init;
+    document.head.appendChild(sc);
   } else {
-    document.head.appendChild(script);
+    // Script đang tải — poll
+    const t=setInterval(()=>{if(window.TradingView){clearInterval(t);init();}},200);
   }
 }
 
-function openChart(sym) {
-  _currentSym  = sym.toUpperCase().trim();
-  _currentExch = 'HOSE';
-  // Reset exchange tabs
-  ['hose','hnx','upcom'].forEach(e => document.getElementById('ex-'+e).classList.remove('active'));
-  document.getElementById('ex-hose').classList.add('active');
+function openChart(sym){
+  _sym=sym.toUpperCase().trim();
+  _ex='HOSE'; _tf='D'; _tab='tv';
 
-  document.getElementById('popup-title').textContent = `📈 ${_currentSym}`;
-  document.getElementById('popup-overlay').classList.add('active');
-  document.body.style.overflow = 'hidden';
+  document.getElementById('ptitle').textContent=`📈 ${_sym}`;
 
-  buildTVWidget(_currentSym, _currentExch);
+  // Reset exchange
+  ['HOSE','HNX','UPCOM'].forEach(e=>
+    document.getElementById('ex-'+e).classList.toggle('on',e==='HOSE'));
+  // Reset TF
+  ['15','D','W'].forEach(t=>
+    document.getElementById('tf-'+t).classList.toggle('on',t==='D'));
+
+  _activateTab('tv');
+  document.getElementById('iframe-24h').src='about:blank';
+
+  document.getElementById('overlay').classList.add('on');
+  document.body.style.overflow='hidden';
+  buildTV();
 }
 
-function setExchange(ex) {
-  _currentExch = ex;
-  ['hose','hnx','upcom'].forEach(e => document.getElementById('ex-'+e).classList.remove('active'));
-  document.getElementById('ex-'+ex.toLowerCase()).classList.add('active');
-  buildTVWidget(_currentSym, _currentExch);
+function _activateTab(tab){
+  _tab=tab;
+  ['tv','24h'].forEach(t=>{
+    document.getElementById('ctab-'+t).classList.toggle('on',t===tab);
+    document.getElementById('panel-'+t).classList.toggle('on',t===tab);
+  });
+  const show=tab==='tv';
+  document.getElementById('tfg').style.display=show?'flex':'none';
+  document.getElementById('exg').style.display=show?'flex':'none';
 }
 
-function closePopup() {
-  document.getElementById('popup-overlay').classList.remove('active');
-  document.getElementById('tv-container').innerHTML = '';
-  document.body.style.overflow = '';
+function switchTab(tab){
+  _activateTab(tab);
+  if(tab==='24h'){
+    const f=document.getElementById('iframe-24h');
+    if(f.src==='about:blank') f.src=`https://24hmoney.vn/stock/${_sym}`;
+  }
 }
 
-document.getElementById('popup-overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('popup-overlay')) closePopup();
+function setTF(tf){
+  _tf=tf;
+  ['15','D','W'].forEach(t=>document.getElementById('tf-'+t).classList.toggle('on',t===tf));
+  if(_tab==='tv') buildTV();
+}
+
+function setEx(ex){
+  _ex=ex;
+  ['HOSE','HNX','UPCOM'].forEach(e=>document.getElementById('ex-'+e).classList.toggle('on',e===ex));
+  if(_tab==='tv') buildTV();
+}
+
+function closePopup(){
+  document.getElementById('overlay').classList.remove('on');
+  document.getElementById('tv-container').innerHTML='';
+  document.getElementById('iframe-24h').src='about:blank';
+  document.body.style.overflow='';
+}
+
+document.getElementById('overlay').addEventListener('click',e=>{
+  if(e.target===document.getElementById('overlay')) closePopup();
 });
-document.addEventListener('keydown', e => { if (e.key==='Escape') closePopup(); });
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePopup();});
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ĐỒNG HỒ
+// CLOCK
 // ═══════════════════════════════════════════════════════════════════════════
-function updateClock() {
-  const now = new Date();
-  document.getElementById('clock').textContent =
-    now.toLocaleTimeString('vi-VN',{hour12:false}) + '  ' +
-    now.toLocaleDateString('vi-VN');
+function tick(){
+  const n=new Date();
+  document.getElementById('clock').textContent=
+    n.toLocaleTimeString('vi-VN',{hour12:false})+'  '+n.toLocaleDateString('vi-VN');
 }
-setInterval(updateClock, 1000); updateClock();
+setInterval(tick,1000);tick();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BADGE
 // ═══════════════════════════════════════════════════════════════════════════
-function badgeClass(sig) {
-  return ({
-    'BREAKOUT'    :'badge-BREAKOUT',
-    'POCKET PIVOT':'badge-POCKET',
-    'PRE-BREAK'   :'badge-PREBREAK',
-    'BOTTOMBREAKP':'badge-BOTTOMBREAKP',
-    'BOTTOMFISH'  :'badge-BOTTOMFISH',
-    'MA_CROSS'    :'badge-MA_CROSS',
-  })[sig]||'badge-MA_CROSS';
+function badgeCls(sig){
+  return({'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
+    'BOTTOMBREAKP':'b-BBREAKP','BOTTOMFISH':'b-BFISH','MA_CROSS':'b-MACROSS'})[sig]||'b-MACROSS';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FETCH SIGNALS
+// FETCH
 // ═══════════════════════════════════════════════════════════════════════════
-async function fetchSignals() {
-  try {
-    const r = await fetch('/api/signals');
-    const j = await r.json();
-    document.getElementById('sig-meta').textContent =
-      `Cập nhật: ${j.updated_at}  •  ${j.count} tín hiệu  •  Click để xem chart`;
-    const list = document.getElementById('signal-list');
-    if (!j.signals.length) {
-      list.innerHTML = `<div class="empty-state"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>`;
+async function fetchSigs(){
+  try{
+    const j=await fetch('/api/signals').then(r=>r.json());
+    document.getElementById('sig-meta').textContent=
+      `Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
+    const el=document.getElementById('sig-list');
+    if(!j.signals.length){
+      el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';
       return;
     }
-    list.innerHTML = j.signals.map(s => `
-      <div class="signal-row" onclick="openChart('${s.symbol}')">
-        <span class="sig-emoji">${s.emoji}</span>
-        <span class="sig-sym">${s.symbol}</span>
-        <span class="sig-type">${s.signal}</span>
-        <span class="sig-badge ${badgeClass(s.signal)}">
+    el.innerHTML=j.signals.map(s=>`
+      <div class="sig-row" onclick="openChart('${s.symbol}')">
+        <span class="s-emoji">${s.emoji}</span>
+        <span class="s-sym">${s.symbol}</span>
+        <span class="s-type">${s.signal}</span>
+        <span class="s-badge ${badgeCls(s.signal)}">
           ${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}
         </span>
       </div>`).join('');
-  } catch(e) { console.error('fetchSignals:', e); }
+  }catch(e){console.error('fetchSigs:',e)}
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// FETCH HEATMAP
-// ═══════════════════════════════════════════════════════════════════════════
-async function fetchHeatmap() {
-  try {
-    const r = await fetch('/api/heatmap');
-    const j = await r.json();
-    const age = j.cached_age || 0;
-    document.getElementById('hmap-ts').textContent =
-      `${j.timestamp||''}  •  làm mới ${age}s trước  •  click để xem chart`;
-    renderHeatmap(j.data || {});
-  } catch(e) { console.error('fetchHeatmap:', e); }
+async function fetchHmap(){
+  try{
+    const j=await fetch('/api/heatmap').then(r=>r.json());
+    document.getElementById('hmap-ts').textContent=
+      `${j.timestamp||''}  •  data cách ${j.cached_age||0}s  •  click để xem chart`;
+    renderHeatmap(j.data||{});
+  }catch(e){console.error('fetchHmap:',e)}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REFRESH BAR
 // ═══════════════════════════════════════════════════════════════════════════
-function startRefreshBar(durationSec) {
-  const bar = document.getElementById('rbar');
-  bar.style.transition = 'none'; bar.style.width = '0%';
-  requestAnimationFrame(() => {
-    bar.style.transition = `width ${durationSec}s linear`;
-    bar.style.width = '100%';
+function bar(sec){
+  const el=document.getElementById('rbar');
+  el.style.transition='none';el.style.width='0%';
+  requestAnimationFrame(()=>{
+    el.style.transition=`width ${sec}s linear`;
+    el.style.width='100%';
   });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// KHỞI ĐỘNG
+// INIT
 // ═══════════════════════════════════════════════════════════════════════════
-async function init() {
-  startRefreshBar(120);
-  await Promise.all([fetchSignals(), fetchHeatmap()]);
+async function init(){
+  await loadConfig();
+  bar(HMAP_TTL);
+  await Promise.all([fetchSigs(), fetchHmap()]);
+
+  setInterval(async()=>{ bar(SIG_TTL);  await fetchSigs(); },  SIG_TTL  * 1000);
+  setInterval(async()=>{ bar(HMAP_TTL); await fetchHmap(); }, HMAP_TTL * 1000);
 }
 init();
-setInterval(async () => { startRefreshBar(30); await fetchSignals(); },    30_000);
-setInterval(async () => { startRefreshBar(120); await fetchHeatmap(); }, 120_000);
 </script>
 </body>
 </html>
