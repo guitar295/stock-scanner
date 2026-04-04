@@ -52,58 +52,36 @@ register_user(VNSTOCK_API)
 # =============================================================================
 # BƯỚC 2A: PHÂN QUYỀN VIP / FREE SLOT
 # =============================================================================
-# VIP: toàn quyền, không giới hạn, /s xem được tín hiệu
 VIP_CHAT_IDS = {
     str(TELEGRAM_CHAT_ID),
     str(MY_PERSONAL_CHAT_ID),
     '1207484510',
 }
 
-# Free slot: tối đa 20 người cùng lúc, TTL 30 phút không nhắn → hết slot
 FREE_CHAT_LIMIT = 10
-SESSION_TTL     = 1800   # 30 phút (giây)
-free_sessions: dict = {}  # {chat_id: last_seen (time.time())}
+SESSION_TTL     = 1800
+free_sessions: dict = {}
 free_lock = threading.Lock()
 
 def is_vip(chat_id: str) -> bool:
-    """Kiểm tra có phải VIP không."""
     return chat_id in VIP_CHAT_IDS
 
 def is_allowed(chat_id: str) -> tuple[bool, str]:
-    """
-    Kiểm tra chat_id có được phép tương tác không.
-    Trả về (allowed: bool, reason: str).
-
-    Logic:
-    - VIP → luôn được phép
-    - Free:
-        + Đã có session còn hạn → gia hạn TTL, cho phép
-        + Chưa có session + còn slot → tạo session mới, cho phép
-        + Chưa có session + hết slot → từ chối
-    """
     if is_vip(chat_id):
         return True, 'vip'
-
     now = time.time()
     with free_lock:
-        # Dọn session hết hạn (TTL)
         expired = [k for k, v in free_sessions.items() if now - v > SESSION_TTL]
         for k in expired:
             del free_sessions[k]
             print(f"  🔄 Free slot hết hạn: {k} → giải phóng ({len(free_sessions)}/{FREE_CHAT_LIMIT})")
-
-        # Đã có session còn hạn → gia hạn
         if chat_id in free_sessions:
             free_sessions[chat_id] = now
             return True, 'free_existing'
-
-        # Chưa có → kiểm tra còn slot
         if len(free_sessions) < FREE_CHAT_LIMIT:
             free_sessions[chat_id] = now
             print(f"  ✅ Free slot mới: {chat_id} ({len(free_sessions)}/{FREE_CHAT_LIMIT})")
             return True, 'free_new'
-
-        # Hết slot
         print(f"  🚫 Free slot đầy: {chat_id} bị từ chối ({FREE_CHAT_LIMIT}/{FREE_CHAT_LIMIT})")
         return False, 'full'
 
@@ -298,9 +276,6 @@ def _hmap_col_height(groups):
         h += (1 + len(g["symbols"])) * HMAP_CELL_H
     return h + HMAP_MARGIN
 
-# =============================================================================
-# HEATMAP: fetch + build
-# =============================================================================
 def fetch_heatmap_data() -> tuple:
     engine = Trading(source=DATA_SOURCE)
     need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
@@ -347,7 +322,6 @@ def fetch_heatmap_data() -> tuple:
 
     if data_time is None:
         data_time = datetime.now(TZ_VN)
-        print(f"  [{ts_log}] ⚠️  Heatmap: dùng fallback timestamp = now()")
 
     ts_str = data_time.strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
@@ -592,6 +566,54 @@ def build_history_cache(symbols: list, current_date: date):
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {loaded}/{len(symbols)} mã có dữ liệu.")
 
+# =============================================================================
+# BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
+# =============================================================================
+# Mã đại diện dùng để kiểm tra cache
+CACHE_CHECK_SYMBOL = 'HPG'
+
+def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
+    """
+    Kiểm tra nhanh cache bằng 1 mã đại diện.
+    Nếu cache stale → rebuild toàn bộ.
+    Trả về True nếu cache OK, False nếu đã rebuild.
+    """
+    ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+
+    # Lấy mã đại diện — ưu tiên HPG, fallback mã đầu tiên trong cache
+    with cache_lock:
+        check_sym = CACHE_CHECK_SYMBOL if CACHE_CHECK_SYMBOL in history_cache else (
+            next(iter(history_cache), None)
+        )
+        sample_df = history_cache.get(check_sym) if check_sym else None
+
+    if sample_df is None:
+        print(f"  [{ts}] 🔍 Cache check: không có dữ liệu → rebuild")
+        build_history_cache(symbols, current_date)
+        return False
+
+    cache_last = sample_df.index[-1].date()
+
+    # Tính ngày giao dịch gần nhất (lùi 1 BDay từ current_date)
+    prev_bday = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
+
+    print(f"  [{ts}] 🔍 Cache check [{check_sym}]: nến cuối = {cache_last} | kỳ vọng ≥ {prev_bday}")
+
+    if cache_last < prev_bday:
+        print(f"  [{ts}] ⚠️  Cache STALE ({cache_last} < {prev_bday}) → Rebuild ngay...")
+        build_history_cache(symbols, current_date)
+        # Kiểm tra lại sau rebuild
+        with cache_lock:
+            sample_df2 = history_cache.get(check_sym)
+        if sample_df2 is not None:
+            new_last = sample_df2.index[-1].date()
+            ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
+            print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
+        return False
+    else:
+        print(f"  [{ts}] ✅ Cache OK ({cache_last} ≥ {prev_bday})")
+        return True
+
 def fetch_today_bar(symbol: str, current_date: date):
     for attempt in range(3):
         try:
@@ -714,6 +736,41 @@ def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
         except Exception as e:
             if attempt < 2: time.sleep(2)
             else: print(f"    ❌ fetch_intraday_15m {symbol}: {e}")
+    return None
+
+# =============================================================================
+# BƯỚC 5F: FETCH FRESH HOÀN TOÀN CHO ON-DEMAND CHART (không dùng cache)
+# =============================================================================
+def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | None:
+    """
+    Fetch dữ liệu mới hoàn toàn từ server, không phụ thuộc cache.
+    Dùng cho on-demand chart và button tín hiệu hôm nay.
+    - Lấy toàn bộ lịch sử (length=1000)
+    - Không filter ngày → lấy nến mới nhất server có
+    - Merge nến hôm nay nếu đang trong giờ giao dịch
+    """
+    for attempt in range(3):
+        try:
+            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
+            df_raw = quote.history(length='1000', interval='1D')
+            if df_raw is None or len(df_raw) < 60: return None
+            df_raw['time'] = pd.to_datetime(df_raw['time'])
+            df_raw.set_index('time', inplace=True)
+            df_raw.columns = [c.lower() for c in df_raw.columns]
+            df_raw = df_raw[['open','high','low','close','volume']].copy()
+
+            # Bỏ nến current_date nếu volume = 0 (ngày nghỉ / chưa giao dịch)
+            today_rows = df_raw[df_raw.index.date == current_date]
+            if not today_rows.empty:
+                vol_today = float(today_rows.iloc[-1].get('volume', 0) or 0)
+                if vol_today < 100:
+                    df_raw = df_raw[df_raw.index.date < current_date]
+
+            if len(df_raw) < 60: return None
+            return df_raw
+        except Exception as e:
+            if attempt < 2: time.sleep(2)
+            else: print(f"    ❌ fetch_fresh_for_chart {symbol}: {e}")
     return None
 
 # =============================================================================
@@ -1173,7 +1230,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
 # =============================================================================
 # BƯỚC 8B: PARSE LỆNH CHART
 # =============================================================================
-_RESERVED_KEYWORDS = {'s','help','h','scan','c','chart','heatmap'}
+_RESERVED_KEYWORDS = {'s','help','h','scan','c','chart','heatmap','start'}
 
 def parse_chart_command(text: str):
     text = text.strip()
@@ -1205,7 +1262,7 @@ def _filter_symbols(raw_list: list):
     return result if result else None
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND
+# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND — FETCH FRESH, KHÔNG DÙNG CACHE
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
@@ -1227,28 +1284,18 @@ def fetch_and_send_chart(symbol, chat_id):
                 })
                 return
         else:
-            with cache_lock: df_hist = history_cache.get(symbol)
-            if df_hist is not None and len(df_hist) >= 60:
-                today_bar = fetch_today_bar(symbol, current_date)
-                if today_bar is not None:
-                    df_raw = merge_today_bar(df_hist, today_bar, current_date)
-                else:
-                    df_raw = df_hist.copy()
-                    ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
-                    print(f"  [{ts_log}] ⚠️  {symbol}: chưa có nến hôm nay → vẽ lịch sử thuần")
+            # ── FETCH FRESH HOÀN TOÀN, KHÔNG DÙNG CACHE ──────────────
+            ts_log   = datetime.now(TZ_VN).strftime('%H:%M:%S')
+            df_raw   = fetch_fresh_for_chart(symbol, current_date)
+            if df_raw is not None:
+                print(f"  [{ts_log}] ℹ️  {symbol}: fresh fetch OK (nến cuối: {df_raw.index[-1].date()})")
             else:
-                quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-                df_raw = quote.history(length='1000', interval='1D')
-                if df_raw is None or len(df_raw) < 60:
-                    requests.post(url_msg, data={
-                        'chat_id': chat_id,
-                        'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
-                        'parse_mode': 'HTML'
-                    })
-                    return
-                df_raw['time'] = pd.to_datetime(df_raw['time'])
-                df_raw.set_index('time', inplace=True)
-                df_raw.columns = [c.lower() for c in df_raw.columns]
+                requests.post(url_msg, data={
+                    'chat_id': chat_id,
+                    'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
+                    'parse_mode': 'HTML'
+                })
+                return
 
         df_calc  = compute_indicators(df_raw)
         today    = df_calc.iloc[-1]
@@ -1410,6 +1457,7 @@ def telegram_listener(stop_event: threading.Event):
                     if allowed and cb_data.startswith('chart_'):
                         sym = cb_data.replace('chart_', '').upper()
                         print(f"  📥 Callback chart {sym} → chat_id={cb_chat_id} ({reason})")
+                        # ── Dùng fetch_fresh (không cache) khi nhấn button ──
                         threading.Thread(
                             target=fetch_and_send_chart,
                             args=(sym, cb_chat_id),
@@ -1422,6 +1470,12 @@ def telegram_listener(stop_event: threading.Event):
                 text    = msg_obj.get('text', '').strip()
                 chat_id = str(msg_obj.get('chat', {}).get('id', ''))
                 if not text or not chat_id: continue
+
+                text_lower = text.lower().strip()
+
+                # ── /start — bỏ qua, không xử lý ─────────────────────────
+                if text_lower == '/start':
+                    continue
 
                 # ── Kiểm tra quyền truy cập ───────────────────────────────
                 allowed, reason = is_allowed(chat_id)
@@ -1436,8 +1490,6 @@ def telegram_listener(stop_event: threading.Event):
                         )
                     })
                     continue
-
-                text_lower = text.lower().strip()
 
                 # ── /s — chỉ VIP mới xem được tín hiệu ──────────────────
                 if text_lower == '/s' or text_lower.startswith('/s '):
@@ -1470,7 +1522,7 @@ def telegram_listener(stop_event: threading.Event):
                         payload['reply_markup'] = json.dumps({"inline_keyboard": buttons})
                     requests.post(url_msg, data=payload)
 
-                # ── /h hoặc /heatmap hoặc / h ────────────────────────────────
+                # ── /h hoặc /heatmap ─────────────────────────────────────
                 elif text_lower in ('/h', '/heatmap', '/ h', '/ heatmap'):
                     print(f"  🗺  Lệnh heatmap từ chat_id={chat_id} ({reason})")
                     threading.Thread(
@@ -1563,6 +1615,8 @@ print(f"   Chart gửi   : Daily [D] + Weekly [W] + 15 phút [15m]")
 print(f"   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
 print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
 print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
+print(f"   Cache check : Tự động trước mỗi chu kỳ quét")
+print(f"   On-demand   : Fetch fresh, không phụ thuộc cache")
 print("="*60)
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
@@ -1604,6 +1658,9 @@ while True:
     if not cache_ok:
         print(f"[{ts}] ⚠️  Cache chưa sẵn sàng — đang load...")
         build_history_cache(symbols_to_scan, current_date)
+
+    # ── KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT ─────────────────────────────
+    check_and_rebuild_cache_if_stale(symbols_to_scan, current_date)
 
     print(f"\n{'='*60}")
     print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
