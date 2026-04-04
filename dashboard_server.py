@@ -32,6 +32,7 @@ _get_alerted_today  = None
 _get_history_cache  = None
 _cache_lock         = None
 _fetch_heatmap_fn   = None
+_fetch_chart_fn     = None   # hàm scanner tạo 3 ảnh chart → trả về list[bytes]
 _signal_emoji       = {}
 _signal_rank        = {}
 
@@ -39,6 +40,11 @@ _heatmap_cache  = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock   = threading.Lock()
 HEATMAP_TTL_SEC = 120
 SIGNAL_TTL_SEC  = 30
+
+# Cache chart: tránh render lại khi user click qua lại trong cùng 5 phút
+_chart_cache: dict = {}   # sym → {"images": [...b64...], "updated_at": float}
+_chart_lock         = threading.Lock()
+CHART_TTL_SEC       = 300  # 5 phút
 
 # =============================================================================
 # API ENDPOINTS
@@ -86,12 +92,55 @@ def api_heatmap():
 @app.route("/api/chart_images/<symbol>")
 def api_chart_images(symbol):
     """
-    Trả về JSON chứa 3 URL ảnh chart (daily, weekly, 15m) từ scanner cache.
-    Frontend dùng để hiển thị album ảnh trong tab Scanner Chart.
-    Vì scanner tạo chart on-demand và lưu tạm, endpoint này gọi lại
-    fetch_and_send_chart logic nhưng trả về base64 PNG thay vì gửi Telegram.
+    Tạo 3 ảnh chart (Daily, Weekly, 15m) qua hàm scanner,
+    encode base64 và trả về JSON. Cache 5 phút để tránh render lại.
     """
-    return jsonify({"symbol": symbol.upper(), "status": "use_scanner_endpoint"})
+    import base64
+    symbol = symbol.upper().strip()
+    now    = time.time()
+
+    # Kiểm tra cache còn hạn
+    with _chart_lock:
+        cached = _chart_cache.get(symbol)
+        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
+            return jsonify({
+                "symbol": symbol,
+                "images": cached["images"],
+                "labels": cached["labels"],
+                "cached": True,
+            })
+
+    if not _fetch_chart_fn:
+        return jsonify({"error": "chart_fn_not_registered"}), 503
+
+    try:
+        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [Dashboard] 📊 Tạo chart {symbol}...")
+        png_list, labels = _fetch_chart_fn(symbol)   # list[bytes], list[str]
+        if not png_list:
+            return jsonify({"error": "no_data"}), 404
+
+        b64_list = [base64.b64encode(b).decode() for b in png_list]
+
+        with _chart_lock:
+            _chart_cache[symbol] = {
+                "images":     b64_list,
+                "labels":     labels,
+                "updated_at": time.time(),
+            }
+
+        ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [Dashboard] ✅ Chart {symbol}: {len(b64_list)} ảnh OK ({ts}→{ts2})")
+        return jsonify({
+            "symbol": symbol,
+            "images": b64_list,
+            "labels": labels,
+            "cached": False,
+        })
+
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Chart {symbol} lỗi: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cache_info")
@@ -147,15 +196,17 @@ def start_dashboard(
     fetch_heatmap_fn,
     signal_emoji_ref,
     signal_rank_ref,
+    fetch_chart_fn=None,   # hàm(symbol) → (list[bytes], list[str]) — 3 PNG + labels
     port=8888,
 ):
     global _get_alerted_today, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_chart_fn, _signal_emoji, _signal_rank
 
     _get_alerted_today = alerted_today_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
+    _fetch_chart_fn    = fetch_chart_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
 
@@ -167,7 +218,8 @@ def start_dashboard(
     threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard khởi động tại http://0.0.0.0:{port}")
     print(f"   Tín hiệu refresh : {SIGNAL_TTL_SEC}s (đọc RAM, không gọi API)")
-    print(f"   Heatmap refresh  : {HEATMAP_TTL_SEC}s (gọi API, chỉ khi có người mở dashboard)")
+    print(f"   Heatmap refresh  : {HEATMAP_TTL_SEC}s (gọi API, chỉ khi có người mở)")
+    print(f"   Scanner Chart    : {'✅ đã đăng ký' if fetch_chart_fn else '❌ chưa đăng ký'} (cache {CHART_TTL_SEC}s)")
 
 
 # =============================================================================
@@ -620,52 +672,51 @@ document.getElementById('panel-scanner').addEventListener('touchend',e=>{
   if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
 },{passive:true});
 
-// Gọi API scanner để lấy ảnh chart — dùng /api/heatmap endpoint làm proxy
-// Thực tế: fetch ảnh chart từ scanner qua endpoint /api/chart_images/<sym>
-// Vì scanner tạo ảnh PNG tạm, ta dùng một approach khác:
-// Tạo URL ảnh trực tiếp từ scanner (nếu có endpoint), hoặc hiển thị thông báo
-// Ở đây ta implement: gọi scanner bot qua Telegram và poll, nhưng đơn giản hơn
-// ta dùng iframe embed chart từ Vietstock như fallback, còn album ảnh
-// sẽ được load từ /api/chart_png/<sym>/<type> nếu scanner expose endpoint.
-// Hiện tại: hiển thị placeholder với link để mở chart.
-
 async function loadScannerChart(sym){
-  // Reset
   document.getElementById('album-wrap').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML=`<span>⏳ Đang tải chart <b>${sym}</b> từ scanner...</span>`;
+  document.getElementById('scanner-loading').innerHTML=
+    `<span>⏳ Đang tạo chart <b>${sym}</b>… (15–30 giây lần đầu)</span>`;
 
-  // Thử fetch /api/chart_png/<sym> — nếu scanner expose endpoint này
   try{
     const r=await fetch(`/api/chart_images/${sym}`);
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      throw new Error(j.error||`HTTP ${r.status}`);
+    }
     const j=await r.json();
-    // Nếu scanner trả về base64 images:
     if(j.images && j.images.length>0){
+      const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
       _showAlbum(j.images.map((b64,i)=>({
-        url: `data:image/png;base64,${b64}`,
-        label: _albumLabels[i]||`Chart ${i+1}`
+        url:`data:image/png;base64,${b64}`,
+        label: labels[i]||`Chart ${i+1}`,
       })));
+      // Hiện badge nếu dùng cache
+      if(j.cached){
+        const hint=document.querySelector('.album-hint');
+        if(hint) hint.textContent='♻️ Dùng cache — click lại tab để làm mới';
+      }
       return;
     }
-  }catch(e){}
-
-  // Fallback: hiển thị 3 link chart tĩnh
-  document.getElementById('scanner-loading').innerHTML=`
-    <div style="text-align:center;color:#aaa;padding:20px">
-      <div style="font-size:20px;margin-bottom:12px">📊</div>
-      <div style="margin-bottom:16px">Chart <b style="color:#4d9ff5">${sym}</b> được tạo bởi scanner khi có tín hiệu.</div>
-      <div style="font-size:11px;color:#666;margin-bottom:16px">Để xem chart real-time, dùng tab Vietstock hoặc gửi lệnh /${sym} trên Telegram.</div>
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <a href="https://ta.vietstock.vn/?stockcode=${sym}" target="_blank"
-           style="padding:7px 14px;border-radius:5px;background:#1a56db;color:#fff;text-decoration:none;font-size:12px">
-          📈 Vietstock Chart
-        </a>
-        <a href="https://24hmoney.vn/stock/${sym}" target="_blank"
-           style="padding:7px 14px;border-radius:5px;background:#0e9f6e;color:#fff;text-decoration:none;font-size:12px">
-          📰 24HMoney
-        </a>
-      </div>
-    </div>`;
+    throw new Error('no_images');
+  }catch(e){
+    document.getElementById('scanner-loading').innerHTML=`
+      <div style="text-align:center;color:#aaa;padding:24px">
+        <div style="font-size:24px;margin-bottom:10px">⚠️</div>
+        <div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
+        <div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button onclick="loadScannerChart('${sym}')"
+            style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
+            🔄 Thử lại
+          </button>
+          <a href="https://stockchart.vietstock.vn/?stockcode=${sym}" target="_blank"
+             style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
+            📈 Stockchart
+          </a>
+        </div>
+      </div>`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════
