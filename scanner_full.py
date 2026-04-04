@@ -105,15 +105,15 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # =============================================================================
 TRADING_STOCKS_POOL = [
     "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
-    "CCL","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM",
+    "CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE",
     "DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS",
-    "GAS","GEG","GEX","GIL","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC",
-    "HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","ITA","KBC","KDH","KSB",
-    "LCG","LDG","LHG","LPB","LSS","LTG","MBB","MBS","MHC","MSB","MSN","MWG",
-    "NKG","NLG","NTL","NVL","PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW",
-    "PTB","PVD","PVS","PVT","QNS","REE","SBT","SCR","SHB","SHS","SJS","SSI",
-    "STB","SZC","TCB","TCM","TDM","TIG","TNG","TPB","TV2","VCB","VCI","VCS",
-    "VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE",
+    "GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK",
+    "HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG",
+    "LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL",
+    "PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT",
+    "QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG",
+    "TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC",
+    "VNM","VPB","VRE",
 ]
 
 HEATMAP_COLUMNS = [
