@@ -493,6 +493,24 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   }
 }
 
+  /* 1/ Sửa chữ "TÍN HIỆU HÔM NAY" không xuống dòng */
+  .panel-title{
+    white-space:nowrap!important;
+    font-size:11px!important;
+    letter-spacing:1px!important;
+  }
+  .panel-meta{
+    font-size:9px!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    max-width:55%!important;
+  }
+  .panel-hdr{
+    gap:6px!important;
+    padding:7px 10px!important;
+  }
+
 </style>
 </head>
 <body>
