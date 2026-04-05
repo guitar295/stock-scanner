@@ -334,7 +334,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hmap-row{display:inline-flex;flex-direction:row;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
 .hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
-.hmap-group{display:flex;flex-direction:column;gap:2px;margin-bottom:3px}
+.hmap-group{display:flex;flex-direction:column;gap:2px}
 
 .hmap-ghdr{
   display:flex;align-items:center;justify-content:center;
