@@ -385,14 +385,14 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 /* Vùng ảnh: chiếm toàn bộ chiều cao còn lại */
 .album-center{
   flex:1;overflow-y:auto;display:flex;flex-direction:column;
-  align-items:center;padding:12px 16px 4px;gap:8px;
+  align-items:center;padding:4px 4px 2px;gap:4px;
 }
 .album-center::-webkit-scrollbar{width:4px}
 .album-center::-webkit-scrollbar-thumb{background:#444;border-radius:2px}
 
 .album-slide{display:none;flex-direction:column;align-items:center;gap:8px;width:100%}
 .album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(94vh - 160px);object-fit:contain;border-radius:6px;border:1px solid #333}
+.album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid #2a2a3a}
 .album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
 
 /* Nav bar: nằm dưới ảnh, chứa nút ◀ + dots + ▶ + refresh trên cùng một hàng */
@@ -417,10 +417,10 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 
 /* Nút refresh — nằm ngay cạnh nút ▶ */
 .album-refresh-btn{
-  height:26px;padding:0 10px;border-radius:13px;
+  width:30px;height:30px;padding:0;border-radius:50%;
   border:1px solid #555;background:rgba(255,255,255,.06);
-  color:#aaa;font-size:10px;font-family:var(--font-mono);cursor:pointer;
-  display:flex;align-items:center;gap:5px;white-space:nowrap;
+  color:#aaa;font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
   transition:background .15s,color .15s,border-color .15s;
   user-select:none;flex-shrink:0;
 }
@@ -537,8 +537,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="Ảnh trước (←)">&#9664;</button>
             <div class="album-dots-wrap" id="album-dots"></div>
             <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)" title="Ảnh sau (→)">&#9654;</button>
-            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()" title="Xoá cache, tải lại chart">
-              <span class="ri">&#8635;</span><span>Làm mới</span>
+            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()" title="Làm mới chart">
+              <span class="ri">&#8635;</span>
             </button>
           </div>
           <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
@@ -824,7 +824,7 @@ async function loadScannerChart(sym){
             style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
             🔄 Thử lại
           </button>
-          <a href="https://stockchart.vietstock.vn/?stockcode=${sym}" target="_blank"
+          <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank"
              style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
             📈 Stockchart
           </a>
@@ -845,8 +845,9 @@ function openChart(sym){
   _tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
 
+
   document.getElementById('iframe-vs').src=
-    `https://stockchart.vietstock.vn/?stockcode=${_sym}`;
+    `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
 
   IFRAME_TABS.forEach(t=>{
     document.getElementById(`iframe-${t}`).src='about:blank';
