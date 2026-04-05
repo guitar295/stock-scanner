@@ -39,7 +39,7 @@ _signal_rank        = {}
 _heatmap_cache  = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock   = threading.Lock()
 HEATMAP_TTL_SEC = 120
-SIGNAL_TTL_SEC  = 30
+SIGNAL_TTL_SEC  = 15
 
 _chart_cache: dict = {}
 _chart_lock         = threading.Lock()
@@ -272,12 +272,12 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 
 /* Progress bar nhỏ dưới header mỗi panel */
 .pbar-wrap{
-  height:3px;background:var(--border);overflow:hidden;
-  /* KHÔNG có border-radius để sát vào panel-hdr */
+  height:2px;background:transparent;overflow:hidden;
 }
 .pbar-fill{
   height:100%;width:0%;
   background:linear-gradient(90deg,var(--accent),var(--green));
+  opacity:0.5;
   transition:none;
 }
 .panel-body{padding:12px 14px}
