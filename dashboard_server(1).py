@@ -254,8 +254,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 
-
-
 header{display:flex;align-items:center;justify-content:space-between;padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow)}
 header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
 .hdr-right{display:flex;gap:18px;align-items:center}
@@ -270,16 +268,46 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .panel-title{font-family:var(--font-ui);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}
 .panel-meta{font-size:10px;color:var(--muted)}
 
-/* Progress bar nhỏ dưới header mỗi panel */
-.pbar-wrap{
-  height:2px;background:transparent;overflow:hidden;
+/* ── HEATMAP HEADER với 2 nút + search ── */
+.hmap-panel-hdr{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border);
+  flex-wrap:wrap;
 }
-.pbar-fill{
-  height:100%;width:0%;
-  background:linear-gradient(90deg,var(--accent),var(--green));
-  opacity:0.5;
-  transition:none;
+.hmap-panel-left{
+  display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;
 }
+.hmap-link-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:4px 11px;border-radius:5px;border:1px solid var(--border);
+  background:var(--surface);color:var(--accent);
+  font-family:var(--font-mono);font-size:10px;font-weight:600;
+  cursor:pointer;text-decoration:none;white-space:nowrap;
+  transition:all .15s;
+}
+.hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Search bar kiểu pill */
+.hmap-search-wrap{
+  position:relative;display:flex;align-items:center;
+  flex-shrink:0;
+}
+.hmap-search-wrap .s-icon{
+  position:absolute;left:11px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:13px;pointer-events:none;
+}
+.hmap-search-input{
+  width:140px;padding:5px 10px 5px 30px;
+  border-radius:20px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  font-family:var(--font-mono);font-size:11px;
+  outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
+}
+.hmap-search-input::placeholder{color:var(--muted)}
+.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:170px}
+
+.pbar-wrap{height:2px;background:transparent;overflow:hidden}
+.pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:0.5;transition:none}
 .panel-body{padding:12px 14px}
 
 .sig-list{display:flex;flex-direction:column;gap:3px}
@@ -350,13 +378,34 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 
 .phdr{
-  display:flex;align-items:center;justify-content:space-between;
-  flex-wrap:wrap;padding:9px 14px;gap:6px;
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  padding:7px 14px;gap:0;
   background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0
 }
-.ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0}
+.phdr-left{display:flex;align-items:center;gap:8px;justify-content:flex-start}
+.phdr-center{display:flex;align-items:flex-end;justify-content:center}
+.phdr-right{display:flex;align-items:center;justify-content:flex-end}
+.ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
 
-/* Tab order: Scanner Chart ngay sau Vietstock */
+/* Search trong popup */
+.popup-search-wrap{
+  position:relative;display:flex;align-items:center;
+}
+.popup-search-wrap .ps-icon{
+  position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:12px;pointer-events:none;
+}
+.popup-search-input{
+  width:160px;padding:5px 10px 5px 28px;
+  border-radius:20px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  font-family:var(--font-mono);font-size:11px;
+  outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
+}
+.popup-search-input::placeholder{color:var(--muted)}
+.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
+
+/* Tab order */
 .ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
 .ctab{
   font-size:11px;font-family:var(--font-mono);font-weight:600;
@@ -385,62 +434,26 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   flex:1;color:#6b7280;font-size:14px;font-family:var(--font-mono)
 }
 
-/*
-  Album layout: ảnh chiếm toàn bộ, navigation bar nằm ở giữa cùng hàng với dots
-  Không còn nút trái/phải cạnh ảnh — thay bằng nút ◀ ▶ inline trong nav bar
-*/
-.album-outer{
-  flex:1;display:flex;flex-direction:column;overflow:hidden;
-}
-
-/* Vùng ảnh: chiếm toàn bộ chiều cao còn lại */
-.album-center{
-  flex:1;overflow-y:auto;display:flex;flex-direction:column;
-  align-items:center;padding:4px 4px 2px;gap:4px;
-  background:#ffffff;
-}
+.album-outer{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px 4px 2px;gap:4px;background:#ffffff}
 .album-center::-webkit-scrollbar{width:4px}
 .album-center::-webkit-scrollbar-thumb{background:#444;border-radius:2px}
-
 .album-slide{display:none;flex-direction:column;align-items:center;gap:8px;width:100%}
 .album-slide.on{display:flex}
 .album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee}
 .album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
 
-/* Nav bar: nằm dưới ảnh, chứa nút ◀ + dots + ▶ + refresh trên cùng một hàng */
-.album-nav-bar{
-  display:flex;align-items:center;justify-content:center;
-  gap:10px;padding:6px 0 8px;flex-shrink:0;
-  background:#ffffff;
-}
-.album-nav-btn{
-  width:30px;height:30px;border-radius:50%;
-  border:1px solid #dde3ee;background:#f4f6fb;
-  color:#6b7280;font-size:14px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transition:background .15s,color .15s,border-color .15s;
-  user-select:none;flex-shrink:0;
-}
+.album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0;background:#ffffff}
+.album-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;user-select:none;flex-shrink:0}
 .album-nav-btn:hover:not(.disabled){background:#1a56db;color:#fff;border-color:#1a56db}
 .album-nav-btn.disabled{opacity:.25;cursor:default;pointer-events:none}
-
 .album-dots-wrap{display:flex;gap:6px;align-items:center}
 .album-dot{width:8px;height:8px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
 .album-dot.on{background:#1a56db;transform:scale(1.3)}
-
-/* Nút refresh — nằm ngay cạnh nút ▶ */
-.album-refresh-btn{
-  width:30px;height:30px;padding:0;border-radius:50%;
-  border:1px solid #dde3ee;background:#f4f6fb;
-  color:#6b7280;font-size:15px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transition:background .15s,color .15s,border-color .15s;
-  user-select:none;flex-shrink:0;
-}
+.album-refresh-btn{width:30px;height:30px;padding:0;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;user-select:none;flex-shrink:0}
 .album-refresh-btn:hover{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
 .album-refresh-btn.spinning span.ri{display:inline-block;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-
 .album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0;background:#ffffff}
 
 footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
@@ -454,11 +467,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
   .album-nav-btn{width:26px;height:26px;font-size:12px}
+  .popup-search-input{width:120px}
+  .popup-search-input:focus{width:150px}
 }
 </style>
 </head>
 <body>
-
 
 <header>
   <h1>⚡ Scanner Dashboard</h1>
@@ -486,10 +500,35 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   <!-- HEATMAP -->
   <div class="panel">
-    <div class="panel-hdr">
+    <!-- Header: HEATMAP THỊ TRƯỜNG | MARKET | VNINDEX | Tìm kiếm mã | Cập nhật thời gian -->
+    <div class="hmap-panel-hdr">
       <span class="panel-title">Heatmap thị trường</span>
-      <span class="panel-meta" id="hmap-ts">Đang tải...</span>
+
+      <button class="hmap-link-btn" onclick="openUrl('https://dstock.vndirect.com.vn','MARKET')">
+        MARKET
+      </button>
+      <button class="hmap-link-btn" onclick="openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX')">
+        VNINDEX
+      </button>
+
+      <!-- Search pill -->
+      <div class="hmap-search-wrap">
+        <span class="s-icon">🔍</span>
+        <input
+          class="hmap-search-input"
+          id="hmap-search-input"
+          type="text"
+          placeholder="Tìm kiếm mã"
+          maxlength="10"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+
+      <!-- Thời gian đẩy hết sang phải -->
+      <span class="panel-meta" id="hmap-ts" style="margin-left:auto">Đang tải...</span>
     </div>
+
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
       <div class="hmap-outer">
@@ -509,22 +548,39 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div class="pbox">
 
     <div class="phdr">
-      <span class="ptitle" id="ptitle">Chart</span>
-
-      <!--
-        THỨ TỰ TAB: Vietstock | Scanner Chart | Cơ bản | Tin tức | Tổng quan | 24HMoney
-        Scanner Chart được đặt ngay sau Vietstock (yêu cầu 1)
-      -->
-      <div class="ctabs">
-        <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
-        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
-        <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
-        <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
-        <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
-        <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+      <!-- Trái: tên mã + search sát nhau -->
+      <div class="phdr-left">
+        <span class="ptitle" id="ptitle">Chart</span>
+        <div class="popup-search-wrap">
+          <span class="ps-icon">🔍</span>
+          <input
+            class="popup-search-input"
+            id="popup-search-input"
+            type="text"
+            placeholder="Tìm mã khác"
+            maxlength="10"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
       </div>
 
-      <button class="closebtn" onclick="closePopup()">✕</button>
+      <!-- Giữa: tabs canh giữa -->
+      <div class="phdr-center">
+        <div class="ctabs">
+          <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
+          <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
+          <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
+          <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
+          <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
+          <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+        </div>
+      </div>
+
+      <!-- Phải: nút đóng -->
+      <div class="phdr-right">
+        <button class="closebtn" onclick="closePopup()">✕</button>
+      </div>
     </div>
 
     <div class="pbody">
@@ -532,21 +588,15 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <div class="tpanel on" id="panel-vs">
         <iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab Scanner Chart: ngay sau Vietstock (yêu cầu 1) -->
+      <!-- Tab Scanner Chart -->
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading">
           <span>⏳ Đang tạo chart từ scanner...</span>
         </div>
-        <!--
-          Album layout mới (yêu cầu 2):
-          - Không có nút trái/phải cạnh ảnh
-          - Nút ◀ ▶ nằm cùng hàng với dots trong nav bar bên dưới
-        -->
         <div class="album-outer" id="album-outer" style="display:none">
           <div class="album-center">
             <div id="album-slides"></div>
           </div>
-          <!-- Nav bar: ◀ · · · ▶ 🔄 -->
           <div class="album-nav-bar">
             <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="Ảnh trước (←)">&#9664;</button>
             <div class="album-dots-wrap" id="album-dots"></div>
@@ -574,6 +624,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <div class="tpanel" id="panel-24h">
         <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
       </div>
+      <!-- Tab URL (Market / VNINDEX) -->
+      <div class="tpanel" id="panel-url">
+        <iframe id="iframe-url" src="about:blank" allowfullscreen></iframe>
+      </div>
     </div>
 
   </div>
@@ -593,6 +647,47 @@ async function loadConfig(){
   document.getElementById('footer-txt').textContent=
     `Scanner Bot Dashboard  •  Tín hiệu tự động làm mới sau ${SIG_TTL}s  •  Heatmap tự động làm mới sau ${HMAP_TTL}s`;
 }
+
+// ═══════════════════════════════════════════════════════
+// SEARCH BAR — Heatmap panel (mở popup)
+// ═══════════════════════════════════════════════════════
+(function(){
+  const inp = document.getElementById('hmap-search-input');
+  inp.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      const sym = this.value.trim().toUpperCase();
+      if(sym.length >= 2){
+        this.value = '';
+        this.blur();
+        openChart(sym);
+      }
+    }
+    if(e.key === 'Escape'){ this.value=''; this.blur(); }
+  });
+  // Ngăn Enter khi overlay đang mở cuộc nổ phím keyboard popup
+  inp.addEventListener('focus', function(){
+    this.select();
+  });
+})();
+
+// ═══════════════════════════════════════════════════════
+// SEARCH BAR — Trong popup (chuyển mã)
+// ═══════════════════════════════════════════════════════
+(function(){
+  const inp = document.getElementById('popup-search-input');
+  inp.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      const sym = this.value.trim().toUpperCase();
+      if(sym.length >= 2){
+        this.value = '';
+        this.blur();
+        openChart(sym);   // openChart tự reset popup và load mã mới
+      }
+    }
+    if(e.key === 'Escape'){ closePopup(); }
+  });
+  inp.addEventListener('focus', function(){ this.select(); });
+})();
 
 // ═══════════════════════════════════════════════════════
 // HEATMAP CONFIG
@@ -755,11 +850,8 @@ function refreshScannerChart(){
   if(!_sym) return;
   const btn=document.getElementById('btn-refresh');
   if(btn){ btn.classList.add('spinning'); btn.disabled=true; }
-  // Xóa cache phía client bằng cách gọi API với tham số bust
   fetch(`/api/chart_images/${_sym}?bust=${Date.now()}`,{cache:'no-store'})
-    .then(()=>{})
-    .catch(()=>{});
-  // Load lại với cache bị bỏ qua — dùng trick đổi URL
+    .then(()=>{}).catch(()=>{});
   loadScannerChartForce(_sym);
 }
 
@@ -768,7 +860,6 @@ async function loadScannerChartForce(sym){
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML=
     `<span>🔄 Đang làm mới chart <b>${sym}</b>…</span>`;
-  // Gọi endpoint xóa cache rồi tải lại
   try{
     await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});
   }catch(e){}
@@ -790,11 +881,12 @@ document.getElementById('panel-scanner').addEventListener('touchend',e=>{
   if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
 },{passive:true});
 
-// ── Phím mũi tên bàn phím (yêu cầu 3) ──────────────────
-// Chỉ kích hoạt khi popup đang mở VÀ đang ở tab Scanner Chart
+// Phím mũi tên bàn phím
 document.addEventListener('keydown', e => {
   const overlayOn = document.getElementById('overlay').classList.contains('on');
   if (!overlayOn) return;
+  // Không xử lý khi đang focus vào search input
+  if(document.activeElement === document.getElementById('popup-search-input')) return;
   if (_tab !== 'scanner') return;
   if (_albumTotal === 0) return;
   if (e.key === 'ArrowLeft')  { e.preventDefault(); albumNav(-1); }
@@ -852,13 +944,39 @@ async function loadScannerChart(sym){
 // ═══════════════════════════════════════════════════════
 let _sym='', _tab='vs';
 
-const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h'];
+const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
+
+// Mở URL bất kỳ trong popup (Market / VNINDEX)
+function openUrl(url, label){
+  _tab='url';
+  document.getElementById('ptitle').textContent= label || '🌐 Web';
+  // Reset các iframe khác
+  document.getElementById('iframe-vs').src='about:blank';
+  IFRAME_TABS.forEach(t=>{
+    document.getElementById(`iframe-${t}`).src='about:blank';
+  });
+  document.getElementById('album-outer').style.display='none';
+  document.getElementById('scanner-loading').style.display='flex';
+  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
+
+  // Ẩn toàn bộ panel, hiện panel-url
+  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
+  allTabs.forEach(t=>{
+    const ct = document.getElementById('ctab-'+t);
+    if(ct) ct.classList.remove('on');
+    document.getElementById('panel-'+t).classList.toggle('on', t==='url');
+  });
+
+  document.getElementById('iframe-url').src = url;
+  document.getElementById('overlay').classList.add('on');
+  document.body.style.overflow='hidden';
+  document.getElementById('popup-search-input').value='';
+}
 
 function openChart(sym){
   _sym=sym.toUpperCase().trim();
   _tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
-
 
   document.getElementById('iframe-vs').src=
     `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
@@ -874,14 +992,17 @@ function openChart(sym){
   _activateTab('vs');
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
+
+  // Clear popup search input khi mở mã mới
+  document.getElementById('popup-search-input').value='';
 }
 
 function _activateTab(tab){
   _tab=tab;
-  // Danh sách tất cả tab IDs khớp với thứ tự mới
-  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
   allTabs.forEach(t=>{
-    document.getElementById('ctab-'+t).classList.toggle('on',t===tab);
+    const ct = document.getElementById('ctab-'+t);
+    if(ct) ct.classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
 
@@ -925,7 +1046,14 @@ document.getElementById('overlay').addEventListener('click',e=>{
   if(e.target===document.getElementById('overlay'))closePopup();
 });
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape') closePopup();
+  if(e.key==='Escape'){
+    // Nếu đang focus vào popup search thì chỉ blur, không đóng popup
+    if(document.activeElement===document.getElementById('popup-search-input')){
+      document.getElementById('popup-search-input').blur();
+      return;
+    }
+    closePopup();
+  }
 });
 
 // ═══════════════════════════════════════════════════════
@@ -981,17 +1109,14 @@ async function fetchHmap(){
   }catch(e){console.error('fetchHmap:',e)}
 }
 
-
-
 // ═══════════════════════════════════════════════════════
-// PROGRESS BAR (mỗi panel độc lập, độ rộng bằng nhau)
+// PROGRESS BAR
 // ═══════════════════════════════════════════════════════
 function startBar(id, sec){
   const el=document.getElementById(id);
   if(!el) return;
   el.style.transition='none';
   el.style.width='0%';
-  // Dùng rAF để đảm bảo reset xong mới animate
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     el.style.transition=`width ${sec}s linear`;
     el.style.width='100%';
@@ -1003,7 +1128,6 @@ function startBar(id, sec){
 // ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
-  // Chạy 2 bar cùng lúc khi init
   startBar('pbar-sig',  SIG_TTL);
   startBar('pbar-hmap', HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
