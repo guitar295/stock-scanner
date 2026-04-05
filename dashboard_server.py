@@ -471,6 +471,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .popup-search-input:focus{width:150px}
 }
 
+
+/* ══ CHỈ MOBILE - KHÔNG ảnh hưởng desktop ══ */
 @media screen and (max-width:768px){
   .pbox{
     width:100vw!important;
