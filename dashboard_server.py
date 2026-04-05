@@ -32,7 +32,7 @@ _get_alerted_today  = None
 _get_history_cache  = None
 _cache_lock         = None
 _fetch_heatmap_fn   = None
-_fetch_chart_fn     = None   # hàm scanner tạo 3 ảnh chart → trả về list[bytes]
+_fetch_chart_fn     = None
 _signal_emoji       = {}
 _signal_rank        = {}
 
@@ -41,10 +41,9 @@ _heatmap_lock   = threading.Lock()
 HEATMAP_TTL_SEC = 120
 SIGNAL_TTL_SEC  = 30
 
-# Cache chart: tránh render lại khi user click qua lại trong cùng 5 phút
-_chart_cache: dict = {}   # sym → {"images": [...b64...], "updated_at": float}
+_chart_cache: dict = {}
 _chart_lock         = threading.Lock()
-CHART_TTL_SEC       = 300  # 5 phút
+CHART_TTL_SEC       = 300
 
 # =============================================================================
 # API ENDPOINTS
@@ -91,15 +90,10 @@ def api_heatmap():
 
 @app.route("/api/chart_images/<symbol>")
 def api_chart_images(symbol):
-    """
-    Tạo 3 ảnh chart (Daily, Weekly, 15m) qua hàm scanner,
-    encode base64 và trả về JSON. Cache 5 phút để tránh render lại.
-    """
     import base64
     symbol = symbol.upper().strip()
     now    = time.time()
 
-    # Kiểm tra cache còn hạn
     with _chart_lock:
         cached = _chart_cache.get(symbol)
         if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
@@ -116,7 +110,7 @@ def api_chart_images(symbol):
     try:
         ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
         print(f"  [Dashboard] 📊 Tạo chart {symbol}...")
-        png_list, labels = _fetch_chart_fn(symbol)   # list[bytes], list[str]
+        png_list, labels = _fetch_chart_fn(symbol)
         if not png_list:
             return jsonify({"error": "no_data"}), 404
 
@@ -196,7 +190,7 @@ def start_dashboard(
     fetch_heatmap_fn,
     signal_emoji_ref,
     signal_rank_ref,
-    fetch_chart_fn=None,   # hàm(symbol) → (list[bytes], list[str]) — 3 PNG + labels
+    fetch_chart_fn=None,
     port=8888,
 ):
     global _get_alerted_today, _get_history_cache, _cache_lock
@@ -294,24 +288,26 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
 .hmap-group{display:flex;flex-direction:column;gap:2px;margin-bottom:3px}
 
-/* Header nhóm ngành: tên regular, % bên phải, khoảng cách rộng */
+/*
+  [1] Tên ngành: căn giữa (justify-content:center), khoảng cách tên–% rộng hơn
+      dùng gap:16px thay vì gap:10px
+*/
 .hmap-ghdr{
-  display:flex;align-items:center;justify-content:space-between;
+  display:flex;align-items:center;justify-content:center;
   padding:0 8px;height:24px;border-radius:4px;
   background:rgb(220,228,250);border:1px solid rgb(160,180,230);
-  overflow:hidden;gap:10px;
+  overflow:hidden;gap:16px;
 }
 .hmap-gname{
-  font-family:var(--font-ui);font-size:10px;font-weight:400;
+  font-family:var(--font-ui);font-size:10px;font-weight:700;
   text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .hmap-gavg{font-family:var(--font-mono);font-size:9px;font-weight:400;flex-shrink:0}
 .hmap-gavg.pos{color:rgb(22,120,40)}
 .hmap-gavg.neg{color:rgb(185,25,25)}
 .hmap-gavg.zer{color:rgb(110,105,20)}
 
-/* Cell: SYM regular (không bold), giá regular, % regular */
 .hmap-cell{
   display:grid;grid-template-columns:56px 48px 1fr;
   align-items:center;height:24px;border-radius:4px;
@@ -321,7 +317,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 }
 .hmap-cell:hover{filter:brightness(.88);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .hmap-cell > span{display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;white-space:nowrap;font-family:var(--font-mono)}
-/* SYM: regular, không bold */
 .hc-sym  {font-size:10px;font-weight:400}
 .hc-price{font-size:8.5px;font-weight:400;opacity:.82}
 .hc-pct  {font-size:9.5px;font-weight:400}
@@ -329,15 +324,32 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 /* ── POPUP ─── */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
-.pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:95vw;max-width:1440px;height:90vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease}
+
+/* [3] Khung popup rộng hơn: 99vw, max-width lớn hơn, height 94vh */
+.pbox{
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 20px 60px rgba(0,0,0,.15);
+  width:99vw;max-width:1800px;height:94vh;
+  display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease
+}
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 
-.phdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:9px 14px;gap:8px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
+.phdr{
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;padding:9px 14px;gap:6px;
+  background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0
+}
 .ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0}
 
-/* 3 tab: Vietstock | 24HMoney | Scanner Chart */
-.ctabs{display:flex;gap:2px;align-items:flex-end}
-.ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 13px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s}
+/* [2] 6 tab: Vietstock | VND Detail | VND News | VND Summary | 24HMoney | Scanner Chart */
+.ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
+.ctab{
+  font-size:11px;font-family:var(--font-mono);font-weight:600;
+  padding:5px 11px;border-radius:5px 5px 0 0;
+  border:1px solid var(--border);border-bottom:2px solid transparent;
+  background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;
+  white-space:nowrap;
+}
 .ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);border-bottom-color:var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 
@@ -349,23 +361,51 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
-/* ── Scanner Chart tab: album 3 ảnh ─── */
-#panel-scanner{overflow-y:auto;background:#1a1a2e;display:none}
-#panel-scanner.on{display:block}
-.scanner-loading{display:flex;align-items:center;justify-content:center;height:100%;color:#aaa;font-size:14px;font-family:var(--font-mono)}
-.album-wrap{padding:12px;display:flex;flex-direction:column;gap:10px}
-.album-nav{display:flex;align-items:center;justify-content:center;gap:12px;padding:8px 0}
-.album-nav button{font-family:var(--font-mono);font-size:12px;padding:6px 18px;border-radius:5px;border:1px solid #444;background:#2a2a3e;color:#ccc;cursor:pointer;transition:all .15s}
-.album-nav button:hover{background:#3a3a5e;color:#fff;border-color:#666}
-.album-nav button.disabled{opacity:.3;cursor:default;pointer-events:none}
-.album-dots{display:flex;gap:6px}
+/* ── Scanner Chart tab ─── */
+#panel-scanner{overflow:hidden;background:#1a1a2e;display:none;flex-direction:column}
+#panel-scanner.on{display:flex}
+
+.scanner-loading{
+  display:flex;align-items:center;justify-content:center;
+  flex:1;color:#aaa;font-size:14px;font-family:var(--font-mono)
+}
+
+/*
+  [4] Album: nút trước/sau ở hai bên trái/phải, ảnh ở giữa
+      layout: 3 cột [btn | slide | btn], full height
+*/
+.album-outer{
+  flex:1;display:flex;align-items:stretch;overflow:hidden;
+  position:relative;
+}
+.album-side-btn{
+  display:flex;align-items:center;justify-content:center;
+  width:52px;flex-shrink:0;
+  background:rgba(0,0,0,.25);cursor:pointer;
+  transition:background .15s;border:none;color:#ccc;font-size:22px;
+  user-select:none;
+}
+.album-side-btn:hover:not(.disabled){background:rgba(26,86,219,.45);color:#fff}
+.album-side-btn.disabled{opacity:.2;cursor:default;pointer-events:none}
+
+.album-center{
+  flex:1;overflow-y:auto;display:flex;flex-direction:column;
+  align-items:center;padding:12px 8px;gap:8px;
+}
+.album-center::-webkit-scrollbar{width:4px}
+.album-center::-webkit-scrollbar-thumb{background:#444;border-radius:2px}
+
+.album-slide{display:none;flex-direction:column;align-items:center;gap:8px;width:100%}
+.album-slide.on{display:flex}
+.album-slide img{max-width:100%;max-height:calc(94vh - 140px);object-fit:contain;border-radius:6px;border:1px solid #333}
+.album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
+
+/* dots indicator */
+.album-dots-wrap{display:flex;gap:6px;justify-content:center;padding:4px 0;flex-shrink:0}
 .album-dot{width:8px;height:8px;border-radius:50%;background:#444;cursor:pointer;transition:all .15s}
 .album-dot.on{background:#4d9ff5;transform:scale(1.3)}
-.album-slide{display:none;flex-direction:column;align-items:center;gap:8px}
-.album-slide.on{display:flex}
-.album-slide img{max-width:100%;border-radius:6px;border:1px solid #333}
-.album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
-.album-hint{text-align:center;font-size:10px;color:#555;padding:4px 0;font-family:var(--font-mono)}
+
+.album-hint{text-align:center;font-size:10px;color:#555;padding:2px 0 6px;font-family:var(--font-mono);flex-shrink:0}
 
 footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
 
@@ -375,8 +415,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
 @media(max-width:768px){
-  .pbox{width:99vw;height:94vh;border-radius:6px}
+  .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
+  .album-side-btn{width:38px;font-size:18px}
 }
 </style>
 </head>
@@ -433,11 +474,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="phdr">
       <span class="ptitle" id="ptitle">Chart</span>
 
-      <!-- 3 tab -->
+      <!-- [2] 6 tab -->
       <div class="ctabs">
-        <button class="ctab on"  id="ctab-vs"      onclick="switchTab('vs')">📈 Vietstock</button>
-        <button class="ctab"     id="ctab-24h"     onclick="switchTab('24h')">📰 24HMoney</button>
-        <button class="ctab"     id="ctab-scanner" onclick="switchTab('scanner')">🖼 Scanner Chart</button>
+        <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
+        <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
+        <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
+        <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
+        <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
       </div>
 
       <button class="closebtn" onclick="closePopup()">✕</button>
@@ -448,25 +492,38 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <div class="tpanel on" id="panel-vs">
         <iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe>
       </div>
+      <!-- Tab VND Cơ bản -->
+      <div class="tpanel" id="panel-vnd-cs">
+        <iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <!-- Tab VND Tin tức -->
+      <div class="tpanel" id="panel-vnd-news">
+        <iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <!-- Tab VND Tổng quan -->
+      <div class="tpanel" id="panel-vnd-sum">
+        <iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe>
+      </div>
       <!-- Tab 24HMoney -->
       <div class="tpanel" id="panel-24h">
         <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab Scanner Chart: album 3 ảnh -->
+      <!-- Tab Scanner Chart: nút trái/phải hai bên -->
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading">
           <span>⏳ Đang tạo chart từ scanner...</span>
         </div>
-        <div class="album-wrap" id="album-wrap" style="display:none">
-          <!-- nav -->
-          <div class="album-nav">
-            <button id="btn-prev" onclick="albumNav(-1)">◀ Trước</button>
-            <div class="album-dots" id="album-dots"></div>
-            <button id="btn-next" onclick="albumNav(1)">Sau ▶</button>
+        <div class="album-outer" id="album-outer" style="display:none">
+          <!-- Nút trái -->
+          <button class="album-side-btn disabled" id="btn-prev" onclick="albumNav(-1)">&#9664;</button>
+          <!-- Vùng ảnh giữa -->
+          <div class="album-center">
+            <div class="album-dots-wrap" id="album-dots"></div>
+            <div id="album-slides"></div>
+            <div class="album-hint">Vuốt trái/phải hoặc dùng nút ◀ ▶ để chuyển ảnh</div>
           </div>
-          <!-- slides -->
-          <div id="album-slides"></div>
-          <div class="album-hint">Vuốt trái/phải hoặc dùng nút ◀ ▶ để chuyển ảnh</div>
+          <!-- Nút phải -->
+          <button class="album-side-btn" id="btn-next" onclick="albumNav(1)">&#9654;</button>
         </div>
       </div>
     </div>
@@ -582,7 +639,6 @@ function mkCell(sym,data){
 }
 
 function mkGroup(name,syms,data){
-  /* Tên ngành: BOLD căn giữa | % TB bên phải */
   const sorted=sortDesc(syms,data);
   const avg=avgPct(syms,data);
   const sign=avg>=0?'+':'';
@@ -617,17 +673,14 @@ function renderHeatmap(data){
 // ═══════════════════════════════════════════════════════
 // ALBUM STATE (Scanner Chart tab)
 // ═══════════════════════════════════════════════════════
-let _albumIdx=0;
-const _albumLabels=['📊 Daily [D]','📈 Weekly [W]','⚡ 15 phút [15m]'];
-
-// _scannerCharts[sym] = { status:'loading'|'ready'|'error', images:[{url,label}] }
-const _scannerCharts={};
+let _albumIdx=0, _albumTotal=0;
 
 function _showAlbum(images){
   const slidesEl=document.getElementById('album-slides');
   const dotsEl  =document.getElementById('album-dots');
   slidesEl.innerHTML='';
   dotsEl.innerHTML='';
+  _albumTotal=images.length;
   images.forEach((img,i)=>{
     slidesEl.innerHTML+=`<div class="album-slide${i===0?' on':''}" id="slide-${i}">
       <img src="${img.url}" alt="${img.label}" loading="lazy">
@@ -636,34 +689,27 @@ function _showAlbum(images){
     dotsEl.innerHTML+=`<div class="album-dot${i===0?' on':''}" id="dot-${i}" onclick="albumGoto(${i})"></div>`;
   });
   _albumIdx=0;
-  _updateAlbumNav(images.length);
-  document.getElementById('album-wrap').style.display='block';
+  _updateAlbumNav();
+  document.getElementById('album-outer').style.display='flex';
   document.getElementById('scanner-loading').style.display='none';
 }
 
 function albumGoto(i){
-  const slides=document.querySelectorAll('.album-slide');
-  const dots  =document.querySelectorAll('.album-dot');
-  if(i<0||i>=slides.length)return;
-  slides.forEach(s=>s.classList.remove('on'));
-  dots.forEach(d=>d.classList.remove('on'));
-  slides[i].classList.add('on');
-  dots[i].classList.add('on');
+  if(i<0||i>=_albumTotal)return;
+  document.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
+  document.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
   _albumIdx=i;
-  _updateAlbumNav(slides.length);
+  _updateAlbumNav();
 }
 
-function albumNav(dir){
-  const slides=document.querySelectorAll('.album-slide');
-  albumGoto(_albumIdx+dir);
+function albumNav(dir){ albumGoto(_albumIdx+dir); }
+
+function _updateAlbumNav(){
+  document.getElementById('btn-prev').classList.toggle('disabled', _albumIdx===0);
+  document.getElementById('btn-next').classList.toggle('disabled', _albumIdx===_albumTotal-1);
 }
 
-function _updateAlbumNav(total){
-  document.getElementById('btn-prev').className='album-nav button'+ (_albumIdx===0?' disabled':'');
-  document.getElementById('btn-next').className='album-nav button'+ (_albumIdx===total-1?' disabled':'');
-}
-
-// Touch/swipe support cho album
+// Touch/swipe
 let _touchStartX=0;
 document.getElementById('panel-scanner').addEventListener('touchstart',e=>{_touchStartX=e.touches[0].clientX},{passive:true});
 document.getElementById('panel-scanner').addEventListener('touchend',e=>{
@@ -672,7 +718,7 @@ document.getElementById('panel-scanner').addEventListener('touchend',e=>{
 },{passive:true});
 
 async function loadScannerChart(sym){
-  document.getElementById('album-wrap').style.display='none';
+  document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML=
     `<span>⏳ Đang tạo chart <b>${sym}</b>… (15–30 giây lần đầu)</span>`;
@@ -690,7 +736,6 @@ async function loadScannerChart(sym){
         url:`data:image/png;base64,${b64}`,
         label: labels[i]||`Chart ${i+1}`,
       })));
-      // Hiện badge nếu dùng cache
       if(j.cached){
         const hint=document.querySelector('.album-hint');
         if(hint) hint.textContent='♻️ Dùng cache — click lại tab để làm mới';
@@ -723,33 +768,61 @@ async function loadScannerChart(sym){
 // ═══════════════════════════════════════════════════════
 let _sym='', _tab='vs';
 
+// Các tab ID cần iframe lazy-load (chỉ load khi lần đầu chọn tab)
+const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h'];
+
 function openChart(sym){
   _sym=sym.toUpperCase().trim();
   _tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
-  _activateTab('vs');
+
   // Load Vietstock ngay
-  document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
-  document.getElementById('iframe-24h').src='about:blank';
+  document.getElementById('iframe-vs').src=
+    `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
+
+  // Reset tất cả iframe lazy-load
+  IFRAME_TABS.forEach(t=>{
+    document.getElementById(`iframe-${t}`).src='about:blank';
+  });
+
   // Reset scanner tab
-  document.getElementById('album-wrap').style.display='none';
+  document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
 
+  _activateTab('vs');
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
 }
 
 function _activateTab(tab){
   _tab=tab;
-  ['vs','24h','scanner'].forEach(t=>{
+  const allTabs=['vs','vnd-cs','vnd-news','vnd-sum','24h','scanner'];
+  allTabs.forEach(t=>{
     document.getElementById('ctab-'+t).classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
-  // Lazy load: chỉ load khi tab được chọn
+
+  // Lazy load iframe khi lần đầu chọn
+  if(tab==='vnd-cs'){
+    const f=document.getElementById('iframe-vnd-cs');
+    if(f.src==='about:blank')
+      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup`;
+  }
+  if(tab==='vnd-news'){
+    const f=document.getElementById('iframe-vnd-news');
+    if(f.src==='about:blank')
+      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn`;
+  }
+  if(tab==='vnd-sum'){
+    const f=document.getElementById('iframe-vnd-sum');
+    if(f.src==='about:blank')
+      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}`;
+  }
   if(tab==='24h'){
     const f=document.getElementById('iframe-24h');
-    if(f.src==='about:blank') f.src=`https://24hmoney.vn/stock/${_sym}`;
+    if(f.src==='about:blank')
+      f.src=`https://24hmoney.vn/stock/${_sym}/news`;
   }
   if(tab==='scanner'){
     loadScannerChart(_sym);
@@ -761,7 +834,9 @@ function switchTab(tab){ _activateTab(tab); }
 function closePopup(){
   document.getElementById('overlay').classList.remove('on');
   document.getElementById('iframe-vs').src='about:blank';
-  document.getElementById('iframe-24h').src='about:blank';
+  IFRAME_TABS.forEach(t=>{
+    document.getElementById(`iframe-${t}`).src='about:blank';
+  });
   document.body.style.overflow='';
 }
 
