@@ -846,7 +846,7 @@ function openChart(sym){
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
 
   document.getElementById('iframe-vs').src=
-    `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
+    `https://stockchart.vietstock.vn/?stockcode=${_sym}`;
 
   IFRAME_TABS.forEach(t=>{
     document.getElementById(`iframe-${t}`).src='about:blank';
