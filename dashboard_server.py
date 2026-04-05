@@ -254,7 +254,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 
-#rbar{height:2px;background:linear-gradient(90deg,var(--accent),var(--green));width:0%;position:fixed;top:0;left:0;z-index:200}
+
 
 header{display:flex;align-items:center;justify-content:space-between;padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow)}
 header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
@@ -446,7 +446,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 </head>
 <body>
 
-<div id="rbar"></div>
 
 <header>
   <h1>⚡ Scanner Dashboard</h1>
@@ -960,33 +959,23 @@ async function fetchSigs(){
 async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
+    const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
     document.getElementById('hmap-ts').textContent=
-      `${j.timestamp||''}  •  data cách ${j.cached_age||0}s  •  click để xem chart`;
+      `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
     renderHeatmap(j.data||{});
   }catch(e){console.error('fetchHmap:',e)}
 }
 
-// ═══════════════════════════════════════════════════════
-// REFRESH BAR
-// ═══════════════════════════════════════════════════════
-function bar(sec){
-  const el=document.getElementById('rbar');
-  el.style.transition='none';el.style.width='0%';
-  requestAnimationFrame(()=>{
-    el.style.transition=`width ${sec}s linear`;
-    el.style.width='100%';
-  });
-}
+
 
 // ═══════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
-  bar(HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
-  setInterval(async()=>{bar(SIG_TTL);  await fetchSigs(); }, SIG_TTL  * 1000);
-  setInterval(async()=>{bar(HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
+  setInterval(async()=>{ await fetchSigs(); }, SIG_TTL  * 1000);
+  setInterval(async()=>{ await fetchHmap();}, HMAP_TTL * 1000);
 }
 init();
 </script>
