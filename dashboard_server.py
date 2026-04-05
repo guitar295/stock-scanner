@@ -573,31 +573,51 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   box-shadow: 0 2px 0 0 var(--accent) !important;
 }
 
-/* ══ MOBILE LIGHTBOX ══ */
+/* ══ MOBILE LIGHTBOX — carousel strip ══ */
 #mob-lightbox {
   display: none;
   position: fixed;
   inset: 0;
   z-index: 99999;
   background: #000;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
   touch-action: none;
 }
-#mob-lightbox.on {
-  display: flex;
+#mob-lightbox.on { display: block; }
+#lb-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
-#mob-lightbox-img {
+/* Strip ngang: tất cả ảnh xếp liền nhau, di chuyển bằng translateX */
+#lb-strip {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  will-change: transform;
+}
+#lb-strip.snapping {
+  transition: transform 0.32s cubic-bezier(0.25,0.46,0.45,0.94);
+}
+/* Mỗi slide chiếm đúng 1 màn hình */
+.lb-slide {
+  flex-shrink: 0;
+  width: 100vw;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lb-slide img {
   max-width: 100vw;
   max-height: 100dvh;
   object-fit: contain;
   display: block;
   transform-origin: center center;
   will-change: transform;
-  transition: transform 0.05s linear;
   user-select: none;
   -webkit-user-drag: none;
+  pointer-events: none;
 }
 #mob-lightbox-close {
   position: absolute;
@@ -614,14 +634,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 2;
+  z-index: 10;
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   touch-action: manipulation;
 }
-#mob-lightbox-close:active {
-  background: rgba(255,255,255,.32);
-}
+#mob-lightbox-close:active { background: rgba(255,255,255,.32); }
 #mob-lightbox-counter {
   position: absolute;
   bottom: 20px;
@@ -630,7 +648,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   display: flex;
   gap: 8px;
   align-items: center;
-  z-index: 2;
+  z-index: 10;
+  pointer-events: none;
 }
 .mob-lb-dot {
   width: 7px;
@@ -639,26 +658,24 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   background: rgba(255,255,255,.35);
   transition: background .2s, transform .2s;
 }
-.mob-lb-dot.on {
-  background: #fff;
-  transform: scale(1.4);
-}
+.mob-lb-dot.on { background: #fff; transform: scale(1.4); }
 #mob-lightbox-label {
   position: absolute;
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  color: rgba(255,255,255,.75);
+  color: rgba(255,255,255,.85);
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: nowrap;
-  z-index: 2;
+  z-index: 10;
   pointer-events: none;
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
-  background: rgba(0,0,0,.3);
-  padding: 3px 10px;
+  background: rgba(0,0,0,.35);
+  padding: 3px 12px;
   border-radius: 20px;
+  transition: opacity .15s;
 }
 </style>
 </head>
@@ -813,10 +830,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   </div>
 </div>
 
-<!-- ══ MOBILE LIGHTBOX ══ -->
-<div id="mob-lightbox">
+<!-- ══ MOBILE LIGHTBOX — carousel strip ══ -->
+<div id="mob-lightbox" onclick="lbClose()">
+  <div id="lb-viewport" onclick="event.stopPropagation()">
+    <div id="lb-strip"></div>
+  </div>
   <div id="mob-lightbox-label">📊 Daily [D]</div>
-  <img id="mob-lightbox-img" src="" alt="chart">
   <button id="mob-lightbox-close" onclick="lbClose()">✕</button>
   <div id="mob-lightbox-counter"></div>
 </div>
@@ -991,60 +1010,49 @@ function renderHeatmap(data){
 }
 
 // ═══════════════════════════════════════════════════════
-// MOBILE LIGHTBOX
+// MOBILE LIGHTBOX — carousel strip
 // ═══════════════════════════════════════════════════════
 const lb = {
-  el:       null,
-  imgEl:    null,
-  labelEl:  null,
-  counterEl:null,
-  images:   [],   // [{url, label}, ...]
-  idx:      0,
-  // pinch / pan state
-  scale:    1,
-  baseScale:1,
-  tx:       0,
-  ty:       0,
-  baseTx:   0,
-  baseTy:   0,
-  pinchDist:0,
-  touches:  0,
-  swipeStartX: 0,
-  swipeStartY: 0,
-  swipeTracking: false,
+  el: null, stripEl: null, labelEl: null, counterEl: null,
+  images: [],   // [{url, label}]
+  idx: 0,
+  W: 0,         // viewport width, cập nhật khi open
+  // swipe carousel state
+  dragStartX: 0,
+  dragStartY: 0,
+  dragDx: 0,
+  dragging: false,
+  dragLocked: false,  // locked = chỉ scroll dọc, không swipe ngang
+  stripOffset: 0,     // translateX hiện tại của strip (không tính drag live)
 };
 
 function lbInit(){
   lb.el        = document.getElementById('mob-lightbox');
-  lb.imgEl     = document.getElementById('mob-lightbox-img');
+  lb.stripEl   = document.getElementById('lb-strip');
   lb.labelEl   = document.getElementById('mob-lightbox-label');
   lb.counterEl = document.getElementById('mob-lightbox-counter');
 
-  const img = lb.imgEl;
-
-  // ── Touch handlers ──
-  img.addEventListener('touchstart',  lbTouchStart,  {passive:false});
-  img.addEventListener('touchmove',   lbTouchMove,   {passive:false});
-  img.addEventListener('touchend',    lbTouchEnd,    {passive:false});
-
-  // double-tap to reset zoom
-  let lastTap = 0;
-  img.addEventListener('touchend', function(e){
-    const now = Date.now();
-    if(now - lastTap < 280 && e.changedTouches.length === 1){
-      if(lb.scale > 1.05){ lbResetTransform(); }
-      else { lbSetScale(2.5); }
-    }
-    lastTap = now;
-  });
+  const vp = document.getElementById('lb-viewport');
+  vp.addEventListener('touchstart', _lbTS, {passive: false});
+  vp.addEventListener('touchmove',  _lbTM, {passive: false});
+  vp.addEventListener('touchend',   _lbTE, {passive: false});
 }
 
 function lbOpen(images, idx){
   if(!lb.el) lbInit();
   lb.images = images;
   lb.idx    = idx;
-  lbResetTransform();
-  lbRender();
+  lb.W      = window.innerWidth;
+
+  // Build strip
+  lb.stripEl.innerHTML = images.map((img, i) =>
+    `<div class="lb-slide"><img src="${img.url}" alt="${img.label}" draggable="false"></div>`
+  ).join('');
+  lb.stripEl.style.width = `${lb.W * images.length}px`;
+
+  _lbSnapTo(idx, false);  // không animate lần đầu
+  _lbUpdateMeta();
+
   lb.el.classList.add('on');
   document.body.style.overflow = 'hidden';
 }
@@ -1053,108 +1061,95 @@ function lbClose(){
   if(!lb.el) return;
   lb.el.classList.remove('on');
   document.body.style.overflow = '';
-  lbResetTransform();
 }
 
-function lbRender(){
-  const img = lb.images[lb.idx];
-  lb.imgEl.src       = img.url;
-  lb.labelEl.textContent = img.label;
+function _lbSnapTo(idx, animate){
+  lb.idx = Math.max(0, Math.min(idx, lb.images.length - 1));
+  const target = -lb.idx * lb.W;
+  lb.stripOffset = target;
 
-  // dots
+  if(animate){
+    lb.stripEl.classList.add('snapping');
+    lb.stripEl.style.transform = `translateX(${target}px)`;
+    setTimeout(() => lb.stripEl.classList.remove('snapping'), 350);
+  } else {
+    lb.stripEl.classList.remove('snapping');
+    lb.stripEl.style.transform = `translateX(${target}px)`;
+  }
+  _lbUpdateMeta();
+}
+
+function _lbUpdateMeta(){
+  if(!lb.images.length) return;
+  lb.labelEl.textContent = lb.images[lb.idx].label;
   lb.counterEl.innerHTML = lb.images.map((_, i) =>
     `<div class="mob-lb-dot${i===lb.idx?' on':''}"></div>`
   ).join('');
-
-  // dot click
-  lb.counterEl.querySelectorAll('.mob-lb-dot').forEach((d, i) => {
-    d.onclick = () => { lb.idx = i; lbResetTransform(); lbRender(); };
-  });
 }
 
-function lbResetTransform(){
-  lb.scale = 1; lb.tx = 0; lb.ty = 0;
-  lb.baseScale = 1; lb.baseTx = 0; lb.baseTy = 0;
-  _lbApplyTransform();
+// ── Touch handlers cho strip ──
+function _lbTS(e){
+  if(e.touches.length !== 1) return;
+  lb.dragging   = true;
+  lb.dragLocked = false;
+  lb.dragDx     = 0;
+  lb.dragStartX = e.touches[0].clientX;
+  lb.dragStartY = e.touches[0].clientY;
+  // tắt transition khi bắt đầu kéo
+  lb.stripEl.classList.remove('snapping');
 }
 
-function lbSetScale(s){
-  lb.scale = Math.min(Math.max(s, 1), 5);
-  lb.baseScale = lb.scale;
-  _lbApplyTransform();
-}
+function _lbTM(e){
+  if(!lb.dragging || e.touches.length !== 1) return;
+  const dx = e.touches[0].clientX - lb.dragStartX;
+  const dy = e.touches[0].clientY - lb.dragStartY;
 
-function _lbApplyTransform(){
-  if(!lb.imgEl) return;
-  lb.imgEl.style.transform = `translate(${lb.tx}px,${lb.ty}px) scale(${lb.scale})`;
-}
-
-function _dist(t){
-  const dx = t[0].clientX - t[1].clientX;
-  const dy = t[0].clientY - t[1].clientY;
-  return Math.sqrt(dx*dx + dy*dy);
-}
-
-function lbTouchStart(e){
-  lb.touches = e.touches.length;
-  if(lb.touches === 2){
-    e.preventDefault();
-    lb.pinchDist  = _dist(e.touches);
-    lb.baseScale  = lb.scale;
-    lb.baseTx     = lb.tx;
-    lb.baseTy     = lb.ty;
-    lb.swipeTracking = false;
-  } else if(lb.touches === 1){
-    lb.swipeStartX   = e.touches[0].clientX;
-    lb.swipeStartY   = e.touches[0].clientY;
-    lb.baseTx        = lb.tx;
-    lb.baseTy        = lb.ty;
-    lb.swipeTracking = true;
-  }
-}
-
-function lbTouchMove(e){
-  if(lb.touches === 2 && e.touches.length === 2){
-    e.preventDefault();
-    const newDist  = _dist(e.touches);
-    const ratio    = newDist / lb.pinchDist;
-    lb.scale       = Math.min(Math.max(lb.baseScale * ratio, 1), 5);
-    // pan while pinching
-    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    lb.tx = lb.baseTx + (mx - window.innerWidth/2)  * (lb.scale - lb.baseScale) * 0;
-    lb.ty = lb.baseTy + (my - window.innerHeight/2) * (lb.scale - lb.baseScale) * 0;
-    _lbApplyTransform();
-  } else if(lb.touches === 1 && e.touches.length === 1 && lb.swipeTracking){
-    const dx = e.touches[0].clientX - lb.swipeStartX;
-    const dy = e.touches[0].clientY - lb.swipeStartY;
-    if(lb.scale > 1.05){
-      // pan mode
-      e.preventDefault();
-      lb.tx = lb.baseTx + dx;
-      lb.ty = lb.baseTy + dy;
-      _lbApplyTransform();
-    }
-    // else: let natural scroll happen (swipe to next detected on touchend)
-  }
-}
-
-function lbTouchEnd(e){
-  if(lb.touches === 1 && lb.swipeTracking && lb.scale <= 1.05){
-    const dx = e.changedTouches[0].clientX - lb.swipeStartX;
-    const dy = e.changedTouches[0].clientY - lb.swipeStartY;
-    if(Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)){
-      if(dx < 0 && lb.idx < lb.images.length - 1){
-        lb.idx++; lbResetTransform(); lbRender();
-      } else if(dx > 0 && lb.idx > 0){
-        lb.idx--; lbResetTransform(); lbRender();
-      }
+  // Xác định hướng kéo lần đầu
+  if(!lb.dragLocked && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
+    lb.dragLocked = true;
+    // nếu kéo dọc nhiều hơn ngang → cho scroll tự nhiên, bỏ qua
+    if(Math.abs(dy) > Math.abs(dx)){
+      lb.dragging = false;
+      return;
     }
   }
-  lb.swipeTracking = false;
-  lb.touches = e.touches.length;
-  // clamp pan after pinch release
-  if(lb.scale <= 1.02){ lbResetTransform(); }
+  if(!lb.dragLocked) return;
+
+  e.preventDefault();  // chặn scroll dọc khi đã xác định kéo ngang
+  lb.dragDx = dx;
+
+  // Rubber-band ở đầu/cuối
+  let offset = lb.stripOffset + dx;
+  const maxOffset = 0;
+  const minOffset = -(lb.images.length - 1) * lb.W;
+  if(offset > maxOffset) offset = dx * 0.3;
+  if(offset < minOffset) offset = minOffset + (offset - minOffset) * 0.3;
+
+  lb.stripEl.style.transform = `translateX(${offset}px)`;
+}
+
+function _lbTE(e){
+  if(!lb.dragging) return;
+  lb.dragging = false;
+
+  const dx    = lb.dragDx;
+  const absX  = Math.abs(dx);
+  const THRESHOLD = lb.W * 0.25;   // kéo ≥25% màn hình thì chuyển
+
+  let nextIdx = lb.idx;
+  if     (absX > THRESHOLD && dx < 0) nextIdx = lb.idx + 1;
+  else if(absX > THRESHOLD && dx > 0) nextIdx = lb.idx - 1;
+  // Nếu kéo nhanh (velocity) — kéo ngắn hơn cũng chuyển
+  // (đơn giản: nếu > 8px và hướng rõ)
+  else if(absX > 8 && dx < 0 && lb.idx < lb.images.length - 1) {
+    // velocity check bằng absX so với thời gian — đơn giản dùng 80px
+    if(absX > 80) nextIdx = lb.idx + 1;
+  } else if(absX > 8 && dx > 0 && lb.idx > 0){
+    if(absX > 80) nextIdx = lb.idx - 1;
+  }
+
+  _lbSnapTo(nextIdx, true);
+  lb.dragDx = 0;
 }
 
 // esc key để đóng lightbox
