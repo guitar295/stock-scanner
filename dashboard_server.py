@@ -39,7 +39,7 @@ _signal_rank        = {}
 _heatmap_cache  = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock   = threading.Lock()
 HEATMAP_TTL_SEC = 120
-SIGNAL_TTL_SEC  = 10
+SIGNAL_TTL_SEC  = 15
 
 _chart_cache: dict = {}
 _chart_lock         = threading.Lock()
@@ -377,12 +377,12 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
 /* ── Scanner Chart tab ─── */
-#panel-scanner{overflow:hidden;background:#1a1a2e;display:none;flex-direction:column}
+#panel-scanner{overflow:hidden;background:#ffffff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
 
 .scanner-loading{
   display:flex;align-items:center;justify-content:center;
-  flex:1;color:#aaa;font-size:14px;font-family:var(--font-mono)
+  flex:1;color:#6b7280;font-size:14px;font-family:var(--font-mono)
 }
 
 /*
@@ -397,49 +397,51 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .album-center{
   flex:1;overflow-y:auto;display:flex;flex-direction:column;
   align-items:center;padding:4px 4px 2px;gap:4px;
+  background:#ffffff;
 }
 .album-center::-webkit-scrollbar{width:4px}
 .album-center::-webkit-scrollbar-thumb{background:#444;border-radius:2px}
 
 .album-slide{display:none;flex-direction:column;align-items:center;gap:8px;width:100%}
 .album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid #2a2a3a}
+.album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee}
 .album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
 
 /* Nav bar: nằm dưới ảnh, chứa nút ◀ + dots + ▶ + refresh trên cùng một hàng */
 .album-nav-bar{
   display:flex;align-items:center;justify-content:center;
   gap:10px;padding:6px 0 8px;flex-shrink:0;
+  background:#ffffff;
 }
 .album-nav-btn{
   width:30px;height:30px;border-radius:50%;
-  border:1px solid #444;background:rgba(255,255,255,.08);
-  color:#ccc;font-size:14px;cursor:pointer;
+  border:1px solid #dde3ee;background:#f4f6fb;
+  color:#6b7280;font-size:14px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:background .15s,color .15s,border-color .15s;
   user-select:none;flex-shrink:0;
 }
-.album-nav-btn:hover:not(.disabled){background:rgba(26,86,219,.5);color:#fff;border-color:#4d9ff5}
-.album-nav-btn.disabled{opacity:.2;cursor:default;pointer-events:none}
+.album-nav-btn:hover:not(.disabled){background:#1a56db;color:#fff;border-color:#1a56db}
+.album-nav-btn.disabled{opacity:.25;cursor:default;pointer-events:none}
 
 .album-dots-wrap{display:flex;gap:6px;align-items:center}
-.album-dot{width:8px;height:8px;border-radius:50%;background:#444;cursor:pointer;transition:all .15s}
-.album-dot.on{background:#4d9ff5;transform:scale(1.3)}
+.album-dot{width:8px;height:8px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
+.album-dot.on{background:#1a56db;transform:scale(1.3)}
 
 /* Nút refresh — nằm ngay cạnh nút ▶ */
 .album-refresh-btn{
   width:30px;height:30px;padding:0;border-radius:50%;
-  border:1px solid #555;background:rgba(255,255,255,.06);
-  color:#aaa;font-size:15px;cursor:pointer;
+  border:1px solid #dde3ee;background:#f4f6fb;
+  color:#6b7280;font-size:15px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:background .15s,color .15s,border-color .15s;
   user-select:none;flex-shrink:0;
 }
-.album-refresh-btn:hover{background:rgba(14,159,110,.35);color:#6ee7b7;border-color:#0e9f6e}
+.album-refresh-btn:hover{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
 .album-refresh-btn.spinning span.ri{display:inline-block;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-.album-hint{text-align:center;font-size:10px;color:#555;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0}
+.album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0;background:#ffffff}
 
 footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
 
@@ -886,17 +888,17 @@ function _activateTab(tab){
   if(tab==='vnd-cs'){
     const f=document.getElementById('iframe-vnd-cs');
     if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup`;
+      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;
   }
   if(tab==='vnd-news'){
     const f=document.getElementById('iframe-vnd-news');
     if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn`;
+      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn&theme=light`;
   }
   if(tab==='vnd-sum'){
     const f=document.getElementById('iframe-vnd-sum');
     if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}`;
+      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}?theme=light`;
   }
   if(tab==='24h'){
     const f=document.getElementById('iframe-24h');
