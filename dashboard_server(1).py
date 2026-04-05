@@ -472,111 +472,27 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 }
 
 /* ══ CHỈ MOBILE - KHÔNG ảnh hưởng desktop ══ */
-@media(max-width:768px){
-
-  /* Popup full màn hình */
+@media screen and (max-width:768px){
   .pbox{
-    width:100vw !important;
-    max-width:100vw !important;
-    height:100dvh !important;
-    border-radius:0 !important;
-    border:none !important;
+    width:100vw!important;
+    max-width:100vw!important;
+    height:100dvh!important;
+    border-radius:0!important;
+    border:none!important;
   }
-
-  /* Header popup: bỏ grid 3 cột, chuyển sang flex column */
   .phdr{
-    display:flex !important;
-    flex-direction:column !important;
-    padding:0 !important;
+    display:flex!important;
+    flex-direction:column!important;
+    padding:0!important;
+    gap:0!important;
   }
-
-  /* Hàng 1: Title + Close nằm ngang */
-  .phdr-left{
-    order:1;
-    width:100%;
-    display:flex !important;
-    align-items:center;
-    justify-content:space-between;
-    padding:8px 12px;
-    border-bottom:1px solid var(--border);
-  }
-
-  /* Search nằm cạnh title, đẩy close sang phải */
-  .popup-search-wrap{
-    flex:1;
-    margin:0 8px;
-  }
-  .popup-search-input{
-    width:100% !important;
-    font-size:13px !important;
-  }
-  .popup-search-input:focus{
-    width:100% !important;
-  }
-
-  /* Hàng 2: Tabs cuộn ngang, KHÔNG xuống dòng */
-  .phdr-center{
-    order:2;
-    width:100%;
-    overflow-x:auto;
-    overflow-y:hidden;
-    -webkit-overflow-scrolling:touch;
-    padding:6px 8px;
-    background:var(--surf2);
-    border-bottom:1px solid var(--border);
-    /* Ẩn scrollbar nhưng vẫn cuộn được */
-    scrollbar-width:none;
-  }
-  .phdr-center::-webkit-scrollbar{display:none;}
-
-  .ctabs{
-    display:flex !important;
-    flex-wrap:nowrap !important;   /* KHÔNG xuống dòng */
-    gap:4px;
-    width:max-content;             /* Đủ rộng chứa hết tab */
-  }
-
-  .ctab{
-    font-size:11px;
-    padding:5px 10px;
-    white-space:nowrap;
-    flex-shrink:0;
-  }
-
-  /* Ẩn phần right (vốn chứa close button desktop) */
+  .phdr-left,
+  .phdr-center,
   .phdr-right{
-    display:none !important;
-  }
-
-  /* Close button nằm trong phdr-left trên mobile */
-  .phdr-left .closebtn{
-    display:flex !important;
-    flex-shrink:0;
-  }
-
-  /* Heatmap header: wrap tự nhiên */
-  .hmap-panel-hdr{
-    flex-wrap:wrap;
-    gap:6px;
-    padding:8px 10px;
-  }
-  .hmap-search-input{
-    width:110px !important;
-  }
-  .hmap-search-input:focus{
-    width:140px !important;
-  }
-
-  /* Signal row gọn hơn chút */
-  .sig-row{
-    grid-template-columns:24px 58px 1fr 76px;
-    padding:6px 8px;
-  }
-  .s-badge{
-    font-size:9px;
-    padding:2px 4px;
+    display:none!important;
   }
 }
+
 </style>
 </head>
 <body>
@@ -1246,6 +1162,95 @@ async function init(){
   setInterval(async()=>{ startBar('pbar-sig',  SIG_TTL);  await fetchSigs(); }, SIG_TTL  * 1000);
   setInterval(async()=>{ startBar('pbar-hmap', HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
 }
+
+// ═══════════════════════════════════════════════
+// MOBILE HEADER REBUILD
+// ═══════════════════════════════════════════════
+function tabStyleMob(active){
+  return (active
+    ? 'background:var(--surface);color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700;'
+    : 'background:var(--bg);color:var(--muted);border-bottom:2px solid transparent;'
+  ) + 'font-size:12px;font-family:var(--font-mono);padding:5px 12px;border-radius:5px 5px 0 0;border:1px solid var(--border);white-space:nowrap;flex-shrink:0;cursor:pointer;';
+}
+
+function buildMobileHeader(){
+  if(window.innerWidth > 768) return;
+  const phdr = document.querySelector('.phdr');
+  if(!phdr || phdr.dataset.mob === '1') return;
+  phdr.dataset.mob = '1';
+  phdr.innerHTML = '';
+  phdr.style.cssText = 'display:flex;flex-direction:column;flex-shrink:0;';
+
+  // Hàng 1: Title + Search + Close
+  const r1 = document.createElement('div');
+  r1.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border);';
+  r1.innerHTML = `
+    <span id="ptitle"
+      style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">
+      Chart
+    </span>
+    <div style="position:relative;flex:1;">
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
+      <input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10"
+        autocomplete="off" spellcheck="false"
+        style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
+    </div>
+    <button onclick="closePopup()"
+      style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
+  `;
+  phdr.appendChild(r1);
+
+  // Hàng 2: Tabs cuộn ngang
+  const r2 = document.createElement('div');
+  r2.id = 'mob-tabrow';
+  r2.style.cssText = 'display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding:5px 8px;gap:3px;background:var(--surf2);border-bottom:1px solid var(--border);scrollbar-width:none;';
+  const tabs = [
+    {id:'vs',      label:'📈 Vietstock'},
+    {id:'scanner', label:'🖼 Scanner'},
+    {id:'vnd-cs',  label:'⚖️ Cơ bản'},
+    {id:'vnd-news',label:'🗞️ Tin tức'},
+    {id:'vnd-sum', label:'📄 Tổng quan'},
+    {id:'24h',     label:'💬 24HMoney'},
+  ];
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.id = 'ctab-' + t.id;
+    btn.textContent = t.label;
+    btn.style.cssText = tabStyleMob(t.id === 'vs');
+    btn.onclick = () => switchTab(t.id);
+    r2.appendChild(btn);
+  });
+  phdr.appendChild(r2);
+
+  // Ẩn scrollbar webkit
+  const s = document.createElement('style');
+  s.textContent = '#mob-tabrow::-webkit-scrollbar{display:none}';
+  document.head.appendChild(s);
+
+  // Event search mobile
+  const inp = document.getElementById('popup-search-input');
+  inp.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      const sym = this.value.trim().toUpperCase();
+      if(sym.length >= 2){ this.value=''; this.blur(); openChart(sym); }
+    }
+    if(e.key === 'Escape') this.blur();
+  });
+  inp.addEventListener('focus', function(){ this.select(); });
+}
+
+// Gọi buildMobileHeader mỗi khi mở popup
+const _openChartOrig = openChart;
+openChart = function(sym){
+  buildMobileHeader();
+  _openChartOrig(sym);
+};
+
+const _openUrlOrig = openUrl;
+openUrl = function(url, label){
+  buildMobileHeader();
+  _openUrlOrig(url, label);
+};
 init();
 </script>
 </body>
