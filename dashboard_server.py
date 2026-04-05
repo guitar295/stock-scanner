@@ -1166,91 +1166,91 @@ async function init(){
 // ═══════════════════════════════════════════════
 // MOBILE HEADER REBUILD
 // ═══════════════════════════════════════════════
-function rebuildMobileHeader(){
+function tabStyleMob(active){
+  return (active
+    ? 'background:var(--surface);color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700;'
+    : 'background:var(--bg);color:var(--muted);border-bottom:2px solid transparent;'
+  ) + 'font-size:12px;font-family:var(--font-mono);padding:5px 12px;border-radius:5px 5px 0 0;border:1px solid var(--border);white-space:nowrap;flex-shrink:0;cursor:pointer;';
+}
+
+function buildMobileHeader(){
   if(window.innerWidth > 768) return;
-
   const phdr = document.querySelector('.phdr');
-  if(phdr.dataset.mobileDone === '1') return;
-  phdr.dataset.mobileDone = '1';
-
-  // Xóa nội dung cũ
+  if(!phdr || phdr.dataset.mob === '1') return;
+  phdr.dataset.mob = '1';
   phdr.innerHTML = '';
-  phdr.style.cssText = 'display:flex;flex-direction:column;padding:0;gap:0;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0;';
+  phdr.style.cssText = 'display:flex;flex-direction:column;flex-shrink:0;';
 
-  // Hàng 1: Title + Close
-  const row1 = document.createElement('div');
-  row1.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);gap:8px;';
-  row1.innerHTML = `
-    <span id="ptitle" style="font-family:var(--font-ui);font-size:18px;font-weight:800;color:var(--accent);letter-spacing:1px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Chart</span>
-    <div style="position:relative;display:flex;align-items:center;flex:1;max-width:180px;">
-      <span style="position:absolute;left:10px;color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
-      <input id="popup-search-input"
-        style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;"
-        type="text" placeholder="Tìm mã..." maxlength="10" autocomplete="off" spellcheck="false">
+  // Hàng 1: Title + Search + Close
+  const r1 = document.createElement('div');
+  r1.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border);';
+  r1.innerHTML = `
+    <span id="ptitle"
+      style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">
+      Chart
+    </span>
+    <div style="position:relative;flex:1;">
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
+      <input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10"
+        autocomplete="off" spellcheck="false"
+        style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
     </div>
     <button onclick="closePopup()"
       style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
   `;
-  phdr.appendChild(row1);
+  phdr.appendChild(r1);
 
   // Hàng 2: Tabs cuộn ngang
-  const row2 = document.createElement('div');
-  row2.style.cssText = 'display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding:6px 8px;gap:4px;scrollbar-width:none;border-bottom:1px solid var(--border);';
-  row2.innerHTML = `
-    <button id="ctab-vs"       onclick="switchTab('vs')"       style="${tabStyle(true)}" >📈 Vietstock</button>
-    <button id="ctab-scanner"  onclick="switchTab('scanner')"  style="${tabStyle(false)}">🖼 Scanner</button>
-    <button id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')"   style="${tabStyle(false)}">⚖️ Cơ bản</button>
-    <button id="ctab-vnd-news" onclick="switchTab('vnd-news')" style="${tabStyle(false)}">🗞️ Tin tức</button>
-    <button id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')"  style="${tabStyle(false)}">📄 Tổng quan</button>
-    <button id="ctab-24h"      onclick="switchTab('24h')"      style="${tabStyle(false)}">💬 24HMoney</button>
-  `;
-  phdr.appendChild(row2);
+  const r2 = document.createElement('div');
+  r2.id = 'mob-tabrow';
+  r2.style.cssText = 'display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding:5px 8px;gap:3px;background:var(--surf2);border-bottom:1px solid var(--border);scrollbar-width:none;';
+  const tabs = [
+    {id:'vs',      label:'📈 Vietstock'},
+    {id:'scanner', label:'🖼 Scanner'},
+    {id:'vnd-cs',  label:'⚖️ Cơ bản'},
+    {id:'vnd-news',label:'🗞️ Tin tức'},
+    {id:'vnd-sum', label:'📄 Tổng quan'},
+    {id:'24h',     label:'💬 24HMoney'},
+  ];
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.id = 'ctab-' + t.id;
+    btn.textContent = t.label;
+    btn.style.cssText = tabStyleMob(t.id === 'vs');
+    btn.onclick = () => switchTab(t.id);
+    r2.appendChild(btn);
+  });
+  phdr.appendChild(r2);
 
   // Ẩn scrollbar webkit
-  const style = document.createElement('style');
-  style.textContent = '#mob-tabrow::-webkit-scrollbar{display:none}';
-  document.head.appendChild(style);
+  const s = document.createElement('style');
+  s.textContent = '#mob-tabrow::-webkit-scrollbar{display:none}';
+  document.head.appendChild(s);
 
-  // Gắn lại event search
+  // Event search mobile
   const inp = document.getElementById('popup-search-input');
   inp.addEventListener('keydown', function(e){
-    if(e.key==='Enter'){
-      const s=this.value.trim().toUpperCase();
-      if(s.length>=2){this.value='';this.blur();openChart(s);}
+    if(e.key === 'Enter'){
+      const sym = this.value.trim().toUpperCase();
+      if(sym.length >= 2){ this.value=''; this.blur(); openChart(sym); }
     }
-    if(e.key==='Escape') this.blur();
+    if(e.key === 'Escape') this.blur();
   });
   inp.addEventListener('focus', function(){ this.select(); });
 }
 
-function tabStyle(active){
-  const base = 'font-size:12px;font-family:var(--font-mono);font-weight:600;padding:5px 12px;border-radius:5px 5px 0 0;border:1px solid var(--border);white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s;';
-  return active
-    ? base+'background:var(--surface);color:var(--accent);border-bottom:2px solid var(--accent);'
-    : base+'background:var(--bg);color:var(--muted);border-bottom:2px solid transparent;';
-}
+// Gọi buildMobileHeader mỗi khi mở popup
+const _openChartOrig = openChart;
+openChart = function(sym){
+  buildMobileHeader();
+  _openChartOrig(sym);
+};
 
-// Gọi khi mở popup
-const _origOpenChart = openChart;
-// Override openChart để gọi rebuild trước
-function openChart(sym){
-  rebuildMobileHeader();
-  _sym = sym.toUpperCase().trim();
-  _tab = 'vs';
-  const ptitle = document.getElementById('ptitle');
-  if(ptitle) ptitle.textContent = `📈 ${_sym}`;
-  document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
-  IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
-  document.getElementById('album-outer').style.display='none';
-  document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-  _activateTab('vs');
-  document.getElementById('overlay').classList.add('on');
-  document.body.style.overflow='hidden';
-  const sinp = document.getElementById('popup-search-input');
-  if(sinp) sinp.value='';
-}
-
+const _openUrlOrig = openUrl;
+openUrl = function(url, label){
+  buildMobileHeader();
+  _openUrlOrig(url, label);
+};
 init();
 </script>
 </body>
