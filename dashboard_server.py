@@ -294,18 +294,17 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
 .hmap-group{display:flex;flex-direction:column;gap:2px;margin-bottom:3px}
 
-/* Header nhóm ngành: tên BOLD căn giữa, % bên phải */
+/* Header nhóm ngành: tên regular, % bên phải, khoảng cách rộng */
 .hmap-ghdr{
-  display:flex;align-items:center;justify-content:center;
-  gap:6px;
-  padding:0 7px;height:24px;border-radius:4px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 8px;height:24px;border-radius:4px;
   background:rgb(220,228,250);border:1px solid rgb(160,180,230);
-  overflow:hidden;
+  overflow:hidden;gap:10px;
 }
 .hmap-gname{
-  font-family:var(--font-ui);font-size:10px;font-weight:800;
+  font-family:var(--font-ui);font-size:10px;font-weight:400;
   text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;
 }
 .hmap-gavg{font-family:var(--font-mono);font-size:9px;font-weight:400;flex-shrink:0}
 .hmap-gavg.pos{color:rgb(22,120,40)}
