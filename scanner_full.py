@@ -133,7 +133,7 @@ HEATMAP_COLUMNS = [
         {"name": "XAY DUNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
     ]},
     {"col": 4, "groups": [
-        {"name": "BAT DONG SAN", "symbols": ["IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
+        {"name": "BAT DONG SAN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
         {"name": "PHAN BON",     "symbols": ["BFC","DCM","DPM"]},
         {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
     ]},
