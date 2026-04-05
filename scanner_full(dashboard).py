@@ -105,16 +105,15 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
 TRADING_STOCKS_POOL = [
-    "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
-    "CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE",
-    "DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS",
-    "GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK",
-    "HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG",
-    "LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL",
-    "PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT",
-    "QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG",
-    "TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC",
-    "VNM","VPB","VRE",
+    "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVB","BVH","BWE","VCK","CII",
+    "CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DGW","DIG",
+    "DPG","DPM","DRC","DRH","DXG","FCN","FPT","FRT","FTS","GAS","GEG","GEX",
+    "GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","HDG","HNG","HPG","HSG",
+    "HTN","HVN","IDC","IJC","DSE","KBC","KDH","KSB","LDG","LPB","LSS","LTG",
+    "MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET",
+    "PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT",
+    "SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2",
+    "VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE",
 ]
 
 HEATMAP_COLUMNS = [
@@ -134,7 +133,7 @@ HEATMAP_COLUMNS = [
         {"name": "XAY DUNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
     ]},
     {"col": 4, "groups": [
-        {"name": "BAT DONG SAN", "symbols": ["IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
+        {"name": "BAT DONG SAN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
         {"name": "PHAN BON",     "symbols": ["BFC","DCM","DPM"]},
         {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
     ]},
@@ -179,7 +178,7 @@ def _hmap_fg(bg):
     return (30,30,30) if lum > 160 else (15,15,15)
 
 HMAP_CELL_W      = 162
-HMAP_CELL_H      = 30
+HMAP_CELL_H      = 26
 HMAP_COL_GAP     = 4
 HMAP_COL_W       = HMAP_CELL_W + HMAP_COL_GAP
 HMAP_MARGIN      = 5
@@ -224,11 +223,11 @@ def _hmap_load_fonts():
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
     try:
-        f_title  = ImageFont.truetype(bold, 14)
-        f_hdr    = ImageFont.truetype(bold, 12)
-        f_sym    = ImageFont.truetype(bold, 12)
-        f_data   = ImageFont.truetype(reg or bold, 11)
-        f_sector = ImageFont.truetype(bold, 12)
+        f_title  = ImageFont.truetype(bold, 13)
+        f_hdr    = ImageFont.truetype(bold, 10)
+        f_sym    = ImageFont.truetype(bold, 10)
+        f_data   = ImageFont.truetype(reg or bold, 9)
+        f_sector = ImageFont.truetype(bold, 11)
         return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
@@ -242,20 +241,15 @@ def _hmap_draw_stock_cell(draw, x, y, sym, price, pct, f_sym, f_data):
     w1 = int(HMAP_CELL_W * 0.35)
     w2 = int(HMAP_CELL_W * 0.30)
     w3 = HMAP_CELL_W - w1 - w2
-    ty = y + (HMAP_CELL_H - 2) // 2 - 6
-    price_str = f"{price:.2f}" if price < 100 else f"{price:.1f}"
+    ty = y + (HMAP_CELL_H - 2) // 2 - 5
 
-    def dc(txt, fnt, bx, bw, use_stroke=False):
+    def dc(txt, fnt, bx, bw):
         bb = draw.textbbox((0, 0), txt, font=fnt)
-        tx = bx + (bw - (bb[2] - bb[0])) // 2
-        if use_stroke:
-            draw.text((tx, ty), txt, font=fnt, fill=fg, stroke_width=1, stroke_fill=fg)
-        else:
-            draw.text((tx, ty), txt, font=fnt, fill=fg)
+        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=fg)
 
-    dc(sym,             f_sym,  x,        w1, use_stroke=True)
-    dc(price_str,       f_data, x + w1,   w2)
-    dc(f"{pct:+.1f}%", f_data, x+w1+w2,  w3)
+    dc(sym,                                                    f_sym,  x,       w1)
+    dc(f"{price:,.2f}" if price < 100 else f"{price:,.0f}",   f_data, x + w1,  w2)
+    dc(f"{pct:+.1f}%",                                        f_data, x+w1+w2, w3)
 
 def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
     x1, y1 = x + HMAP_CELL_W - 1, y + HMAP_CELL_H - 2
@@ -263,12 +257,11 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
                        fill=HMAP_HDR_FILL, outline=HMAP_HDR_OUTLINE, lw=1)
     w1 = int(HMAP_CELL_W * 0.65)
     w2 = HMAP_CELL_W - w1
-    ty = y + (HMAP_CELL_H - 2) // 2 - 6
+    ty = y + (HMAP_CELL_H - 2) // 2 - 5
 
     def dc(txt, fnt, bx, bw, color):
         bb = draw.textbbox((0, 0), txt, font=fnt)
-        tx = bx + (bw - (bb[2] - bb[0])) // 2
-        draw.text((tx, ty), txt, font=fnt, fill=color, stroke_width=1, stroke_fill=color)
+        draw.text((bx + (bw - (bb[2] - bb[0])) // 2, ty), txt, font=fnt, fill=color)
 
     dc(name, f_hdr, x, w1, HMAP_HDR_FG)
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
@@ -310,6 +303,8 @@ def fetch_heatmap_data() -> tuple:
                             data_time = datetime.fromtimestamp(val_num / 1000, tz=TZ_VN)
                         elif val_num > 1_000_000_000:
                             data_time = datetime.fromtimestamp(val_num, tz=TZ_VN)
+                        else:
+                            data_time = None
                     except (TypeError, ValueError, OSError):
                         data_time = None
 
@@ -328,11 +323,14 @@ def fetch_heatmap_data() -> tuple:
 
     if data_time is None:
         data_time = datetime.now(TZ_VN)
+
     ts_str = data_time.strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
 
+
 def build_heatmap_image(data: dict, timestamp: str) -> str:
     f_title, f_hdr, f_sym, f_data, f_sector = _hmap_load_fonts()
+
     max_rows   = max(sum(len(g["symbols"]) for g in c["groups"]) for c in HEATMAP_COLUMNS)
     ts_display = sorted(
         [s for s in TRADING_STOCKS_POOL if s in data],
@@ -344,12 +342,14 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
 
     col0     = {"col": 0, "groups": [{"name": "TRADING STOCKS", "symbols": ts_display}]}
     all_cols = [col0] + HEATMAP_COLUMNS
+
     all_sorted = []
     for cd in all_cols:
         all_sorted.append([{"name": g["name"], "symbols": srt(g["symbols"])} for g in cd["groups"]])
 
     IMG_W = len(all_cols) * HMAP_COL_W + HMAP_MARGIN * 2
     IMG_H = max(_hmap_col_height(gs) for gs in all_sorted)
+
     img  = Image.new("RGB", (IMG_W, IMG_H), HMAP_BG)
     draw = ImageDraw.Draw(img)
 
@@ -376,12 +376,14 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
                 y += HMAP_CELL_H
 
     draw.rectangle([0, 0, IMG_W - 1, IMG_H - 1], outline=(200,210,230), width=1)
+
     fd, path = tempfile.mkstemp(suffix='_heatmap.png')
     os.close(fd)
     img.save(path, "PNG", optimize=True)
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts_log}] 🗺  Heatmap: ảnh {IMG_W}x{IMG_H}px → {path}")
     return path
+
 
 def handle_heatmap_command(chat_id):
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -425,14 +427,17 @@ def build_weekly_df(df_daily):
 def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=None):
     if image_path and not image_paths:
         image_paths = [image_path]
+
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
     try:
         if notify_text:
             requests.post(url_msg, data={
                 'chat_id': TELEGRAM_CHAT_ID, 'text': notify_text, 'parse_mode': 'HTML'
             })
+
         if image_paths and len(image_paths) == 1:
             with open(image_paths[0], 'rb') as f:
                 requests.post(url_photo, data={
@@ -440,6 +445,7 @@ def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=Non
                     'parse_mode': 'HTML', 'disable_notification': True,
                 }, files={'photo': f})
             print(f"  ✅ Đã gửi chart: {image_paths[0]}")
+
         elif image_paths and len(image_paths) >= 2:
             files, media = {}, []
             for i, path in enumerate(image_paths):
@@ -456,9 +462,11 @@ def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=Non
                 print(f"  ✅ Đã gửi album: {image_paths[0]}")
             finally:
                 for fh in files.values(): fh.close()
+
         if image_paths:
             for path in image_paths:
                 if os.path.exists(path): os.remove(path)
+
     except Exception as e:
         print(f"  ❌ Lỗi gửi Telegram: {e}")
 
@@ -500,6 +508,7 @@ def compute_indicators(df):
         df[f'EMA{n}'] = df['close'].ewm(span=n, adjust=False).mean()
     for n in [2,3,5,10,15,20,30,50]:
         df[f'VMA{n}'] = df['volume'].rolling(n).mean()
+
     delta    = df['close'].diff()
     gain     = delta.clip(lower=0)
     loss     = (-delta).clip(lower=0)
@@ -507,6 +516,7 @@ def compute_indicators(df):
     avg_loss = loss.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
     rs       = avg_gain / avg_loss.replace(0, np.nan)
     df['RSI14'] = 100 - (100 / (1 + rs))
+
     exp12 = df['close'].ewm(span=12, adjust=False).mean()
     exp26 = df['close'].ewm(span=26, adjust=False).mean()
     df['MACD']             = exp12 - exp26
@@ -557,26 +567,43 @@ def build_history_cache(symbols: list, current_date: date):
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {loaded}/{len(symbols)} mã có dữ liệu.")
 
+# =============================================================================
+# BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
+# =============================================================================
 CACHE_CHECK_SYMBOL = 'HPG'
 
 def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+
     with cache_lock:
-        check_sym  = CACHE_CHECK_SYMBOL if CACHE_CHECK_SYMBOL in history_cache else (next(iter(history_cache), None))
-        sample_df  = history_cache.get(check_sym) if check_sym else None
+        check_sym = CACHE_CHECK_SYMBOL if CACHE_CHECK_SYMBOL in history_cache else (
+            next(iter(history_cache), None)
+        )
+        sample_df = history_cache.get(check_sym) if check_sym else None
+
     if sample_df is None:
         print(f"  [{ts}] 🔍 Cache check: không có dữ liệu → rebuild")
         build_history_cache(symbols, current_date)
         return False
+
     cache_last = sample_df.index[-1].date()
     prev_bday  = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
+
     print(f"  [{ts}] 🔍 Cache check [{check_sym}]: nến cuối = {cache_last} | kỳ vọng ≥ {prev_bday}")
+
     if cache_last < prev_bday:
-        print(f"  [{ts}] ⚠️  Cache STALE → Rebuild ngay...")
+        print(f"  [{ts}] ⚠️  Cache STALE ({cache_last} < {prev_bday}) → Rebuild ngay...")
         build_history_cache(symbols, current_date)
+        with cache_lock:
+            sample_df2 = history_cache.get(check_sym)
+        if sample_df2 is not None:
+            new_last = sample_df2.index[-1].date()
+            ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
+            print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
         return False
-    print(f"  [{ts}] ✅ Cache OK")
-    return True
+    else:
+        print(f"  [{ts}] ✅ Cache OK ({cache_last} ≥ {prev_bday})")
+        return True
 
 def fetch_today_bar(symbol: str, current_date: date):
     for attempt in range(3):
@@ -587,34 +614,49 @@ def fetch_today_bar(symbol: str, current_date: date):
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
+
             today_rows = df_raw[df_raw.index.date == current_date]
             if today_rows.empty: return None
+
             row    = today_rows.iloc[-1]
             close  = float(row.get('close',  np.nan))
             open_  = float(row.get('open',   close))
             high   = float(row.get('high',   close))
             low    = float(row.get('low',    close))
             volume = float(row.get('volume', np.nan))
+
             if pd.isna(close) or close <= 0: return None
             if pd.isna(volume) or volume < 100: return None
+
             prev_rows = df_raw[df_raw.index.date < current_date]
             if not prev_rows.empty:
-                prev        = prev_rows.iloc[-1]
+                prev = prev_rows.iloc[-1]
                 prev_close  = float(prev.get('close',  np.nan))
                 prev_volume = float(prev.get('volume', np.nan))
                 prev_open   = float(prev.get('open',   np.nan))
                 prev_high   = float(prev.get('high',   np.nan))
                 prev_low    = float(prev.get('low',    np.nan))
-                if (close==prev_close and open_==prev_open and
-                    high==prev_high   and low==prev_low and volume==prev_volume):
+
+                ohlcv_clone = (
+                    close  == prev_close  and open_  == prev_open  and
+                    high   == prev_high   and low    == prev_low   and
+                    volume == prev_volume
+                )
+                if ohlcv_clone:
                     print(f"    ⚠️  {symbol}: today_bar OHLCV = phiên trước → bỏ qua")
                     return None
-                if (not pd.isna(prev_close) and close==prev_close and
-                    not pd.isna(prev_volume) and volume==prev_volume):
+
+                price_vol_clone = (
+                    not pd.isna(prev_close)  and close  == prev_close and
+                    not pd.isna(prev_volume) and volume == prev_volume
+                )
+                if price_vol_clone:
                     print(f"    ⚠️  {symbol}: close+volume = phiên trước → bỏ qua")
                     return None
+
             high = max(high, open_, close)
             low  = min(low,  open_, close)
+
             return pd.Series(
                 {'open': open_, 'high': high, 'low': low, 'close': close, 'volume': volume},
                 name=pd.Timestamp(current_date)
@@ -631,7 +673,7 @@ def merge_today_bar(df_hist, today_bar, current_date: date):
     return pd.concat([df_hist, new_row])
 
 # =============================================================================
-# BƯỚC 5C-5F: HÀM TIỆN ÍCH VÀ FETCH
+# BƯỚC 5C: HÀM TIỆN ÍCH
 # =============================================================================
 def _date_str_from_df(df: pd.DataFrame) -> str:
     last_ts = pd.Timestamp(df.index[-1])
@@ -639,6 +681,9 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
         last_ts = last_ts.tz_localize('Asia/Ho_Chi_Minh')
     return last_ts.strftime('%d/%m/%Y')
 
+# =============================================================================
+# BƯỚC 5D: HÀM LẤY DỮ LIỆU CHỈ SỐ
+# =============================================================================
 def fetch_index_history(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
@@ -660,6 +705,9 @@ def fetch_index_history(symbol: str) -> pd.DataFrame | None:
             else: print(f"    ❌ fetch_index_history {symbol}: {e}")
     return None
 
+# =============================================================================
+# BƯỚC 5E: HÀM LẤY DỮ LIỆU 15 PHÚT
+# =============================================================================
 def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
@@ -681,7 +729,17 @@ def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
             else: print(f"    ❌ fetch_intraday_15m {symbol}: {e}")
     return None
 
+# =============================================================================
+# BƯỚC 5F: FETCH FRESH HOÀN TOÀN CHO ON-DEMAND CHART (không dùng cache)
+# =============================================================================
 def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | None:
+    """
+    Fetch dữ liệu mới hoàn toàn từ server, không phụ thuộc cache.
+    Dùng cho on-demand chart và button tín hiệu hôm nay.
+    - Lấy toàn bộ lịch sử (length=1000)
+    - Không filter ngày → lấy nến mới nhất server có
+    - Bỏ nến hôm nay nếu volume < 100 (chưa giao dịch / ngày nghỉ)
+    """
     for attempt in range(3):
         try:
             quote  = Quote(symbol=symbol, source=DATA_SOURCE)
@@ -691,11 +749,13 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
             df_raw = df_raw[['open','high','low','close','volume']].copy()
+
             today_rows = df_raw[df_raw.index.date == current_date]
             if not today_rows.empty:
                 vol_today = float(today_rows.iloc[-1].get('volume', 0) or 0)
                 if vol_today < 100:
                     df_raw = df_raw[df_raw.index.date < current_date]
+
             if len(df_raw) < 60: return None
             return df_raw
         except Exception as e:
@@ -799,8 +859,8 @@ def calc_break_price(df):
     return c1&c2&c3&c4&c5&c6&c7&c8&c9&c10&c11&box1&box2&box3&wedging
 
 def calc_prebreak_vol(df, now_time):
-    V  = df['volume']
-    V1 = ref(V,1); V2 = ref(V,2)
+    V   = df['volume']
+    V1  = ref(V,1); V2 = ref(V,2)
     pct = (df['close']-ref(df['close'],1))/ref(df['close'],1)
     def make_cond(vma_n, v_lo_mult, big_vma, big_v2):
         normal = (
@@ -830,6 +890,9 @@ def calc_liquidity(df):
         (df['VMA30']>=50_000)&(df['VMA50']>=50_000)
     )
 
+# =============================================================================
+# BƯỚC 6B: CÁC TÍN HIỆU MỚI
+# =============================================================================
 def calc_bottomfish(df):
     C, V = df['close'], df['volume']
     r    = df['RSI14']
@@ -899,6 +962,9 @@ def calc_ma_cross(df):
     )
     return ma_cross_cond & ma_above_200 & price_cond & liq
 
+# =============================================================================
+# BƯỚC 6C: HÀM DETECT_SIGNAL
+# =============================================================================
 def detect_signal(df, now_time):
     df = compute_indicators(df)
     if len(df) < 60: return None
@@ -909,9 +975,10 @@ def detect_signal(df, now_time):
     pvol        = calc_pocket_pivot_vol(df)
     ma10_ok     = df['MA10'] >= 0.8*ref(df['MA10'],1)
     pre_vol     = calc_prebreak_vol(df, now_time)
-    is_breakout     = (break_price & break_vol & liq).iloc[-1]
-    is_pocket       = (pprice & (pvol | break_vol) & liq & ma10_ok).iloc[-1]
-    is_prebreak     = (
+
+    is_breakout = (break_price & break_vol & liq).iloc[-1]
+    is_pocket   = (pprice & (pvol | break_vol) & liq & ma10_ok).iloc[-1]
+    is_prebreak = (
         ((break_price | pprice) & pre_vol & liq).iloc[-1] and
         not is_breakout and not is_pocket and
         (91700 < now_time < 150000)
@@ -919,6 +986,7 @@ def detect_signal(df, now_time):
     is_bottombreakp = calc_bottombreakp(df).iloc[-1]
     is_bottomfish   = calc_bottomfish(df).iloc[-1]
     is_ma_cross     = calc_ma_cross(df).iloc[-1]
+
     if is_breakout:     return 'BREAKOUT'
     if is_pocket:       return 'POCKET PIVOT'
     if is_prebreak:     return 'PRE-BREAK'
@@ -934,18 +1002,23 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     is_daily  = (timeframe == 'Daily')
     is_weekly = (timeframe == 'Weekly')
     is_15m    = (timeframe == '15m')
+
     if date_str is None:
         date_str = _date_str_from_df(df_plot)
+
     prev_close = df_plot['close'].iloc[-2]
     pct        = (today['close'] - prev_close) / prev_close * 100
+
     hist_val    = df_plot['MACD_Hist'].values
     macd_colors = []
     for i, val in enumerate(hist_val):
         prev = hist_val[i-1] if i > 0 else 0
         if val >= 0: macd_colors.append('#26A69A' if val >= prev else '#B2DFDB')
         else:        macd_colors.append('#EF5350' if val <= prev else '#FFCDD2')
+
     colors_vol = ['#26A69A' if r['close'] >= r['open'] else '#EF5350'
                   for _, r in df_plot.iterrows()]
+
     apds = [
         mpf.make_addplot(df_plot['EMA10'],       color='red',    width=0.6),
         mpf.make_addplot(df_plot['EMA20'],       color='green',  width=0.6),
@@ -955,14 +1028,18 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
         mpf.make_addplot(df_plot['MACD'],        panel=2, color='blue',   width=0.6, secondary_y=False),
         mpf.make_addplot(df_plot['MACD_Signal'], panel=2, color='orange', width=0.6, secondary_y=False),
     ]
+
     if is_daily:
         apds.append(mpf.make_addplot(df_plot['MA200'],  color='brown', width=0.6))
     if is_15m:
         apds.append(mpf.make_addplot(df_plot['EMA200'], color='brown', width=0.6))
+
     mc           = mpf.make_marketcolors(up='#26A69A',down='#EF5350',edge='inherit',wick='inherit',alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles',marketcolors=mc,gridstyle='',facecolor='white')
+
     fd, img_name = tempfile.mkstemp(suffix=f'_{symbol}_{timeframe.lower()}.png')
     os.close(fd)
+
     fig, axlist = mpf.plot(
         df_plot, type='candle', volume=False, addplot=apds,
         style=custom_style, savefig=dict(fname=img_name, dpi=150),
@@ -973,10 +1050,12 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     ax_price.set_ylabel(""); ax_price.tick_params(axis='y', labelsize=8)
     y_min, y_max = ax_price.get_ylim()
     ax_price.set_ylim(y_min, y_max + (y_max-y_min)*0.15)
+
     if is_daily and add_arrow:
         ax_price.annotate(r'$\mathbf{\uparrow}$',
             xy=(len(df_plot)-1, today['low']), xytext=(0,-8), textcoords='offset points',
             ha='center', va='top', color='DeepPink', fontsize=12)
+
     if is_daily:
         title_str = (
             f"{symbol} [D] {date_str}  |  "
@@ -990,7 +1069,7 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
             f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
             f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
         )
-    else:
+    else:  # 15m
         last_ts = pd.Timestamp(df_plot.index[-1])
         if last_ts.tzinfo is None:
             last_ts = last_ts.tz_localize('Asia/Ho_Chi_Minh')
@@ -1000,26 +1079,34 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
             f"O:{today['open']:.2f}  H:{today['high']:.2f}  "
             f"L:{today['low']:.2f}  C:{today['close']:.2f} ({pct:+.2f}%)"
         )
+
     ax_price.set_title(title_str, loc='left', fontsize=11)
+
     if len(axlist) > 4:
         ax_macd = axlist[4]
         ax_macd.yaxis.set_ticks([]); ax_macd.yaxis.set_ticklabels([])
         m_vals = pd.concat([df_plot['MACD'],df_plot['MACD_Signal'],df_plot['MACD_Hist']]).dropna()
-        try:
-            abs_m = max(abs(m_vals.min()), abs(m_vals.max())) if len(m_vals) > 0 else 1
-            if abs_m == 0 or np.isnan(abs_m): abs_m = 1
-        except Exception:
+        if len(m_vals) == 0 or m_vals.empty:
             abs_m = 1
+        else:
+            try:
+                abs_m = max(abs(m_vals.min()), abs(m_vals.max()))
+                if abs_m == 0 or np.isnan(abs_m): abs_m = 1
+            except Exception:
+                abs_m = 1
         ax_macd.set_ylim(-abs_m*0.8, abs_m*1.2)
         for spine in ['top','right','left','bottom']: ax_macd.spines[spine].set_visible(False)
+
     for i, ax in enumerate(axlist):
         if i not in [0,4]: ax.set_axis_off()
         else: ax.xaxis.set_visible(False); ax.spines['top'].set_visible(False); ax.spines['left'].set_visible(False)
+
     xlim = ax_price.get_xlim()
     ax_price.set_xlim(xlim[0], xlim[1]+20)
     fig.savefig(img_name, bbox_inches='tight', pad_inches=0.15, dpi=150)
     plt.close('all')
     return img_name
+
 
 def _build_15m_chart(symbol: str, signal_type: str) -> str | None:
     df_15m = fetch_intraday_15m(symbol)
@@ -1057,23 +1144,29 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
     new_signals  = []
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã...")
+    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=2)...")
+
     for symbol in symbols:
         try:
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is None or len(df_hist) < 60: continue
+
             today_bar = fetch_today_bar(symbol, current_date)
             if today_bar is None: continue
+
             df_merged   = merge_today_bar(df_hist, today_bar, current_date)
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
                 time.sleep(0.3); continue
+
             prev_rank    = SIGNAL_RANK.get(alerted_today.get(symbol), 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
             if prev_rank >= current_rank:
                 time.sleep(0.3); continue
+
             alerted_today[symbol] = signal_type
             new_signals.append(symbol)
+
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
             date_str     = _date_str_from_df(df_calc)
@@ -1082,11 +1175,13 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
             vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
+
             link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
             link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
             link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
             link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
             link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
+
             msg = (
                 f"{emoji} #{symbol}  {date_str} \n"
                 f"Sig: {signal_type} \n"
@@ -1098,6 +1193,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
                 f"<a href='{link_vnd_summary}'>📄</a> "
                 f"<a href='{link_24h_money}'>📄</a>"
             )
+
             df_plot_d  = df_calc.tail(250).copy()
             img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
                                     timeframe='Daily', add_arrow=True, date_str=date_str)
@@ -1108,13 +1204,17 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                     timeframe='Weekly', add_arrow=False, date_str=date_str_w)
             img_15m    = _build_15m_chart(symbol, signal_type)
+
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
+
             notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
             send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
+
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
         time.sleep(0.3)
+
     return new_signals
 
 # =============================================================================
@@ -1126,9 +1226,12 @@ def parse_chart_command(text: str):
     text = text.strip()
     if not text.startswith('/'): return None
     body = text[1:]
+
     m = re.match(r'^(c|chart)\s+(.+)$', body, re.IGNORECASE)
     if m: return _filter_symbols(m.group(2).split())
+
     if body.startswith(' '): return _filter_symbols(body.strip().split())
+
     parts = body.strip().split()
     if len(parts) == 1:
         candidate = parts[0].upper()
@@ -1140,7 +1243,8 @@ def parse_chart_command(text: str):
 
 def _is_valid_symbol(s: str) -> bool:
     s_upper = s.upper()
-    if s_upper in INDEX_SYMBOLS: return True
+    if s_upper in INDEX_SYMBOLS:
+        return True
     return bool(re.match(r'^[A-Z0-9]{1,5}$', s_upper)) and s.lower() not in _RESERVED_KEYWORDS
 
 def _filter_symbols(raw_list: list):
@@ -1148,36 +1252,55 @@ def _filter_symbols(raw_list: list):
     return result if result else None
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND
+# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND — FETCH FRESH, KHÔNG DÙNG CACHE
 # =============================================================================
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
     symbol    = symbol.upper().strip()
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     is_index  = symbol in INDEX_SYMBOLS
-    print(f"  🧵 [{thread_id}] fetch_and_send_chart: {symbol}")
+    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol} (index={is_index})")
+
     try:
         current_date = datetime.now(TZ_VN).date()
+
         if is_index:
             df_raw = fetch_index_history(symbol)
+            if df_raw is None or len(df_raw) < 10:
+                requests.post(url_msg, data={
+                    'chat_id': chat_id,
+                    'text': f"❌ Không tìm thấy dữ liệu chỉ số <b>{symbol}</b>.",
+                    'parse_mode': 'HTML'
+                })
+                return
         else:
-            df_raw = fetch_fresh_for_chart(symbol, current_date)
-        if df_raw is None:
-            requests.post(url_msg, data={
-                'chat_id': chat_id,
-                'text': f"❌ Không tìm thấy dữ liệu <b>{symbol}</b>",
-                'parse_mode': 'HTML'
-            })
-            return
-        df_calc     = compute_indicators(df_raw)
-        today       = df_calc.iloc[-1]
-        now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-        signal_type = "INDEX" if is_index else (detect_signal(df_raw, now_time) or "ON-DEMAND")
-        date_str    = _date_str_from_df(df_calc)
-        pct         = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
-        change      = today['close'] - df_calc['close'].iloc[-2]
+            ts_log   = datetime.now(TZ_VN).strftime('%H:%M:%S')
+            df_raw   = fetch_fresh_for_chart(symbol, current_date)
+            if df_raw is not None:
+                print(f"  [{ts_log}] ℹ️  {symbol}: fresh fetch OK (nến cuối: {df_raw.index[-1].date()})")
+            else:
+                requests.post(url_msg, data={
+                    'chat_id': chat_id,
+                    'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
+                    'parse_mode': 'HTML'
+                })
+                return
+
+        df_calc  = compute_indicators(df_raw)
+        today    = df_calc.iloc[-1]
+        now_time = int(datetime.now(TZ_VN).strftime("%H%M%S"))
+
+        if is_index:
+            signal_type = "INDEX"
+        else:
+            signal_type = detect_signal(df_raw, now_time) or "ON-DEMAND"
+
+        date_str     = _date_str_from_df(df_calc)
+        pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
+        change       = today['close'] - df_calc['close'].iloc[-2]
         vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
         vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
+
         if is_index:
             msg = (
                 f"#{symbol}  {date_str}\n"
@@ -1201,6 +1324,7 @@ def fetch_and_send_chart(symbol, chat_id):
                 f"<a href='{link_vnd_summary}'>📄</a> "
                 f"<a href='{link_24h_money}'>📄</a>"
             )
+
         df_plot_d  = df_calc.tail(250).copy()
         img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
                                 timeframe='Daily', add_arrow=False, date_str=date_str)
@@ -1210,12 +1334,16 @@ def fetch_and_send_chart(symbol, chat_id):
         date_str_w = _date_str_from_df(df_plot_w)
         img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                 timeframe='Weekly', add_arrow=False, date_str=date_str_w)
+
         image_paths = [img_daily, img_weekly]
         if not is_index:
             img_15m = _build_15m_chart(symbol, signal_type)
             if img_15m: image_paths.append(img_15m)
+
+        print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi {len(image_paths)} chart")
         _send_chart_to_chat(msg, image_paths, chat_id)
         print(f"  🧵 [{thread_id}] {symbol} — đã gửi xong")
+
     except Exception as e:
         print(f"  🧵 [{thread_id}] {symbol} — LỖI: {e}")
         requests.post(url_msg, data={
@@ -1248,7 +1376,7 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
             finally:
                 for fh in files.values(): fh.close()
     except Exception as e:
-        print(f"  ❌ Lỗi gửi chart: {e}")
+        print(f"  ❌ Lỗi gửi chart on-demand: {e}")
     finally:
         for path in image_paths:
             if os.path.exists(path): os.remove(path)
@@ -1334,6 +1462,7 @@ def dashboard_chart_fn(symbol: str):
 def telegram_listener(stop_event: threading.Event):
     url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
     url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
     try:
         resp    = requests.get(url_upd, params={'offset':-1,'limit':1}, timeout=10)
         results = resp.json().get('result', [])
@@ -1342,33 +1471,42 @@ def telegram_listener(stop_event: threading.Event):
     except Exception as e:
         offset = 0
         print(f"🎧 Telegram Listener khởi động — offset=0 (lỗi: {e})")
+
     processed_ids: dict = {}
     PROCESSED_TTL = 300
     print(f"🎧 Listener sẵn sàng | VIP: {VIP_CHAT_IDS} | Free slot: {FREE_CHAT_LIMIT}")
+
     while not stop_event.is_set():
         try:
             resp = requests.get(url_upd, params={
                 'offset': offset, 'timeout': 30,
                 'allowed_updates': ['message', 'callback_query'],
             }, timeout=35)
+
             if stop_event.is_set(): break
+
             if resp.status_code == 409:
-                print("  ⚠️ HTTP 409 Conflict — đợi 15s..."); time.sleep(15); continue
+                print("  ⚠️ HTTP 409 Conflict — có instance khác đang chạy! Đợi 15s...")
+                time.sleep(15); continue
             elif resp.status_code != 200:
-                print(f"  ⚠️ getUpdates HTTP {resp.status_code}"); time.sleep(5); continue
+                print(f"  ⚠️ getUpdates HTTP {resp.status_code} — thử lại sau 5s")
+                time.sleep(5); continue
+
             updates = resp.json().get('result', [])
             if not updates: continue
+
             now_ts  = time.time()
             expired = [uid for uid, ts in processed_ids.items() if now_ts-ts > PROCESSED_TTL]
             for uid in expired: del processed_ids[uid]
+
             for update in updates:
                 update_id = update['update_id']
                 if update_id >= offset: offset = update_id + 1
-                if update_id in processed_ids: continue
+                if update_id in processed_ids:
+                    print(f"  ⚠️ Bỏ qua duplicate update_id={update_id}"); continue
                 processed_ids[update_id] = time.time()
-                print(f"  📨 update_id={update_id} | offset={offset}")
+                print(f"  📨 Xử lý update_id={update_id} | offset mới={offset}")
 
-                # callback_query (nút bấm /s)
                 callback = update.get('callback_query', {})
                 if callback:
                     cb_id      = callback.get('id')
@@ -1381,52 +1519,76 @@ def telegram_listener(stop_event: threading.Event):
                     allowed, reason = is_allowed(cb_chat_id)
                     if allowed and cb_data.startswith('chart_'):
                         sym = cb_data.replace('chart_', '').upper()
-                        threading.Thread(target=fetch_and_send_chart, args=(sym, cb_chat_id), daemon=True).start()
+                        print(f"  📥 Callback chart {sym} → chat_id={cb_chat_id} ({reason})")
+                        threading.Thread(
+                            target=fetch_and_send_chart,
+                            args=(sym, cb_chat_id),
+                            daemon=True
+                        ).start()
                     continue
 
                 msg_obj = update.get('message', {})
                 text    = msg_obj.get('text', '').strip()
                 chat_id = str(msg_obj.get('chat', {}).get('id', ''))
                 if not text or not chat_id: continue
+
                 text_lower = text.lower().strip()
-                if text_lower == '/start': continue
+
+                if text_lower == '/start':
+                    continue
 
                 allowed, reason = is_allowed(chat_id)
                 if not allowed:
                     requests.post(url_msg, data={
-                        'chat_id': chat_id, 'parse_mode': 'HTML',
+                        'chat_id':    chat_id,
+                        'parse_mode': 'HTML',
                         'text': (
                             "⚠️ Bot đang phục vụ tối đa <b>20 người</b> cùng lúc.\n"
-                            "Hiện tại đã đầy slot. Thử lại sau ít phút.\n"
+                            "Hiện tại đã đầy slot. Vui lòng thử lại sau ít phút.\n"
                             "Slot tự động giải phóng sau <b>30 phút</b> không hoạt động."
                         )
                     })
                     continue
 
-                if text_lower in ('/s', ) or text_lower.startswith('/s '):
+                if text_lower == '/s' or text_lower.startswith('/s '):
                     if not is_vip(chat_id):
                         requests.post(url_msg, data={
-                            'chat_id': chat_id, 'parse_mode': 'HTML',
-                            'text': '🔒 Lệnh <b>/s</b> chỉ dành cho thành viên VIP.'
+                            'chat_id':    chat_id,
+                            'parse_mode': 'HTML',
+                            'text':       '🔒 Lệnh <b>/s</b> chỉ dành cho thành viên VIP.'
                         })
                         continue
+
                     if alerted_today:
-                        buttons = [[{"text": f"{SIGNAL_EMOJI.get(v,'📌')} #{k}: {v}",
-                                     "callback_data": f"chart_{k}"}]
-                                   for k, v in alerted_today.items()]
+                        buttons = []
+                        for k, v in alerted_today.items():
+                            emoji = SIGNAL_EMOJI.get(v, '📌')
+                            buttons.append([
+                                {"text": f"{emoji} #{k}: {v}", "callback_data": f"chart_{k}"},
+                            ])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
                     else:
-                        reply = "📋 Chưa có tín hiệu nào hôm nay."
+                        reply   = "📋 Chưa có tín hiệu nào hôm nay."
                         buttons = []
-                    payload = {'chat_id': chat_id, 'text': reply, 'parse_mode': 'HTML'}
+
+                    payload = {
+                        'chat_id':    chat_id,
+                        'text':       reply,
+                        'parse_mode': 'HTML',
+                    }
                     if buttons:
                         payload['reply_markup'] = json.dumps({"inline_keyboard": buttons})
                     requests.post(url_msg, data=payload)
 
                 elif text_lower in ('/h', '/heatmap', '/ h', '/ heatmap'):
-                    threading.Thread(target=handle_heatmap_command, args=(chat_id,), daemon=True).start()
+                    print(f"  🗺  Lệnh heatmap từ chat_id={chat_id} ({reason})")
+                    threading.Thread(
+                        target=handle_heatmap_command,
+                        args=(chat_id,),
+                        daemon=True
+                    ).start()
 
-                elif text_lower in ('/help',) or text_lower.startswith('/help '):
+                elif text_lower == '/help' or text_lower.startswith('/help '):
                     vip_note = "\n\n🔒 <b>Chỉ VIP:</b> /s — Tín hiệu hôm nay" if not is_vip(chat_id) else ""
                     requests.post(url_msg, data={
                         'chat_id': chat_id, 'parse_mode': 'HTML',
@@ -1434,7 +1596,7 @@ def telegram_listener(stop_event: threading.Event):
                             "🤖 <b>Lệnh hỗ trợ:</b>\n\n"
                             "<b>Xem chart cổ phiếu:</b>\n"
                             "/c HPG\n/chart HPG\n/HPG\n/ HPG\n"
-                            "/c HPG VNM FPT  (tối đa 5)\n\n"
+                            "/c HPG VNM FPT  (nhiều mã, tối đa 5)\n\n"
                             "<b>Xem chart chỉ số:</b>\n"
                             "/VNINDEX  /VN30  /HNX  /UPCOM  /VN100\n\n"
                             "<b>Heatmap thị trường:</b>\n"
@@ -1442,7 +1604,7 @@ def telegram_listener(stop_event: threading.Event):
                             "<b>Khác:</b>\n"
                             "/s  — Tín hiệu hôm nay (VIP)\n"
                             "/help  — Trợ giúp\n\n"
-                            "<b>Chart gửi kèm:</b> Daily [D] + Weekly [W] + 15m"
+                            "<b>Chart gửi kèm:</b> Daily [D] + Weekly [W] + 15 phút [15m]"
                             f"{vip_note}"
                         )
                     })
@@ -1450,18 +1612,25 @@ def telegram_listener(stop_event: threading.Event):
                 else:
                     symbols = parse_chart_command(text)
                     if symbols:
+                        print(f"  🔍 {text!r} → {symbols} | update_id={update_id} ({reason})")
                         for sym in symbols[:5]:
-                            threading.Thread(target=fetch_and_send_chart, args=(sym, chat_id), daemon=True).start()
+                            print(f"  📥 Chart {sym} → chat_id={chat_id}")
+                            threading.Thread(
+                                target=fetch_and_send_chart,
+                                args=(sym, chat_id),
+                                daemon=True
+                            ).start()
                             time.sleep(0.3)
 
         except requests.exceptions.Timeout:
             continue
         except requests.exceptions.ConnectionError as e:
             if stop_event.is_set(): break
-            print(f"  ❌ Connection error: {e}"); time.sleep(10)
+            print(f"  ❌ Connection error: {e} — thử lại sau 10s"); time.sleep(10)
         except Exception as e:
             if stop_event.is_set(): break
             print(f"  ❌ Listener lỗi: {e}"); time.sleep(5)
+
     print("🛑 Listener đã dừng.")
 
 # =============================================================================
@@ -1494,7 +1663,7 @@ start_dashboard(
     fetch_heatmap_fn  = fetch_heatmap_data,
     signal_emoji_ref  = SIGNAL_EMOJI,
     signal_rank_ref   = SIGNAL_RANK,
-    fetch_chart_fn    = dashboard_chart_fn,   # ← tích hợp scanner chart vào dashboard
+    fetch_chart_fn    = dashboard_chart_fn,
     port              = 8888,
 )
 
@@ -1512,6 +1681,10 @@ print(f"   Phân quyền  : VIP (toàn quyền) | Free (tối đa {FREE_CHAT_LIM
 print(f"   Chart gửi   : Daily [D] + Weekly [W] + 15 phút [15m]")
 print(f"   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
 print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
+print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
+print(f"   Cache check : Tự động trước mỗi chu kỳ quét")
+print(f"   On-demand   : Fetch fresh, không phụ thuộc cache")
+print(f"   Nghỉ quét   : Thứ 7 và Chủ nhật")
 print("="*60)
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
@@ -1526,8 +1699,9 @@ while True:
         current_date = now_obj.date()
         now_time     = int(now_obj.strftime("%H%M%S"))
         ts           = now_obj.strftime("%H:%M:%S")
-        weekday      = now_obj.weekday()  # 5=Thứ 7, 6=Chủ nhật
+        weekday      = now_obj.weekday()  # 0=Thứ 2 ... 4=Thứ 6, 5=Thứ 7, 6=Chủ nhật
 
+        # ── BỎ QUA THỨ 7 VÀ CHỦ NHẬT ────────────────────────────────────────
         if weekday >= 5:
             day_name = "Thứ 7" if weekday == 5 else "Chủ nhật"
             print(f"[{ts}] 📅 {day_name} — không quét. Listener + Dashboard vẫn chạy.")
@@ -1538,6 +1712,7 @@ while True:
             alerted_today.clear()
             last_run_date = current_date
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
+            print("🔧 Reload cache lịch sử cho ngày mới...")
             build_history_cache(symbols_to_scan, current_date)
 
         is_morning   = 85500 <= now_time <= 113000
@@ -1546,22 +1721,25 @@ while True:
         if not (is_morning or is_afternoon):
             with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
             if not cache_ok:
+                print(f"[{ts}] Cache chưa có — tải lịch sử trước giờ giao dịch...")
                 build_history_cache(symbols_to_scan, current_date)
+
             if   now_time < 85000:  next_open = "09:00"
             elif now_time < 130000: next_open = "13:00"
             else:                   next_open = "09:00 ngày mai"
-            print(f"[{ts}] ⏸  Ngoài giờ → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
+            print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
             time.sleep(SCAN_INTERVAL_SEC)
             continue
 
         with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
         if not cache_ok:
+            print(f"[{ts}] ⚠️  Cache chưa sẵn sàng — đang load...")
             build_history_cache(symbols_to_scan, current_date)
 
         check_and_rebuild_cache_if_stale(symbols_to_scan, current_date)
 
         print(f"\n{'='*60}")
-        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT")
+        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
         print(f"{'='*60}")
 
         new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
@@ -1575,7 +1753,7 @@ while True:
             summary_str = " | ".join([f"{k}:{v}" for k,v in alerted_today.items()])
             print(f"   📋 Đã báo hôm nay: {summary_str}")
 
-        print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s...")
+        print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
         time.sleep(SCAN_INTERVAL_SEC)
 
     except Exception as e:
