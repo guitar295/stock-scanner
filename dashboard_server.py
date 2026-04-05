@@ -39,7 +39,7 @@ _signal_rank        = {}
 _heatmap_cache  = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock   = threading.Lock()
 HEATMAP_TTL_SEC = 120
-SIGNAL_TTL_SEC  = 15
+SIGNAL_TTL_SEC  = 10
 
 _chart_cache: dict = {}
 _chart_lock         = threading.Lock()
