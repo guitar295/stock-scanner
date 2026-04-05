@@ -703,7 +703,7 @@ const HMAP_COLS = [
     {name:"XAY DUNG",   syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
   ]},
   {groups:[
-    {name:"BAT DONG SAN",syms:["IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
+    {name:"BAT DONG SAN",syms:["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
     {name:"PHAN BON",    syms:["BFC","DCM","DPM"]},
     {name:"THEP",        syms:["HPG","HSG","NKG"]},
   ]},
