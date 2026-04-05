@@ -491,9 +491,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .phdr-right{
     display:none!important;
   }
-}
 
-  /* 1/ Sửa chữ "TÍN HIỆU HÔM NAY" không xuống dòng */
+  /* Sửa chữ "TÍN HIỆU HÔM NAY" không xuống dòng */
   .panel-title{
     white-space:nowrap!important;
     font-size:11px!important;
@@ -510,7 +509,82 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     gap:6px!important;
     padding:7px 10px!important;
   }
+}
 
+/* ══ MOBILE TAB ROW — thanh tab cuộn ngang ══
+   Chỉ áp dụng cho #mob-tabrow được tạo bởi buildMobileHeader()
+   KHÔNG ảnh hưởng gì đến desktop vì desktop không có element này trong popup
+══ */
+#mob-tabrow {
+  /* Layout: hàng ngang, KHÔNG wrap, scroll ngang */
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+
+  /* Scroll ngang */
+  overflow-x: scroll !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+
+  /* Spacing */
+  padding: 6px 8px !important;
+  gap: 5px !important;
+
+  /* Màu nền */
+  background: var(--surf2) !important;
+  border-bottom: 1px solid var(--border) !important;
+
+  /* Ẩn scrollbar nhưng vẫn scroll được */
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+#mob-tabrow::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* Mỗi tab button trong mob-tabrow */
+#mob-tabrow > button {
+  /* Quan trọng: không được co lại */
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+
+  /* Nội dung không wrap */
+  white-space: nowrap !important;
+
+  /* Snap khi vuốt */
+  scroll-snap-align: start;
+
+  /* Kích thước & kiểu dáng */
+  padding: 7px 14px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--border) !important;
+  font-size: 12px !important;
+  font-family: var(--font-mono) !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: background .15s, color .15s !important;
+
+  /* Màu mặc định (inactive) */
+  background: var(--bg) !important;
+  color: var(--muted) !important;
+
+  /* Căn giữa nội dung */
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Tab đang active */
+#mob-tabrow > button.on {
+  background: var(--surface) !important;
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 0 0 var(--accent) !important;
+}
 </style>
 </head>
 <body>
@@ -541,7 +615,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   <!-- HEATMAP -->
   <div class="panel">
-    <!-- Header: HEATMAP THỊ TRƯỜNG | MARKET | VNINDEX | Tìm kiếm mã | Cập nhật thời gian -->
     <div class="hmap-panel-hdr">
       <span class="panel-title">Heatmap thị trường</span>
 
@@ -552,7 +625,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         VNINDEX
       </button>
 
-      <!-- Search pill -->
       <div class="hmap-search-wrap">
         <span class="s-icon">🔍</span>
         <input
@@ -566,7 +638,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         >
       </div>
 
-      <!-- Thời gian đẩy hết sang phải -->
       <span class="panel-meta" id="hmap-ts" style="margin-left:auto">Đang tải...</span>
     </div>
 
@@ -625,11 +696,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
 
     <div class="pbody">
-      <!-- Tab Vietstock -->
       <div class="tpanel on" id="panel-vs">
         <iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab Scanner Chart -->
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading">
           <span>⏳ Đang tạo chart từ scanner...</span>
@@ -649,23 +718,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
         </div>
       </div>
-      <!-- Tab VND Cơ bản -->
       <div class="tpanel" id="panel-vnd-cs">
         <iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab VND Tin tức -->
       <div class="tpanel" id="panel-vnd-news">
         <iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab VND Tổng quan -->
       <div class="tpanel" id="panel-vnd-sum">
         <iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab 24HMoney -->
       <div class="tpanel" id="panel-24h">
         <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab URL (Market / VNINDEX) -->
       <div class="tpanel" id="panel-url">
         <iframe id="iframe-url" src="about:blank" allowfullscreen></iframe>
       </div>
@@ -690,40 +754,29 @@ async function loadConfig(){
 }
 
 // ═══════════════════════════════════════════════════════
-// SEARCH BAR — Heatmap panel (mở popup)
+// SEARCH BAR — Heatmap panel
 // ═══════════════════════════════════════════════════════
 (function(){
   const inp = document.getElementById('hmap-search-input');
   inp.addEventListener('keydown', function(e){
     if(e.key === 'Enter'){
       const sym = this.value.trim().toUpperCase();
-      if(sym.length >= 2){
-        this.value = '';
-        this.blur();
-        openChart(sym);
-      }
+      if(sym.length >= 2){ this.value=''; this.blur(); openChart(sym); }
     }
     if(e.key === 'Escape'){ this.value=''; this.blur(); }
   });
-  // Ngăn Enter khi overlay đang mở cuộc nổ phím keyboard popup
-  inp.addEventListener('focus', function(){
-    this.select();
-  });
+  inp.addEventListener('focus', function(){ this.select(); });
 })();
 
 // ═══════════════════════════════════════════════════════
-// SEARCH BAR — Trong popup (chuyển mã)
+// SEARCH BAR — Trong popup (desktop)
 // ═══════════════════════════════════════════════════════
 (function(){
   const inp = document.getElementById('popup-search-input');
   inp.addEventListener('keydown', function(e){
     if(e.key === 'Enter'){
       const sym = this.value.trim().toUpperCase();
-      if(sym.length >= 2){
-        this.value = '';
-        this.blur();
-        openChart(sym);   // openChart tự reset popup và load mã mới
-      }
+      if(sym.length >= 2){ this.value=''; this.blur(); openChart(sym); }
     }
     if(e.key === 'Escape'){ closePopup(); }
   });
@@ -855,7 +908,7 @@ function renderHeatmap(data){
 }
 
 // ═══════════════════════════════════════════════════════
-// ALBUM STATE (Scanner Chart tab)
+// ALBUM STATE
 // ═══════════════════════════════════════════════════════
 let _albumIdx=0, _albumTotal=0;
 
@@ -891,8 +944,6 @@ function refreshScannerChart(){
   if(!_sym) return;
   const btn=document.getElementById('btn-refresh');
   if(btn){ btn.classList.add('spinning'); btn.disabled=true; }
-  fetch(`/api/chart_images/${_sym}?bust=${Date.now()}`,{cache:'no-store'})
-    .then(()=>{}).catch(()=>{});
   loadScannerChartForce(_sym);
 }
 
@@ -914,7 +965,6 @@ function _updateAlbumNav(){
   document.getElementById('btn-next').classList.toggle('disabled', _albumIdx===_albumTotal-1);
 }
 
-// Touch/swipe
 let _touchStartX=0;
 document.getElementById('panel-scanner').addEventListener('touchstart',e=>{_touchStartX=e.touches[0].clientX},{passive:true});
 document.getElementById('panel-scanner').addEventListener('touchend',e=>{
@@ -922,11 +972,9 @@ document.getElementById('panel-scanner').addEventListener('touchend',e=>{
   if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
 },{passive:true});
 
-// Phím mũi tên bàn phím
 document.addEventListener('keydown', e => {
   const overlayOn = document.getElementById('overlay').classList.contains('on');
   if (!overlayOn) return;
-  // Không xử lý khi đang focus vào search input
   if(document.activeElement === document.getElementById('popup-search-input')) return;
   if (_tab !== 'scanner') return;
   if (_albumTotal === 0) return;
@@ -984,35 +1032,23 @@ async function loadScannerChart(sym){
 // POPUP STATE
 // ═══════════════════════════════════════════════════════
 let _sym='', _tab='vs';
-
 const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
 
-// Mở URL bất kỳ trong popup (Market / VNINDEX)
 function openUrl(url, label){
   _sym = 'VNINDEX';
   _tab = 'url';
   document.getElementById('ptitle').textContent = label || '🌐 Web';
-
-  // Reset các iframe phụ, nhưng pre-load iframe-vs với chart VNINDEX
-  // để khi user click tab Vietstock sẽ có chart sẵn
-  IFRAME_TABS.forEach(t=>{
-    document.getElementById(`iframe-${t}`).src='about:blank';
-  });
-  document.getElementById('iframe-vs').src =
-    'https://ta.vietstock.vn/?stockcode=vnindex';
-
+  IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
+  document.getElementById('iframe-vs').src = 'https://ta.vietstock.vn/?stockcode=vnindex';
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
-
-  // Ẩn toàn bộ panel, hiện panel-url
   const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
   allTabs.forEach(t=>{
     const ct = document.getElementById('ctab-'+t);
     if(ct) ct.classList.toggle('on', t==='url');
     document.getElementById('panel-'+t).classList.toggle('on', t==='url');
   });
-
   document.getElementById('iframe-url').src = url;
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
@@ -1023,23 +1059,14 @@ function openChart(sym){
   _sym=sym.toUpperCase().trim();
   _tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
-
-  document.getElementById('iframe-vs').src=
-    `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
-
-  IFRAME_TABS.forEach(t=>{
-    document.getElementById(`iframe-${t}`).src='about:blank';
-  });
-
+  document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
+  IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-
   _activateTab('vs');
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
-
-  // Clear popup search input khi mở mã mới
   document.getElementById('popup-search-input').value='';
 }
 
@@ -1051,6 +1078,18 @@ function _activateTab(tab){
     if(ct) ct.classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
+
+  // ── Scroll tab active vào tầm nhìn trên mobile ──
+  if(window.innerWidth <= 768){
+    const row = document.getElementById('mob-tabrow');
+    const activeBtn = document.getElementById('ctab-'+tab);
+    if(row && activeBtn){
+      const btnLeft  = activeBtn.offsetLeft;
+      const btnWidth = activeBtn.offsetWidth;
+      const rowWidth = row.offsetWidth;
+      row.scrollTo({ left: btnLeft - (rowWidth/2) + (btnWidth/2), behavior:'smooth' });
+    }
+  }
 
   if(tab==='vnd-cs'){
     const f=document.getElementById('iframe-vnd-cs');
@@ -1082,9 +1121,7 @@ function switchTab(tab){ _activateTab(tab); }
 function closePopup(){
   document.getElementById('overlay').classList.remove('on');
   document.getElementById('iframe-vs').src='about:blank';
-  IFRAME_TABS.forEach(t=>{
-    document.getElementById(`iframe-${t}`).src='about:blank';
-  });
+  IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
   document.body.style.overflow='';
 }
 
@@ -1093,7 +1130,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    // Nếu đang focus vào popup search thì chỉ blur, không đóng popup
     if(document.activeElement===document.getElementById('popup-search-input')){
       document.getElementById('popup-search-input').blur();
       return;
@@ -1181,16 +1217,12 @@ async function init(){
   setInterval(async()=>{ startBar('pbar-hmap', HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
 }
 
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // MOBILE HEADER REBUILD
-// ═══════════════════════════════════════════════
-function tabStyleMob(active){
-  return (active
-    ? 'background:var(--surface);color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700;'
-    : 'background:var(--bg);color:var(--muted);border-bottom:2px solid transparent;'
-  ) + 'font-size:12px;font-family:var(--font-mono);padding:5px 12px;border-radius:5px 5px 0 0;border:1px solid var(--border);white-space:nowrap;flex-shrink:0;cursor:pointer;';
-}
-
+// Chỉ chạy trên mobile (≤768px). Xây lại .phdr với:
+//   - Hàng 1: Title | Search | Close
+//   - Hàng 2: #mob-tabrow — thanh tab CUỘN NGANG, flex-shrink:0 trên mỗi button
+// ═══════════════════════════════════════════════════════════════════
 function buildMobileHeader(){
   if(window.innerWidth > 768) return;
   const phdr = document.querySelector('.phdr');
@@ -1199,53 +1231,63 @@ function buildMobileHeader(){
   phdr.innerHTML = '';
   phdr.style.cssText = 'display:flex;flex-direction:column;flex-shrink:0;';
 
-  // Hàng 1: Title + Search + Close
+  // ── Hàng 1: Title + Search + Close ──
   const r1 = document.createElement('div');
-  r1.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border);';
+  r1.style.cssText = [
+    'display:flex',
+    'align-items:center',
+    'gap:8px',
+    'padding:8px 12px',
+    'background:var(--surf2)',
+    'border-bottom:1px solid var(--border)',
+  ].join(';');
   r1.innerHTML = `
     <span id="ptitle"
-      style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">
+      style="font-family:var(--font-ui);font-size:17px;font-weight:800;
+             color:var(--accent);letter-spacing:1px;flex-shrink:0;">
       Chart
     </span>
-    <div style="position:relative;flex:1;">
-      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
+    <div style="position:relative;flex:1;min-width:0;">
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
+                   color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
       <input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10"
         autocomplete="off" spellcheck="false"
-        style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
+        style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;
+               border:1px solid var(--border);background:var(--surface);
+               color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
     </div>
     <button onclick="closePopup()"
-      style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
+      style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);
+             background:var(--bg);color:var(--muted);font-size:18px;cursor:pointer;
+             display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
   `;
   phdr.appendChild(r1);
 
-  // Hàng 2: Tabs cuộn ngang
+  // ── Hàng 2: #mob-tabrow — CSS đã định nghĩa ở <style> ──
   const r2 = document.createElement('div');
   r2.id = 'mob-tabrow';
-  r2.style.cssText = 'display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding:5px 8px;gap:3px;background:var(--surf2);border-bottom:1px solid var(--border);scrollbar-width:none;';
+
   const tabs = [
-    {id:'vs',      label:'📈 Vietstock'},
-    {id:'scanner', label:'🖼 Scanner'},
-    {id:'vnd-cs',  label:'⚖️ Cơ bản'},
-    {id:'vnd-news',label:'🗞️ Tin tức'},
-    {id:'vnd-sum', label:'📄 Tổng quan'},
-    {id:'24h',     label:'💬 24HMoney'},
+    { id:'vs',       label:'📈 Vietstock' },
+    { id:'scanner',  label:'🖼 Scanner'   },
+    { id:'vnd-cs',   label:'⚖️ Cơ bản'   },
+    { id:'vnd-news', label:'🗞️ Tin tức'  },
+    { id:'vnd-sum',  label:'📄 Tổng quan' },
+    { id:'24h',      label:'💬 24HMoney'  },
   ];
+
   tabs.forEach(t => {
     const btn = document.createElement('button');
-    btn.id = 'ctab-' + t.id;
+    btn.id        = 'ctab-' + t.id;
     btn.textContent = t.label;
-    btn.style.cssText = tabStyleMob(t.id === 'vs');
+    if(t.id === 'vs') btn.classList.add('on');
     btn.onclick = () => switchTab(t.id);
     r2.appendChild(btn);
   });
+
   phdr.appendChild(r2);
 
-  // Ẩn scrollbar webkit
-  const s = document.createElement('style');
-  s.textContent = '#mob-tabrow::-webkit-scrollbar{display:none}';
-  document.head.appendChild(s);
-
-  // Event search mobile
+  // ── Gắn lại event cho popup-search-input (DOM đã rebuild) ──
   const inp = document.getElementById('popup-search-input');
   inp.addEventListener('keydown', function(e){
     if(e.key === 'Enter'){
@@ -1257,7 +1299,7 @@ function buildMobileHeader(){
   inp.addEventListener('focus', function(){ this.select(); });
 }
 
-// Gọi buildMobileHeader mỗi khi mở popup
+// Wrap openChart / openUrl để gọi buildMobileHeader trước
 const _openChartOrig = openChart;
 openChart = function(sym){
   buildMobileHeader();
@@ -1269,6 +1311,7 @@ openUrl = function(url, label){
   buildMobileHeader();
   _openUrlOrig(url, label);
 };
+
 init();
 </script>
 </body>
