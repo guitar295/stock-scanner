@@ -470,6 +470,113 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .popup-search-input{width:120px}
   .popup-search-input:focus{width:150px}
 }
+
+/* ══ CHỈ MOBILE - KHÔNG ảnh hưởng desktop ══ */
+@media(max-width:768px){
+
+  /* Popup full màn hình */
+  .pbox{
+    width:100vw !important;
+    max-width:100vw !important;
+    height:100dvh !important;
+    border-radius:0 !important;
+    border:none !important;
+  }
+
+  /* Header popup: bỏ grid 3 cột, chuyển sang flex column */
+  .phdr{
+    display:flex !important;
+    flex-direction:column !important;
+    padding:0 !important;
+  }
+
+  /* Hàng 1: Title + Close nằm ngang */
+  .phdr-left{
+    order:1;
+    width:100%;
+    display:flex !important;
+    align-items:center;
+    justify-content:space-between;
+    padding:8px 12px;
+    border-bottom:1px solid var(--border);
+  }
+
+  /* Search nằm cạnh title, đẩy close sang phải */
+  .popup-search-wrap{
+    flex:1;
+    margin:0 8px;
+  }
+  .popup-search-input{
+    width:100% !important;
+    font-size:13px !important;
+  }
+  .popup-search-input:focus{
+    width:100% !important;
+  }
+
+  /* Hàng 2: Tabs cuộn ngang, KHÔNG xuống dòng */
+  .phdr-center{
+    order:2;
+    width:100%;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    padding:6px 8px;
+    background:var(--surf2);
+    border-bottom:1px solid var(--border);
+    /* Ẩn scrollbar nhưng vẫn cuộn được */
+    scrollbar-width:none;
+  }
+  .phdr-center::-webkit-scrollbar{display:none;}
+
+  .ctabs{
+    display:flex !important;
+    flex-wrap:nowrap !important;   /* KHÔNG xuống dòng */
+    gap:4px;
+    width:max-content;             /* Đủ rộng chứa hết tab */
+  }
+
+  .ctab{
+    font-size:11px;
+    padding:5px 10px;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+
+  /* Ẩn phần right (vốn chứa close button desktop) */
+  .phdr-right{
+    display:none !important;
+  }
+
+  /* Close button nằm trong phdr-left trên mobile */
+  .phdr-left .closebtn{
+    display:flex !important;
+    flex-shrink:0;
+  }
+
+  /* Heatmap header: wrap tự nhiên */
+  .hmap-panel-hdr{
+    flex-wrap:wrap;
+    gap:6px;
+    padding:8px 10px;
+  }
+  .hmap-search-input{
+    width:110px !important;
+  }
+  .hmap-search-input:focus{
+    width:140px !important;
+  }
+
+  /* Signal row gọn hơn chút */
+  .sig-row{
+    grid-template-columns:24px 58px 1fr 76px;
+    padding:6px 8px;
+  }
+  .s-badge{
+    font-size:9px;
+    padding:2px 4px;
+  }
+}
 </style>
 </head>
 <body>
