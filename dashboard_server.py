@@ -39,7 +39,7 @@ _signal_rank        = {}
 _heatmap_cache  = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock   = threading.Lock()
 HEATMAP_TTL_SEC = 120
-SIGNAL_TTL_SEC  = 10
+SIGNAL_TTL_SEC  = 15
 
 _chart_cache: dict = {}
 _chart_lock         = threading.Lock()
@@ -264,9 +264,9 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
-.panel-hdr{display:flex;align-items:center;gap:10px;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.panel-hdr{display:flex;align-items:center;gap:10px;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border);flex-wrap:nowrap}
 .panel-title{font-family:var(--font-ui);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent);white-space:nowrap;flex-shrink:0}
-.panel-meta{font-size:10px;color:var(--muted)}
+.panel-meta{font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap;flex-shrink:0}
 
 /* Progress bar */
 .pbar-wrap{height:2px;background:transparent;overflow:hidden}
@@ -293,7 +293,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 
 /* ── QUICK LINKS + SEARCH BAR (heatmap toolbar) ─── */
 .hmap-toolbar{
-  display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;
 }
 .qlink-btn{
   display:inline-flex;align-items:center;gap:5px;
@@ -361,6 +361,12 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 .closebtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
+/* Popup search */
+.popup-search-wrap{position:relative;display:flex;align-items:center;flex-shrink:0}
+.popup-search-wrap .s-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);display:flex;align-items:center}
+#popup-sym-search{width:140px;height:28px;padding:0 10px 0 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;transition:border-color .15s,box-shadow .15s,width .2s}
+#popup-sym-search::placeholder{color:var(--muted)}
+#popup-sym-search:focus{border-color:rgba(26,86,219,.5);box-shadow:0 0 0 3px rgba(26,86,219,.1);width:170px}
 .pbody{flex:1;overflow:hidden;position:relative;border-top:1px solid var(--border)}
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
@@ -474,7 +480,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
                  maxlength="10">
         </div>
       </div>
-      <span class="panel-meta" id="hmap-ts" style="display:none">Đang tải...</span>
+      <span class="panel-meta" id="hmap-ts">Đang tải...</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
@@ -503,10 +509,24 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
         <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
       </div>
+      <div class="popup-search-wrap">
+        <span class="s-icon">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </span>
+        <input id="popup-sym-search"
+               type="text"
+               placeholder="Tìm kiếm mã"
+               autocomplete="off"
+               autocorrect="off"
+               spellcheck="false"
+               maxlength="10">
+      </div>
       <button class="closebtn" onclick="closePopup()">✕</button>
     </div>
     <div class="pbody">
-      <div class="tpanel on" id="panel-vs">
         <iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe>
       </div>
       <div class="tpanel" id="panel-scanner">
@@ -949,19 +969,24 @@ function startBar(id, sec){
 // SEARCH BAR — nhập mã → Enter → mở popup chart
 // ═══════════════════════════════════════════════════════
 (function(){
+  // Heatmap search bar
   const inp = document.getElementById('sym-search');
-  if(!inp) return;
-  function doSearch(){
-    const v = inp.value.trim().toUpperCase();
-    if(v.length >= 1){
-      openChart(v);
-      inp.value = '';
-      inp.blur();
+  if(inp){
+    function doSearch(){
+      const v = inp.value.trim().toUpperCase();
+      if(v.length >= 1){ openChart(v); inp.value=''; inp.blur(); }
     }
+    inp.addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
   }
-  inp.addEventListener('keydown', e => {
-    if(e.key === 'Enter') doSearch();
-  });
+  // Popup search bar — tìm mã khác ngay trong popup
+  const pinp = document.getElementById('popup-sym-search');
+  if(pinp){
+    function doPopupSearch(){
+      const v = pinp.value.trim().toUpperCase();
+      if(v.length >= 1){ openChart(v); pinp.value=''; pinp.blur(); }
+    }
+    pinp.addEventListener('keydown', e => { if(e.key==='Enter') doPopupSearch(); });
+  }
 })();
 
 // ═══════════════════════════════════════════════════════
