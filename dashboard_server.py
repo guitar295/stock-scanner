@@ -43,7 +43,7 @@ SIGNAL_TTL_SEC  = 30
 
 _chart_cache: dict = {}
 _chart_lock         = threading.Lock()
-CHART_TTL_SEC       = 300
+CHART_TTL_SEC       = 0   # Không cache — chart luôn vẽ mới mỗi lần click tab
 
 # =============================================================================
 # API ENDPOINTS
@@ -164,6 +164,15 @@ def api_status():
         "cache_symbols": len(cache),
         "server_time":   datetime.now(TZ_VN).strftime("%H:%M:%S %d/%m/%Y"),
     })
+
+
+@app.route("/api/chart_cache_clear/<symbol>", methods=["DELETE"])
+def api_chart_cache_clear(symbol):
+    symbol = symbol.upper().strip()
+    with _chart_lock:
+        removed = symbol in _chart_cache
+        _chart_cache.pop(symbol, None)
+    return jsonify({"symbol": symbol, "cleared": removed})
 
 
 @app.route("/api/config")
@@ -386,7 +395,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .album-slide img{max-width:100%;max-height:calc(94vh - 160px);object-fit:contain;border-radius:6px;border:1px solid #333}
 .album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
 
-/* Nav bar: nằm dưới ảnh, chứa nút ◀ + dots + ▶ trên cùng một hàng */
+/* Nav bar: nằm dưới ảnh, chứa nút ◀ + dots + ▶ + refresh trên cùng một hàng */
 .album-nav-bar{
   display:flex;align-items:center;justify-content:center;
   gap:10px;padding:6px 0 8px;flex-shrink:0;
@@ -405,6 +414,19 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .album-dots-wrap{display:flex;gap:6px;align-items:center}
 .album-dot{width:8px;height:8px;border-radius:50%;background:#444;cursor:pointer;transition:all .15s}
 .album-dot.on{background:#4d9ff5;transform:scale(1.3)}
+
+/* Nút refresh — nằm ngay cạnh nút ▶ */
+.album-refresh-btn{
+  height:26px;padding:0 10px;border-radius:13px;
+  border:1px solid #555;background:rgba(255,255,255,.06);
+  color:#aaa;font-size:10px;font-family:var(--font-mono);cursor:pointer;
+  display:flex;align-items:center;gap:5px;white-space:nowrap;
+  transition:background .15s,color .15s,border-color .15s;
+  user-select:none;flex-shrink:0;
+}
+.album-refresh-btn:hover{background:rgba(14,159,110,.35);color:#6ee7b7;border-color:#0e9f6e}
+.album-refresh-btn.spinning span.ri{display:inline-block;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 .album-hint{text-align:center;font-size:10px;color:#555;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0}
 
@@ -510,11 +532,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <div class="album-center">
             <div id="album-slides"></div>
           </div>
-          <!-- Nav bar: ◀ · · · ▶ -->
+          <!-- Nav bar: ◀ · · · ▶ 🔄 -->
           <div class="album-nav-bar">
             <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="Ảnh trước (←)">&#9664;</button>
             <div class="album-dots-wrap" id="album-dots"></div>
             <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)" title="Ảnh sau (→)">&#9654;</button>
+            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()" title="Xoá cache, tải lại chart">
+              <span class="ri">&#8635;</span><span>Làm mới</span>
+            </button>
           </div>
           <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
         </div>
@@ -693,7 +718,6 @@ function _showAlbum(images){
   images.forEach((img,i)=>{
     slidesEl.innerHTML+=`<div class="album-slide${i===0?' on':''}" id="slide-${i}">
       <img src="${img.url}" alt="${img.label}" loading="lazy">
-      <div class="album-label">${img.label}</div>
     </div>`;
     dotsEl.innerHTML+=`<div class="album-dot${i===0?' on':''}" id="dot-${i}" onclick="albumGoto(${i})"></div>`;
   });
@@ -712,6 +736,32 @@ function albumGoto(i){
 }
 
 function albumNav(dir){ albumGoto(_albumIdx+dir); }
+
+function refreshScannerChart(){
+  if(!_sym) return;
+  const btn=document.getElementById('btn-refresh');
+  if(btn){ btn.classList.add('spinning'); btn.disabled=true; }
+  // Xóa cache phía client bằng cách gọi API với tham số bust
+  fetch(`/api/chart_images/${_sym}?bust=${Date.now()}`,{cache:'no-store'})
+    .then(()=>{})
+    .catch(()=>{});
+  // Load lại với cache bị bỏ qua — dùng trick đổi URL
+  loadScannerChartForce(_sym);
+}
+
+async function loadScannerChartForce(sym){
+  document.getElementById('album-outer').style.display='none';
+  document.getElementById('scanner-loading').style.display='flex';
+  document.getElementById('scanner-loading').innerHTML=
+    `<span>🔄 Đang làm mới chart <b>${sym}</b>…</span>`;
+  // Gọi endpoint xóa cache rồi tải lại
+  try{
+    await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});
+  }catch(e){}
+  const btn=document.getElementById('btn-refresh');
+  if(btn){ btn.classList.remove('spinning'); btn.disabled=false; }
+  await loadScannerChart(sym);
+}
 
 function _updateAlbumNav(){
   document.getElementById('btn-prev').classList.toggle('disabled', _albumIdx===0);
