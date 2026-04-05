@@ -378,11 +378,14 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 
 .phdr{
-  display:flex;align-items:center;justify-content:space-between;
-  flex-wrap:wrap;padding:9px 14px;gap:6px;
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  padding:7px 14px;gap:0;
   background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0
 }
-.ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0}
+.phdr-left{display:flex;align-items:center;gap:8px;justify-content:flex-start}
+.phdr-center{display:flex;align-items:flex-end;justify-content:center}
+.phdr-right{display:flex;align-items:center;justify-content:flex-end}
+.ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
 
 /* Search trong popup */
 .popup-search-wrap{
@@ -501,12 +504,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="hmap-panel-hdr">
       <span class="panel-title">Heatmap thị trường</span>
 
-      <a class="hmap-link-btn" href="https://dstock.vndirect.com.vn" target="_blank" rel="noopener">
-        Market
-      </a>
-      <a class="hmap-link-btn" href="https://24hmoney.vn/indices/vn-index" target="_blank" rel="noopener">
+      <button class="hmap-link-btn" onclick="openUrl('https://dstock.vndirect.com.vn','MARKET')">
+        MARKET
+      </button>
+      <button class="hmap-link-btn" onclick="openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX')">
         VNINDEX
-      </a>
+      </button>
 
       <!-- Search pill -->
       <div class="hmap-search-wrap">
@@ -545,32 +548,39 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div class="pbox">
 
     <div class="phdr">
-      <span class="ptitle" id="ptitle">Chart</span>
-
-      <!-- Search mã khác — ngay sau tên mã, trước tabs -->
-      <div class="popup-search-wrap">
-        <span class="ps-icon">🔍</span>
-        <input
-          class="popup-search-input"
-          id="popup-search-input"
-          type="text"
-          placeholder="Tìm mã khác"
-          maxlength="10"
-          autocomplete="off"
-          spellcheck="false"
-        >
+      <!-- Trái: tên mã + search sát nhau -->
+      <div class="phdr-left">
+        <span class="ptitle" id="ptitle">Chart</span>
+        <div class="popup-search-wrap">
+          <span class="ps-icon">🔍</span>
+          <input
+            class="popup-search-input"
+            id="popup-search-input"
+            type="text"
+            placeholder="Tìm mã khác"
+            maxlength="10"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
       </div>
 
-      <div class="ctabs">
-        <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
-        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
-        <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
-        <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
-        <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
-        <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+      <!-- Giữa: tabs canh giữa -->
+      <div class="phdr-center">
+        <div class="ctabs">
+          <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
+          <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
+          <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
+          <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
+          <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
+          <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+        </div>
       </div>
 
-      <button class="closebtn" onclick="closePopup()">✕</button>
+      <!-- Phải: nút đóng -->
+      <div class="phdr-right">
+        <button class="closebtn" onclick="closePopup()">✕</button>
+      </div>
     </div>
 
     <div class="pbody">
@@ -613,6 +623,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <!-- Tab 24HMoney -->
       <div class="tpanel" id="panel-24h">
         <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <!-- Tab URL (Market / VNINDEX) -->
+      <div class="tpanel" id="panel-url">
+        <iframe id="iframe-url" src="about:blank" allowfullscreen></iframe>
       </div>
     </div>
 
@@ -930,7 +944,34 @@ async function loadScannerChart(sym){
 // ═══════════════════════════════════════════════════════
 let _sym='', _tab='vs';
 
-const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h'];
+const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
+
+// Mở URL bất kỳ trong popup (Market / VNINDEX)
+function openUrl(url, label){
+  _tab='url';
+  document.getElementById('ptitle').textContent= label || '🌐 Web';
+  // Reset các iframe khác
+  document.getElementById('iframe-vs').src='about:blank';
+  IFRAME_TABS.forEach(t=>{
+    document.getElementById(`iframe-${t}`).src='about:blank';
+  });
+  document.getElementById('album-outer').style.display='none';
+  document.getElementById('scanner-loading').style.display='flex';
+  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
+
+  // Ẩn toàn bộ panel, hiện panel-url
+  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
+  allTabs.forEach(t=>{
+    const ct = document.getElementById('ctab-'+t);
+    if(ct) ct.classList.remove('on');
+    document.getElementById('panel-'+t).classList.toggle('on', t==='url');
+  });
+
+  document.getElementById('iframe-url').src = url;
+  document.getElementById('overlay').classList.add('on');
+  document.body.style.overflow='hidden';
+  document.getElementById('popup-search-input').value='';
+}
 
 function openChart(sym){
   _sym=sym.toUpperCase().trim();
@@ -958,9 +999,10 @@ function openChart(sym){
 
 function _activateTab(tab){
   _tab=tab;
-  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
   allTabs.forEach(t=>{
-    document.getElementById('ctab-'+t).classList.toggle('on',t===tab);
+    const ct = document.getElementById('ctab-'+t);
+    if(ct) ct.classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
 
