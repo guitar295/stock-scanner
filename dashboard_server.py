@@ -269,6 +269,17 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .panel-title{font-family:var(--font-ui);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}
 .panel-meta{font-size:10px;color:var(--muted)}
+
+/* Progress bar nhỏ dưới header mỗi panel */
+.pbar-wrap{
+  height:3px;background:var(--border);overflow:hidden;
+  /* KHÔNG có border-radius để sát vào panel-hdr */
+}
+.pbar-fill{
+  height:100%;width:0%;
+  background:linear-gradient(90deg,var(--accent),var(--green));
+  transition:none;
+}
 .panel-body{padding:12px 14px}
 
 .sig-list{display:flex;flex-direction:column;gap:3px}
@@ -463,6 +474,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="panel-title">Tín hiệu hôm nay</span>
       <span class="panel-meta" id="sig-meta">Đang tải...</span>
     </div>
+    <div class="pbar-wrap"><div class="pbar-fill" id="pbar-sig"></div></div>
     <div class="panel-body">
       <div class="sig-list" id="sig-list">
         <div class="empty"><div class="big">📡</div><div>Đang tải...</div></div>
@@ -476,6 +488,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="panel-title">Heatmap thị trường</span>
       <span class="panel-meta" id="hmap-ts">Đang tải...</span>
     </div>
+    <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
       <div class="hmap-outer">
         <div class="hmap-row" id="hmap-grid">
@@ -969,13 +982,31 @@ async function fetchHmap(){
 
 
 // ═══════════════════════════════════════════════════════
+// PROGRESS BAR (mỗi panel độc lập, độ rộng bằng nhau)
+// ═══════════════════════════════════════════════════════
+function startBar(id, sec){
+  const el=document.getElementById(id);
+  if(!el) return;
+  el.style.transition='none';
+  el.style.width='0%';
+  // Dùng rAF để đảm bảo reset xong mới animate
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    el.style.transition=`width ${sec}s linear`;
+    el.style.width='100%';
+  }));
+}
+
+// ═══════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
+  // Chạy 2 bar cùng lúc khi init
+  startBar('pbar-sig',  SIG_TTL);
+  startBar('pbar-hmap', HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
-  setInterval(async()=>{ await fetchSigs(); }, SIG_TTL  * 1000);
-  setInterval(async()=>{ await fetchHmap();}, HMAP_TTL * 1000);
+  setInterval(async()=>{ startBar('pbar-sig',  SIG_TTL);  await fetchSigs(); }, SIG_TTL  * 1000);
+  setInterval(async()=>{ startBar('pbar-hmap', HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
 }
 init();
 </script>
