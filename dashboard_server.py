@@ -275,7 +275,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   flex-wrap:wrap;
 }
 .hmap-panel-left{
-  display:flex;align-items:center;gap:10px;flex:1;min-width:0;flex-wrap:wrap;
+  display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;
 }
 .hmap-link-btn{
   display:inline-flex;align-items:center;gap:5px;
@@ -290,21 +290,21 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 /* Search bar kiểu pill */
 .hmap-search-wrap{
   position:relative;display:flex;align-items:center;
-  flex:1;min-width:140px;max-width:280px;
+  flex-shrink:0;
 }
 .hmap-search-wrap .s-icon{
   position:absolute;left:11px;top:50%;transform:translateY(-50%);
   color:var(--muted);font-size:13px;pointer-events:none;
 }
 .hmap-search-input{
-  width:100%;padding:5px 12px 5px 32px;
+  width:140px;padding:5px 10px 5px 30px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:12px;
-  outline:none;transition:border-color .15s,box-shadow .15s;
+  font-family:var(--font-mono);font-size:11px;
+  outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
 }
 .hmap-search-input::placeholder{color:var(--muted)}
-.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
+.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:170px}
 
 .pbar-wrap{height:2px;background:transparent;overflow:hidden}
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:0.5;transition:none}
@@ -497,36 +497,33 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   <!-- HEATMAP -->
   <div class="panel">
-    <!-- Header heatmap: title + meta | nút VND | nút 24HMoney | search -->
+    <!-- Header: HEATMAP THỊ TRƯỜNG | MARKET | VNINDEX | Tìm kiếm mã | Cập nhật thời gian -->
     <div class="hmap-panel-hdr">
-      <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-        <span class="panel-title">Heatmap thị trường</span>
-        <span class="panel-meta" id="hmap-ts" style="padding:0">Đang tải...</span>
+      <span class="panel-title">Heatmap thị trường</span>
+
+      <a class="hmap-link-btn" href="https://dstock.vndirect.com.vn" target="_blank" rel="noopener">
+        Market
+      </a>
+      <a class="hmap-link-btn" href="https://24hmoney.vn/indices/vn-index" target="_blank" rel="noopener">
+        VNINDEX
+      </a>
+
+      <!-- Search pill -->
+      <div class="hmap-search-wrap">
+        <span class="s-icon">🔍</span>
+        <input
+          class="hmap-search-input"
+          id="hmap-search-input"
+          type="text"
+          placeholder="Tìm kiếm mã"
+          maxlength="10"
+          autocomplete="off"
+          spellcheck="false"
+        >
       </div>
 
-      <!-- Nút + Search cùng hàng, sát bên phải title/meta -->
-      <div class="hmap-panel-left">
-        <a class="hmap-link-btn" href="https://dstock.vndirect.com.vn" target="_blank" rel="noopener">
-          📊 VNDirect
-        </a>
-        <a class="hmap-link-btn" href="https://24hmoney.vn/indices/vn-index" target="_blank" rel="noopener">
-          💬 24HMoney
-        </a>
-
-        <!-- Search bar pill -->
-        <div class="hmap-search-wrap">
-          <span class="s-icon">🔍</span>
-          <input
-            class="hmap-search-input"
-            id="hmap-search-input"
-            type="text"
-            placeholder="Tìm kiếm mã"
-            maxlength="10"
-            autocomplete="off"
-            spellcheck="false"
-          >
-        </div>
-      </div>
+      <!-- Thời gian đẩy hết sang phải -->
+      <span class="panel-meta" id="hmap-ts" style="margin-left:auto">Đang tải...</span>
     </div>
 
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
@@ -550,16 +547,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="phdr">
       <span class="ptitle" id="ptitle">Chart</span>
 
-      <div class="ctabs">
-        <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
-        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
-        <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
-        <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
-        <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
-        <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
-      </div>
-
-      <!-- Search mã khác trong popup -->
+      <!-- Search mã khác — ngay sau tên mã, trước tabs -->
       <div class="popup-search-wrap">
         <span class="ps-icon">🔍</span>
         <input
@@ -571,6 +559,15 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           autocomplete="off"
           spellcheck="false"
         >
+      </div>
+
+      <div class="ctabs">
+        <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
+        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
+        <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
+        <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
+        <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
+        <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
       </div>
 
       <button class="closebtn" onclick="closePopup()">✕</button>
