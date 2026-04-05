@@ -479,12 +479,24 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     height:100dvh!important;
     border-radius:0!important;
     border:none!important;
+    /* KHÔNG đặt overflow:hidden — browser sẽ coerce overflow-x:visible
+       thành auto nếu overflow-y khác visible, làm clip thanh tab con.
+       Dùng max-height + flex để kiểm soát layout thay thế. */
+    overflow:visible!important;
+    max-height:100dvh!important;
+  }
+  .pbody{
+    overflow:hidden!important;
   }
   .phdr{
     display:flex!important;
     flex-direction:column!important;
     padding:0!important;
     gap:0!important;
+    overflow:visible!important;
+    width:100vw!important;
+    max-width:100vw!important;
+    flex-shrink:0!important;
   }
   .phdr-left,
   .phdr-center,
@@ -1084,6 +1096,13 @@ function _activateTab(tab){
     const row = document.getElementById('mob-tabrow');
     const activeBtn = document.getElementById('ctab-'+tab);
     if(row && activeBtn){
+      // Cập nhật inline style cho tất cả button
+      const BTN_BASE = 'flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:var(--font-mono);font-weight:600;cursor:pointer;background:var(--bg);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s;touch-action:manipulation';
+      const BTN_ON   = 'flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--accent);font-size:12px;font-family:var(--font-mono);font-weight:700;cursor:pointer;background:var(--surface);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 0 0 var(--accent);touch-action:manipulation';
+      row.querySelectorAll('button').forEach(btn => {
+        btn.style.cssText = btn.id === 'ctab-'+tab ? BTN_ON : BTN_BASE;
+      });
+      // Scroll tab active vào giữa màn hình
       const btnLeft  = activeBtn.offsetLeft;
       const btnWidth = activeBtn.offsetWidth;
       const rowWidth = row.offsetWidth;
@@ -1263,9 +1282,30 @@ function buildMobileHeader(){
   `;
   phdr.appendChild(r1);
 
-  // ── Hàng 2: #mob-tabrow — CSS đã định nghĩa ở <style> ──
+  // ── Hàng 2: #mob-tabrow ──
+  // Dùng inline style trực tiếp để đảm bảo scroll ngang hoạt động
+  // bất kể ancestor có overflow:hidden (inline style > CSS cascade)
   const r2 = document.createElement('div');
   r2.id = 'mob-tabrow';
+  r2.style.cssText = [
+    'display:flex',
+    'flex-direction:row',
+    'flex-wrap:nowrap',
+    'align-items:center',
+    'overflow-x:scroll',          /* bắt buộc scroll ngang */
+    'overflow-y:hidden',
+    '-webkit-overflow-scrolling:touch',
+    'overscroll-behavior-x:contain',
+    'padding:6px 8px',
+    'gap:5px',
+    'background:var(--surf2)',
+    'border-bottom:1px solid var(--border)',
+    'scrollbar-width:none',
+    '-ms-overflow-style:none',
+    'width:100%',
+    'box-sizing:border-box',
+    'min-height:44px',            /* đủ cao để ngón tay chạm */
+  ].join(';');
 
   const tabs = [
     { id:'vs',       label:'📈 Vietstock' },
@@ -1276,10 +1316,51 @@ function buildMobileHeader(){
     { id:'24h',      label:'💬 24HMoney'  },
   ];
 
+  const BTN_BASE = [
+    'flex-shrink:0',
+    'flex-grow:0',
+    'white-space:nowrap',
+    'padding:7px 14px',
+    'border-radius:6px',
+    'border:1px solid var(--border)',
+    'font-size:12px',
+    'font-family:var(--font-mono)',
+    'font-weight:600',
+    'cursor:pointer',
+    'background:var(--bg)',
+    'color:var(--muted)',
+    'display:inline-flex',
+    'align-items:center',
+    'justify-content:center',
+    'transition:background .15s,color .15s',
+    'touch-action:manipulation',  /* tránh delay 300ms trên mobile */
+  ].join(';');
+
+  const BTN_ON = [
+    'flex-shrink:0',
+    'flex-grow:0',
+    'white-space:nowrap',
+    'padding:7px 14px',
+    'border-radius:6px',
+    'border:1px solid var(--accent)',
+    'font-size:12px',
+    'font-family:var(--font-mono)',
+    'font-weight:700',
+    'cursor:pointer',
+    'background:var(--surface)',
+    'color:var(--accent)',
+    'display:inline-flex',
+    'align-items:center',
+    'justify-content:center',
+    'box-shadow:0 2px 0 0 var(--accent)',
+    'touch-action:manipulation',
+  ].join(';');
+
   tabs.forEach(t => {
     const btn = document.createElement('button');
-    btn.id        = 'ctab-' + t.id;
+    btn.id          = 'ctab-' + t.id;
     btn.textContent = t.label;
+    btn.style.cssText = (t.id === 'vs') ? BTN_ON : BTN_BASE;
     if(t.id === 'vs') btn.classList.add('on');
     btn.onclick = () => switchTab(t.id);
     r2.appendChild(btn);
