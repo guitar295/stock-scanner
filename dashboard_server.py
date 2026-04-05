@@ -288,10 +288,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
 .hmap-group{display:flex;flex-direction:column;gap:2px;margin-bottom:3px}
 
-/*
-  [1] Tên ngành: căn giữa (justify-content:center), khoảng cách tên–% rộng hơn
-      dùng gap:16px thay vì gap:10px
-*/
 .hmap-ghdr{
   display:flex;align-items:center;justify-content:center;
   padding:0 8px;height:24px;border-radius:4px;
@@ -325,7 +321,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
 
-/* [3] Khung popup rộng hơn: 99vw, max-width lớn hơn, height 94vh */
 .pbox{
   background:var(--surface);border:1px solid var(--border);border-radius:10px;
   box-shadow:0 20px 60px rgba(0,0,0,.15);
@@ -341,7 +336,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 }
 .ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0}
 
-/* [2] 6 tab: Vietstock | VND Detail | VND News | VND Summary | 24HMoney | Scanner Chart */
+/* Tab order: Scanner Chart ngay sau Vietstock */
 .ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
 .ctab{
   font-size:11px;font-family:var(--font-mono);font-weight:600;
@@ -371,41 +366,47 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 }
 
 /*
-  [4] Album: nút trước/sau ở hai bên trái/phải, ảnh ở giữa
-      layout: 3 cột [btn | slide | btn], full height
+  Album layout: ảnh chiếm toàn bộ, navigation bar nằm ở giữa cùng hàng với dots
+  Không còn nút trái/phải cạnh ảnh — thay bằng nút ◀ ▶ inline trong nav bar
 */
 .album-outer{
-  flex:1;display:flex;align-items:stretch;overflow:hidden;
-  position:relative;
+  flex:1;display:flex;flex-direction:column;overflow:hidden;
 }
-.album-side-btn{
-  display:flex;align-items:center;justify-content:center;
-  width:52px;flex-shrink:0;
-  background:rgba(0,0,0,.25);cursor:pointer;
-  transition:background .15s;border:none;color:#ccc;font-size:22px;
-  user-select:none;
-}
-.album-side-btn:hover:not(.disabled){background:rgba(26,86,219,.45);color:#fff}
-.album-side-btn.disabled{opacity:.2;cursor:default;pointer-events:none}
 
+/* Vùng ảnh: chiếm toàn bộ chiều cao còn lại */
 .album-center{
   flex:1;overflow-y:auto;display:flex;flex-direction:column;
-  align-items:center;padding:12px 8px;gap:8px;
+  align-items:center;padding:12px 16px 4px;gap:8px;
 }
 .album-center::-webkit-scrollbar{width:4px}
 .album-center::-webkit-scrollbar-thumb{background:#444;border-radius:2px}
 
 .album-slide{display:none;flex-direction:column;align-items:center;gap:8px;width:100%}
 .album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(94vh - 140px);object-fit:contain;border-radius:6px;border:1px solid #333}
+.album-slide img{max-width:100%;max-height:calc(94vh - 160px);object-fit:contain;border-radius:6px;border:1px solid #333}
 .album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
 
-/* dots indicator */
-.album-dots-wrap{display:flex;gap:6px;justify-content:center;padding:4px 0;flex-shrink:0}
+/* Nav bar: nằm dưới ảnh, chứa nút ◀ + dots + ▶ trên cùng một hàng */
+.album-nav-bar{
+  display:flex;align-items:center;justify-content:center;
+  gap:10px;padding:6px 0 8px;flex-shrink:0;
+}
+.album-nav-btn{
+  width:30px;height:30px;border-radius:50%;
+  border:1px solid #444;background:rgba(255,255,255,.08);
+  color:#ccc;font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s,color .15s,border-color .15s;
+  user-select:none;flex-shrink:0;
+}
+.album-nav-btn:hover:not(.disabled){background:rgba(26,86,219,.5);color:#fff;border-color:#4d9ff5}
+.album-nav-btn.disabled{opacity:.2;cursor:default;pointer-events:none}
+
+.album-dots-wrap{display:flex;gap:6px;align-items:center}
 .album-dot{width:8px;height:8px;border-radius:50%;background:#444;cursor:pointer;transition:all .15s}
 .album-dot.on{background:#4d9ff5;transform:scale(1.3)}
 
-.album-hint{text-align:center;font-size:10px;color:#555;padding:2px 0 6px;font-family:var(--font-mono);flex-shrink:0}
+.album-hint{text-align:center;font-size:10px;color:#555;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0}
 
 footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
 
@@ -417,7 +418,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 @media(max-width:768px){
   .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
-  .album-side-btn{width:38px;font-size:18px}
+  .album-nav-btn{width:26px;height:26px;font-size:12px}
 }
 </style>
 </head>
@@ -474,14 +475,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="phdr">
       <span class="ptitle" id="ptitle">Chart</span>
 
-      <!-- [2] 6 tab -->
+      <!--
+        THỨ TỰ TAB: Vietstock | Scanner Chart | Cơ bản | Tin tức | Tổng quan | 24HMoney
+        Scanner Chart được đặt ngay sau Vietstock (yêu cầu 1)
+      -->
       <div class="ctabs">
         <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
+        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
         <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
         <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
         <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
         <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
-        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
       </div>
 
       <button class="closebtn" onclick="closePopup()">✕</button>
@@ -491,6 +495,29 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <!-- Tab Vietstock -->
       <div class="tpanel on" id="panel-vs">
         <iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <!-- Tab Scanner Chart: ngay sau Vietstock (yêu cầu 1) -->
+      <div class="tpanel" id="panel-scanner">
+        <div class="scanner-loading" id="scanner-loading">
+          <span>⏳ Đang tạo chart từ scanner...</span>
+        </div>
+        <!--
+          Album layout mới (yêu cầu 2):
+          - Không có nút trái/phải cạnh ảnh
+          - Nút ◀ ▶ nằm cùng hàng với dots trong nav bar bên dưới
+        -->
+        <div class="album-outer" id="album-outer" style="display:none">
+          <div class="album-center">
+            <div id="album-slides"></div>
+          </div>
+          <!-- Nav bar: ◀ · · · ▶ -->
+          <div class="album-nav-bar">
+            <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="Ảnh trước (←)">&#9664;</button>
+            <div class="album-dots-wrap" id="album-dots"></div>
+            <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)" title="Ảnh sau (→)">&#9654;</button>
+          </div>
+          <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
+        </div>
       </div>
       <!-- Tab VND Cơ bản -->
       <div class="tpanel" id="panel-vnd-cs">
@@ -507,24 +534,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <!-- Tab 24HMoney -->
       <div class="tpanel" id="panel-24h">
         <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
-      </div>
-      <!-- Tab Scanner Chart: nút trái/phải hai bên -->
-      <div class="tpanel" id="panel-scanner">
-        <div class="scanner-loading" id="scanner-loading">
-          <span>⏳ Đang tạo chart từ scanner...</span>
-        </div>
-        <div class="album-outer" id="album-outer" style="display:none">
-          <!-- Nút trái -->
-          <button class="album-side-btn disabled" id="btn-prev" onclick="albumNav(-1)">&#9664;</button>
-          <!-- Vùng ảnh giữa -->
-          <div class="album-center">
-            <div class="album-dots-wrap" id="album-dots"></div>
-            <div id="album-slides"></div>
-            <div class="album-hint">Vuốt trái/phải hoặc dùng nút ◀ ▶ để chuyển ảnh</div>
-          </div>
-          <!-- Nút phải -->
-          <button class="album-side-btn" id="btn-next" onclick="albumNav(1)">&#9654;</button>
-        </div>
       </div>
     </div>
 
@@ -717,6 +726,17 @@ document.getElementById('panel-scanner').addEventListener('touchend',e=>{
   if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
 },{passive:true});
 
+// ── Phím mũi tên bàn phím (yêu cầu 3) ──────────────────
+// Chỉ kích hoạt khi popup đang mở VÀ đang ở tab Scanner Chart
+document.addEventListener('keydown', e => {
+  const overlayOn = document.getElementById('overlay').classList.contains('on');
+  if (!overlayOn) return;
+  if (_tab !== 'scanner') return;
+  if (_albumTotal === 0) return;
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); albumNav(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); albumNav(1);  }
+});
+
 async function loadScannerChart(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
@@ -768,7 +788,6 @@ async function loadScannerChart(sym){
 // ═══════════════════════════════════════════════════════
 let _sym='', _tab='vs';
 
-// Các tab ID cần iframe lazy-load (chỉ load khi lần đầu chọn tab)
 const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h'];
 
 function openChart(sym){
@@ -776,16 +795,13 @@ function openChart(sym){
   _tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
 
-  // Load Vietstock ngay
   document.getElementById('iframe-vs').src=
     `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
 
-  // Reset tất cả iframe lazy-load
   IFRAME_TABS.forEach(t=>{
     document.getElementById(`iframe-${t}`).src='about:blank';
   });
 
-  // Reset scanner tab
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
@@ -797,13 +813,13 @@ function openChart(sym){
 
 function _activateTab(tab){
   _tab=tab;
-  const allTabs=['vs','vnd-cs','vnd-news','vnd-sum','24h','scanner'];
+  // Danh sách tất cả tab IDs khớp với thứ tự mới
+  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
   allTabs.forEach(t=>{
     document.getElementById('ctab-'+t).classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
 
-  // Lazy load iframe khi lần đầu chọn
   if(tab==='vnd-cs'){
     const f=document.getElementById('iframe-vnd-cs');
     if(f.src==='about:blank')
@@ -843,7 +859,9 @@ function closePopup(){
 document.getElementById('overlay').addEventListener('click',e=>{
   if(e.target===document.getElementById('overlay'))closePopup();
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closePopup();});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closePopup();
+});
 
 // ═══════════════════════════════════════════════════════
 // CLOCK
