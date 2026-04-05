@@ -233,7 +233,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Scanner Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -252,83 +252,88 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   --font-ui:   'Barlow Condensed', sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 
-/* ── HEADER ── */
-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow)}
-header h1{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:2px;color:var(--accent);text-transform:uppercase}
-.hdr-right{display:flex;gap:12px;align-items:center}
+header{display:flex;align-items:center;justify-content:space-between;padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow)}
+header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
+.hdr-right{display:flex;gap:18px;align-items:center}
 #clock{color:var(--muted);font-size:11px}
-.dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
+.dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-.wrap{padding:12px;display:flex;flex-direction:column;gap:12px}
+.wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
-.panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:6px}
+.panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .panel-title{font-family:var(--font-ui);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}
 .panel-meta{font-size:10px;color:var(--muted)}
 
-/* ── HEATMAP HEADER ── */
+/* ── HEATMAP HEADER với 2 nút + search ── */
 .hmap-panel-hdr{
-  display:flex;align-items:center;gap:8px;
-  padding:9px 14px;background:var(--surf2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+  padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border);
   flex-wrap:wrap;
 }
+.hmap-panel-left{
+  display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;
+}
 .hmap-link-btn{
-  display:inline-flex;align-items:center;gap:4px;
-  padding:5px 12px;border-radius:5px;border:1px solid var(--border);
+  display:inline-flex;align-items:center;gap:5px;
+  padding:4px 11px;border-radius:5px;border:1px solid var(--border);
   background:var(--surface);color:var(--accent);
-  font-family:var(--font-mono);font-size:11px;font-weight:600;
+  font-family:var(--font-mono);font-size:10px;font-weight:600;
   cursor:pointer;text-decoration:none;white-space:nowrap;
-  transition:all .15s;min-height:32px;
+  transition:all .15s;
 }
 .hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* Search bar */
-.hmap-search-wrap{position:relative;display:flex;align-items:center;flex-shrink:0}
-.hmap-search-wrap .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
+/* Search bar kiểu pill */
+.hmap-search-wrap{
+  position:relative;display:flex;align-items:center;
+  flex-shrink:0;
+}
+.hmap-search-wrap .s-icon{
+  position:absolute;left:11px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:13px;pointer-events:none;
+}
 .hmap-search-input{
-  width:130px;padding:6px 10px 6px 28px;
+  width:140px;padding:5px 10px 5px 30px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;
   outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
-  min-height:32px;
 }
 .hmap-search-input::placeholder{color:var(--muted)}
-.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:160px}
+.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:170px}
 
 .pbar-wrap{height:2px;background:transparent;overflow:hidden}
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:0.5;transition:none}
-.panel-body{padding:10px 12px}
+.panel-body{padding:12px 14px}
 
-/* ── TÍN HIỆU ── */
-.sig-list{display:flex;flex-direction:column;gap:4px}
-.sig-row{display:grid;grid-template-columns:26px 60px 1fr 96px;align-items:center;padding:8px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:all .15s;animation:fadeIn .3s ease;background:var(--surface);min-height:40px}
+.sig-list{display:flex;flex-direction:column;gap:3px}
+.sig-row{display:grid;grid-template-columns:28px 68px 1fr 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:all .15s;animation:fadeIn .3s ease;background:var(--surface)}
 @keyframes fadeIn{from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:none}}
-.sig-row:hover,.sig-row:active{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
-.sig-row:hover .s-sym,.sig-row:active .s-sym{color:var(--accent)}
+.sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
+.sig-row:hover .s-sym{color:var(--accent)}
 .s-emoji{font-size:14px;text-align:center}
 .s-sym{font-weight:700;font-size:13px;transition:color .15s}
-.s-type{font-size:10px;color:var(--muted)}
-.s-badge{font-size:10px;font-weight:700;padding:3px 6px;border-radius:4px;text-align:center;letter-spacing:.3px;font-family:var(--font-ui)}
-.b-BREAKOUT {background:#dcfce7;color:#15803d;border:1px solid #86efac}
-.b-POCKET   {background:#fef9c3;color:#854d0e;border:1px solid #fde047}
-.b-PREBREAK {background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
-.b-BBREAKP  {background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
-.b-BFISH    {background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
-.b-MACROSS  {background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
-.empty{text-align:center;padding:32px 20px;color:var(--muted);font-size:12px}
-.empty .big{font-size:28px;margin-bottom:8px}
+.s-type{font-size:11px;color:var(--muted)}
+.s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui)}
+.b-BREAKOUT    {background:#dcfce7;color:#15803d;border:1px solid #86efac}
+.b-POCKET      {background:#fef9c3;color:#854d0e;border:1px solid #fde047}
+.b-PREBREAK    {background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
+.b-BBREAKP     {background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
+.b-BFISH       {background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
+.b-MACROSS     {background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
+.empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px}
+.empty .big{font-size:30px;margin-bottom:8px}
 
-/* ── HEATMAP ── */
-.hmap-outer{overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+/* ── HEATMAP ─── */
+.hmap-outer{overflow-x:auto;padding-bottom:4px}
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hmap-row{display:inline-flex;flex-direction:row;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
 .hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
-/* FIX: hmap-group không có margin-bottom để khoảng cách đều nhau */
 .hmap-group{display:flex;flex-direction:column;gap:2px}
 
 .hmap-ghdr{
@@ -337,7 +342,11 @@ header h1{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spaci
   background:rgb(220,228,250);border:1px solid rgb(160,180,230);
   overflow:hidden;gap:16px;
 }
-.hmap-gname{font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hmap-gname{
+  font-family:var(--font-ui);font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 .hmap-gavg{font-family:var(--font-mono);font-size:9px;font-weight:400;flex-shrink:0}
 .hmap-gavg.pos{color:rgb(22,120,40)}
 .hmap-gavg.neg{color:rgb(185,25,25)}
@@ -350,151 +359,116 @@ header h1{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spaci
   transition:filter .12s,transform .1s,box-shadow .12s;
   overflow:hidden;
 }
-.hmap-cell:hover,.hmap-cell:active{filter:brightness(.88);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.hmap-cell:hover{filter:brightness(.88);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .hmap-cell > span{display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;white-space:nowrap;font-family:var(--font-mono)}
 .hc-sym  {font-size:10px;font-weight:400}
 .hc-price{font-size:8.5px;font-weight:400;opacity:.82}
 .hc-pct  {font-size:9.5px;font-weight:400}
 
-/* ══════════════════════════════════════
-   POPUP — full redesign mobile-first
-══════════════════════════════════════ */
-.overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.55);backdrop-filter:blur(4px);align-items:flex-end;justify-content:center}
+/* ── POPUP ─── */
+.overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
 
-/* Desktop: modal giữa màn hình */
-@media(min-width:769px){
-  .overlay{align-items:center}
-  .pbox{border-radius:10px;width:99vw;max-width:1800px;height:94vh}
-}
-
 .pbox{
-  background:var(--surface);border:1px solid var(--border);
-  box-shadow:0 -4px 40px rgba(0,0,0,.18);
-  width:100vw;height:96vh;
-  display:flex;flex-direction:column;overflow:hidden;
-  animation:popIn .22s ease;
-  border-radius:14px 14px 0 0;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 20px 60px rgba(0,0,0,.15);
+  width:99vw;max-width:1800px;height:94vh;
+  display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease
 }
-@keyframes popIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 
-/* ── Popup header ── */
 .phdr{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:8px 12px;gap:8px;
-  background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0;
-  flex-wrap:wrap;
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  padding:7px 14px;gap:0;
+  background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0
 }
-.phdr-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
-.ptitle{font-family:var(--font-ui);font-size:16px;font-weight:800;color:var(--accent);letter-spacing:1px;white-space:nowrap;flex-shrink:0}
+.phdr-left{display:flex;align-items:center;gap:8px;justify-content:flex-start}
+.phdr-center{display:flex;align-items:flex-end;justify-content:center}
+.phdr-right{display:flex;align-items:center;justify-content:flex-end}
+.ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
 
 /* Search trong popup */
-.popup-search-wrap{position:relative;display:flex;align-items:center;flex:1;max-width:180px}
-.popup-search-wrap .ps-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none}
+.popup-search-wrap{
+  position:relative;display:flex;align-items:center;
+}
+.popup-search-wrap .ps-icon{
+  position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:12px;pointer-events:none;
+}
 .popup-search-input{
-  width:100%;padding:5px 10px 5px 26px;
+  width:160px;padding:5px 10px 5px 28px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;
-  outline:none;transition:border-color .15s,box-shadow .15s;
-  min-height:30px;
+  outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
 }
 .popup-search-input::placeholder{color:var(--muted)}
-.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
+.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
 
-.closebtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.closebtn:hover,.closebtn:active{background:var(--red);color:#fff;border-color:var(--red)}
-
-/* ── Tabs — cuộn ngang trên mobile ── */
-.ctabs-wrap{
-  overflow-x:auto;overflow-y:hidden;
-  -webkit-overflow-scrolling:touch;
-  background:var(--surf2);border-bottom:2px solid var(--border);
-  flex-shrink:0;
-}
-.ctabs-wrap::-webkit-scrollbar{display:none}
-.ctabs{display:flex;gap:0;white-space:nowrap;padding:0 4px}
+/* Tab order */
+.ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
 .ctab{
   font-size:11px;font-family:var(--font-mono);font-weight:600;
-  padding:8px 12px;
-  border:none;border-bottom:3px solid transparent;
-  background:transparent;color:var(--muted);cursor:pointer;
-  transition:all .15s;white-space:nowrap;flex-shrink:0;
+  padding:5px 11px;border-radius:5px 5px 0 0;
+  border:1px solid var(--border);border-bottom:2px solid transparent;
+  background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;
+  white-space:nowrap;
 }
-.ctab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:700;background:rgba(26,86,219,.05)}
+.ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);border-bottom-color:var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 
-/* ── Body panels ── */
-.pbody{flex:1;overflow:hidden;position:relative}
+.closebtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
+
+.pbody{flex:1;overflow:hidden;position:relative;border-top:1px solid var(--border)}
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
-/* ── Scanner Chart tab ── */
-#panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
+/* ── Scanner Chart tab ─── */
+#panel-scanner{overflow:hidden;background:#ffffff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
 
-.scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:#6b7280;font-size:13px;font-family:var(--font-mono);padding:20px;text-align:center}
+.scanner-loading{
+  display:flex;align-items:center;justify-content:center;
+  flex:1;color:#6b7280;font-size:14px;font-family:var(--font-mono)
+}
 
 .album-outer{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px;background:#fff;-webkit-overflow-scrolling:touch}
-.album-center::-webkit-scrollbar{width:3px}
+.album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px 4px 2px;gap:4px;background:#ffffff}
+.album-center::-webkit-scrollbar{width:4px}
 .album-center::-webkit-scrollbar-thumb{background:#444;border-radius:2px}
-.album-slide{display:none;flex-direction:column;align-items:center;gap:6px;width:100%}
+.album-slide{display:none;flex-direction:column;align-items:center;gap:8px;width:100%}
 .album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(96vh - 160px);object-fit:contain;border-radius:4px;border:1px solid #dde3ee}
-.album-label{font-size:10px;color:#888;font-family:var(--font-mono)}
+.album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee}
+.album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
 
-.album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:8px 0;flex-shrink:0;background:#fff}
-.album-nav-btn{width:34px;height:34px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;user-select:none;flex-shrink:0;-webkit-tap-highlight-color:transparent}
-.album-nav-btn:hover:not(.disabled),.album-nav-btn:active:not(.disabled){background:#1a56db;color:#fff;border-color:#1a56db}
+.album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0;background:#ffffff}
+.album-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;user-select:none;flex-shrink:0}
+.album-nav-btn:hover:not(.disabled){background:#1a56db;color:#fff;border-color:#1a56db}
 .album-nav-btn.disabled{opacity:.25;cursor:default;pointer-events:none}
-.album-dots-wrap{display:flex;gap:8px;align-items:center}
-.album-dot{width:9px;height:9px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
+.album-dots-wrap{display:flex;gap:6px;align-items:center}
+.album-dot{width:8px;height:8px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
 .album-dot.on{background:#1a56db;transform:scale(1.3)}
-.album-refresh-btn{width:34px;height:34px;padding:0;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;user-select:none;flex-shrink:0;-webkit-tap-highlight-color:transparent}
-.album-refresh-btn:hover,.album-refresh-btn:active{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
+.album-refresh-btn{width:30px;height:30px;padding:0;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;user-select:none;flex-shrink:0}
+.album-refresh-btn:hover{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
 .album-refresh-btn.spinning span.ri{display:inline-block;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 6px;font-family:var(--font-mono);flex-shrink:0;background:#fff}
+.album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0;background:#ffffff}
 
-footer{text-align:center;padding:8px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
+footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
 
-::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
-/* ══ MOBILE overrides ══ */
 @media(max-width:768px){
-  .wrap{padding:8px}
+  .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
-  #clock{display:none}  /* ẩn đồng hồ trên mobile để tiết kiệm chỗ */
-
-  /* Heatmap: dùng bảng lớn hơn để bấm dễ hơn */
-  .hmap-cell{height:28px}
-  .hc-sym{font-size:9.5px}
-  .hc-price{font-size:8px}
-  .hc-pct{font-size:9px}
-
-  /* Tín hiệu */
-  .sig-row{grid-template-columns:24px 56px 1fr 86px;padding:7px 8px}
-  .s-sym{font-size:12px}
-  .s-badge{font-size:9px;padding:2px 5px}
-
-  /* Heatmap header wrap 2 dòng gọn hơn */
-  .hmap-panel-hdr{gap:6px;padding:7px 10px}
-  .hmap-search-input{width:110px}
-  .hmap-search-input:focus{width:130px}
-
-  /* Popup full screen trên mobile */
-  .pbox{height:100vh;border-radius:0}
-  .ptitle{font-size:14px}
-  .ctab{font-size:10px;padding:7px 10px}
-
-  .album-nav-btn{width:38px;height:38px;font-size:16px}
-  .album-refresh-btn{width:38px;height:38px}
-  .album-slide img{max-height:calc(100vh - 180px)}
+  .album-nav-btn{width:26px;height:26px;font-size:12px}
+  .popup-search-input{width:120px}
+  .popup-search-input:focus{width:150px}
 }
 </style>
 </head>
@@ -526,18 +500,32 @@ footer{text-align:center;padding:8px;color:var(--muted);font-size:10px;border-to
 
   <!-- HEATMAP -->
   <div class="panel">
+    <!-- Header: HEATMAP THỊ TRƯỜNG | MARKET | VNINDEX | Tìm kiếm mã | Cập nhật thời gian -->
     <div class="hmap-panel-hdr">
-      <span class="panel-title">Heatmap</span>
+      <span class="panel-title">Heatmap thị trường</span>
 
-      <button class="hmap-link-btn" onclick="openIndex('MARKET')">📊 MARKET</button>
-      <button class="hmap-link-btn" onclick="openIndex('VNINDEX')">📈 VNINDEX</button>
+      <button class="hmap-link-btn" onclick="openUrl('https://dstock.vndirect.com.vn','MARKET')">
+        MARKET
+      </button>
+      <button class="hmap-link-btn" onclick="openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX')">
+        VNINDEX
+      </button>
 
+      <!-- Search pill -->
       <div class="hmap-search-wrap">
         <span class="s-icon">🔍</span>
-        <input class="hmap-search-input" id="hmap-search-input" type="text"
-          placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+        <input
+          class="hmap-search-input"
+          id="hmap-search-input"
+          type="text"
+          placeholder="Tìm kiếm mã"
+          maxlength="10"
+          autocomplete="off"
+          spellcheck="false"
+        >
       </div>
 
+      <!-- Thời gian đẩy hết sang phải -->
       <span class="panel-meta" id="hmap-ts" style="margin-left:auto">Đang tải...</span>
     </div>
 
@@ -555,40 +543,52 @@ footer{text-align:center;padding:8px;color:var(--muted);font-size:10px;border-to
 
 <footer id="footer-txt">Scanner Bot Dashboard</footer>
 
-<!-- ══ POPUP ══ -->
+<!-- ══ POPUP CHART ══ -->
 <div class="overlay" id="overlay">
   <div class="pbox">
 
-    <!-- Header -->
     <div class="phdr">
+      <!-- Trái: tên mã + search sát nhau -->
       <div class="phdr-left">
         <span class="ptitle" id="ptitle">Chart</span>
         <div class="popup-search-wrap">
           <span class="ps-icon">🔍</span>
-          <input class="popup-search-input" id="popup-search-input" type="text"
-            placeholder="Tìm mã khác" maxlength="10" autocomplete="off" spellcheck="false">
+          <input
+            class="popup-search-input"
+            id="popup-search-input"
+            type="text"
+            placeholder="Tìm mã khác"
+            maxlength="10"
+            autocomplete="off"
+            spellcheck="false"
+          >
         </div>
       </div>
-      <button class="closebtn" onclick="closePopup()">✕</button>
-    </div>
 
-    <!-- Tabs — cuộn ngang -->
-    <div class="ctabs-wrap">
-      <div class="ctabs">
-        <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
-        <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
-        <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
-        <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
-        <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
-        <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+      <!-- Giữa: tabs canh giữa -->
+      <div class="phdr-center">
+        <div class="ctabs">
+          <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
+          <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
+          <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
+          <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
+          <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
+          <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+        </div>
+      </div>
+
+      <!-- Phải: nút đóng -->
+      <div class="phdr-right">
+        <button class="closebtn" onclick="closePopup()">✕</button>
       </div>
     </div>
 
-    <!-- Panels -->
     <div class="pbody">
+      <!-- Tab Vietstock -->
       <div class="tpanel on" id="panel-vs">
         <iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe>
       </div>
+      <!-- Tab Scanner Chart -->
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading">
           <span>⏳ Đang tạo chart từ scanner...</span>
@@ -598,27 +598,35 @@ footer{text-align:center;padding:8px;color:var(--muted);font-size:10px;border-to
             <div id="album-slides"></div>
           </div>
           <div class="album-nav-bar">
-            <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="← Ảnh trước">&#9664;</button>
+            <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="Ảnh trước (←)">&#9664;</button>
             <div class="album-dots-wrap" id="album-dots"></div>
-            <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)" title="Ảnh sau →">&#9654;</button>
-            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()" title="Làm mới">
+            <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)" title="Ảnh sau (→)">&#9654;</button>
+            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()" title="Làm mới chart">
               <span class="ri">&#8635;</span>
             </button>
           </div>
-          <div class="album-hint">◀ ▶ hoặc ← → để chuyển ảnh</div>
+          <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
         </div>
       </div>
+      <!-- Tab VND Cơ bản -->
       <div class="tpanel" id="panel-vnd-cs">
         <iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe>
       </div>
+      <!-- Tab VND Tin tức -->
       <div class="tpanel" id="panel-vnd-news">
         <iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe>
       </div>
+      <!-- Tab VND Tổng quan -->
       <div class="tpanel" id="panel-vnd-sum">
         <iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe>
       </div>
+      <!-- Tab 24HMoney -->
       <div class="tpanel" id="panel-24h">
         <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <!-- Tab URL (Market / VNINDEX) -->
+      <div class="tpanel" id="panel-url">
+        <iframe id="iframe-url" src="about:blank" allowfullscreen></iframe>
       </div>
     </div>
 
@@ -626,57 +634,65 @@ footer{text-align:center;padding:8px;color:var(--muted);font-size:10px;border-to
 </div>
 
 <script>
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // CONFIG
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 let SIG_TTL=30, HMAP_TTL=120;
 
 async function loadConfig(){
   try{
     const j=await fetch('/api/config').then(r=>r.json());
-    SIG_TTL=j.signal_ttl_sec||30;
-    HMAP_TTL=j.heatmap_ttl_sec||120;
+    SIG_TTL=j.signal_ttl_sec||30; HMAP_TTL=j.heatmap_ttl_sec||120;
   }catch(e){}
   document.getElementById('footer-txt').textContent=
-    `Scanner Bot  •  Tín hiệu: ${SIG_TTL}s  •  Heatmap: ${HMAP_TTL}s`;
+    `Scanner Bot Dashboard  •  Tín hiệu tự động làm mới sau ${SIG_TTL}s  •  Heatmap tự động làm mới sau ${HMAP_TTL}s`;
 }
 
-// ════════════════════════════════════
-// SEARCH — Heatmap panel
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// SEARCH BAR — Heatmap panel (mở popup)
+// ═══════════════════════════════════════════════════════
 (function(){
-  const inp=document.getElementById('hmap-search-input');
-  inp.addEventListener('keydown',function(e){
-    if(e.key==='Enter'){
-      const sym=this.value.trim().toUpperCase();
-      if(sym.length>=2){this.value='';this.blur();openChart(sym);}
+  const inp = document.getElementById('hmap-search-input');
+  inp.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      const sym = this.value.trim().toUpperCase();
+      if(sym.length >= 2){
+        this.value = '';
+        this.blur();
+        openChart(sym);
+      }
     }
-    if(e.key==='Escape'){this.value='';this.blur();}
+    if(e.key === 'Escape'){ this.value=''; this.blur(); }
   });
-  inp.addEventListener('focus',function(){this.select();});
+  // Ngăn Enter khi overlay đang mở cuộc nổ phím keyboard popup
+  inp.addEventListener('focus', function(){
+    this.select();
+  });
 })();
 
-// ════════════════════════════════════
-// SEARCH — Trong popup
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// SEARCH BAR — Trong popup (chuyển mã)
+// ═══════════════════════════════════════════════════════
 (function(){
-  const inp=document.getElementById('popup-search-input');
-  inp.addEventListener('keydown',function(e){
-    if(e.key==='Enter'){
-      const sym=this.value.trim().toUpperCase();
-      if(sym.length>=2){this.value='';this.blur();openChart(sym);}
+  const inp = document.getElementById('popup-search-input');
+  inp.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      const sym = this.value.trim().toUpperCase();
+      if(sym.length >= 2){
+        this.value = '';
+        this.blur();
+        openChart(sym);   // openChart tự reset popup và load mã mới
+      }
     }
-    if(e.key==='Escape'){
-      document.getElementById('popup-search-input').blur();
-    }
+    if(e.key === 'Escape'){ closePopup(); }
   });
-  inp.addEventListener('focus',function(){this.select();});
+  inp.addEventListener('focus', function(){ this.select(); });
 })();
 
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // HEATMAP CONFIG
-// ════════════════════════════════════
-const HMAP_COLS=[
+// ═══════════════════════════════════════════════════════
+const HMAP_COLS = [
   {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
   {groups:[
     {name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
@@ -737,6 +753,7 @@ function cellStyle(pct){
   const lum=.299*r+.587*g+.114*b;
   return{bg:`rgb(${r},${g},${b})`,fg:lum>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
+
 function avgPct(syms,data){
   const v=syms.filter(s=>data[s]).map(s=>data[s].pct||0);
   return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
@@ -748,6 +765,7 @@ function fmtP(p){
   if(!p||p<=0)return'—';
   return p<100?p.toFixed(2):p.toFixed(1);
 }
+
 function mkCell(sym,data){
   const d=data[sym]||{};
   const pct=typeof d.pct==='number'?d.pct:0;
@@ -762,6 +780,7 @@ function mkCell(sym,data){
     <span class="hc-pct">${sign}${pct.toFixed(1)}%</span>
   </div>`;
 }
+
 function mkGroup(name,syms,data){
   const sorted=sortDesc(syms,data);
   const avg=avgPct(syms,data);
@@ -775,6 +794,7 @@ function mkGroup(name,syms,data){
     ${sorted.map(s=>mkCell(s,data)).join('')}
   </div>`;
 }
+
 function renderHeatmap(data){
   const grid=document.getElementById('hmap-grid');
   if(!data||!Object.keys(data).length){
@@ -793,15 +813,16 @@ function renderHeatmap(data){
   grid.innerHTML=col0+rest;
 }
 
-// ════════════════════════════════════
-// ALBUM (Scanner Chart)
-// ════════════════════════════════════
-let _albumIdx=0,_albumTotal=0;
+// ═══════════════════════════════════════════════════════
+// ALBUM STATE (Scanner Chart tab)
+// ═══════════════════════════════════════════════════════
+let _albumIdx=0, _albumTotal=0;
 
 function _showAlbum(images){
   const slidesEl=document.getElementById('album-slides');
-  const dotsEl=document.getElementById('album-dots');
-  slidesEl.innerHTML='';dotsEl.innerHTML='';
+  const dotsEl  =document.getElementById('album-dots');
+  slidesEl.innerHTML='';
+  dotsEl.innerHTML='';
   _albumTotal=images.length;
   images.forEach((img,i)=>{
     slidesEl.innerHTML+=`<div class="album-slide${i===0?' on':''}" id="slide-${i}">
@@ -809,73 +830,91 @@ function _showAlbum(images){
     </div>`;
     dotsEl.innerHTML+=`<div class="album-dot${i===0?' on':''}" id="dot-${i}" onclick="albumGoto(${i})"></div>`;
   });
-  _albumIdx=0;_updateAlbumNav();
+  _albumIdx=0;
+  _updateAlbumNav();
   document.getElementById('album-outer').style.display='flex';
   document.getElementById('scanner-loading').style.display='none';
 }
+
 function albumGoto(i){
   if(i<0||i>=_albumTotal)return;
   document.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
   document.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i;_updateAlbumNav();
+  _albumIdx=i;
+  _updateAlbumNav();
 }
-function albumNav(dir){albumGoto(_albumIdx+dir);}
-function _updateAlbumNav(){
-  document.getElementById('btn-prev').classList.toggle('disabled',_albumIdx===0);
-  document.getElementById('btn-next').classList.toggle('disabled',_albumIdx===_albumTotal-1);
-}
+
+function albumNav(dir){ albumGoto(_albumIdx+dir); }
+
 function refreshScannerChart(){
-  if(!_sym)return;
+  if(!_sym) return;
   const btn=document.getElementById('btn-refresh');
-  if(btn){btn.classList.add('spinning');btn.disabled=true;}
+  if(btn){ btn.classList.add('spinning'); btn.disabled=true; }
+  fetch(`/api/chart_images/${_sym}?bust=${Date.now()}`,{cache:'no-store'})
+    .then(()=>{}).catch(()=>{});
   loadScannerChartForce(_sym);
 }
+
 async function loadScannerChartForce(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML=`<span>🔄 Đang làm mới <b>${sym}</b>…</span>`;
-  try{await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});}catch(e){}
+  document.getElementById('scanner-loading').innerHTML=
+    `<span>🔄 Đang làm mới chart <b>${sym}</b>…</span>`;
+  try{
+    await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});
+  }catch(e){}
   const btn=document.getElementById('btn-refresh');
-  if(btn){btn.classList.remove('spinning');btn.disabled=false;}
+  if(btn){ btn.classList.remove('spinning'); btn.disabled=false; }
   await loadScannerChart(sym);
+}
+
+function _updateAlbumNav(){
+  document.getElementById('btn-prev').classList.toggle('disabled', _albumIdx===0);
+  document.getElementById('btn-next').classList.toggle('disabled', _albumIdx===_albumTotal-1);
 }
 
 // Touch/swipe
 let _touchStartX=0;
-document.getElementById('panel-scanner').addEventListener('touchstart',e=>{_touchStartX=e.touches[0].clientX;},{passive:true});
+document.getElementById('panel-scanner').addEventListener('touchstart',e=>{_touchStartX=e.touches[0].clientX},{passive:true});
 document.getElementById('panel-scanner').addEventListener('touchend',e=>{
   const dx=e.changedTouches[0].clientX-_touchStartX;
-  if(Math.abs(dx)>50)albumNav(dx<0?1:-1);
+  if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
 },{passive:true});
 
-document.addEventListener('keydown',e=>{
-  const overlayOn=document.getElementById('overlay').classList.contains('on');
-  if(!overlayOn)return;
-  if(document.activeElement===document.getElementById('popup-search-input'))return;
-  if(_tab!=='scanner')return;
-  if(_albumTotal===0)return;
-  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
-  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
+// Phím mũi tên bàn phím
+document.addEventListener('keydown', e => {
+  const overlayOn = document.getElementById('overlay').classList.contains('on');
+  if (!overlayOn) return;
+  // Không xử lý khi đang focus vào search input
+  if(document.activeElement === document.getElementById('popup-search-input')) return;
+  if (_tab !== 'scanner') return;
+  if (_albumTotal === 0) return;
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); albumNav(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); albumNav(1);  }
 });
 
 async function loadScannerChart(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML=
-    `<span>⏳ Đang tạo chart <b>${sym}</b>…<br><small style="color:#9ca3af">(15–30 giây lần đầu)</small></span>`;
+    `<span>⏳ Đang tạo chart <b>${sym}</b>… (15–30 giây lần đầu)</span>`;
+
   try{
     const r=await fetch(`/api/chart_images/${sym}`);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      throw new Error(j.error||`HTTP ${r.status}`);
+    }
     const j=await r.json();
-    if(j.images&&j.images.length>0){
-      const labels=j.labels||['📊 Daily','📈 Weekly','⚡ 15m'];
+    if(j.images && j.images.length>0){
+      const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
       _showAlbum(j.images.map((b64,i)=>({
         url:`data:image/png;base64,${b64}`,
-        label:labels[i]||`Chart ${i+1}`,
+        label: labels[i]||`Chart ${i+1}`,
       })));
       if(j.cached){
         const hint=document.querySelector('.album-hint');
-        if(hint)hint.textContent='♻️ Dùng cache — nhấn ↻ để làm mới';
+        if(hint) hint.textContent='♻️ Dùng cache — click lại tab để làm mới';
       }
       return;
     }
@@ -884,15 +923,15 @@ async function loadScannerChart(sym){
     document.getElementById('scanner-loading').innerHTML=`
       <div style="text-align:center;color:#aaa;padding:24px">
         <div style="font-size:24px;margin-bottom:10px">⚠️</div>
-        <div style="margin-bottom:6px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
-        <div style="font-size:11px;color:#666;margin-bottom:14px">${e.message}</div>
+        <div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
+        <div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div>
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
           <button onclick="loadScannerChart('${sym}')"
-            style="padding:7px 16px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
+            style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
             🔄 Thử lại
           </button>
           <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank"
-             style="padding:7px 16px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
+             style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
             📈 Stockchart
           </a>
         </div>
@@ -900,39 +939,36 @@ async function loadScannerChart(sym){
   }
 }
 
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // POPUP STATE
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 let _sym='', _tab='vs';
 
-// URL mặc định cho từng loại index khi mở popup MARKET / VNINDEX
-const INDEX_VS_URL = {
-  'MARKET':  'https://dstock.vndirect.com.vn',
-  'VNINDEX': 'https://24hmoney.vn/indices/vn-index',
-};
+const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
 
-// Mở popup cho nút MARKET / VNINDEX
-// Tab Vietstock → URL tương ứng, Tab Scanner Chart → gọi /api/chart_images/VNINDEX
-function openIndex(label){
-  _sym = 'VNINDEX';   // Scanner Chart sẽ dùng symbol này
-  _tab = 'vs';
-  document.getElementById('ptitle').textContent = `📊 ${label}`;
-
-  // Set URL cho tab vs
-  const vsUrl = INDEX_VS_URL[label] || INDEX_VS_URL['VNINDEX'];
-  document.getElementById('iframe-vs').src = vsUrl;
-
-  // Reset các iframe còn lại
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{
+// Mở URL bất kỳ trong popup (Market / VNINDEX)
+function openUrl(url, label){
+  _sym = 'VNINDEX'; 
+  _tab='url';
+  document.getElementById('ptitle').textContent= label || '🌐 Web';
+  // Reset các iframe khác
+  document.getElementById('iframe-vs').src='about:blank';
+  IFRAME_TABS.forEach(t=>{
     document.getElementById(`iframe-${t}`).src='about:blank';
   });
-
-  // Reset album
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
+  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
 
-  _activateTab('vs');
+  // Ẩn toàn bộ panel, hiện panel-url
+  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
+  allTabs.forEach(t=>{
+    const ct = document.getElementById('ctab-'+t);
+    if(ct) ct.classList.remove('on');
+    document.getElementById('panel-'+t).classList.toggle('on', t==='url');
+  });
+
+  document.getElementById('iframe-url').src = url;
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
@@ -942,29 +978,35 @@ function openChart(sym){
   _sym=sym.toUpperCase().trim();
   _tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
+
   document.getElementById('iframe-vs').src=
     `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{
+
+  IFRAME_TABS.forEach(t=>{
     document.getElementById(`iframe-${t}`).src='about:blank';
   });
+
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
+
   _activateTab('vs');
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
+
+  // Clear popup search input khi mở mã mới
   document.getElementById('popup-search-input').value='';
 }
 
-const ALL_TABS=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
-
 function _activateTab(tab){
   _tab=tab;
-  ALL_TABS.forEach(t=>{
-    const ct=document.getElementById('ctab-'+t);
-    if(ct)ct.classList.toggle('on',t===tab);
+  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
+  allTabs.forEach(t=>{
+    const ct = document.getElementById('ctab-'+t);
+    if(ct) ct.classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
+
   if(tab==='vnd-cs'){
     const f=document.getElementById('iframe-vnd-cs');
     if(f.src==='about:blank')
@@ -989,12 +1031,13 @@ function _activateTab(tab){
     loadScannerChart(_sym);
   }
 }
-function switchTab(tab){_activateTab(tab);}
+
+function switchTab(tab){ _activateTab(tab); }
 
 function closePopup(){
   document.getElementById('overlay').classList.remove('on');
   document.getElementById('iframe-vs').src='about:blank';
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{
+  IFRAME_TABS.forEach(t=>{
     document.getElementById(`iframe-${t}`).src='about:blank';
   });
   document.body.style.overflow='';
@@ -1005,16 +1048,18 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
+    // Nếu đang focus vào popup search thì chỉ blur, không đóng popup
     if(document.activeElement===document.getElementById('popup-search-input')){
-      document.getElementById('popup-search-input').blur();return;
+      document.getElementById('popup-search-input').blur();
+      return;
     }
     closePopup();
   }
 });
 
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // CLOCK
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 function tick(){
   const n=new Date();
   document.getElementById('clock').textContent=
@@ -1022,22 +1067,22 @@ function tick(){
 }
 setInterval(tick,1000);tick();
 
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // BADGE
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 function badgeCls(sig){
   return({'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
     'BOTTOMBREAKP':'b-BBREAKP','BOTTOMFISH':'b-BFISH','MA_CROSS':'b-MACROSS'})[sig]||'b-MACROSS';
 }
 
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // FETCH
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
     document.getElementById('sig-meta').textContent=
-      `${j.updated_at}  •  ${j.count} tín hiệu`;
+      `Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
     const el=document.getElementById('sig-list');
     if(!j.signals.length){
       el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';
@@ -1052,7 +1097,7 @@ async function fetchSigs(){
           ${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}
         </span>
       </div>`).join('');
-  }catch(e){console.error('fetchSigs:',e);}
+  }catch(e){console.error('fetchSigs:',e)}
 }
 
 async function fetchHmap(){
@@ -1060,33 +1105,35 @@ async function fetchHmap(){
     const j=await fetch('/api/heatmap').then(r=>r.json());
     const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
     document.getElementById('hmap-ts').textContent=
-      `${j.timestamp||'--'}  •  ${now}`;
+      `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
     renderHeatmap(j.data||{});
-  }catch(e){console.error('fetchHmap:',e);}
+  }catch(e){console.error('fetchHmap:',e)}
 }
 
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // PROGRESS BAR
-// ════════════════════════════════════
-function startBar(id,sec){
+// ═══════════════════════════════════════════════════════
+function startBar(id, sec){
   const el=document.getElementById(id);
-  if(!el)return;
-  el.style.transition='none';el.style.width='0%';
+  if(!el) return;
+  el.style.transition='none';
+  el.style.width='0%';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    el.style.transition=`width ${sec}s linear`;el.style.width='100%';
+    el.style.transition=`width ${sec}s linear`;
+    el.style.width='100%';
   }));
 }
 
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // INIT
-// ════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
-  startBar('pbar-sig',SIG_TTL);
-  startBar('pbar-hmap',HMAP_TTL);
+  startBar('pbar-sig',  SIG_TTL);
+  startBar('pbar-hmap', HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
-  setInterval(async()=>{startBar('pbar-sig',SIG_TTL);await fetchSigs();},SIG_TTL*1000);
-  setInterval(async()=>{startBar('pbar-hmap',HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
+  setInterval(async()=>{ startBar('pbar-sig',  SIG_TTL);  await fetchSigs(); }, SIG_TTL  * 1000);
+  setInterval(async()=>{ startBar('pbar-hmap', HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
 }
 init();
 </script>
