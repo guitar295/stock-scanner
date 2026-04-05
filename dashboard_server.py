@@ -492,6 +492,44 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .phdr-right{
     display:none!important;
   }
+
+  /* 1/ Sửa chữ "TÍN HIỆU HÔM NAY" không xuống dòng */
+  .panel-title{
+    white-space:nowrap!important;
+    font-size:11px!important;
+    letter-spacing:1px!important;
+  }
+  .panel-meta{
+    font-size:9px!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    max-width:55%!important;
+  }
+  .panel-hdr{
+    gap:6px!important;
+    padding:7px 10px!important;
+  }
+
+  /* 2/ Tab row mobile: luôn bắt đầu từ đầu, cuộn sang phải */
+  #mob-tabrow{
+    display:flex!important;
+    flex-direction:row!important;
+    flex-wrap:nowrap!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    -webkit-overflow-scrolling:touch!important;
+    scroll-snap-type:x mandatory!important;
+    padding:5px 8px!important;
+    gap:3px!important;
+    /* Luôn scroll về đầu khi mở */
+    scroll-behavior:smooth!important;
+  }
+  #mob-tabrow button{
+    scroll-snap-align:start!important;
+    flex-shrink:0!important;
+    white-space:nowrap!important;
+  }
 }
 
 </style>
@@ -1220,6 +1258,9 @@ function buildMobileHeader(){
     r2.appendChild(btn);
   });
   phdr.appendChild(r2);
+ 
+  // Luôn scroll tab row về đầu (Vietstock) khi mở popup
+  r2.scrollLeft = 0;
 
   // Ẩn scrollbar webkit
   const s = document.createElement('style');
