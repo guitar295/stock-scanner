@@ -1,21 +1,6 @@
 """
 =============================================================================
 DASHBOARD SERVER — Tích hợp vào scanner bot
-Thêm vào cuối BƯỚC 1 (IMPORT):
-    from dashboard_server import start_dashboard
-
-Thêm vào BƯỚC 9 (sau khi khởi động listener):
-    start_dashboard(
-        alerted_today_ref  = lambda: alerted_today,
-        history_cache_ref  = lambda: history_cache,
-        cache_lock_ref     = cache_lock,
-        fetch_heatmap_fn   = fetch_heatmap_data,
-        signal_emoji_ref   = SIGNAL_EMOJI,
-        signal_rank_ref    = SIGNAL_RANK,
-        port               = 8888,
-    )
-
-Truy cập: http://YOUR_VPS_IP:8888
 =============================================================================
 """
 
@@ -43,11 +28,8 @@ SIGNAL_TTL_SEC  = 10
 
 _chart_cache: dict = {}
 _chart_lock         = threading.Lock()
-CHART_TTL_SEC       = 0   # Không cache — chart luôn vẽ mới mỗi lần click tab
+CHART_TTL_SEC       = 0
 
-# =============================================================================
-# API ENDPOINTS
-# =============================================================================
 
 @app.route("/api/signals")
 def api_signals():
@@ -80,7 +62,7 @@ def api_heatmap():
                 _heatmap_cache["ts"]         = ts_str
                 _heatmap_cache["updated_at"] = time.time()
             except Exception as e:
-                print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
+                print(f"  [Dashboard] Fetch heatmap loi: {e}")
         return jsonify({
             "data":       _heatmap_cache["data"],
             "timestamp":  _heatmap_cache["ts"],
@@ -109,7 +91,7 @@ def api_chart_images(symbol):
 
     try:
         ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [Dashboard] 📊 Tạo chart {symbol}...")
+        print(f"  [Dashboard] Tao chart {symbol}...")
         png_list, labels = _fetch_chart_fn(symbol)
         if not png_list:
             return jsonify({"error": "no_data"}), 404
@@ -124,7 +106,7 @@ def api_chart_images(symbol):
             }
 
         ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [Dashboard] ✅ Chart {symbol}: {len(b64_list)} ảnh OK ({ts}→{ts2})")
+        print(f"  [Dashboard] Chart {symbol}: {len(b64_list)} anh OK ({ts}->{ts2})")
         return jsonify({
             "symbol": symbol,
             "images": b64_list,
@@ -133,7 +115,7 @@ def api_chart_images(symbol):
         })
 
     except Exception as e:
-        print(f"  [Dashboard] ❌ Chart {symbol} lỗi: {e}")
+        print(f"  [Dashboard] Chart {symbol} loi: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -188,10 +170,6 @@ def index():
     return Response(DASHBOARD_HTML, mimetype="text/html")
 
 
-# =============================================================================
-# KHỞI ĐỘNG
-# =============================================================================
-
 def start_dashboard(
     alerted_today_ref,
     history_cache_ref,
@@ -219,16 +197,15 @@ def start_dashboard(
         app.run(host="0.0.0.0", port=port, threaded=True, use_reloader=False)
 
     threading.Thread(target=_run, daemon=True).start()
-    print(f"🌐 Dashboard khởi động tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu refresh : {SIGNAL_TTL_SEC}s (đọc RAM, không gọi API)")
-    print(f"   Heatmap refresh  : {HEATMAP_TTL_SEC}s (gọi API, chỉ khi có người mở)")
-    print(f"   Scanner Chart    : {'✅ đã đăng ký' if fetch_chart_fn else '❌ chưa đăng ký'} (cache {CHART_TTL_SEC}s)")
+    print(f"Dashboard: http://0.0.0.0:{port}")
+    print(f"   Signal TTL : {SIGNAL_TTL_SEC}s")
+    print(f"   Heatmap TTL: {HEATMAP_TTL_SEC}s")
+    print(f"   Chart fn   : {'OK' if fetch_chart_fn else 'NOT registered'}")
 
 
 # =============================================================================
-# HTML DASHBOARD
+# HTML
 # =============================================================================
-
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -262,49 +239,54 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
 .wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
-
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
 .panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .panel-title{font-family:var(--font-ui);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}
 .panel-meta{font-size:10px;color:var(--muted)}
 
-/* ── HEATMAP HEADER với 2 nút + search ── */
+/* ── HEATMAP HEADER: 2 hàng ─────────────────────────── */
+/* Hàng 1: title + nút + search — tất cả cùng hàng, không wrap trên desktop */
 .hmap-panel-hdr{
-  display:flex;align-items:center;gap:10px;
-  padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border);
-  flex-wrap:wrap;
+  padding:7px 16px 0;
+  background:var(--surf2);
+  border-bottom:1px solid var(--border);
 }
-.hmap-panel-left{
-  display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;
+.hmap-row1{
+  display:flex;align-items:center;gap:7px;
+  flex-wrap:nowrap;
+  padding-bottom:5px;
+  overflow:hidden;
 }
+/* Hàng 2: timestamp — dòng riêng, cỡ nhỏ */
+.hmap-row2{
+  font-size:10px;color:var(--muted);
+  padding-bottom:6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  line-height:1.4;
+}
+
 .hmap-link-btn{
-  display:inline-flex;align-items:center;gap:5px;
-  padding:4px 11px;border-radius:5px;border:1px solid var(--border);
+  display:inline-flex;align-items:center;
+  padding:3px 9px;border-radius:5px;border:1px solid var(--border);
   background:var(--surface);color:var(--accent);
   font-family:var(--font-mono);font-size:10px;font-weight:600;
-  cursor:pointer;text-decoration:none;white-space:nowrap;
+  cursor:pointer;text-decoration:none;white-space:nowrap;flex-shrink:0;
   transition:all .15s;
 }
 .hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* Search bar kiểu pill */
-.hmap-search-wrap{
-  position:relative;display:flex;align-items:center;
-  flex-shrink:0;
-}
-.hmap-search-wrap .s-icon{
-  position:absolute;left:11px;top:50%;transform:translateY(-50%);
-  color:var(--muted);font-size:13px;pointer-events:none;
-}
+/* Search pill nhỏ — "Tìm mã" */
+.hmap-search-wrap{position:relative;display:flex;align-items:center;flex-shrink:0;}
+.hmap-search-wrap .s-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none;}
 .hmap-search-input{
-  width:140px;padding:5px 10px 5px 30px;
+  width:82px;padding:3px 7px 3px 22px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;
   outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
 }
 .hmap-search-input::placeholder{color:var(--muted)}
-.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:170px}
+.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:110px}
 
 .pbar-wrap{height:2px;background:transparent;overflow:hidden}
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:0.5;transition:none}
@@ -319,121 +301,63 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .s-sym{font-weight:700;font-size:13px;transition:color .15s}
 .s-type{font-size:11px;color:var(--muted)}
 .s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui)}
-.b-BREAKOUT    {background:#dcfce7;color:#15803d;border:1px solid #86efac}
-.b-POCKET      {background:#fef9c3;color:#854d0e;border:1px solid #fde047}
-.b-PREBREAK    {background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
-.b-BBREAKP     {background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
-.b-BFISH       {background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
-.b-MACROSS     {background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
+.b-BREAKOUT {background:#dcfce7;color:#15803d;border:1px solid #86efac}
+.b-POCKET   {background:#fef9c3;color:#854d0e;border:1px solid #fde047}
+.b-PREBREAK {background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
+.b-BBREAKP  {background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
+.b-BFISH    {background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
+.b-MACROSS  {background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px}
 .empty .big{font-size:30px;margin-bottom:8px}
 
-/* ── HEATMAP ─── */
+/* ── HEATMAP GRID ── */
 .hmap-outer{overflow-x:auto;padding-bottom:4px}
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hmap-row{display:inline-flex;flex-direction:row;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
+.hmap-row-grid{display:inline-flex;flex-direction:row;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
 .hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
 .hmap-group{display:flex;flex-direction:column;gap:2px}
-
-.hmap-ghdr{
-  display:flex;align-items:center;justify-content:center;
-  padding:0 8px;height:24px;border-radius:4px;
-  background:rgb(220,228,250);border:1px solid rgb(160,180,230);
-  overflow:hidden;gap:16px;
-}
-.hmap-gname{
-  font-family:var(--font-ui);font-size:10px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
+.hmap-ghdr{display:flex;align-items:center;justify-content:center;padding:0 8px;height:24px;border-radius:4px;background:rgb(220,228,250);border:1px solid rgb(160,180,230);overflow:hidden;gap:16px;}
+.hmap-gname{font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .hmap-gavg{font-family:var(--font-mono);font-size:9px;font-weight:400;flex-shrink:0}
 .hmap-gavg.pos{color:rgb(22,120,40)}
 .hmap-gavg.neg{color:rgb(185,25,25)}
 .hmap-gavg.zer{color:rgb(110,105,20)}
-
-.hmap-cell{
-  display:grid;grid-template-columns:56px 48px 1fr;
-  align-items:center;height:24px;border-radius:4px;
-  cursor:pointer;border:1px solid rgba(0,0,0,.1);
-  transition:filter .12s,transform .1s,box-shadow .12s;
-  overflow:hidden;
-}
+.hmap-cell{display:grid;grid-template-columns:56px 48px 1fr;align-items:center;height:24px;border-radius:4px;cursor:pointer;border:1px solid rgba(0,0,0,.1);transition:filter .12s,transform .1s,box-shadow .12s;overflow:hidden;}
 .hmap-cell:hover{filter:brightness(.88);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .hmap-cell > span{display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;white-space:nowrap;font-family:var(--font-mono)}
 .hc-sym  {font-size:10px;font-weight:400}
 .hc-price{font-size:8.5px;font-weight:400;opacity:.82}
 .hc-pct  {font-size:9.5px;font-weight:400}
 
-/* ── POPUP ─── */
+/* ── POPUP ── */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
-
-.pbox{
-  background:var(--surface);border:1px solid var(--border);border-radius:10px;
-  box-shadow:0 20px 60px rgba(0,0,0,.15);
-  width:99vw;max-width:1800px;height:94vh;
-  display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease
-}
+.pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:99vw;max-width:1800px;height:94vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease}
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
-
-.phdr{
-  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
-  padding:7px 14px;gap:0;
-  background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0
-}
+.phdr{display:grid;grid-template-columns:auto 1fr auto;align-items:center;padding:7px 14px;gap:0;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 .phdr-left{display:flex;align-items:center;gap:8px;justify-content:flex-start}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
 .phdr-right{display:flex;align-items:center;justify-content:flex-end}
 .ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
-
-/* Search trong popup */
-.popup-search-wrap{
-  position:relative;display:flex;align-items:center;
-}
-.popup-search-wrap .ps-icon{
-  position:absolute;left:10px;top:50%;transform:translateY(-50%);
-  color:var(--muted);font-size:12px;pointer-events:none;
-}
-.popup-search-input{
-  width:160px;padding:5px 10px 5px 28px;
-  border-radius:20px;border:1px solid var(--border);
-  background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:11px;
-  outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
-}
+.popup-search-wrap{position:relative;display:flex;align-items:center;}
+.popup-search-wrap .ps-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;}
+.popup-search-input{width:160px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,box-shadow .15s,width .2s;}
 .popup-search-input::placeholder{color:var(--muted)}
 .popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
-
-/* Tab order */
 .ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
-.ctab{
-  font-size:11px;font-family:var(--font-mono);font-weight:600;
-  padding:5px 11px;border-radius:5px 5px 0 0;
-  border:1px solid var(--border);border-bottom:2px solid transparent;
-  background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;
-  white-space:nowrap;
-}
+.ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap;}
 .ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);border-bottom-color:var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
-
 .closebtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
-
 .pbody{flex:1;overflow:hidden;position:relative;border-top:1px solid var(--border)}
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
-
-/* ── Scanner Chart tab ─── */
 #panel-scanner{overflow:hidden;background:#ffffff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
-
-.scanner-loading{
-  display:flex;align-items:center;justify-content:center;
-  flex:1;color:#6b7280;font-size:14px;font-family:var(--font-mono)
-}
-
+.scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:#6b7280;font-size:14px;font-family:var(--font-mono)}
 .album-outer{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px 4px 2px;gap:4px;background:#ffffff}
 .album-center::-webkit-scrollbar{width:4px}
@@ -442,7 +366,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .album-slide.on{display:flex}
 .album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee}
 .album-label{font-size:11px;color:#888;font-family:var(--font-mono)}
-
 .album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0;background:#ffffff}
 .album-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;user-select:none;flex-shrink:0}
 .album-nav-btn:hover:not(.disabled){background:#1a56db;color:#fff;border-color:#1a56db}
@@ -457,12 +380,12 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0;background:#ffffff}
 
 footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
-
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
+/* ── MOBILE ── */
 @media(max-width:768px){
   .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
@@ -470,68 +393,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .popup-search-input{width:120px}
   .popup-search-input:focus{width:150px}
 }
-
-
-/* ══ CHỈ MOBILE - KHÔNG ảnh hưởng desktop ══ */
 @media screen and (max-width:768px){
-  .pbox{
-    width:100vw!important;
-    max-width:100vw!important;
-    height:100dvh!important;
-    border-radius:0!important;
-    border:none!important;
-  }
-  .phdr{
-    display:flex!important;
-    flex-direction:column!important;
-    padding:0!important;
-    gap:0!important;
-  }
-  .phdr-left,
-  .phdr-center,
-  .phdr-right{
-    display:none!important;
-  }
-
-  /* 1/ Sửa chữ "TÍN HIỆU HÔM NAY" không xuống dòng */
-  .panel-title{
-    white-space:nowrap!important;
-    font-size:11px!important;
-    letter-spacing:1px!important;
-  }
-  .panel-meta{
-    font-size:9px!important;
-    white-space:nowrap!important;
-    overflow:hidden!important;
-    text-overflow:ellipsis!important;
-    max-width:55%!important;
-  }
-  .panel-hdr{
-    gap:6px!important;
-    padding:7px 10px!important;
-  }
-
-  /* 2/ Tab row mobile: luôn bắt đầu từ đầu, cuộn sang phải */
-  #mob-tabrow{
-    display:flex!important;
-    flex-direction:row!important;
-    flex-wrap:nowrap!important;
-    overflow-x:auto!important;
-    overflow-y:hidden!important;
-    -webkit-overflow-scrolling:touch!important;
-    scroll-snap-type:x mandatory!important;
-    padding:5px 8px!important;
-    gap:3px!important;
-    /* Luôn scroll về đầu khi mở */
-    scroll-behavior:smooth!important;
-  }
-  #mob-tabrow button{
-    scroll-snap-align:start!important;
-    flex-shrink:0!important;
-    white-space:nowrap!important;
-  }
+  .pbox{width:100vw!important;max-width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;}
+  .phdr{display:flex!important;flex-direction:column!important;padding:0!important;gap:0!important;}
+  .phdr-left,.phdr-center,.phdr-right{display:none!important;}
+  .panel-title{white-space:nowrap!important;font-size:11px!important;letter-spacing:1px!important;}
+  .panel-meta{font-size:9px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:55%!important;}
+  .panel-hdr{gap:6px!important;padding:7px 10px!important;}
+  /* Heatmap mobile: hàng 1 vẫn cùng dòng, hàng 2 timestamp font nhỏ hơn chút */
+  .hmap-row2{font-size:9px!important;}
 }
-
 </style>
 </head>
 <body>
@@ -546,7 +417,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 <div class="wrap">
 
-  <!-- TÍN HIỆU -->
+  <!-- TIN HIEU -->
   <div class="panel">
     <div class="panel-hdr">
       <span class="panel-title">Tín hiệu hôm nay</span>
@@ -562,39 +433,33 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   <!-- HEATMAP -->
   <div class="panel">
-    <!-- Header: HEATMAP THỊ TRƯỜNG | MARKET | VNINDEX | Tìm kiếm mã | Cập nhật thời gian -->
     <div class="hmap-panel-hdr">
-      <span class="panel-title">Heatmap thị trường</span>
-
-      <button class="hmap-link-btn" onclick="openUrl('https://dstock.vndirect.com.vn','MARKET')">
-        MARKET
-      </button>
-      <button class="hmap-link-btn" onclick="openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX')">
-        VNINDEX
-      </button>
-
-      <!-- Search pill -->
-      <div class="hmap-search-wrap">
-        <span class="s-icon">🔍</span>
-        <input
-          class="hmap-search-input"
-          id="hmap-search-input"
-          type="text"
-          placeholder="Tìm kiếm mã"
-          maxlength="10"
-          autocomplete="off"
-          spellcheck="false"
-        >
+      <!-- Hàng 1: HEATMAP | MARKET | VNINDEX | [Tìm mã] — cùng một dòng -->
+      <div class="hmap-row1">
+        <span class="panel-title" style="flex-shrink:0">Heatmap thị trường</span>
+        <button class="hmap-link-btn" onclick="openUrl('https://dstock.vndirect.com.vn','MARKET')">MARKET</button>
+        <button class="hmap-link-btn" onclick="openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX')">VNINDEX</button>
+        <div class="hmap-search-wrap">
+          <span class="s-icon">🔍</span>
+          <input
+            class="hmap-search-input"
+            id="hmap-search-input"
+            type="text"
+            placeholder="Tìm mã"
+            maxlength="10"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
       </div>
-
-      <!-- Thời gian đẩy hết sang phải -->
-      <span class="panel-meta" id="hmap-ts" style="margin-left:auto">Đang tải...</span>
+      <!-- Hàng 2: thời gian data + cập nhật — dòng riêng, cỡ nhỏ -->
+      <div class="hmap-row2" id="hmap-ts">Đang tải...</div>
     </div>
 
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
       <div class="hmap-outer">
-        <div class="hmap-row" id="hmap-grid">
+        <div class="hmap-row-grid" id="hmap-grid">
           <div class="empty"><div class="big">🗺</div><div>Đang tải...</div></div>
         </div>
       </div>
@@ -605,88 +470,65 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 <footer id="footer-txt">Scanner Bot Dashboard</footer>
 
-<!-- ══ POPUP CHART ══ -->
+<!-- POPUP -->
 <div class="overlay" id="overlay">
   <div class="pbox">
 
     <div class="phdr">
-      <!-- Trái: tên mã + search sát nhau -->
       <div class="phdr-left">
         <span class="ptitle" id="ptitle">Chart</span>
         <div class="popup-search-wrap">
           <span class="ps-icon">🔍</span>
-          <input
-            class="popup-search-input"
-            id="popup-search-input"
-            type="text"
-            placeholder="Tìm mã khác"
-            maxlength="10"
-            autocomplete="off"
-            spellcheck="false"
-          >
+          <input class="popup-search-input" id="popup-search-input" type="text"
+            placeholder="Tìm mã khác" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
       </div>
-
-      <!-- Giữa: tabs canh giữa -->
       <div class="phdr-center">
         <div class="ctabs">
-          <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
-          <button class="ctab"     id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
-          <button class="ctab"     id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
-          <button class="ctab"     id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
-          <button class="ctab"     id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
-          <button class="ctab"     id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
+          <button class="ctab on" id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
+          <button class="ctab"    id="ctab-scanner"  onclick="switchTab('scanner')">🖼 Scanner Chart</button>
+          <button class="ctab"    id="ctab-vnd-cs"   onclick="switchTab('vnd-cs')">⚖️ Cơ bản</button>
+          <button class="ctab"    id="ctab-vnd-news" onclick="switchTab('vnd-news')">🗞️ Tin tức</button>
+          <button class="ctab"    id="ctab-vnd-sum"  onclick="switchTab('vnd-sum')">📄 Tổng quan</button>
+          <button class="ctab"    id="ctab-24h"      onclick="switchTab('24h')">💬 24HMoney</button>
         </div>
       </div>
-
-      <!-- Phải: nút đóng -->
       <div class="phdr-right">
         <button class="closebtn" onclick="closePopup()">✕</button>
       </div>
     </div>
 
     <div class="pbody">
-      <!-- Tab Vietstock -->
       <div class="tpanel on" id="panel-vs">
         <iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab Scanner Chart -->
       <div class="tpanel" id="panel-scanner">
-        <div class="scanner-loading" id="scanner-loading">
-          <span>⏳ Đang tạo chart từ scanner...</span>
-        </div>
+        <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
         <div class="album-outer" id="album-outer" style="display:none">
-          <div class="album-center">
-            <div id="album-slides"></div>
-          </div>
+          <div class="album-center"><div id="album-slides"></div></div>
           <div class="album-nav-bar">
-            <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="Ảnh trước (←)">&#9664;</button>
+            <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)">&#9664;</button>
             <div class="album-dots-wrap" id="album-dots"></div>
-            <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)" title="Ảnh sau (→)">&#9654;</button>
-            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()" title="Làm mới chart">
+            <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)">&#9654;</button>
+            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()">
               <span class="ri">&#8635;</span>
             </button>
           </div>
           <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
         </div>
       </div>
-      <!-- Tab VND Cơ bản -->
       <div class="tpanel" id="panel-vnd-cs">
         <iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab VND Tin tức -->
       <div class="tpanel" id="panel-vnd-news">
         <iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab VND Tổng quan -->
       <div class="tpanel" id="panel-vnd-sum">
         <iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab 24HMoney -->
       <div class="tpanel" id="panel-24h">
         <iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe>
       </div>
-      <!-- Tab URL (Market / VNINDEX) -->
       <div class="tpanel" id="panel-url">
         <iframe id="iframe-url" src="about:blank" allowfullscreen></iframe>
       </div>
@@ -696,11 +538,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-// CONFIG
-// ═══════════════════════════════════════════════════════
+// ── CONFIG ──────────────────────────────────────────────
 let SIG_TTL=30, HMAP_TTL=120;
-
 async function loadConfig(){
   try{
     const j=await fetch('/api/config').then(r=>r.json());
@@ -710,123 +549,55 @@ async function loadConfig(){
     `Scanner Bot Dashboard  •  Tín hiệu tự động làm mới sau ${SIG_TTL}s  •  Heatmap tự động làm mới sau ${HMAP_TTL}s`;
 }
 
-// ═══════════════════════════════════════════════════════
-// SEARCH BAR — Heatmap panel (mở popup)
-// ═══════════════════════════════════════════════════════
+// ── SEARCH: heatmap panel ────────────────────────────────
 (function(){
-  const inp = document.getElementById('hmap-search-input');
-  inp.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){
-      const sym = this.value.trim().toUpperCase();
-      if(sym.length >= 2){
-        this.value = '';
-        this.blur();
-        openChart(sym);
-      }
-    }
-    if(e.key === 'Escape'){ this.value=''; this.blur(); }
+  const inp=document.getElementById('hmap-search-input');
+  inp.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();openChart(s);}}
+    if(e.key==='Escape'){this.value='';this.blur();}
   });
-  // Ngăn Enter khi overlay đang mở cuộc nổ phím keyboard popup
-  inp.addEventListener('focus', function(){
-    this.select();
-  });
+  inp.addEventListener('focus',function(){this.select();});
 })();
 
-// ═══════════════════════════════════════════════════════
-// SEARCH BAR — Trong popup (chuyển mã)
-// ═══════════════════════════════════════════════════════
+// ── SEARCH: popup ────────────────────────────────────────
 (function(){
-  const inp = document.getElementById('popup-search-input');
-  inp.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){
-      const sym = this.value.trim().toUpperCase();
-      if(sym.length >= 2){
-        this.value = '';
-        this.blur();
-        openChart(sym);   // openChart tự reset popup và load mã mới
-      }
-    }
-    if(e.key === 'Escape'){ closePopup(); }
+  const inp=document.getElementById('popup-search-input');
+  inp.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();openChart(s);}}
+    if(e.key==='Escape'){closePopup();}
   });
-  inp.addEventListener('focus', function(){ this.select(); });
+  inp.addEventListener('focus',function(){this.select();});
 })();
 
-// ═══════════════════════════════════════════════════════
-// HEATMAP CONFIG
-// ═══════════════════════════════════════════════════════
-const HMAP_COLS = [
+// ── HEATMAP DATA ─────────────────────────────────────────
+const HMAP_COLS=[
   {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
-  {groups:[
-    {name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
-    {name:"DAU KHI",  syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
-  ]},
-  {groups:[
-    {name:"CHUNG KHOAN",syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
-    {name:"XAY DUNG",   syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
-  ]},
-  {groups:[
-    {name:"BAT DONG SAN",syms:["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
-    {name:"PHAN BON",    syms:["BFC","DCM","DPM"]},
-    {name:"THEP",        syms:["HPG","HSG","NKG"]},
-  ]},
-  {groups:[
-    {name:"BAN LE",    syms:["MSN","FPT","FRT","MWG","PNJ","DGW"]},
-    {name:"THUY SAN",  syms:["ANV","FMC","CMX","VHC","IDI"]},
-    {name:"CANG BIEN", syms:["HAH","GMD","SGP","VSC"]},
-    {name:"CAO SU",    syms:["GVR","DPR","DRI","PHR","DRC"]},
-    {name:"NHUA",      syms:["AAA","BMP","NTP"]},
-  ]},
-  {groups:[
-    {name:"DIEN NUOC",  syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},
-    {name:"DET MAY",    syms:["TCM","TNG","VGT","MSH"]},
-    {name:"HANG KHONG", syms:["NCT","ACV","AST","HVN","SCS","VJC"]},
-    {name:"BAO HIEM",   syms:["BMI","MIG","BVH"]},
-    {name:"MIA DUONG",  syms:["LSS","SBT","QNS"]},
-  ]},
-  {groups:[
-    {name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
-  ]},
+  {groups:[{name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},{name:"DAU KHI",syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]}]},
+  {groups:[{name:"CHUNG KHOAN",syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},{name:"XAY DUNG",syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]}]},
+  {groups:[{name:"BAT DONG SAN",syms:["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},{name:"PHAN BON",syms:["BFC","DCM","DPM"]},{name:"THEP",syms:["HPG","HSG","NKG"]}]},
+  {groups:[{name:"BAN LE",syms:["MSN","FPT","FRT","MWG","PNJ","DGW"]},{name:"THUY SAN",syms:["ANV","FMC","CMX","VHC","IDI"]},{name:"CANG BIEN",syms:["HAH","GMD","SGP","VSC"]},{name:"CAO SU",syms:["GVR","DPR","DRI","PHR","DRC"]},{name:"NHUA",syms:["AAA","BMP","NTP"]}]},
+  {groups:[{name:"DIEN NUOC",syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},{name:"DET MAY",syms:["TCM","TNG","VGT","MSH"]},{name:"HANG KHONG",syms:["NCT","ACV","AST","HVN","SCS","VJC"]},{name:"BAO HIEM",syms:["BMI","MIG","BVH"]},{name:"MIA DUONG",syms:["LSS","SBT","QNS"]}]},
+  {groups:[{name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]}]},
 ];
-
-const TS_POOL=[
-  "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
-  "CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE",
-  "DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS",
-  "GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK",
-  "HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG",
-  "LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL",
-  "PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT",
-  "QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG",
-  "TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC",
-  "VNM","VPB","VRE",
-];
+const TS_POOL=["AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE","DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS","GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK","HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG","LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE"];
 
 function cellStyle(pct){
   let r,g,b;
-  if      (pct>=6.5) {r=250;g=170;b=225}
-  else if (pct>=4.0) {r=160;g=220;b=170}
-  else if (pct>=2.0) {r=195;g=235;b=200}
-  else if (pct>0.0)  {r=225;g=245;b=228}
-  else if (pct===0)  {r=245;g=245;b=200}
-  else if (pct>=-2.0){r=255;g=220;b=210}
-  else if (pct>=-4.0){r=250;g=185;b=175}
-  else if (pct>=-6.5){r=240;g=150;b=145}
-  else               {r=175;g=250;b=255}
+  if(pct>=6.5){r=250;g=170;b=225}
+  else if(pct>=4.0){r=160;g=220;b=170}
+  else if(pct>=2.0){r=195;g=235;b=200}
+  else if(pct>0.0){r=225;g=245;b=228}
+  else if(pct===0){r=245;g=245;b=200}
+  else if(pct>=-2.0){r=255;g=220;b=210}
+  else if(pct>=-4.0){r=250;g=185;b=175}
+  else if(pct>=-6.5){r=240;g=150;b=145}
+  else{r=175;g=250;b=255}
   const lum=.299*r+.587*g+.114*b;
   return{bg:`rgb(${r},${g},${b})`,fg:lum>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-
-function avgPct(syms,data){
-  const v=syms.filter(s=>data[s]).map(s=>data[s].pct||0);
-  return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
-}
-function sortDesc(syms,data){
-  return [...syms].sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0));
-}
-function fmtP(p){
-  if(!p||p<=0)return'—';
-  return p<100?p.toFixed(2):p.toFixed(1);
-}
+function avgPct(syms,data){const v=syms.filter(s=>data[s]).map(s=>data[s].pct||0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;}
+function sortDesc(syms,data){return[...syms].sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0));}
+function fmtP(p){if(!p||p<=0)return'—';return p<100?p.toFixed(2):p.toFixed(1);}
 
 function mkCell(sym,data){
   const d=data[sym]||{};
@@ -834,414 +605,230 @@ function mkCell(sym,data){
   const price=typeof d.price==='number'?d.price:0;
   const{bg,fg}=cellStyle(pct);
   const sign=pct>=0?'+':'';
-  return `<div class="hmap-cell" style="background:${bg};color:${fg};"
-    onclick="openChart('${sym}')"
-    title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%">
-    <span class="hc-sym">${sym}</span>
-    <span class="hc-price">${fmtP(price)}</span>
-    <span class="hc-pct">${sign}${pct.toFixed(1)}%</span>
-  </div>`;
+  return `<div class="hmap-cell" style="background:${bg};color:${fg};" onclick="openChart('${sym}')" title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%"><span class="hc-sym">${sym}</span><span class="hc-price">${fmtP(price)}</span><span class="hc-pct">${sign}${pct.toFixed(1)}%</span></div>`;
 }
-
 function mkGroup(name,syms,data){
   const sorted=sortDesc(syms,data);
   const avg=avgPct(syms,data);
   const sign=avg>=0?'+':'';
   const cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
-  return `<div class="hmap-group">
-    <div class="hmap-ghdr">
-      <span class="hmap-gname">${name}</span>
-      <span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span>
-    </div>
-    ${sorted.map(s=>mkCell(s,data)).join('')}
-  </div>`;
+  return `<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">${name}</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sorted.map(s=>mkCell(s,data)).join('')}</div>`;
 }
-
 function renderHeatmap(data){
   const grid=document.getElementById('hmap-grid');
-  if(!data||!Object.keys(data).length){
-    grid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';
-    return;
-  }
+  if(!data||!Object.keys(data).length){grid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
   const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
-  const tsSyms=TS_POOL
-    .filter(s=>data[s]!==undefined)
-    .sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0))
-    .slice(0,maxRows);
+  const tsSyms=TS_POOL.filter(s=>data[s]!==undefined).sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0)).slice(0,maxRows);
   const col0=`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,data)}</div>`;
-  const rest=HMAP_COLS.map(cd=>
-    `<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,data)).join('')}</div>`
-  ).join('');
+  const rest=HMAP_COLS.map(cd=>`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,data)).join('')}</div>`).join('');
   grid.innerHTML=col0+rest;
 }
 
-// ═══════════════════════════════════════════════════════
-// ALBUM STATE (Scanner Chart tab)
-// ═══════════════════════════════════════════════════════
-let _albumIdx=0, _albumTotal=0;
-
+// ── ALBUM ────────────────────────────────────────────────
+let _albumIdx=0,_albumTotal=0,_touchStartX=0;
 function _showAlbum(images){
-  const slidesEl=document.getElementById('album-slides');
-  const dotsEl  =document.getElementById('album-dots');
-  slidesEl.innerHTML='';
-  dotsEl.innerHTML='';
+  const se=document.getElementById('album-slides'),de=document.getElementById('album-dots');
+  se.innerHTML='';de.innerHTML='';
   _albumTotal=images.length;
   images.forEach((img,i)=>{
-    slidesEl.innerHTML+=`<div class="album-slide${i===0?' on':''}" id="slide-${i}">
-      <img src="${img.url}" alt="${img.label}" loading="lazy">
-    </div>`;
-    dotsEl.innerHTML+=`<div class="album-dot${i===0?' on':''}" id="dot-${i}" onclick="albumGoto(${i})"></div>`;
+    se.innerHTML+=`<div class="album-slide${i===0?' on':''}" id="slide-${i}"><img src="${img.url}" alt="${img.label}" loading="lazy"></div>`;
+    de.innerHTML+=`<div class="album-dot${i===0?' on':''}" id="dot-${i}" onclick="albumGoto(${i})"></div>`;
   });
-  _albumIdx=0;
-  _updateAlbumNav();
+  _albumIdx=0;_updateAlbumNav();
   document.getElementById('album-outer').style.display='flex';
   document.getElementById('scanner-loading').style.display='none';
 }
-
 function albumGoto(i){
   if(i<0||i>=_albumTotal)return;
   document.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
   document.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i;
-  _updateAlbumNav();
+  _albumIdx=i;_updateAlbumNav();
 }
-
-function albumNav(dir){ albumGoto(_albumIdx+dir); }
-
+function albumNav(dir){albumGoto(_albumIdx+dir);}
+function _updateAlbumNav(){
+  document.getElementById('btn-prev').classList.toggle('disabled',_albumIdx===0);
+  document.getElementById('btn-next').classList.toggle('disabled',_albumIdx===_albumTotal-1);
+}
 function refreshScannerChart(){
-  if(!_sym) return;
+  if(!_sym)return;
   const btn=document.getElementById('btn-refresh');
-  if(btn){ btn.classList.add('spinning'); btn.disabled=true; }
-  fetch(`/api/chart_images/${_sym}?bust=${Date.now()}`,{cache:'no-store'})
-    .then(()=>{}).catch(()=>{});
+  if(btn){btn.classList.add('spinning');btn.disabled=true;}
   loadScannerChartForce(_sym);
 }
-
 async function loadScannerChartForce(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML=
-    `<span>🔄 Đang làm mới chart <b>${sym}</b>…</span>`;
-  try{
-    await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});
-  }catch(e){}
+  document.getElementById('scanner-loading').innerHTML=`<span>🔄 Đang làm mới chart <b>${sym}</b>…</span>`;
+  try{await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});}catch(e){}
   const btn=document.getElementById('btn-refresh');
-  if(btn){ btn.classList.remove('spinning'); btn.disabled=false; }
+  if(btn){btn.classList.remove('spinning');btn.disabled=false;}
   await loadScannerChart(sym);
 }
-
-function _updateAlbumNav(){
-  document.getElementById('btn-prev').classList.toggle('disabled', _albumIdx===0);
-  document.getElementById('btn-next').classList.toggle('disabled', _albumIdx===_albumTotal-1);
-}
-
-// Touch/swipe
-let _touchStartX=0;
-document.getElementById('panel-scanner').addEventListener('touchstart',e=>{_touchStartX=e.touches[0].clientX},{passive:true});
-document.getElementById('panel-scanner').addEventListener('touchend',e=>{
-  const dx=e.changedTouches[0].clientX-_touchStartX;
-  if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
-},{passive:true});
-
-// Phím mũi tên bàn phím
-document.addEventListener('keydown', e => {
-  const overlayOn = document.getElementById('overlay').classList.contains('on');
-  if (!overlayOn) return;
-  // Không xử lý khi đang focus vào search input
-  if(document.activeElement === document.getElementById('popup-search-input')) return;
-  if (_tab !== 'scanner') return;
-  if (_albumTotal === 0) return;
-  if (e.key === 'ArrowLeft')  { e.preventDefault(); albumNav(-1); }
-  if (e.key === 'ArrowRight') { e.preventDefault(); albumNav(1);  }
+document.getElementById('panel-scanner').addEventListener('touchstart',e=>{_touchStartX=e.touches[0].clientX;},{passive:true});
+document.getElementById('panel-scanner').addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-_touchStartX;if(Math.abs(dx)>50)albumNav(dx<0?1:-1);},{passive:true});
+document.addEventListener('keydown',e=>{
+  const on=document.getElementById('overlay').classList.contains('on');
+  if(!on)return;
+  if(document.activeElement===document.getElementById('popup-search-input'))return;
+  if(_tab!=='scanner'||_albumTotal===0)return;
+  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
+  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
-
 async function loadScannerChart(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML=
-    `<span>⏳ Đang tạo chart <b>${sym}</b>… (15–30 giây lần đầu)</span>`;
-
+  document.getElementById('scanner-loading').innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>… (15–30 giây lần đầu)</span>`;
   try{
     const r=await fetch(`/api/chart_images/${sym}`);
-    if(!r.ok){
-      const j=await r.json().catch(()=>({}));
-      throw new Error(j.error||`HTTP ${r.status}`);
-    }
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
     const j=await r.json();
-    if(j.images && j.images.length>0){
+    if(j.images&&j.images.length>0){
       const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
-      _showAlbum(j.images.map((b64,i)=>({
-        url:`data:image/png;base64,${b64}`,
-        label: labels[i]||`Chart ${i+1}`,
-      })));
-      if(j.cached){
-        const hint=document.querySelector('.album-hint');
-        if(hint) hint.textContent='♻️ Dùng cache — click lại tab để làm mới';
-      }
+      _showAlbum(j.images.map((b64,i)=>({url:`data:image/png;base64,${b64}`,label:labels[i]||`Chart ${i+1}`})));
+      if(j.cached){const hint=document.querySelector('.album-hint');if(hint)hint.textContent='♻️ Dùng cache — click lại tab để làm mới';}
       return;
     }
     throw new Error('no_images');
   }catch(e){
-    document.getElementById('scanner-loading').innerHTML=`
-      <div style="text-align:center;color:#aaa;padding:24px">
-        <div style="font-size:24px;margin-bottom:10px">⚠️</div>
-        <div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
-        <div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div>
-        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-          <button onclick="loadScannerChart('${sym}')"
-            style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
-            🔄 Thử lại
-          </button>
-          <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank"
-             style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
-            📈 Stockchart
-          </a>
-        </div>
-      </div>`;
+    document.getElementById('scanner-loading').innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// POPUP STATE
-// ═══════════════════════════════════════════════════════
-let _sym='', _tab='vs';
-
-const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
-
-// Mở URL bất kỳ trong popup (Market / VNINDEX)
-function openUrl(url, label){
-  _sym = 'VNINDEX';
-  _tab = 'url';
-  document.getElementById('ptitle').textContent = label || '🌐 Web';
-
-  // Reset các iframe phụ, nhưng pre-load iframe-vs với chart VNINDEX
-  // để khi user click tab Vietstock sẽ có chart sẵn
-  IFRAME_TABS.forEach(t=>{
-    document.getElementById(`iframe-${t}`).src='about:blank';
-  });
-  document.getElementById('iframe-vs').src =
-    'https://ta.vietstock.vn/?stockcode=vnindex';
-
-  document.getElementById('album-outer').style.display='none';
-  document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
-
-  // Ẩn toàn bộ panel, hiện panel-url
-  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
-  allTabs.forEach(t=>{
-    const ct = document.getElementById('ctab-'+t);
-    if(ct) ct.classList.toggle('on', t==='url');
-    document.getElementById('panel-'+t).classList.toggle('on', t==='url');
-  });
-
-  document.getElementById('iframe-url').src = url;
-  document.getElementById('overlay').classList.add('on');
-  document.body.style.overflow='hidden';
-  document.getElementById('popup-search-input').value='';
-}
-
-function openChart(sym){
-  _sym=sym.toUpperCase().trim();
-  _tab='vs';
-  document.getElementById('ptitle').textContent=`📈 ${_sym}`;
-
-  document.getElementById('iframe-vs').src=
-    `https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
-
-  IFRAME_TABS.forEach(t=>{
-    document.getElementById(`iframe-${t}`).src='about:blank';
-  });
-
-  document.getElementById('album-outer').style.display='none';
-  document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-
-  _activateTab('vs');
-  document.getElementById('overlay').classList.add('on');
-  document.body.style.overflow='hidden';
-
-  // Clear popup search input khi mở mã mới
-  document.getElementById('popup-search-input').value='';
-}
+// ── POPUP STATE ──────────────────────────────────────────
+let _sym='',_tab='vs';
+const IFRAME_TABS=['vnd-cs','vnd-news','vnd-sum','24h','url'];
+const ALL_TABS=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
 
 function _activateTab(tab){
   _tab=tab;
-  const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
-  allTabs.forEach(t=>{
-    const ct = document.getElementById('ctab-'+t);
-    if(ct) ct.classList.toggle('on',t===tab);
+  ALL_TABS.forEach(t=>{
+    const ct=document.getElementById('ctab-'+t);
+    if(ct)ct.classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
+  // Cuon tab active vao view (mobile)
+  const activeBtn=document.getElementById('ctab-'+tab);
+  if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'nearest'});
 
-  if(tab==='vnd-cs'){
-    const f=document.getElementById('iframe-vnd-cs');
-    if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;
-  }
-  if(tab==='vnd-news'){
-    const f=document.getElementById('iframe-vnd-news');
-    if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn&theme=light`;
-  }
-  if(tab==='vnd-sum'){
-    const f=document.getElementById('iframe-vnd-sum');
-    if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}?theme=light`;
-  }
-  if(tab==='24h'){
-    const f=document.getElementById('iframe-24h');
-    if(f.src==='about:blank')
-      f.src=`https://24hmoney.vn/stock/${_sym}/news`;
-  }
-  if(tab==='scanner'){
-    loadScannerChart(_sym);
-  }
+  if(tab==='vnd-cs'){const f=document.getElementById('iframe-vnd-cs');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;}
+  if(tab==='vnd-news'){const f=document.getElementById('iframe-vnd-news');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn&theme=light`;}
+  if(tab==='vnd-sum'){const f=document.getElementById('iframe-vnd-sum');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}?theme=light`;}
+  if(tab==='24h'){const f=document.getElementById('iframe-24h');if(f.src==='about:blank')f.src=`https://24hmoney.vn/stock/${_sym}/news`;}
+  if(tab==='scanner')loadScannerChart(_sym);
+}
+function switchTab(tab){_activateTab(tab);}
+
+/* Reset tab bar mobile về đầu (tab Vietstock) */
+function _resetMobTabScroll(){
+  const bar=document.getElementById('mob-tabrow');
+  if(bar){bar.scrollLeft=0;}
 }
 
-function switchTab(tab){ _activateTab(tab); }
+function openUrl(url,label){
+  _sym='VNINDEX';_tab='url';
+  document.getElementById('ptitle').textContent=label||'🌐 Web';
+  IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
+  document.getElementById('iframe-vs').src='https://ta.vietstock.vn/?stockcode=vnindex';
+  document.getElementById('album-outer').style.display='none';
+  document.getElementById('scanner-loading').style.display='flex';
+  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
+  ALL_TABS.forEach(t=>{const ct=document.getElementById('ctab-'+t);if(ct)ct.classList.toggle('on',t==='url');document.getElementById('panel-'+t).classList.toggle('on',t==='url');});
+  document.getElementById('iframe-url').src=url;
+  document.getElementById('overlay').classList.add('on');
+  document.body.style.overflow='hidden';
+  document.getElementById('popup-search-input').value='';
+  _resetMobTabScroll();
+}
+
+function openChart(sym){
+  _sym=sym.toUpperCase().trim();_tab='vs';
+  document.getElementById('ptitle').textContent=`📈 ${_sym}`;
+  document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
+  IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
+  document.getElementById('album-outer').style.display='none';
+  document.getElementById('scanner-loading').style.display='flex';
+  document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
+  _activateTab('vs');
+  document.getElementById('overlay').classList.add('on');
+  document.body.style.overflow='hidden';
+  document.getElementById('popup-search-input').value='';
+  _resetMobTabScroll();
+}
 
 function closePopup(){
   document.getElementById('overlay').classList.remove('on');
   document.getElementById('iframe-vs').src='about:blank';
-  IFRAME_TABS.forEach(t=>{
-    document.getElementById(`iframe-${t}`).src='about:blank';
-  });
+  IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
   document.body.style.overflow='';
 }
 
-document.getElementById('overlay').addEventListener('click',e=>{
-  if(e.target===document.getElementById('overlay'))closePopup();
-});
+document.getElementById('overlay').addEventListener('click',e=>{if(e.target===document.getElementById('overlay'))closePopup();});
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    // Nếu đang focus vào popup search thì chỉ blur, không đóng popup
-    if(document.activeElement===document.getElementById('popup-search-input')){
-      document.getElementById('popup-search-input').blur();
-      return;
-    }
+    if(document.activeElement===document.getElementById('popup-search-input')){document.getElementById('popup-search-input').blur();return;}
     closePopup();
   }
 });
 
-// ═══════════════════════════════════════════════════════
-// CLOCK
-// ═══════════════════════════════════════════════════════
-function tick(){
-  const n=new Date();
-  document.getElementById('clock').textContent=
-    n.toLocaleTimeString('vi-VN',{hour12:false})+'  '+n.toLocaleDateString('vi-VN');
-}
+// ── CLOCK ───────────────────────────────────────────────
+function tick(){const n=new Date();document.getElementById('clock').textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+'  '+n.toLocaleDateString('vi-VN');}
 setInterval(tick,1000);tick();
 
-// ═══════════════════════════════════════════════════════
-// BADGE
-// ═══════════════════════════════════════════════════════
-function badgeCls(sig){
-  return({'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
-    'BOTTOMBREAKP':'b-BBREAKP','BOTTOMFISH':'b-BFISH','MA_CROSS':'b-MACROSS'})[sig]||'b-MACROSS';
-}
+function badgeCls(sig){return({'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK','BOTTOMBREAKP':'b-BBREAKP','BOTTOMFISH':'b-BFISH','MA_CROSS':'b-MACROSS'})[sig]||'b-MACROSS';}
 
-// ═══════════════════════════════════════════════════════
-// FETCH
-// ═══════════════════════════════════════════════════════
+// ── FETCH ───────────────────────────────────────────────
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
-    document.getElementById('sig-meta').textContent=
-      `Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
+    document.getElementById('sig-meta').textContent=`Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
     const el=document.getElementById('sig-list');
-    if(!j.signals.length){
-      el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';
-      return;
-    }
-    el.innerHTML=j.signals.map(s=>`
-      <div class="sig-row" onclick="openChart('${s.symbol}')">
-        <span class="s-emoji">${s.emoji}</span>
-        <span class="s-sym">${s.symbol}</span>
-        <span class="s-type">${s.signal}</span>
-        <span class="s-badge ${badgeCls(s.signal)}">
-          ${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}
-        </span>
-      </div>`).join('');
+    if(!j.signals.length){el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
+    el.innerHTML=j.signals.map(s=>`<div class="sig-row" onclick="openChart('${s.symbol}')"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type">${s.signal}</span><span class="s-badge ${badgeCls(s.signal)}">${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}</span></div>`).join('');
   }catch(e){console.error('fetchSigs:',e)}
 }
-
 async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
     const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
-    document.getElementById('hmap-ts').textContent=
-      `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
+    document.getElementById('hmap-ts').textContent=`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
     renderHeatmap(j.data||{});
   }catch(e){console.error('fetchHmap:',e)}
 }
-
-// ═══════════════════════════════════════════════════════
-// PROGRESS BAR
-// ═══════════════════════════════════════════════════════
-function startBar(id, sec){
-  const el=document.getElementById(id);
-  if(!el) return;
-  el.style.transition='none';
-  el.style.width='0%';
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    el.style.transition=`width ${sec}s linear`;
-    el.style.width='100%';
-  }));
+function startBar(id,sec){
+  const el=document.getElementById(id);if(!el)return;
+  el.style.transition='none';el.style.width='0%';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
 }
 
-// ═══════════════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════════════
-async function init(){
-  await loadConfig();
-  startBar('pbar-sig',  SIG_TTL);
-  startBar('pbar-hmap', HMAP_TTL);
-  await Promise.all([fetchSigs(),fetchHmap()]);
-  setInterval(async()=>{ startBar('pbar-sig',  SIG_TTL);  await fetchSigs(); }, SIG_TTL  * 1000);
-  setInterval(async()=>{ startBar('pbar-hmap', HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
-}
-
-// ── MOBILE HEADER ──────────────────────────────
-function tabStyleMob(active){
-  return (active
-    ? 'background:var(--surface);color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700;'
-    : 'background:var(--bg);color:var(--muted);border-bottom:2px solid transparent;'
-  ) + 'font-size:12px;font-family:var(--font-mono);padding:5px 12px;border-radius:5px 5px 0 0;border:1px solid var(--border);white-space:nowrap;flex-shrink:0;cursor:pointer;';
-}
-
+// ── MOBILE HEADER ────────────────────────────────────────
 function buildMobileHeader(){
-  if(window.innerWidth > 768) return;
-  const phdr = document.querySelector('.phdr');
-  if(!phdr || phdr.dataset.mob === '1') return;
-  phdr.dataset.mob = '1';
-  phdr.innerHTML = '';
-  phdr.style.cssText = 'display:flex;flex-direction:column;flex-shrink:0;';
+  if(window.innerWidth>768)return;
+  const phdr=document.querySelector('.phdr');
+  if(!phdr||phdr.dataset.mob==='1')return;
+  phdr.dataset.mob='1';
+  phdr.innerHTML='';
+  phdr.style.cssText='display:flex;flex-direction:column;flex-shrink:0;';
 
-  // Hàng 1: Title + Search + Close
-  const r1 = document.createElement('div');
-  r1.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border);';
-  r1.innerHTML = `
-    <span id="ptitle"
-      style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">
-      Chart
-    </span>
+  /* Hàng 1: Title + Search + Close */
+  const r1=document.createElement('div');
+  r1.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border);';
+  r1.innerHTML=`
+    <span id="ptitle" style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">Chart</span>
     <div style="position:relative;flex:1;">
       <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
-      <input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10"
-        autocomplete="off" spellcheck="false"
+      <input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10" autocomplete="off" spellcheck="false"
         style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
     </div>
-    <button onclick="closePopup()"
-      style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
+    <button onclick="closePopup()" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
   `;
   phdr.appendChild(r1);
 
-  // Hàng 2: Tabs cuộn ngang
-  const r2 = document.createElement('div');
-  r2.id = 'mob-tabrow';
-  r2.style.cssText = 'display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding:5px 8px;gap:3px;background:var(--surf2);border-bottom:1px solid var(--border);scrollbar-width:none;';
-  const tabs = [
+  /* Hàng 2: Tab bar cuộn ngang, bắt đầu từ Vietstock */
+  const r2=document.createElement('div');
+  r2.id='mob-tabrow';
+  r2.style.cssText='display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;padding:5px 8px;gap:3px;background:var(--surf2);border-bottom:1px solid var(--border);scrollbar-width:none;';
+
+  const TABS=[
     {id:'vs',      label:'📈 Vietstock'},
     {id:'scanner', label:'🖼 Scanner'},
     {id:'vnd-cs',  label:'⚖️ Cơ bản'},
@@ -1249,49 +836,49 @@ function buildMobileHeader(){
     {id:'vnd-sum', label:'📄 Tổng quan'},
     {id:'24h',     label:'💬 24HMoney'},
   ];
-  tabs.forEach(t => {
-    const btn = document.createElement('button');
-    btn.id = 'ctab-' + t.id;
-    btn.textContent = t.label;
-    btn.style.cssText = tabStyleMob(t.id === 'vs');
-    btn.onclick = () => switchTab(t.id);
+
+  TABS.forEach((t,i)=>{
+    const btn=document.createElement('button');
+    btn.id='ctab-'+t.id;
+    btn.textContent=t.label;
+    /* Tab đầu (Vietstock) luôn active khi mới build */
+    const activeStyle='background:var(--surface);color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700;';
+    const inactiveStyle='background:var(--bg);color:var(--muted);border-bottom:2px solid transparent;';
+    btn.style.cssText='scroll-snap-align:start;flex-shrink:0;white-space:nowrap;font-size:12px;font-family:var(--font-mono);padding:5px 12px;border-radius:5px 5px 0 0;border:1px solid var(--border);cursor:pointer;'+(i===0?activeStyle:inactiveStyle);
+    btn.onclick=()=>switchTab(t.id);
     r2.appendChild(btn);
   });
   phdr.appendChild(r2);
- 
-  // Luôn scroll tab row về đầu (Vietstock) khi mở popup
-  r2.scrollLeft = 0;
 
-  // Ẩn scrollbar webkit
-  const s = document.createElement('style');
-  s.textContent = '#mob-tabrow::-webkit-scrollbar{display:none}';
-  document.head.appendChild(s);
+  /* Ẩn scrollbar webkit */
+  const st=document.createElement('style');
+  st.textContent='#mob-tabrow::-webkit-scrollbar{display:none}';
+  document.head.appendChild(st);
 
-  // Event search mobile
-  const inp = document.getElementById('popup-search-input');
-  inp.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){
-      const sym = this.value.trim().toUpperCase();
-      if(sym.length >= 2){ this.value=''; this.blur(); openChart(sym); }
-    }
-    if(e.key === 'Escape') this.blur();
+  /* Search event */
+  const inp=document.getElementById('popup-search-input');
+  inp.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();openChart(s);}}
+    if(e.key==='Escape')this.blur();
   });
-  inp.addEventListener('focus', function(){ this.select(); });
+  inp.addEventListener('focus',function(){this.select();});
 }
 
-// Gọi buildMobileHeader mỗi khi mở popup
-const _openChartOrig = openChart;
-openChart = function(sym){
-  buildMobileHeader();
-  _openChartOrig(sym);
-};
+/* Bọc openChart / openUrl để build mobile header + reset scroll tab */
+const _openChartOrig=openChart;
+openChart=function(sym){buildMobileHeader();_openChartOrig(sym);};
+const _openUrlOrig=openUrl;
+openUrl=function(url,label){buildMobileHeader();_openUrlOrig(url,label);};
 
-const _openUrlOrig = openUrl;
-openUrl = function(url, label){
-  buildMobileHeader();
-  _openUrlOrig(url, label);
-};
-
+// ── INIT ─────────────────────────────────────────────────
+async function init(){
+  await loadConfig();
+  startBar('pbar-sig', SIG_TTL);
+  startBar('pbar-hmap',HMAP_TTL);
+  await Promise.all([fetchSigs(),fetchHmap()]);
+  setInterval(async()=>{startBar('pbar-sig', SIG_TTL); await fetchSigs();},SIG_TTL*1000);
+  setInterval(async()=>{startBar('pbar-hmap',HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
+}
 init();
 </script>
 </body>
