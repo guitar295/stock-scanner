@@ -479,9 +479,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     height:100dvh!important;
     border-radius:0!important;
     border:none!important;
-    /* KHÔNG đặt overflow:hidden — browser sẽ coerce overflow-x:visible
-       thành auto nếu overflow-y khác visible, làm clip thanh tab con.
-       Dùng max-height + flex để kiểm soát layout thay thế. */
     overflow:visible!important;
     max-height:100dvh!important;
   }
@@ -504,7 +501,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     display:none!important;
   }
 
-  /* Sửa chữ "TÍN HIỆU HÔM NAY" không xuống dòng */
   .panel-title{
     white-space:nowrap!important;
     font-size:11px!important;
@@ -521,55 +517,40 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     gap:6px!important;
     padding:7px 10px!important;
   }
+
+  /* ── Mobile: ảnh chart có thể chạm để phóng to ── */
+  .album-slide img {
+    cursor: zoom-in !important;
+    -webkit-tap-highlight-color: rgba(26,86,219,.15);
+  }
 }
 
-/* ══ MOBILE TAB ROW — thanh tab cuộn ngang ══
-   Chỉ áp dụng cho #mob-tabrow được tạo bởi buildMobileHeader()
-   KHÔNG ảnh hưởng gì đến desktop vì desktop không có element này trong popup
-══ */
+/* ══ MOBILE TAB ROW ══ */
 #mob-tabrow {
-  /* Layout: hàng ngang, KHÔNG wrap, scroll ngang */
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
   align-items: center;
-
-  /* Scroll ngang */
   overflow-x: scroll !important;
   overflow-y: hidden !important;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
-
-  /* Spacing */
   padding: 6px 8px !important;
   gap: 5px !important;
-
-  /* Màu nền */
   background: var(--surf2) !important;
   border-bottom: 1px solid var(--border) !important;
-
-  /* Ẩn scrollbar nhưng vẫn scroll được */
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
 #mob-tabrow::-webkit-scrollbar {
   display: none !important;
 }
-
-/* Mỗi tab button trong mob-tabrow */
 #mob-tabrow > button {
-  /* Quan trọng: không được co lại */
   flex-shrink: 0 !important;
   flex-grow: 0 !important;
-
-  /* Nội dung không wrap */
   white-space: nowrap !important;
-
-  /* Snap khi vuốt */
   scroll-snap-align: start;
-
-  /* Kích thước & kiểu dáng */
   padding: 7px 14px !important;
   border-radius: 6px !important;
   border: 1px solid var(--border) !important;
@@ -578,24 +559,106 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   font-weight: 600 !important;
   cursor: pointer !important;
   transition: background .15s, color .15s !important;
-
-  /* Màu mặc định (inactive) */
   background: var(--bg) !important;
   color: var(--muted) !important;
-
-  /* Căn giữa nội dung */
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
 }
-
-/* Tab đang active */
 #mob-tabrow > button.on {
   background: var(--surface) !important;
   color: var(--accent) !important;
   border-color: var(--accent) !important;
   font-weight: 700 !important;
   box-shadow: 0 2px 0 0 var(--accent) !important;
+}
+
+/* ══ MOBILE LIGHTBOX ══ */
+#mob-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: #000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+#mob-lightbox.on {
+  display: flex;
+}
+#mob-lightbox-img {
+  max-width: 100vw;
+  max-height: 100dvh;
+  object-fit: contain;
+  display: block;
+  transform-origin: center center;
+  will-change: transform;
+  transition: transform 0.05s linear;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+#mob-lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.3);
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  touch-action: manipulation;
+}
+#mob-lightbox-close:active {
+  background: rgba(255,255,255,.32);
+}
+#mob-lightbox-counter {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 2;
+}
+.mob-lb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.35);
+  transition: background .2s, transform .2s;
+}
+.mob-lb-dot.on {
+  background: #fff;
+  transform: scale(1.4);
+}
+#mob-lightbox-label {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,.75);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 2;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  background: rgba(0,0,0,.3);
+  padding: 3px 10px;
+  border-radius: 20px;
 }
 </style>
 </head>
@@ -748,6 +811,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
 
   </div>
+</div>
+
+<!-- ══ MOBILE LIGHTBOX ══ -->
+<div id="mob-lightbox">
+  <div id="mob-lightbox-label">📊 Daily [D]</div>
+  <img id="mob-lightbox-img" src="" alt="chart">
+  <button id="mob-lightbox-close" onclick="lbClose()">✕</button>
+  <div id="mob-lightbox-counter"></div>
 </div>
 
 <script>
@@ -920,19 +991,200 @@ function renderHeatmap(data){
 }
 
 // ═══════════════════════════════════════════════════════
+// MOBILE LIGHTBOX
+// ═══════════════════════════════════════════════════════
+const lb = {
+  el:       null,
+  imgEl:    null,
+  labelEl:  null,
+  counterEl:null,
+  images:   [],   // [{url, label}, ...]
+  idx:      0,
+  // pinch / pan state
+  scale:    1,
+  baseScale:1,
+  tx:       0,
+  ty:       0,
+  baseTx:   0,
+  baseTy:   0,
+  pinchDist:0,
+  touches:  0,
+  swipeStartX: 0,
+  swipeStartY: 0,
+  swipeTracking: false,
+};
+
+function lbInit(){
+  lb.el        = document.getElementById('mob-lightbox');
+  lb.imgEl     = document.getElementById('mob-lightbox-img');
+  lb.labelEl   = document.getElementById('mob-lightbox-label');
+  lb.counterEl = document.getElementById('mob-lightbox-counter');
+
+  const img = lb.imgEl;
+
+  // ── Touch handlers ──
+  img.addEventListener('touchstart',  lbTouchStart,  {passive:false});
+  img.addEventListener('touchmove',   lbTouchMove,   {passive:false});
+  img.addEventListener('touchend',    lbTouchEnd,    {passive:false});
+
+  // double-tap to reset zoom
+  let lastTap = 0;
+  img.addEventListener('touchend', function(e){
+    const now = Date.now();
+    if(now - lastTap < 280 && e.changedTouches.length === 1){
+      if(lb.scale > 1.05){ lbResetTransform(); }
+      else { lbSetScale(2.5); }
+    }
+    lastTap = now;
+  });
+}
+
+function lbOpen(images, idx){
+  if(!lb.el) lbInit();
+  lb.images = images;
+  lb.idx    = idx;
+  lbResetTransform();
+  lbRender();
+  lb.el.classList.add('on');
+  document.body.style.overflow = 'hidden';
+}
+
+function lbClose(){
+  if(!lb.el) return;
+  lb.el.classList.remove('on');
+  document.body.style.overflow = '';
+  lbResetTransform();
+}
+
+function lbRender(){
+  const img = lb.images[lb.idx];
+  lb.imgEl.src       = img.url;
+  lb.labelEl.textContent = img.label;
+
+  // dots
+  lb.counterEl.innerHTML = lb.images.map((_, i) =>
+    `<div class="mob-lb-dot${i===lb.idx?' on':''}"></div>`
+  ).join('');
+
+  // dot click
+  lb.counterEl.querySelectorAll('.mob-lb-dot').forEach((d, i) => {
+    d.onclick = () => { lb.idx = i; lbResetTransform(); lbRender(); };
+  });
+}
+
+function lbResetTransform(){
+  lb.scale = 1; lb.tx = 0; lb.ty = 0;
+  lb.baseScale = 1; lb.baseTx = 0; lb.baseTy = 0;
+  _lbApplyTransform();
+}
+
+function lbSetScale(s){
+  lb.scale = Math.min(Math.max(s, 1), 5);
+  lb.baseScale = lb.scale;
+  _lbApplyTransform();
+}
+
+function _lbApplyTransform(){
+  if(!lb.imgEl) return;
+  lb.imgEl.style.transform = `translate(${lb.tx}px,${lb.ty}px) scale(${lb.scale})`;
+}
+
+function _dist(t){
+  const dx = t[0].clientX - t[1].clientX;
+  const dy = t[0].clientY - t[1].clientY;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+function lbTouchStart(e){
+  lb.touches = e.touches.length;
+  if(lb.touches === 2){
+    e.preventDefault();
+    lb.pinchDist  = _dist(e.touches);
+    lb.baseScale  = lb.scale;
+    lb.baseTx     = lb.tx;
+    lb.baseTy     = lb.ty;
+    lb.swipeTracking = false;
+  } else if(lb.touches === 1){
+    lb.swipeStartX   = e.touches[0].clientX;
+    lb.swipeStartY   = e.touches[0].clientY;
+    lb.baseTx        = lb.tx;
+    lb.baseTy        = lb.ty;
+    lb.swipeTracking = true;
+  }
+}
+
+function lbTouchMove(e){
+  if(lb.touches === 2 && e.touches.length === 2){
+    e.preventDefault();
+    const newDist  = _dist(e.touches);
+    const ratio    = newDist / lb.pinchDist;
+    lb.scale       = Math.min(Math.max(lb.baseScale * ratio, 1), 5);
+    // pan while pinching
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    lb.tx = lb.baseTx + (mx - window.innerWidth/2)  * (lb.scale - lb.baseScale) * 0;
+    lb.ty = lb.baseTy + (my - window.innerHeight/2) * (lb.scale - lb.baseScale) * 0;
+    _lbApplyTransform();
+  } else if(lb.touches === 1 && e.touches.length === 1 && lb.swipeTracking){
+    const dx = e.touches[0].clientX - lb.swipeStartX;
+    const dy = e.touches[0].clientY - lb.swipeStartY;
+    if(lb.scale > 1.05){
+      // pan mode
+      e.preventDefault();
+      lb.tx = lb.baseTx + dx;
+      lb.ty = lb.baseTy + dy;
+      _lbApplyTransform();
+    }
+    // else: let natural scroll happen (swipe to next detected on touchend)
+  }
+}
+
+function lbTouchEnd(e){
+  if(lb.touches === 1 && lb.swipeTracking && lb.scale <= 1.05){
+    const dx = e.changedTouches[0].clientX - lb.swipeStartX;
+    const dy = e.changedTouches[0].clientY - lb.swipeStartY;
+    if(Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)){
+      if(dx < 0 && lb.idx < lb.images.length - 1){
+        lb.idx++; lbResetTransform(); lbRender();
+      } else if(dx > 0 && lb.idx > 0){
+        lb.idx--; lbResetTransform(); lbRender();
+      }
+    }
+  }
+  lb.swipeTracking = false;
+  lb.touches = e.touches.length;
+  // clamp pan after pinch release
+  if(lb.scale <= 1.02){ lbResetTransform(); }
+}
+
+// esc key để đóng lightbox
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && lb.el && lb.el.classList.contains('on')){ lbClose(); }
+});
+
+// ═══════════════════════════════════════════════════════
 // ALBUM STATE
 // ═══════════════════════════════════════════════════════
 let _albumIdx=0, _albumTotal=0;
+let _albumImages = []; // [{url, label}]
 
 function _showAlbum(images){
+  _albumImages = images;
   const slidesEl=document.getElementById('album-slides');
   const dotsEl  =document.getElementById('album-dots');
   slidesEl.innerHTML='';
   dotsEl.innerHTML='';
   _albumTotal=images.length;
+
+  const isMobile = window.innerWidth <= 768;
+
   images.forEach((img,i)=>{
+    // Trên mobile: thêm onclick phóng to; desktop: giữ nguyên
+    const clickAttr = isMobile
+      ? `onclick="lbOpen(_albumImages, ${i})" style="cursor:zoom-in;-webkit-tap-highlight-color:rgba(26,86,219,.15)"`
+      : '';
     slidesEl.innerHTML+=`<div class="album-slide${i===0?' on':''}" id="slide-${i}">
-      <img src="${img.url}" alt="${img.label}" loading="lazy">
+      <img src="${img.url}" alt="${img.label}" loading="lazy" ${clickAttr}>
     </div>`;
     dotsEl.innerHTML+=`<div class="album-dot${i===0?' on':''}" id="dot-${i}" onclick="albumGoto(${i})"></div>`;
   });
@@ -978,10 +1230,15 @@ function _updateAlbumNav(){
 }
 
 let _touchStartX=0;
-document.getElementById('panel-scanner').addEventListener('touchstart',e=>{_touchStartX=e.touches[0].clientX},{passive:true});
+document.getElementById('panel-scanner').addEventListener('touchstart',e=>{
+  // Chỉ bắt swipe khi KHÔNG phải trên ảnh (ảnh có lightbox riêng trên mobile)
+  if(window.innerWidth > 768) _touchStartX=e.touches[0].clientX;
+},{passive:true});
 document.getElementById('panel-scanner').addEventListener('touchend',e=>{
-  const dx=e.changedTouches[0].clientX-_touchStartX;
-  if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
+  if(window.innerWidth > 768){
+    const dx=e.changedTouches[0].clientX-_touchStartX;
+    if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
+  }
 },{passive:true});
 
 document.addEventListener('keydown', e => {
@@ -1096,13 +1353,11 @@ function _activateTab(tab){
     const row = document.getElementById('mob-tabrow');
     const activeBtn = document.getElementById('ctab-'+tab);
     if(row && activeBtn){
-      // Cập nhật inline style cho tất cả button
       const BTN_BASE = 'flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:var(--font-mono);font-weight:600;cursor:pointer;background:var(--bg);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s;touch-action:manipulation';
       const BTN_ON   = 'flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--accent);font-size:12px;font-family:var(--font-mono);font-weight:700;cursor:pointer;background:var(--surface);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 0 0 var(--accent);touch-action:manipulation';
       row.querySelectorAll('button').forEach(btn => {
         btn.style.cssText = btn.id === 'ctab-'+tab ? BTN_ON : BTN_BASE;
       });
-      // Scroll tab active vào giữa màn hình
       const btnLeft  = activeBtn.offsetLeft;
       const btnWidth = activeBtn.offsetWidth;
       const rowWidth = row.offsetWidth;
@@ -1148,6 +1403,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
   if(e.target===document.getElementById('overlay'))closePopup();
 });
 document.addEventListener('keydown',e=>{
+  if(lb.el && lb.el.classList.contains('on')) return; // lightbox xử lý Esc riêng
   if(e.key==='Escape'){
     if(document.activeElement===document.getElementById('popup-search-input')){
       document.getElementById('popup-search-input').blur();
@@ -1238,9 +1494,6 @@ async function init(){
 
 // ═══════════════════════════════════════════════════════════════════
 // MOBILE HEADER REBUILD
-// Chỉ chạy trên mobile (≤768px). Xây lại .phdr với:
-//   - Hàng 1: Title | Search | Close
-//   - Hàng 2: #mob-tabrow — thanh tab CUỘN NGANG, flex-shrink:0 trên mỗi button
 // ═══════════════════════════════════════════════════════════════════
 function buildMobileHeader(){
   if(window.innerWidth > 768) return;
@@ -1283,8 +1536,6 @@ function buildMobileHeader(){
   phdr.appendChild(r1);
 
   // ── Hàng 2: #mob-tabrow ──
-  // Dùng inline style trực tiếp để đảm bảo scroll ngang hoạt động
-  // bất kể ancestor có overflow:hidden (inline style > CSS cascade)
   const r2 = document.createElement('div');
   r2.id = 'mob-tabrow';
   r2.style.cssText = [
@@ -1292,7 +1543,7 @@ function buildMobileHeader(){
     'flex-direction:row',
     'flex-wrap:nowrap',
     'align-items:center',
-    'overflow-x:scroll',          /* bắt buộc scroll ngang */
+    'overflow-x:scroll',
     'overflow-y:hidden',
     '-webkit-overflow-scrolling:touch',
     'overscroll-behavior-x:contain',
@@ -1304,7 +1555,7 @@ function buildMobileHeader(){
     '-ms-overflow-style:none',
     'width:100%',
     'box-sizing:border-box',
-    'min-height:44px',            /* đủ cao để ngón tay chạm */
+    'min-height:44px',
   ].join(';');
 
   const tabs = [
@@ -1317,43 +1568,21 @@ function buildMobileHeader(){
   ];
 
   const BTN_BASE = [
-    'flex-shrink:0',
-    'flex-grow:0',
-    'white-space:nowrap',
-    'padding:7px 14px',
-    'border-radius:6px',
-    'border:1px solid var(--border)',
-    'font-size:12px',
-    'font-family:var(--font-mono)',
-    'font-weight:600',
-    'cursor:pointer',
-    'background:var(--bg)',
-    'color:var(--muted)',
-    'display:inline-flex',
-    'align-items:center',
-    'justify-content:center',
-    'transition:background .15s,color .15s',
-    'touch-action:manipulation',  /* tránh delay 300ms trên mobile */
+    'flex-shrink:0','flex-grow:0','white-space:nowrap',
+    'padding:7px 14px','border-radius:6px','border:1px solid var(--border)',
+    'font-size:12px','font-family:var(--font-mono)','font-weight:600',
+    'cursor:pointer','background:var(--bg)','color:var(--muted)',
+    'display:inline-flex','align-items:center','justify-content:center',
+    'transition:background .15s,color .15s','touch-action:manipulation',
   ].join(';');
 
   const BTN_ON = [
-    'flex-shrink:0',
-    'flex-grow:0',
-    'white-space:nowrap',
-    'padding:7px 14px',
-    'border-radius:6px',
-    'border:1px solid var(--accent)',
-    'font-size:12px',
-    'font-family:var(--font-mono)',
-    'font-weight:700',
-    'cursor:pointer',
-    'background:var(--surface)',
-    'color:var(--accent)',
-    'display:inline-flex',
-    'align-items:center',
-    'justify-content:center',
-    'box-shadow:0 2px 0 0 var(--accent)',
-    'touch-action:manipulation',
+    'flex-shrink:0','flex-grow:0','white-space:nowrap',
+    'padding:7px 14px','border-radius:6px','border:1px solid var(--accent)',
+    'font-size:12px','font-family:var(--font-mono)','font-weight:700',
+    'cursor:pointer','background:var(--surface)','color:var(--accent)',
+    'display:inline-flex','align-items:center','justify-content:center',
+    'box-shadow:0 2px 0 0 var(--accent)','touch-action:manipulation',
   ].join(';');
 
   tabs.forEach(t => {
