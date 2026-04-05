@@ -948,13 +948,18 @@ const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
 
 // Mở URL bất kỳ trong popup (Market / VNINDEX)
 function openUrl(url, label){
-  _tab='url';
-  document.getElementById('ptitle').textContent= label || '🌐 Web';
-  // Reset các iframe khác
-  document.getElementById('iframe-vs').src='about:blank';
+  _sym = 'VNINDEX';
+  _tab = 'url';
+  document.getElementById('ptitle').textContent = label || '🌐 Web';
+
+  // Reset các iframe phụ, nhưng pre-load iframe-vs với chart VNINDEX
+  // để khi user click tab Vietstock sẽ có chart sẵn
   IFRAME_TABS.forEach(t=>{
     document.getElementById(`iframe-${t}`).src='about:blank';
   });
+  document.getElementById('iframe-vs').src =
+    'https://ta.vietstock.vn/?stockcode=vnindex';
+
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
@@ -963,7 +968,7 @@ function openUrl(url, label){
   const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
   allTabs.forEach(t=>{
     const ct = document.getElementById('ctab-'+t);
-    if(ct) ct.classList.remove('on');
+    if(ct) ct.classList.toggle('on', t==='url');
     document.getElementById('panel-'+t).classList.toggle('on', t==='url');
   });
 
