@@ -1096,6 +1096,11 @@ function _activateTab(tab){
   if(tab==='scanner'){
     loadScannerChart(_sym);
   }
+// Scroll tab đang active vào vùng nhìn thấy
+const activeBtn = document.getElementById('ctab-' + tab);
+if(activeBtn && activeBtn.closest('#mob-tabrow')){
+  activeBtn.scrollIntoView({behavior:'smooth', block:'nearest', inline:'start'});
+}
 }
 
 function switchTab(tab){ _activateTab(tab); }
