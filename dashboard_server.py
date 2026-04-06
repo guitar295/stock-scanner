@@ -410,6 +410,9 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 
 /* ── POPUP ─── */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+@media(max-width:768px){
+  .overlay{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}
+}
 .overlay.on{display:flex}
 
 .pbox{
