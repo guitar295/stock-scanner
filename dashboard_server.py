@@ -923,7 +923,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 // CONFIG
 // ═══════════════════════════════════════════════════════
 let SIG_TTL=30, HMAP_TTL=120;
-const _notifiedKeys = new Set();
 
 async function loadConfig(){
   try{
@@ -1590,7 +1589,7 @@ async function loadScannerChart(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML=
-    `<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
+    `<span>⏳ Đang tạo chart <b>${sym}</b>… (15–30 giây lần đầu)</span>`;
 
   try{
     const r=await fetch(`/api/chart_images/${sym}`);
@@ -1772,20 +1771,7 @@ async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
     document.getElementById('sig-meta').textContent=
-      `Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;  
-    // Gửi desktop notification cho tín hiệu mới
-    if(Notification.permission === 'granted'){
-      j.signals.forEach(s => {
-        const key = `${s.symbol}_${s.signal}`;
-        if(!_notifiedKeys.has(key)){
-          _notifiedKeys.add(key);
-          new Notification(`${s.emoji} ${s.symbol} — ${s.signal}`, {
-            body: `Tín hiệu mới lúc ${j.updated_at}`,
-            tag:  key,
-          });
-        }
-      });
-    }
+      `Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
     const el=document.getElementById('sig-list');
     if(!j.signals.length){
       el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';
@@ -1839,10 +1825,6 @@ async function init(){
   await Promise.all([fetchSigs(),fetchHmap()]);
   setInterval(async()=>{ startBar('pbar-sig',  SIG_TTL);  await fetchSigs(); }, SIG_TTL  * 1000);
   setInterval(async()=>{ startBar('pbar-hmap', HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
-  // Xin quyền desktop notification
-  if('Notification' in window && Notification.permission === 'default'){
-    Notification.requestPermission();
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
