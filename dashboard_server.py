@@ -758,9 +758,20 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   transition: opacity .3s;
   white-space: nowrap;
 }
-#lb-zoom-hint.show { opacity: 1; }
 
-/* ── Zoom indicator đã bỏ ── */
+#edge-swipe-zone {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 30px;
+  height: 100%;
+  z-index: 10000;
+  display: none;
+}
+#edge-swipe-zone.on {
+  display: block;
+}
+
 </style>
 </head>
 <body>
@@ -1660,6 +1671,7 @@ function openUrl(url, label){
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
+  document.getElementById('edge-swipe-zone').classList.add('on');
 }
 
 function openChart(sym){
@@ -1675,6 +1687,7 @@ function openChart(sym){
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
+  document.getElementById('edge-swipe-zone').classList.add('on');
 }
 
 function _activateTab(tab){
@@ -1734,6 +1747,7 @@ function closePopup(){
   document.getElementById('iframe-vs').src='about:blank';
   IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
   document.body.style.overflow='';
+  document.getElementById('edge-swipe-zone').classList.remove('on');
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
@@ -1744,20 +1758,19 @@ document.getElementById('overlay').addEventListener('click',e=>{
 
 (function(){
   if(window.innerWidth > 768) return;
-  const EDGE = 30; // vùng cạnh trái kích hoạt (px)
+  const zone = document.getElementById('edge-swipe-zone');
   let startX = 0, startY = 0, dx = 0, dy = 0;
   let active = false, dir = '';
 
-  document.addEventListener('touchstart', function(e){
+  zone.addEventListener('touchstart', function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
     if(lb.el && lb.el.classList.contains('on')) return;
     const t = e.touches[0];
-    if(t.clientX > EDGE) return; // chỉ bắt từ cạnh trái
     startX = t.clientX; startY = t.clientY;
     dx = 0; dy = 0; dir = ''; active = true;
   }, {passive: true});
 
-  document.addEventListener('touchmove', function(e){
+  zone.addEventListener('touchmove', function(e){
     if(!active) return;
     const t = e.touches[0];
     dx = t.clientX - startX;
@@ -1765,15 +1778,14 @@ document.getElementById('overlay').addEventListener('click',e=>{
     if(!dir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
       dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
     }
-    if(dir !== 'h') return;
-    if(dx <= 0) return;
+    if(dir !== 'h' || dx <= 0) return;
     const pbox = document.querySelector('.pbox');
     const opacity = Math.max(0, 1 - dx / 280);
     pbox.style.transform = `translateX(${dx}px)`;
     document.getElementById('overlay').style.background = `rgba(17,24,39,${0.5 * opacity})`;
   }, {passive: true});
 
-  document.addEventListener('touchend', function(e){
+  zone.addEventListener('touchend', function(e){
     if(!active) return;
     active = false;
     if(dir !== 'h' || dx <= 0){
@@ -1811,7 +1823,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
     dx = 0; dir = '';
   }, {passive: true});
 })();
-
 
 document.addEventListener('keydown',e=>{
   if(lb.el && lb.el.classList.contains('on')) return;
@@ -2033,6 +2044,7 @@ openUrl = function(url, label){
 
 init();
 </script>
+<div id="edge-swipe-zone"></div>
 </body>
 </html>
 """
