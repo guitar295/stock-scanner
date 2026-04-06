@@ -196,7 +196,12 @@ docker run -d \
 ```
 
 ```
-docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env -p 8888:8888 stock-scanner \
+docker run -d \
+  --name scanner \
+  --restart unless-stopped \
+  --env-file ~/scanner/.env \
+  -p 8888:8888 \
+  stock-scanner
 ```
 ## 2.7 — Kiểm tra đang chạy đúng
 
