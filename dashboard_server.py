@@ -1765,7 +1765,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
       swipeDir = Math.abs(swipeDy) > Math.abs(swipeDx) ? 'v' : 'h';
     }
     if(swipeDir !== 'h') return;
-    if(swipeDx >= 0) return; // chỉ xử lý vuốt trái (swipeDx < 0)
+    if(swipeDx <= 0) return; // chỉ xử lý vuốt trái (swipeDx < 0)
     const pull = Math.abs(swipeDx);
     const opacity = Math.max(0, 1 - pull / 280);
     const tx = swipeDx;
@@ -1786,7 +1786,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
     const W    = window.innerWidth;
     if(pull > W * 0.30){
       pbox.style.transition = 'transform 0.22s ease, opacity 0.22s ease';
-      pbox.style.transform  = `translateX(-100vw)`;
+      pbox.style.transform  = `translateX(100vw)`;
       pbox.style.opacity    = '0';
       overlay.style.transition = 'background 0.22s ease';
       overlay.style.background = 'rgba(17,24,39,0)';
