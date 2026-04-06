@@ -418,6 +418,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   }
 }
 .overlay.on{display:flex}
+.overlay.closing{display:none !important}
 
 .pbox{
   background:var(--surface);border:1px solid var(--border);border-radius:10px;
@@ -1760,27 +1761,13 @@ function switchTab(tab){ _activateTab(tab); }
 
 function closePopup(){
   const overlay = document.getElementById('overlay');
-  const pbox = overlay.querySelector('.pbox');
-  
-  // Ẩn ngay lập tức trước mọi thứ
-  pbox.style.visibility = 'hidden';
-  
-  // Xóa src iframe ngay — không chờ
+  overlay.classList.add('closing');
+  overlay.classList.remove('on');
   document.getElementById('iframe-vs').src = 'about:blank';
   IFRAME_TABS.forEach(t => { document.getElementById(`iframe-${t}`).src = 'about:blank'; });
-  
-  // Tắt animation để tránh giật
-  pbox.style.animation = 'none';
-  
-  overlay.classList.remove('on');
   document.body.style.overflow = '';
   document.getElementById('edge-swipe-zone').classList.remove('on');
-  
-  // Reset cho lần mở sau
-  requestAnimationFrame(() => {
-    pbox.style.visibility = '';
-    pbox.style.animation = '';
-  });
+  setTimeout(() => { overlay.classList.remove('closing'); }, 100);
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
