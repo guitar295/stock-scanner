@@ -932,7 +932,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div id="mob-lightbox-counter"></div>
   <div id="lb-zoom-hint">Chụm 2 ngón để zoom</div>
 </div>
-
+<div id="edge-swipe-zone"></div>
 <script>
 // ═══════════════════════════════════════════════════════
 // CONFIG
@@ -2044,7 +2044,6 @@ openUrl = function(url, label){
 
 init();
 </script>
-<div id="edge-swipe-zone"></div>
 </body>
 </html>
 """
