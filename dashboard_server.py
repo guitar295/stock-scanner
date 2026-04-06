@@ -1803,13 +1803,19 @@ document.getElementById('overlay').addEventListener('click',e=>{
       document.getElementById('overlay').style.transition = 'background 0.22s ease';
       document.getElementById('overlay').style.background = 'rgba(17,24,39,0)';
       setTimeout(()=>{
-        closePopup();
-        pbox.style.transition = '';
-        pbox.style.transform = '';
-        pbox.style.opacity = '';
-        document.getElementById('overlay').style.transition = '';
-        document.getElementById('overlay').style.background = '';
-      }, 230);
+          document.getElementById('overlay').classList.remove('on');
+          document.body.style.overflow='';
+          document.getElementById('edge-swipe-zone').classList.remove('on');
+          pbox.style.transition = '';
+          pbox.style.transform = '';
+          pbox.style.opacity = '';
+          document.getElementById('overlay').style.transition = '';
+          document.getElementById('overlay').style.background = '';
+          setTimeout(()=>{
+            document.getElementById('iframe-vs').src='about:blank';
+            IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
+          }, 100);
+        }, 230);
     } else {
       pbox.style.transition = 'transform 0.2s ease';
       pbox.style.transform = '';
