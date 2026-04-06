@@ -53,12 +53,16 @@ CHART_TTL_SEC       = 0   # Không cache — chart luôn vẽ mới mỗi lần 
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     result  = []
+    cache = _get_history_cache() if _get_history_cache else {}
     for sym, sig in alerted.items():
+        df = cache.get(sym)
+        pct = round(float(df['close'].iloc[-1] / df['close'].iloc[-2] - 1) * 100, 2) if df is not None and len(df) >= 2 else None
         result.append({
             "symbol": sym,
             "signal": sig,
             "emoji":  _signal_emoji.get(sig, "📌"),
             "rank":   _signal_rank.get(sig, 0),
+            "pct":    pct,
         })
     result.sort(key=lambda x: x["rank"], reverse=True)
     return jsonify({
@@ -754,9 +758,20 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   transition: opacity .3s;
   white-space: nowrap;
 }
-#lb-zoom-hint.show { opacity: 1; }
 
-/* ── Zoom indicator đã bỏ ── */
+#edge-swipe-zone {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 30px;
+  height: 100%;
+  z-index: 10000;
+  display: none;
+}
+#edge-swipe-zone.on {
+  display: block;
+}
+
 </style>
 </head>
 <body>
@@ -917,7 +932,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div id="mob-lightbox-counter"></div>
   <div id="lb-zoom-hint">Chụm 2 ngón để zoom</div>
 </div>
-
+<div id="edge-swipe-zone"></div>
 <script>
 // ═══════════════════════════════════════════════════════
 // CONFIG
@@ -1656,6 +1671,7 @@ function openUrl(url, label){
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
+  document.getElementById('edge-swipe-zone').classList.add('on');
 }
 
 function openChart(sym){
@@ -1671,6 +1687,7 @@ function openChart(sym){
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
+  document.getElementById('edge-swipe-zone').classList.add('on');
 }
 
 function _activateTab(tab){
@@ -1730,11 +1747,93 @@ function closePopup(){
   document.getElementById('iframe-vs').src='about:blank';
   IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
   document.body.style.overflow='';
+  document.getElementById('edge-swipe-zone').classList.remove('on');
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
   if(e.target===document.getElementById('overlay'))closePopup();
 });
+
+// MOBILE SWIPE LEFT TO CLOSE POPUP
+
+(function(){
+  if(window.innerWidth > 768) return;
+  const zone = document.getElementById('edge-swipe-zone');
+  let startX = 0, startY = 0, dx = 0, dy = 0;
+  let active = false, dir = '';
+
+  zone.addEventListener('touchstart', function(e){
+    if(!document.getElementById('overlay').classList.contains('on')) return;
+    if(lb.el && lb.el.classList.contains('on')) return;
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    dx = 0; dy = 0; dir = ''; active = true;
+  }, {passive: true});
+
+  zone.addEventListener('touchmove', function(e){
+    if(!active) return;
+    const t = e.touches[0];
+    dx = t.clientX - startX;
+    dy = t.clientY - startY;
+    if(!dir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
+      dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    }
+    if(dir !== 'h' || dx <= 0) return;
+    const pbox = document.querySelector('.pbox');
+    const opacity = Math.max(0, 1 - dx / 280);
+    pbox.style.transform = `translateX(${dx}px)`;
+    document.getElementById('overlay').style.background = `rgba(17,24,39,${0.5 * opacity})`;
+  }, {passive: true});
+
+  zone.addEventListener('touchend', function(e){
+    if(!active) return;
+    active = false;
+    if(dir !== 'h' || dx <= 0){
+      const pbox = document.querySelector('.pbox');
+      pbox.style.transition = '';
+      pbox.style.transform = '';
+      document.getElementById('overlay').style.background = '';
+      return;
+    }
+    const pbox = document.querySelector('.pbox');
+    if(dx > window.innerWidth * 0.30){
+      pbox.style.transition = 'transform 0.22s ease, opacity 0.22s ease';
+      pbox.style.transform = `translateX(100vw)`;
+      pbox.style.opacity = '0';
+      document.getElementById('overlay').style.transition = 'background 0.22s ease, backdrop-filter 0.22s ease';
+      document.getElementById('overlay').style.background = 'rgba(17,24,39,0)';
+      document.getElementById('overlay').style.backdropFilter = 'blur(0px)';
+      document.getElementById('overlay').style.webkitBackdropFilter = 'blur(0px)';
+      setTimeout(()=>{
+          document.getElementById('overlay').classList.remove('on');
+          document.body.style.overflow='';
+          document.getElementById('edge-swipe-zone').classList.remove('on');
+          pbox.style.transition = '';
+          pbox.style.transform = '';
+          pbox.style.opacity = '';
+          document.getElementById('overlay').style.transition = '';
+          document.getElementById('overlay').style.background = '';
+          document.getElementById('overlay').style.backdropFilter = '';        
+          document.getElementById('overlay').style.webkitBackdropFilter = ''; 
+          setTimeout(()=>{
+            document.getElementById('iframe-vs').src='about:blank';
+            IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
+          }, 100);
+        }, 230);
+    } else {
+      pbox.style.transition = 'transform 0.2s ease';
+      pbox.style.transform = '';
+      document.getElementById('overlay').style.transition = 'background 0.2s ease';
+      document.getElementById('overlay').style.background = '';
+      setTimeout(()=>{
+        pbox.style.transition = '';
+        document.getElementById('overlay').style.transition = '';
+      }, 210);
+    }
+    dx = 0; dir = '';
+  }, {passive: true});
+})();
+
 document.addEventListener('keydown',e=>{
   if(lb.el && lb.el.classList.contains('on')) return;
   if(e.key==='Escape'){
@@ -1781,7 +1880,7 @@ async function fetchSigs(){
       <div class="sig-row" onclick="openChart('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
-        <span class="s-type">${s.signal}</span>
+        <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+s.pct+'%':'—'}</span>
         <span class="s-badge ${badgeCls(s.signal)}">
           ${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}
         </span>
