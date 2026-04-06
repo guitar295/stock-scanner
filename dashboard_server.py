@@ -793,18 +793,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     transform: translateY(-50%);
     z-index: 10001;
     /* 1. THU NHỎ KÍCH THƯỚC */
-    width: 20px;
-    height: 30px;
+    width: 15px;
+    height: 20px;
     border-radius: 6px 0 0 6px;
     /* nền tối rất mờ — ~5% opacity, gần như trong suốt */
-    background: rgba(17, 24, 39, 0.05);
+    background: rgba(17, 24, 39, 0.02);
     backdrop-filter: blur(1px);
     -webkit-backdrop-filter: blur(1px);
     /* viền mờ, không border bên phải để dính sát cạnh */
     border: 1px solid rgba(255, 255, 255, 0.03);
     border-right: none;
     /* chữ ✕ cũng mờ — không đập vào mắt */
-    color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.10);
     font-size: 12px;
     align-items: center;
     justify-content: center;
