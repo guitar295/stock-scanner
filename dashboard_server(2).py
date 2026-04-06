@@ -411,7 +411,11 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 /* ── POPUP ─── */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 @media(max-width:768px){
-  .overlay{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}
+  .overlay{
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    background:rgba(17,24,39,0)!important;
+  }
 }
 .overlay.on{display:flex}
 
@@ -476,6 +480,8 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
+.pbox.swiping .tpanel iframe{pointer-events:none;will-change:auto;visibility:hidden}
+.pbox.swiping{isolation:isolate;contain:strict}
 
 /* ── Scanner Chart tab ─── */
 #panel-scanner{overflow:hidden;background:#ffffff;display:none;flex-direction:column}
@@ -1768,63 +1774,67 @@ document.getElementById('overlay').addEventListener('click',e=>{
 
 (function(){
   if(window.innerWidth > 768) return;
-  const zone = document.getElementById('edge-swipe-zone');
-  const EASE_OUT = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-  let startX = 0, startY = 0, dx = 0, dy = 0;
-  let active = false, dir = '';
+  const zone    = document.getElementById('edge-swipe-zone');
+  const EASE    = 'cubic-bezier(0.25,0.46,0.45,0.94)';
+  let startX=0, startY=0, curX=0, dx=0, dy=0;
+  let active=false, dir='', rafId=null;
+  let pbox=null;
+
+  // RAF loop — đọc curX mỗi frame, apply transform ngay tức thì
+  function rafLoop(){
+    if(!active){ rafId=null; return; }
+    if(dir==='h' && dx>0){
+      pbox.style.transform = `translate3d(${dx}px,0,0)`;
+    }
+    rafId = requestAnimationFrame(rafLoop);
+  }
 
   zone.addEventListener('touchstart', function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
     if(lb.el && lb.el.classList.contains('on')) return;
-    const t = e.touches[0];
-    startX = t.clientX;
-    startY = t.clientY;
-    dx = 0; dy = 0; dir = ''; active = true;
-  }, {passive: true});
+    pbox = document.querySelector('.pbox');
+    startX=e.touches[0].clientX; startY=e.touches[0].clientY;
+    curX=startX; dx=0; dy=0; dir=''; active=true;
+    // Pre-promote GPU layer ngay lập tức
+    pbox.style.willChange='transform';
+    pbox.style.transition='none';
+    pbox.style.transform='translate3d(0,0,0)';
+    // Freeze iframe để không repaint khi đang kéo
+    pbox.classList.add('swiping');
+  }, {passive:true});
 
   zone.addEventListener('touchmove', function(e){
     if(!active) return;
-    const t = e.touches[0];
-    dx = t.clientX - startX;
-    dy = t.clientY - startY;
-    if(!dir && (Math.abs(dx) > 8 || Math.abs(dy) > 8)){
-      dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    curX=e.touches[0].clientX;
+    dx=curX-startX;
+    dy=e.touches[0].clientY-startY;
+    if(!dir && (Math.abs(dx)>6||Math.abs(dy)>6)){
+      dir=Math.abs(dx)>Math.abs(dy)?'h':'v';
+      if(dir==='h' && !rafId) rafId=requestAnimationFrame(rafLoop);
     }
-    if(dir !== 'h' || dx <= 0) return;
-    const pbox = document.querySelector('.pbox');
-    // translate3d kích hoạt GPU — không giật
-    pbox.style.transition = 'none';
-    pbox.style.transform = `translate3d(${dx}px, 0, 0)`;
-  }, {passive: true});
+  }, {passive:true});
 
   zone.addEventListener('touchend', function(e){
     if(!active) return;
-    active = false;
-    const pbox = document.querySelector('.pbox');
+    active=false;
+    if(rafId){ cancelAnimationFrame(rafId); rafId=null; }
+    pbox.classList.remove('swiping');
 
-    if(dir !== 'h' || dx <= 0){
-      pbox.style.transition = `transform 0.28s ${EASE_OUT}`;
-      pbox.style.transform = 'translate3d(0, 0, 0)';
-      setTimeout(()=>{ pbox.style.transition = ''; pbox.style.transform = ''; }, 290);
-      dx = 0; dir = '';
-      return;
-    }
+    const W=window.innerWidth;
+    const snap=dx>W*0.15;
 
-    if(dx > window.innerWidth * 0.15){
-      pbox.style.transition = `transform 0.26s ${EASE_OUT}`;
-      pbox.style.transform = `translate3d(${window.innerWidth}px, 0, 0)`;
-      setTimeout(()=>{
-        pbox.style.transition = '';
-        pbox.style.transform = '';
-        closePopup();
-      }, 270);
-    } else {
-      pbox.style.transition = `transform 0.28s ${EASE_OUT}`;
-      pbox.style.transform = 'translate3d(0, 0, 0)';
-      setTimeout(()=>{ pbox.style.transition = ''; pbox.style.transform = ''; }, 290);
-    }
-    dx = 0; dir = '';
-  }, {passive: true});
+    pbox.style.transition=`transform 0.28s ${EASE}`;
+    pbox.style.transform=snap?`translate3d(${W}px,0,0)`:'translate3d(0,0,0)';
+
+    setTimeout(()=>{
+      pbox.style.willChange='';
+      pbox.style.transition='';
+      pbox.style.transform='';
+      if(snap) closePopup();
+    }, 290);
+
+    dx=0; dir='';
+  }, {passive:true});
 })();
 
 document.addEventListener('keydown',e=>{
