@@ -552,6 +552,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     text-overflow:ellipsis!important;
     max-width:55%!important;
   }
+  /* Override riêng cho timestamp heatmap — không cắt chữ */
+  .hmap-ts-wrap{
+    white-space:normal!important;
+    overflow:visible!important;
+    text-overflow:unset!important;
+    max-width:100%!important;
+    word-break:break-word!important;
+    line-height:1.5!important;
+    margin-left:0!important;
+    width:100%!important;
+    display:block!important;
+  }
   .panel-hdr{
     gap:6px!important;
     padding:7px 10px!important;
