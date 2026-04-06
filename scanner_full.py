@@ -1424,7 +1424,7 @@ def dashboard_chart_fn(symbol: str):
             df_weekly  = build_weekly_df(df_raw)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
-            date_str_w = _date_str_from_df(df_plot_w)
+            date_str_w = _date_str_from_df(df_raw)
             path_w = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                 timeframe='Weekly', add_arrow=False, date_str=date_str_w)
             tmp_files.append(path_w)
