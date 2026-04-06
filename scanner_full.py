@@ -393,7 +393,7 @@ def handle_heatmap_command(chat_id):
         requests.post(url_act, data={"chat_id": chat_id, "action": "upload_photo"}, timeout=5)
         requests.post(url_msg, data={
             "chat_id": chat_id,
-            "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 15–30 giây..."
+            "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 5–10 giây..."
         })
         data, ts_str = fetch_heatmap_data()
         if not data:
