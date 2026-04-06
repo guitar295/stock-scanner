@@ -1815,7 +1815,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
       return;
     }
 
-    if(dx > window.innerWidth * 0.30){
+    if(dx > window.innerWidth * 0.15){
       // Đủ ngưỡng — đóng popup
       pbox.style.transition = 'transform 0.22s ease';
       pbox.style.transform = `translateX(100vw)`;
