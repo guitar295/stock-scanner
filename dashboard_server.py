@@ -476,6 +476,8 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
+.pbox.swiping .tpanel iframe{pointer-events:none;will-change:auto}
+.pbox.swiping{isolation:isolate}
 
 /* ── Scanner Chart tab ─── */
 #panel-scanner{overflow:hidden;background:#ffffff;display:none;flex-direction:column}
@@ -1793,6 +1795,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
     if(dir !== 'h' || dx <= 0) return;
     const pbox = document.querySelector('.pbox');
     // translate3d kích hoạt GPU — không giật
+    if(!pbox.classList.contains('swiping')) pbox.classList.add('swiping');
     pbox.style.transition = 'none';
     pbox.style.transform = `translate3d(${dx}px, 0, 0)`;
   }, {passive: true});
@@ -1814,6 +1817,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
       pbox.style.transition = `transform 0.26s ${EASE_OUT}`;
       pbox.style.transform = `translate3d(${window.innerWidth}px, 0, 0)`;
       setTimeout(()=>{
+        pbox.classList.remove('swiping');
         pbox.style.transition = '';
         pbox.style.transform = '';
         closePopup();
@@ -1821,7 +1825,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
     } else {
       pbox.style.transition = `transform 0.28s ${EASE_OUT}`;
       pbox.style.transform = 'translate3d(0, 0, 0)';
-      setTimeout(()=>{ pbox.style.transition = ''; pbox.style.transform = ''; }, 290);
+      setTimeout(()=>{ pbox.classList.remove('swiping'); pbox.style.transition = ''; pbox.style.transform = ''; }, 290);
     }
     dx = 0; dir = '';
   }, {passive: true});
