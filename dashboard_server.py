@@ -418,7 +418,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   }
 }
 .overlay.on{display:flex}
-.overlay.closing{display:none !important}
 
 .pbox{
   background:var(--surface);border:1px solid var(--border);border-radius:10px;
@@ -1761,13 +1760,27 @@ function switchTab(tab){ _activateTab(tab); }
 
 function closePopup(){
   const overlay = document.getElementById('overlay');
-  overlay.classList.add('closing');
-  overlay.classList.remove('on');
+  const pbox = overlay.querySelector('.pbox');
+  
+  // Ẩn ngay lập tức trước mọi thứ
+  pbox.style.visibility = 'hidden';
+  
+  // Xóa src iframe ngay — không chờ
   document.getElementById('iframe-vs').src = 'about:blank';
   IFRAME_TABS.forEach(t => { document.getElementById(`iframe-${t}`).src = 'about:blank'; });
+  
+  // Tắt animation để tránh giật
+  pbox.style.animation = 'none';
+  
+  overlay.classList.remove('on');
   document.body.style.overflow = '';
   document.getElementById('edge-swipe-zone').classList.remove('on');
-  setTimeout(() => { overlay.classList.remove('closing'); }, 100);
+  
+  // Reset cho lần mở sau
+  requestAnimationFrame(() => {
+    pbox.style.visibility = '';
+    pbox.style.animation = '';
+  });
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
@@ -1783,7 +1796,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
   pbox.addEventListener('touchstart', function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
     if(lb.el && lb.el.classList.contains('on')) return;
-    if(e.touches[0].clientX > 120) return; // chỉ nhận từ cạnh trái 40px
+    if(e.touches[0].clientX > 40) return; // chỉ nhận từ cạnh trái 40px
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     dir = ''; fired = false;
@@ -1797,10 +1810,9 @@ document.getElementById('overlay').addEventListener('click',e=>{
       dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
     if(dir === 'h' && dx > 40){
       fired = true;
-      e.preventDefault();
       closePopup();
     }
-  }, {passive:false});
+  }, {passive:true});
 })();
 
 document.addEventListener('keydown',e=>{
