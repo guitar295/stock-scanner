@@ -1762,28 +1762,22 @@ document.getElementById('overlay').addEventListener('click',e=>{
 (function(){
   if(window.innerWidth > 768) return;
   const zone = document.getElementById('edge-swipe-zone');
-  let startX = 0, startY = 0, dx = 0, dy = 0;
+  let startX = 0, dx = 0, dy = 0;
   let active = false, dir = '';
 
   zone.addEventListener('touchstart', function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
     if(lb.el && lb.el.classList.contains('on')) return;
     const t = e.touches[0];
-    startX = t.clientX; startY = t.clientY;
+    startX = t.clientX;
     dx = 0; dy = 0; dir = ''; active = true;
-    // Ẩn overlay ngay lập tức — chỉ còn pbox trượt trên trang chủ
-    const o = document.getElementById('overlay');
-    o.style.transition = 'none';
-    o.style.background = 'transparent';
-    o.style.backdropFilter = 'none';
-    o.style.webkitBackdropFilter = 'none';
   }, {passive: true});
 
   zone.addEventListener('touchmove', function(e){
     if(!active) return;
     const t = e.touches[0];
     dx = t.clientX - startX;
-    dy = t.clientY - startY;
+    dy = t.clientY - (e.touches[0].clientY - dy);
     if(!dir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
       dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
     }
@@ -1797,51 +1791,27 @@ document.getElementById('overlay').addEventListener('click',e=>{
     if(!active) return;
     active = false;
     const pbox = document.querySelector('.pbox');
-    const o = document.getElementById('overlay');
 
     if(dir !== 'h' || dx <= 0){
-      // Cancel — restore lại overlay
       pbox.style.transition = 'transform 0.2s ease';
       pbox.style.transform = '';
-      o.style.transition = 'background 0.2s ease, backdrop-filter 0.2s ease';
-      o.style.background = '';
-      o.style.backdropFilter = '';
-      o.style.webkitBackdropFilter = '';
-      setTimeout(()=>{
-        pbox.style.transition = '';
-        o.style.transition = '';
-      }, 200);
+      setTimeout(()=>{ pbox.style.transition = ''; }, 200);
       dx = 0; dir = '';
       return;
     }
 
     if(dx > window.innerWidth * 0.15){
-      // Đủ ngưỡng — đóng popup
       pbox.style.transition = 'transform 0.22s ease';
       pbox.style.transform = `translateX(100vw)`;
       setTimeout(()=>{
-        // Reset tất cả style trước
         pbox.style.transition = '';
         pbox.style.transform = '';
-        o.style.transition = '';
-        o.style.background = '';
-        o.style.backdropFilter = '';
-        o.style.webkitBackdropFilter = '';
-        // Sau đó mới closePopup
         closePopup();
       }, 220);
     } else {
-      // Không đủ ngưỡng — trả về
       pbox.style.transition = 'transform 0.2s ease';
       pbox.style.transform = '';
-      o.style.transition = 'background 0.2s ease, backdrop-filter 0.2s ease';
-      o.style.background = '';
-      o.style.backdropFilter = '';
-      o.style.webkitBackdropFilter = '';
-      setTimeout(()=>{
-        pbox.style.transition = '';
-        o.style.transition = '';
-      }, 200);
+      setTimeout(()=>{ pbox.style.transition = ''; }, 200);
     }
     dx = 0; dir = '';
   }, {passive: true});
