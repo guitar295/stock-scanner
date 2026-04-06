@@ -302,10 +302,15 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   .hmap-search-input{width:122px!important;font-size:11px!important;}
   .hmap-search-input:focus{width:122px!important;}
   .hmap-ts-wrap{
-    margin-left:0!important;width:100%!important;
-    white-space:nowrap!important;overflow:visible!important;
-    text-overflow:clip!important;font-size:9px!important;
-    line-height:1.4!important;display:block!important;
+    margin-left:0!important;
+    width:100%!important;
+    white-space:normal!important;
+    overflow:visible!important;
+    text-overflow:unset!important;
+    font-size:9px!important;
+    line-height:1.5!important;
+    display:block!important;
+    word-break:break-word!important;
   }
 }
 .hmap-panel-left{
@@ -1776,8 +1781,10 @@ async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
     const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
-    document.getElementById('hmap-ts').textContent=
-      `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
+    const isMob = window.innerWidth <= 768;
+    document.getElementById('hmap-ts').textContent= isMob
+      ? `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`
+      : `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
     renderHeatmap(j.data||{});
   }catch(e){console.error('fetchHmap:',e)}
 }
