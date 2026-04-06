@@ -1810,9 +1810,10 @@ document.getElementById('overlay').addEventListener('click',e=>{
       dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
     if(dir === 'h' && dx > 40){
       fired = true;
+      e.preventDefault();
       closePopup();
     }
-  }, {passive:true});
+  }, {passive:false});
 })();
 
 document.addEventListener('keydown',e=>{
