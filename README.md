@@ -143,6 +143,7 @@ bash
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/Dockerfile
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/requirements.txt
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py
 ```
 Kiểm tra đã có đủ 3 file:
 bash
