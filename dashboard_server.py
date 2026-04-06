@@ -1800,8 +1800,10 @@ document.getElementById('overlay').addEventListener('click',e=>{
       pbox.style.transition = 'transform 0.22s ease, opacity 0.22s ease';
       pbox.style.transform = `translateX(100vw)`;
       pbox.style.opacity = '0';
-      document.getElementById('overlay').style.transition = 'background 0.22s ease';
+      document.getElementById('overlay').style.transition = 'background 0.22s ease, backdrop-filter 0.22s ease';
       document.getElementById('overlay').style.background = 'rgba(17,24,39,0)';
+      document.getElementById('overlay').style.backdropFilter = 'blur(0px)';
+      document.getElementById('overlay').style.webkitBackdropFilter = 'blur(0px)';
       setTimeout(()=>{
           document.getElementById('overlay').classList.remove('on');
           document.body.style.overflow='';
@@ -1811,6 +1813,8 @@ document.getElementById('overlay').addEventListener('click',e=>{
           pbox.style.opacity = '';
           document.getElementById('overlay').style.transition = '';
           document.getElementById('overlay').style.background = '';
+          document.getElementById('overlay').style.backdropFilter = '';        
+          document.getElementById('overlay').style.webkitBackdropFilter = ''; 
           setTimeout(()=>{
             document.getElementById('iframe-vs').src='about:blank';
             IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
