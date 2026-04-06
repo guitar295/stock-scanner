@@ -393,7 +393,7 @@ def handle_heatmap_command(chat_id):
         requests.post(url_act, data={"chat_id": chat_id, "action": "upload_photo"}, timeout=5)
         requests.post(url_msg, data={
             "chat_id": chat_id,
-            "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 15–30 giây..."
+            "text": "🗺 Đang tải dữ liệu heatmap, vui lòng chờ 5–10 giây..."
         })
         data, ts_str = fetch_heatmap_data()
         if not data:
@@ -1200,7 +1200,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             df_weekly  = build_weekly_df(df_merged)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
-            date_str_w = _date_str_from_df(df_plot_w)
+            date_str_w = _date_str_from_df(df_merged)
             img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                     timeframe='Weekly', add_arrow=False, date_str=date_str_w)
             img_15m    = _build_15m_chart(symbol, signal_type)
@@ -1331,7 +1331,7 @@ def fetch_and_send_chart(symbol, chat_id):
         df_weekly  = build_weekly_df(df_raw)
         df_plot_w  = df_weekly.tail(200).copy()
         today_w    = df_plot_w.iloc[-1]
-        date_str_w = _date_str_from_df(df_plot_w)
+        date_str_w = _date_str_from_df(df_raw)
         img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                 timeframe='Weekly', add_arrow=False, date_str=date_str_w)
 
@@ -1424,7 +1424,7 @@ def dashboard_chart_fn(symbol: str):
             df_weekly  = build_weekly_df(df_raw)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
-            date_str_w = _date_str_from_df(df_plot_w)
+            date_str_w = _date_str_from_df(df_raw)
             path_w = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                 timeframe='Weekly', add_arrow=False, date_str=date_str_w)
             tmp_files.append(path_w)
