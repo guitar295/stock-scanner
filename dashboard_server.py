@@ -1812,7 +1812,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
 
     if(dx > window.innerWidth * 0.15){
       pbox.style.transition = `transform 0.26s ${EASE_OUT}`;
-      pbox.style.transform = `translate3d(100vw, 0, 0)`;
+      pbox.style.transform = `translate3d(${window.innerWidth}px, 0, 0)`;
       setTimeout(()=>{
         pbox.style.transition = '';
         pbox.style.transform = '';
