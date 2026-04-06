@@ -1787,35 +1787,34 @@ document.getElementById('overlay').addEventListener('click',e=>{
   if(e.target===document.getElementById('overlay'))closePopup();
 });
 
-// MOBILE SWIPE TO CLOSE POPUP
-
-// MOBILE SWIPE TO CLOSE POPUP — đơn giản: vuốt ngang từ cạnh trái → closePopup()
+// MOBILE SWIPE TO CLOSE POPUP — kích hoạt ngay trong touchmove, không chờ nhấc tay
 (function(){
   const zone = document.getElementById('edge-swipe-zone');
-  let startX=0, startY=0, active=false, dir='';
+  let startX=0, startY=0, active=false, dir='', fired=false;
 
   zone.addEventListener('touchstart', function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
     if(lb.el && lb.el.classList.contains('on')) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
-    active = true; dir = '';
+    active = true; dir = ''; fired = false;
   }, {passive:true});
 
   zone.addEventListener('touchmove', function(e){
-    if(!active) return;
+    if(!active || fired) return;
     const dx = e.touches[0].clientX - startX;
     const dy = e.touches[0].clientY - startY;
     if(!dir && (Math.abs(dx)>10 || Math.abs(dy)>10))
       dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    if(dir === 'h' && dx > 40){
+      fired = true;
+      active = false;
+      closePopup();
+    }
   }, {passive:true});
 
   zone.addEventListener('touchend', function(e){
-    if(!active) return;
     active = false;
-    if(dir !== 'h') return;
-    const dx = e.changedTouches[0].clientX - startX;
-    if(dx > 40) closePopup();
   }, {passive:true});
 })();
 
