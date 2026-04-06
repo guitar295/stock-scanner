@@ -287,18 +287,26 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   .hmap-panel-hdr{
     flex-direction:column!important;
     align-items:flex-start!important;
-    gap:5px!important;
-    padding:8px 10px!important;
+    gap:4px!important;
+    padding:7px 10px!important;
   }
   .hmap-hdr-row1{
-    width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;
+    width:100%!important;flex-wrap:nowrap!important;
+    overflow-x:auto!important;overflow-y:visible!important;
+    scrollbar-width:none!important;-ms-overflow-style:none!important;
+    gap:6px!important;
   }
-  .hmap-hdr-row1::-webkit-scrollbar{display:none}
+  .hmap-hdr-row1::-webkit-scrollbar{display:none!important}
+  .hmap-hdr-row1 > *{flex-shrink:0!important;}
+  .hmap-search-wrap{flex-shrink:0!important;}
+  .hmap-search-input{width:122px!important;font-size:11px!important;}
+  .hmap-search-input:focus{width:122px!important;}
   .hmap-ts-wrap{
-    margin-left:0!important;font-size:9px!important;width:100%;
+    margin-left:0!important;width:100%!important;
+    white-space:nowrap!important;overflow:visible!important;
+    text-overflow:clip!important;font-size:9px!important;
+    line-height:1.4!important;display:block!important;
   }
-  .hmap-search-input{width:90px!important;}
-  .hmap-search-input:focus{width:110px!important;}
 }
 .hmap-panel-left{
   display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;
@@ -731,23 +739,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 }
 #lb-zoom-hint.show { opacity: 1; }
 
-/* ── Zoom indicator (scale label) ── */
-#lb-zoom-indicator {
-  position: absolute;
-  top: 56px;
-  right: 14px;
-  background: rgba(0,0,0,.38);
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  z-index: 11;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .25s;
-}
-#lb-zoom-indicator.show { opacity: 1; }
+/* ── Zoom indicator đã bỏ ── */
 </style>
 </head>
 <body>
@@ -907,7 +899,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <button id="mob-lightbox-close" onclick="lbClose()">✕</button>
   <div id="mob-lightbox-counter"></div>
   <div id="lb-zoom-hint">Chụm 2 ngón để zoom</div>
-  <div id="lb-zoom-indicator">1.0×</div>
 </div>
 
 <script>
@@ -1084,7 +1075,7 @@ function renderHeatmap(data){
 // ═══════════════════════════════════════════════════════
 const lb = {
   el: null, stripEl: null, labelEl: null, counterEl: null,
-  zoomHintEl: null, zoomIndicatorEl: null,
+  zoomHintEl: null,
   images: [],
   idx: 0,
   W: 0,
@@ -1143,16 +1134,14 @@ function _lbResetZoom(animate){
     else        img.classList.add('zooming');
     img.style.transform = 'translate(0px,0px) scale(1)';
   }
-  _lbHideZoomIndicator();
 }
 
 /* Áp dụng zoom+pan lên ảnh hiện tại */
 function _lbApplyZoom(){
   const img = _lbCurrentImg();
   if(!img) return;
-  img.classList.add('zooming');   // tắt transition khi kéo/pinch
+  img.classList.add('zooming');
   img.style.transform = `translate(${lb.panX}px,${lb.panY}px) scale(${lb.scale})`;
-  _lbShowZoomIndicator(lb.scale);
 }
 
 /* Clamp pan để ảnh không ra ngoài vùng nhìn */
@@ -1172,21 +1161,7 @@ function _lbClampPan(){
 }
 
 /* Zoom indicator */
-function _lbShowZoomIndicator(scale){
-  const el = lb.zoomIndicatorEl;
-  if(!el) return;
-  el.textContent = scale.toFixed(1) + '×';
-  el.classList.add('show');
-  clearTimeout(lb._zoomIndTimer);
-  if(scale <= 1.05){
-    lb._zoomIndTimer = setTimeout(()=> el.classList.remove('show'), 800);
-  }
-}
-function _lbHideZoomIndicator(){
-  const el = lb.zoomIndicatorEl;
-  if(!el) return;
-  el.classList.remove('show');
-}
+/* Zoom indicator đã bỏ */
 
 /* Zoom hint lần đầu */
 let _lbHintShown = false;
@@ -1205,7 +1180,6 @@ function lbInit(){
   lb.labelEl      = document.getElementById('mob-lightbox-label');
   lb.counterEl    = document.getElementById('mob-lightbox-counter');
   lb.zoomHintEl   = document.getElementById('lb-zoom-hint');
-  lb.zoomIndicatorEl = document.getElementById('lb-zoom-indicator');
 
   const vp = document.getElementById('lb-viewport');
   vp.addEventListener('touchstart', _lbTS, {passive: false});
@@ -1261,7 +1235,6 @@ function _lbSnapTo(idx, animate){
     lb.stripEl.style.transform = `translateX(${target}px)`;
   }
   _lbUpdateMeta();
-  _lbHideZoomIndicator();
 }
 
 function _lbUpdateMeta(){
@@ -1497,10 +1470,9 @@ function _lbDoubleTap(tapX, tapY){
     _lbClampPan();
     const img = _lbCurrentImg();
     if(img){
-      img.classList.remove('zooming');  // bật transition
+      img.classList.remove('zooming');
       img.style.transform = `translate(${lb.panX}px,${lb.panY}px) scale(${lb.scale})`;
     }
-    _lbShowZoomIndicator(lb.scale);
   }
 }
 
