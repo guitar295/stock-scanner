@@ -579,7 +579,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   position: fixed;
   inset: 0;
   z-index: 99999;
-  background: #000;
+  background: #fff;
   overflow: hidden;
   touch-action: none;
 }
@@ -626,9 +626,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.3);
-  color: #fff;
+  background: rgba(0,0,0,.07);
+  border: 1px solid rgba(0,0,0,.15);
+  color: #333;
   font-size: 20px;
   display: flex;
   align-items: center;
@@ -639,7 +639,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   backdrop-filter: blur(6px);
   touch-action: manipulation;
 }
-#mob-lightbox-close:active { background: rgba(255,255,255,.32); }
+#mob-lightbox-close:active { background: rgba(0,0,0,.14); }
 #mob-lightbox-counter {
   position: absolute;
   bottom: 20px;
@@ -655,16 +655,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: rgba(255,255,255,.35);
+  background: rgba(0,0,0,.18);
   transition: background .2s, transform .2s;
 }
-.mob-lb-dot.on { background: #fff; transform: scale(1.4); }
+.mob-lb-dot.on { background: #1a56db; transform: scale(1.4); }
 #mob-lightbox-label {
   position: absolute;
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  color: rgba(255,255,255,.85);
+  color: rgba(30,30,30,.85);
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: nowrap;
@@ -672,7 +672,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   pointer-events: none;
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
-  background: rgba(0,0,0,.35);
+  background: rgba(0,0,0,.08);
   padding: 3px 12px;
   border-radius: 20px;
   transition: opacity .15s;
@@ -717,20 +717,21 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         VNINDEX
       </button>
 
-      <div class="hmap-search-wrap">
-        <span class="s-icon">🔍</span>
-        <input
-          class="hmap-search-input"
-          id="hmap-search-input"
-          type="text"
-          placeholder="Tìm kiếm mã"
-          maxlength="10"
-          autocomplete="off"
-          spellcheck="false"
-        >
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:nowrap;min-width:0">
+        <div class="hmap-search-wrap" style="flex-shrink:0">
+          <span class="s-icon">🔍</span>
+          <input
+            class="hmap-search-input"
+            id="hmap-search-input"
+            type="text"
+            placeholder="Tìm kiếm mã"
+            maxlength="10"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
+        <span class="panel-meta" id="hmap-ts" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Đang tải...</span>
       </div>
-
-      <span class="panel-meta" id="hmap-ts" style="margin-left:auto">Đang tải...</span>
     </div>
 
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
@@ -1021,8 +1022,10 @@ const lb = {
   dragStartX: 0,
   dragStartY: 0,
   dragDx: 0,
+  dragDy: 0,
   dragging: false,
   dragLocked: false,  // locked = chỉ scroll dọc, không swipe ngang
+  dragDir: '',        // 'h' hoặc 'v'
   stripOffset: 0,     // translateX hiện tại của strip (không tính drag live)
 };
 
@@ -1093,6 +1096,8 @@ function _lbTS(e){
   lb.dragging   = true;
   lb.dragLocked = false;
   lb.dragDx     = 0;
+  lb.dragDy     = 0;
+  lb.dragDir    = '';
   lb.dragStartX = e.touches[0].clientX;
   lb.dragStartY = e.touches[0].clientY;
   // tắt transition khi bắt đầu kéo
@@ -1105,17 +1110,26 @@ function _lbTM(e){
   const dy = e.touches[0].clientY - lb.dragStartY;
 
   // Xác định hướng kéo lần đầu
-  if(!lb.dragLocked && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
+  if(!lb.dragDir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
     lb.dragLocked = true;
-    // nếu kéo dọc nhiều hơn ngang → cho scroll tự nhiên, bỏ qua
-    if(Math.abs(dy) > Math.abs(dx)){
-      lb.dragging = false;
-      return;
-    }
+    lb.dragDir = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
   }
-  if(!lb.dragLocked) return;
+  if(!lb.dragDir) return;
 
-  e.preventDefault();  // chặn scroll dọc khi đã xác định kéo ngang
+  e.preventDefault();
+
+  if(lb.dragDir === 'v'){
+    // Chỉ cho vuốt XUỐNG (dy > 0) để thoát
+    lb.dragDy = dy;
+    const pullDown = Math.max(0, dy);
+    const opacity  = Math.max(0, 1 - pullDown / 280);
+    const scale    = Math.max(0.85, 1 - pullDown / 900);
+    lb.el.style.opacity = opacity;
+    lb.stripEl.style.transform = `translateX(${lb.stripOffset}px) translateY(${pullDown * 0.6}px) scale(${scale})`;
+    return;
+  }
+
+  // Hướng ngang
   lb.dragDx = dx;
 
   // Rubber-band ở đầu/cuối
@@ -1132,6 +1146,38 @@ function _lbTE(e){
   if(!lb.dragging) return;
   lb.dragging = false;
 
+  // Vuốt xuống → thoát lightbox
+  if(lb.dragDir === 'v'){
+    const pullDown = Math.max(0, lb.dragDy);
+    if(pullDown > 80){
+      // Animate rời đi rồi đóng
+      lb.stripEl.style.transition = 'transform 0.22s ease';
+      lb.el.style.transition = 'opacity 0.22s ease';
+      lb.stripEl.style.transform = `translateX(${lb.stripOffset}px) translateY(100vh) scale(0.9)`;
+      lb.el.style.opacity = '0';
+      setTimeout(() => {
+        lb.el.style.transition = '';
+        lb.stripEl.style.transition = '';
+        lb.stripEl.style.transform = `translateX(${lb.stripOffset}px)`;
+        lb.el.style.opacity = '';
+        lbClose();
+      }, 230);
+    } else {
+      // Snap trở về
+      lb.stripEl.style.transition = 'transform 0.22s ease';
+      lb.el.style.transition = 'opacity 0.15s ease';
+      lb.stripEl.style.transform = `translateX(${lb.stripOffset}px)`;
+      lb.el.style.opacity = '1';
+      setTimeout(() => {
+        lb.stripEl.style.transition = '';
+        lb.el.style.transition = '';
+      }, 230);
+    }
+    lb.dragDy = 0;
+    lb.dragDir = '';
+    return;
+  }
+
   const dx    = lb.dragDx;
   const absX  = Math.abs(dx);
   const THRESHOLD = lb.W * 0.25;   // kéo ≥25% màn hình thì chuyển
@@ -1139,17 +1185,12 @@ function _lbTE(e){
   let nextIdx = lb.idx;
   if     (absX > THRESHOLD && dx < 0) nextIdx = lb.idx + 1;
   else if(absX > THRESHOLD && dx > 0) nextIdx = lb.idx - 1;
-  // Nếu kéo nhanh (velocity) — kéo ngắn hơn cũng chuyển
-  // (đơn giản: nếu > 8px và hướng rõ)
-  else if(absX > 8 && dx < 0 && lb.idx < lb.images.length - 1) {
-    // velocity check bằng absX so với thời gian — đơn giản dùng 80px
-    if(absX > 80) nextIdx = lb.idx + 1;
-  } else if(absX > 8 && dx > 0 && lb.idx > 0){
-    if(absX > 80) nextIdx = lb.idx - 1;
-  }
+  else if(absX > 80 && dx < 0 && lb.idx < lb.images.length - 1) nextIdx = lb.idx + 1;
+  else if(absX > 80 && dx > 0 && lb.idx > 0)                    nextIdx = lb.idx - 1;
 
   _lbSnapTo(nextIdx, true);
   lb.dragDx = 0;
+  lb.dragDir = '';
 }
 
 // esc key để đóng lightbox
