@@ -1754,7 +1754,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
   if(e.target===document.getElementById('overlay'))closePopup();
 });
 
-// MOBILE SWIPE LEFT TO CLOSE POPUP
+// MOBILE SWIPE TO CLOSE POPUP
 
 (function(){
   if(window.innerWidth > 768) return;
@@ -1768,6 +1768,12 @@ document.getElementById('overlay').addEventListener('click',e=>{
     const t = e.touches[0];
     startX = t.clientX; startY = t.clientY;
     dx = 0; dy = 0; dir = ''; active = true;
+    // Ẩn overlay ngay lập tức — chỉ còn pbox trượt trên trang chủ
+    const o = document.getElementById('overlay');
+    o.style.transition = 'none';
+    o.style.background = 'transparent';
+    o.style.backdropFilter = 'none';
+    o.style.webkitBackdropFilter = 'none';
   }, {passive: true});
 
   zone.addEventListener('touchmove', function(e){
@@ -1780,55 +1786,59 @@ document.getElementById('overlay').addEventListener('click',e=>{
     }
     if(dir !== 'h' || dx <= 0) return;
     const pbox = document.querySelector('.pbox');
-    const opacity = Math.max(0, 1 - dx / 280);
+    pbox.style.transition = 'none';
     pbox.style.transform = `translateX(${dx}px)`;
-    document.getElementById('overlay').style.background = `rgba(17,24,39,${0.5 * opacity})`;
   }, {passive: true});
 
   zone.addEventListener('touchend', function(e){
     if(!active) return;
     active = false;
-    if(dir !== 'h' || dx <= 0){
-      const pbox = document.querySelector('.pbox');
-      pbox.style.transition = '';
-      pbox.style.transform = '';
-      document.getElementById('overlay').style.background = '';
-      return;
-    }
     const pbox = document.querySelector('.pbox');
-    if(dx > window.innerWidth * 0.30){
-      pbox.style.transition = 'transform 0.22s ease, opacity 0.22s ease';
-      pbox.style.transform = `translateX(100vw)`;
-      pbox.style.opacity = '0';
-      document.getElementById('overlay').style.transition = 'background 0.22s ease, backdrop-filter 0.22s ease';
-      document.getElementById('overlay').style.background = 'rgba(17,24,39,0)';
-      document.getElementById('overlay').style.backdropFilter = 'blur(0px)';
-      document.getElementById('overlay').style.webkitBackdropFilter = 'blur(0px)';
-      setTimeout(()=>{
-          document.getElementById('overlay').classList.remove('on');
-          document.body.style.overflow='';
-          document.getElementById('edge-swipe-zone').classList.remove('on');
-          pbox.style.transition = '';
-          pbox.style.transform = '';
-          pbox.style.opacity = '';
-          document.getElementById('overlay').style.transition = '';
-          document.getElementById('overlay').style.background = '';
-          document.getElementById('overlay').style.backdropFilter = '';        
-          document.getElementById('overlay').style.webkitBackdropFilter = ''; 
-          setTimeout(()=>{
-            document.getElementById('iframe-vs').src='about:blank';
-            IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
-          }, 100);
-        }, 230);
-    } else {
+    const o = document.getElementById('overlay');
+
+    if(dir !== 'h' || dx <= 0){
+      // Cancel — restore lại overlay
       pbox.style.transition = 'transform 0.2s ease';
       pbox.style.transform = '';
-      document.getElementById('overlay').style.transition = 'background 0.2s ease';
-      document.getElementById('overlay').style.background = '';
+      o.style.transition = 'background 0.2s ease, backdrop-filter 0.2s ease';
+      o.style.background = '';
+      o.style.backdropFilter = '';
+      o.style.webkitBackdropFilter = '';
       setTimeout(()=>{
         pbox.style.transition = '';
-        document.getElementById('overlay').style.transition = '';
-      }, 210);
+        o.style.transition = '';
+      }, 200);
+      dx = 0; dir = '';
+      return;
+    }
+
+    if(dx > window.innerWidth * 0.30){
+      // Đủ ngưỡng — đóng popup
+      pbox.style.transition = 'transform 0.22s ease';
+      pbox.style.transform = `translateX(100vw)`;
+      setTimeout(()=>{
+        // Reset tất cả style trước
+        pbox.style.transition = '';
+        pbox.style.transform = '';
+        o.style.transition = '';
+        o.style.background = '';
+        o.style.backdropFilter = '';
+        o.style.webkitBackdropFilter = '';
+        // Sau đó mới closePopup
+        closePopup();
+      }, 220);
+    } else {
+      // Không đủ ngưỡng — trả về
+      pbox.style.transition = 'transform 0.2s ease';
+      pbox.style.transform = '';
+      o.style.transition = 'background 0.2s ease, backdrop-filter 0.2s ease';
+      o.style.background = '';
+      o.style.backdropFilter = '';
+      o.style.webkitBackdropFilter = '';
+      setTimeout(()=>{
+        pbox.style.transition = '';
+        o.style.transition = '';
+      }, 200);
     }
     dx = 0; dir = '';
   }, {passive: true});
