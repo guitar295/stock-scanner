@@ -1589,7 +1589,7 @@ async function loadScannerChart(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML=
-    `<span>⏳ Đang tạo chart <b>${sym}</b>… (15–30 giây lần đầu)</span>`;
+    `<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
 
   try{
     const r=await fetch(`/api/chart_images/${sym}`);
