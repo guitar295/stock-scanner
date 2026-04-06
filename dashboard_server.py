@@ -419,8 +419,14 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   background:var(--surface);border:1px solid var(--border);border-radius:10px;
   box-shadow:0 20px 60px rgba(0,0,0,.15);
   width:99vw;max-width:1800px;height:94vh;
-  display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease
+  display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease;
+  will-change:transform;
+  transform:translateZ(0);
+  -webkit-transform:translateZ(0);
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
 }
+
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 
 .phdr{
@@ -770,6 +776,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   height: 100%;
   z-index: 10000;
   display: none;
+  touch-action: pan-y; /* cho phép scroll dọc, không chặn vuốt ngang */
 }
 #edge-swipe-zone.on {
   display: block;
@@ -1762,7 +1769,8 @@ document.getElementById('overlay').addEventListener('click',e=>{
 (function(){
   if(window.innerWidth > 768) return;
   const zone = document.getElementById('edge-swipe-zone');
-  let startX = 0, dx = 0, dy = 0;
+  const EASE_OUT = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+  let startX = 0, startY = 0, dx = 0, dy = 0;
   let active = false, dir = '';
 
   zone.addEventListener('touchstart', function(e){
@@ -1770,6 +1778,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
     if(lb.el && lb.el.classList.contains('on')) return;
     const t = e.touches[0];
     startX = t.clientX;
+    startY = t.clientY;
     dx = 0; dy = 0; dir = ''; active = true;
   }, {passive: true});
 
@@ -1777,14 +1786,15 @@ document.getElementById('overlay').addEventListener('click',e=>{
     if(!active) return;
     const t = e.touches[0];
     dx = t.clientX - startX;
-    dy = t.clientY - (e.touches[0].clientY - dy);
-    if(!dir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
+    dy = t.clientY - startY;
+    if(!dir && (Math.abs(dx) > 8 || Math.abs(dy) > 8)){
       dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
     }
     if(dir !== 'h' || dx <= 0) return;
     const pbox = document.querySelector('.pbox');
+    // translate3d kích hoạt GPU — không giật
     pbox.style.transition = 'none';
-    pbox.style.transform = `translateX(${dx}px)`;
+    pbox.style.transform = `translate3d(${dx}px, 0, 0)`;
   }, {passive: true});
 
   zone.addEventListener('touchend', function(e){
@@ -1793,25 +1803,25 @@ document.getElementById('overlay').addEventListener('click',e=>{
     const pbox = document.querySelector('.pbox');
 
     if(dir !== 'h' || dx <= 0){
-      pbox.style.transition = 'transform 0.2s ease';
-      pbox.style.transform = '';
-      setTimeout(()=>{ pbox.style.transition = ''; }, 200);
+      pbox.style.transition = `transform 0.28s ${EASE_OUT}`;
+      pbox.style.transform = 'translate3d(0, 0, 0)';
+      setTimeout(()=>{ pbox.style.transition = ''; pbox.style.transform = ''; }, 290);
       dx = 0; dir = '';
       return;
     }
 
     if(dx > window.innerWidth * 0.15){
-      pbox.style.transition = 'transform 0.22s ease';
-      pbox.style.transform = `translateX(100vw)`;
+      pbox.style.transition = `transform 0.26s ${EASE_OUT}`;
+      pbox.style.transform = `translate3d(100vw, 0, 0)`;
       setTimeout(()=>{
         pbox.style.transition = '';
         pbox.style.transform = '';
         closePopup();
-      }, 220);
+      }, 270);
     } else {
-      pbox.style.transition = 'transform 0.2s ease';
-      pbox.style.transform = '';
-      setTimeout(()=>{ pbox.style.transition = ''; }, 200);
+      pbox.style.transition = `transform 0.28s ${EASE_OUT}`;
+      pbox.style.transform = 'translate3d(0, 0, 0)';
+      setTimeout(()=>{ pbox.style.transition = ''; pbox.style.transform = ''; }, 290);
     }
     dx = 0; dir = '';
   }, {passive: true});
