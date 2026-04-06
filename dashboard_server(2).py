@@ -788,18 +788,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   display: block;
 }
 
-#swipe-curtain {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 10001;
-  background: #ffffff;
-  will-change: transform;
-  transform: translate3d(-100%, 0, 0);
-  pointer-events: none;
-}
-#swipe-curtain.on { display: block; }
-
 </style>
 </head>
 <body>
@@ -961,7 +949,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div id="lb-zoom-hint">Chụm 2 ngón để zoom</div>
 </div>
 <div id="edge-swipe-zone"></div>
-<div id="swipe-curtain"></div>
 <script>
 // ═══════════════════════════════════════════════════════
 // CONFIG
@@ -1785,59 +1772,33 @@ document.getElementById('overlay').addEventListener('click',e=>{
 
 // MOBILE SWIPE TO CLOSE POPUP
 
+// MOBILE SWIPE TO CLOSE POPUP — đơn giản: vuốt ngang từ cạnh trái → closePopup()
 (function(){
-  if(window.innerWidth > 768) return;
-  const zone    = document.getElementById('edge-swipe-zone');
-  const curtain = document.getElementById('swipe-curtain');
-  const EASE    = 'cubic-bezier(0.25,0.46,0.45,0.94)';
-  const W       = window.innerWidth;
-  let startX=0, startY=0, dx=0, dy=0, active=false, dir='';
+  const zone = document.getElementById('edge-swipe-zone');
+  let startX=0, startY=0, active=false, dir='';
 
   zone.addEventListener('touchstart', function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
     if(lb.el && lb.el.classList.contains('on')) return;
-    startX=e.touches[0].clientX; startY=e.touches[0].clientY;
-    dx=0; dy=0; dir=''; active=true;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    active = true; dir = '';
   }, {passive:true});
 
   zone.addEventListener('touchmove', function(e){
     if(!active) return;
-    dx=e.touches[0].clientX - startX;
-    dy=e.touches[0].clientY - startY;
-    if(!dir && (Math.abs(dx)>8 || Math.abs(dy)>8))
-      dir = Math.abs(dx)>Math.abs(dy) ? 'h' : 'v';
-    if(dir!=='h' || dx<=0) return;
-    curtain.classList.add('on');
-    curtain.style.transition = 'none';
-    curtain.style.transform  = `translate3d(${dx - W}px, 0, 0)`;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if(!dir && (Math.abs(dx)>10 || Math.abs(dy)>10))
+      dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
   }, {passive:true});
 
   zone.addEventListener('touchend', function(e){
     if(!active) return;
-    active=false;
-
-    if(dir!=='h' || dx<=0){
-      curtain.style.transition = `transform 0.28s ${EASE}`;
-      curtain.style.transform  = 'translate3d(-100%, 0, 0)';
-      setTimeout(()=>{ curtain.classList.remove('on'); curtain.style.transition=''; }, 300);
-      dx=0; dir=''; return;
-    }
-
-    if(dx > W * 0.15){
-      curtain.style.transition = `transform 0.26s ${EASE}`;
-      curtain.style.transform  = 'translate3d(0, 0, 0)';
-      setTimeout(()=>{
-        curtain.classList.remove('on');
-        curtain.style.transition = '';
-        curtain.style.transform  = 'translate3d(-100%, 0, 0)';
-        closePopup();
-      }, 270);
-    } else {
-      curtain.style.transition = `transform 0.28s ${EASE}`;
-      curtain.style.transform  = 'translate3d(-100%, 0, 0)';
-      setTimeout(()=>{ curtain.classList.remove('on'); curtain.style.transition=''; }, 300);
-    }
-    dx=0; dir='';
+    active = false;
+    if(dir !== 'h') return;
+    const dx = e.changedTouches[0].clientX - startX;
+    if(dx > 40) closePopup();
   }, {passive:true});
 })();
 
