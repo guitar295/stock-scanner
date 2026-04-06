@@ -1744,75 +1744,71 @@ document.getElementById('overlay').addEventListener('click',e=>{
 
 (function(){
   if(window.innerWidth > 768) return;
-  const overlay = document.getElementById('overlay');
-  const pbox    = overlay.querySelector('.pbox');
-  let swipeStartX = 0, swipeStartY = 0, swipeDx = 0, swipeDy = 0;
-  let swiping = false, swipeDir = '';
+  const EDGE = 30; // vùng cạnh trái kích hoạt (px)
+  let startX = 0, startY = 0, dx = 0, dy = 0;
+  let active = false, dir = '';
 
-  overlay.addEventListener('touchstart', function(e){
-    if(e.target.closest('#mob-lightbox')) return;
+  document.addEventListener('touchstart', function(e){
+    if(!document.getElementById('overlay').classList.contains('on')) return;
+    if(lb.el && lb.el.classList.contains('on')) return;
     const t = e.touches[0];
-    swipeStartX = t.clientX;
-    swipeStartY = t.clientY;
-    swipeDx = 0; swipeDy = 0;
-    swiping = true; swipeDir = '';
-    pbox.style.transition = '';
+    if(t.clientX > EDGE) return; // chỉ bắt từ cạnh trái
+    startX = t.clientX; startY = t.clientY;
+    dx = 0; dy = 0; dir = ''; active = true;
   }, {passive: true});
 
-  overlay.addEventListener('touchmove', function(e){
-    if(!swiping) return;
-    if(e.target.closest('#mob-lightbox')) return;
+  document.addEventListener('touchmove', function(e){
+    if(!active) return;
     const t = e.touches[0];
-    swipeDx = t.clientX - swipeStartX;
-    swipeDy = t.clientY - swipeStartY;
-    if(!swipeDir && (Math.abs(swipeDx) > 8 || Math.abs(swipeDy) > 8)){
-      swipeDir = Math.abs(swipeDy) > Math.abs(swipeDx) ? 'v' : 'h';
+    dx = t.clientX - startX;
+    dy = t.clientY - startY;
+    if(!dir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
+      dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
     }
-    if(swipeDir !== 'h') return;
-    if(swipeDx >= 0) return; // chỉ xử lý vuốt trái (swipeDx < 0)
-    const pull = Math.abs(swipeDx);
-    const opacity = Math.max(0, 1 - pull / 280);
-    const tx = swipeDx;
-    pbox.style.transform = `translateX(${tx}px)`;
-    overlay.style.background = `rgba(17,24,39,${0.5 * opacity})`;
+    if(dir !== 'h') return;
+    if(dx <= 0) return;
+    const pbox = document.querySelector('.pbox');
+    const opacity = Math.max(0, 1 - dx / 280);
+    pbox.style.transform = `translateX(${dx}px)`;
+    document.getElementById('overlay').style.background = `rgba(17,24,39,${0.5 * opacity})`;
   }, {passive: true});
 
-  overlay.addEventListener('touchend', function(e){
-    if(!swiping) return;
-    swiping = false;
-    if(swipeDir !== 'h' || swipeDx <= 0){
+  document.addEventListener('touchend', function(e){
+    if(!active) return;
+    active = false;
+    if(dir !== 'h' || dx <= 0){
+      const pbox = document.querySelector('.pbox');
       pbox.style.transition = '';
-      pbox.style.transform  = '';
-      overlay.style.background = '';
+      pbox.style.transform = '';
+      document.getElementById('overlay').style.background = '';
       return;
     }
-    const pull = Math.abs(swipeDx);
-    const W    = window.innerWidth;
-    if(pull > W * 0.30){
+    const pbox = document.querySelector('.pbox');
+    if(dx > window.innerWidth * 0.30){
       pbox.style.transition = 'transform 0.22s ease, opacity 0.22s ease';
-      pbox.style.transform  = `translateX(100vw)`;
-      pbox.style.opacity    = '0';
-      overlay.style.transition = 'background 0.22s ease';
-      overlay.style.background = 'rgba(17,24,39,0)';
+      pbox.style.transform = `translateX(100vw)`;
+      pbox.style.opacity = '0';
+      document.getElementById('overlay').style.transition = 'background 0.22s ease';
+      document.getElementById('overlay').style.background = 'rgba(17,24,39,0)';
       setTimeout(()=>{
         closePopup();
         pbox.style.transition = '';
-        pbox.style.transform  = '';
-        pbox.style.opacity    = '';
-        overlay.style.transition = '';
-        overlay.style.background = '';
+        pbox.style.transform = '';
+        pbox.style.opacity = '';
+        document.getElementById('overlay').style.transition = '';
+        document.getElementById('overlay').style.background = '';
       }, 230);
     } else {
       pbox.style.transition = 'transform 0.2s ease';
-      pbox.style.transform  = '';
-      overlay.style.transition = 'background 0.2s ease';
-      overlay.style.background = '';
+      pbox.style.transform = '';
+      document.getElementById('overlay').style.transition = 'background 0.2s ease';
+      document.getElementById('overlay').style.background = '';
       setTimeout(()=>{
         pbox.style.transition = '';
-        overlay.style.transition = '';
+        document.getElementById('overlay').style.transition = '';
       }, 210);
     }
-    swipeDx = 0; swipeDir = '';
+    dx = 0; dir = '';
   }, {passive: true});
 })();
 
