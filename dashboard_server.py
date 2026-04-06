@@ -1796,7 +1796,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
   pbox.addEventListener('touchstart', function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
     if(lb.el && lb.el.classList.contains('on')) return;
-    if(e.touches[0].clientX > 40) return; // chỉ nhận từ cạnh trái 40px
+    if(e.touches[0].clientX > 120) return; // chỉ nhận từ cạnh trái 40px
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     dir = ''; fired = false;
