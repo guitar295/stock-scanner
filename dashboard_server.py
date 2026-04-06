@@ -1788,31 +1788,64 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 
 // MOBILE SWIPE TO CLOSE POPUP
+// MOBILE SWIPE TO CLOSE - BẢN CẬP NHẬT CHỐNG NHÂN BẢN & XUNG ĐỘT
 (function(){
-  if(window.innerWidth > 768) return;
-  const pbox = document.querySelector('.pbox');
-  let startX=0, startY=0, dir='', fired=false;
+    // 1. Kiểm tra nếu đã khởi tạo rồi thì không chạy lại nữa (Sửa lỗi lần 2 bị giật)
+    if(window.swipeInitialized || window.innerWidth > 768) return;
+    window.swipeInitialized = true; 
 
-  pbox.addEventListener('touchstart', function(e){
-    if(!document.getElementById('overlay').classList.contains('on')) return;
-    if(lb.el && lb.el.classList.contains('on')) return;
-    if(e.touches[0].clientX > 40) return; // chỉ nhận từ cạnh trái 40px
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    dir = ''; fired = false;
-  }, {passive:true});
+    const pbox = document.querySelector('.pbox');
+    let startX=0, startY=0, dir='', fired=false;
 
-  pbox.addEventListener('touchmove', function(e){
-    if(fired) return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if(!dir && (Math.abs(dx)>10 || Math.abs(dy)>10))
-      dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-    if(dir === 'h' && dx > 40){
-      fired = true;
-      closePopup();
-    }
-  }, {passive:true});
+    pbox.addEventListener('touchstart', function(e){
+        if(!document.getElementById('overlay').classList.contains('on')) return;
+        if(e.touches[0].clientX > 50) return; // Chỉ nhận diện vuốt từ mép trái
+        
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        dir = ''; 
+        fired = false;
+        pbox.style.transition = 'none'; // Tắt hiệu ứng để bám theo tay
+    }, {passive:true});
+
+    pbox.addEventListener('touchmove', function(e){
+        if(fired || !startX) return;
+        const dx = e.touches[0].clientX - startX;
+        const dy = e.touches[0].clientY - startY;
+
+        if(!dir && (Math.abs(dx)>10 || Math.abs(dy)>10)) {
+            dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+        }
+
+        if(dir === 'h' && dx > 0) {
+            // Chặn đứng hành vi lùi trang của trình duyệt để không bị nháy trắng
+            if(e.cancelable) e.preventDefault(); 
+            
+            // Di chuyển popup theo tay để tạo cảm giác mượt
+            pbox.style.transform = `translateX(${dx}px)`;
+
+            // Ngưỡng đóng (90px)
+            if(dx > 90){
+                fired = true;
+                pbox.style.transition = 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+                pbox.style.transform = 'translateX(100vw)';
+                
+                // Đợi trượt hẳn ra ngoài mới dọn dẹp dữ liệu (giống nút X nhưng có độ trễ hình ảnh)
+                setTimeout(() => {
+                    closePopup();
+                    pbox.style.transform = ''; 
+                }, 250);
+            }
+        }
+    }, {passive:false}); // Quan trọng: Phải là false để có quyền chặn browser swipe
+
+    pbox.addEventListener('touchend', function(){
+        if(!fired) {
+            pbox.style.transition = 'transform 0.2s ease';
+            pbox.style.transform = 'translateX(0)'; // Nếu vuốt chưa đủ tầm thì trả về vị trí cũ
+        }
+        startX = 0;
+    });
 })();
 
 document.addEventListener('keydown',e=>{
