@@ -1769,7 +1769,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
       swipeDir = Math.abs(swipeDy) > Math.abs(swipeDx) ? 'v' : 'h';
     }
     if(swipeDir !== 'h') return;
-    if(swipeDx <= 0) return; // chỉ xử lý vuốt trái (swipeDx < 0)
+    if(swipeDx >= 0) return; // chỉ xử lý vuốt trái (swipeDx < 0)
     const pull = Math.abs(swipeDx);
     const opacity = Math.max(0, 1 - pull / 280);
     const tx = swipeDx;
@@ -1780,7 +1780,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
   overlay.addEventListener('touchend', function(e){
     if(!swiping) return;
     swiping = false;
-    if(swipeDir !== 'h' || swipeDx >= 0){
+    if(swipeDir !== 'h' || swipeDx <= 0){
       pbox.style.transition = '';
       pbox.style.transform  = '';
       overlay.style.background = '';
