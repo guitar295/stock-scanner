@@ -1669,6 +1669,7 @@ let _sym='', _tab='vs';
 const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
 
 function openUrl(url, label){
+  history.pushState({popup: true}, '');
   _sym = 'VNINDEX';
   _tab = 'url';
   document.getElementById('ptitle').textContent = label || '🌐 Web';
@@ -1691,6 +1692,7 @@ function openUrl(url, label){
 }
 
 function openChart(sym){
+  history.pushState({popup: true}, '');
   _sym=sym.toUpperCase().trim();
   _tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
@@ -1759,6 +1761,7 @@ function _activateTab(tab){
 function switchTab(tab){ _activateTab(tab); }
 
 function closePopup(){
+  history.back(); 
   const overlay = document.getElementById('overlay');
   const pbox = overlay.querySelector('.pbox');
   
@@ -2032,6 +2035,12 @@ openUrl = function(url, label){
   buildMobileHeader();
   _openUrlOrig(url, label);
 };
+
+window.addEventListener('popstate', function(){
+  if(document.getElementById('overlay').classList.contains('on')){
+    closePopup();
+  }
+});
 
 init();
 </script>
