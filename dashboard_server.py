@@ -792,19 +792,20 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     top: 50%;
     transform: translateY(-50%);
     z-index: 10001;
-    width: 34px;
-    height: 54px;
-    border-radius: 10px 0 0 10px;
-    /* nền tối rất mờ — ~15% opacity, gần như trong suốt */
-    background: rgba(17, 24, 39, 0.15);
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
+    /* 1. THU NHỎ KÍCH THƯỚC */
+    width: 20px;
+    height: 30px;
+    border-radius: 6px 0 0 6px;
+    /* nền tối rất mờ — ~5% opacity, gần như trong suốt */
+    background: rgba(17, 24, 39, 0.05);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
     /* viền mờ, không border bên phải để dính sát cạnh */
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.03);
     border-right: none;
     /* chữ ✕ cũng mờ — không đập vào mắt */
-    color: rgba(255, 255, 255, 0.38);
-    font-size: 16px;
+    color: rgba(255, 255, 255, 0.15);
+    font-size: 12px;
     align-items: center;
     justify-content: center;
     cursor: pointer;
@@ -814,8 +815,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   }
   /* Khi bấm: hiện rõ đỏ để confirm */
   #mob-close-float:active {
-    background: rgba(224, 36, 36, 0.52);
-    color: rgba(255, 255, 255, 0.88);
+    background: rgba(17, 24, 39, 0.6);
+    color: rgba(255, 255, 255, 0.8);
   }
 }
 @media screen and (max-width: 768px) and (orientation: landscape) {
