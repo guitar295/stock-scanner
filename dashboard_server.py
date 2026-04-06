@@ -1812,6 +1812,7 @@ pbox.addEventListener('touchstart', function(e){
       closePopup();
     }
   }, {passive:true});
+})();
 
 document.addEventListener('keydown',e=>{
   if(lb.el && lb.el.classList.contains('on')) return;
