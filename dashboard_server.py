@@ -53,12 +53,16 @@ CHART_TTL_SEC       = 0   # Không cache — chart luôn vẽ mới mỗi lần 
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     result  = []
+    cache = _get_history_cache() if _get_history_cache else {}
     for sym, sig in alerted.items():
+        df = cache.get(sym)
+        pct = round(float(df['close'].iloc[-1] / df['close'].iloc[-2] - 1) * 100, 2) if df is not None and len(df) >= 2 else None
         result.append({
             "symbol": sym,
             "signal": sig,
             "emoji":  _signal_emoji.get(sig, "📌"),
             "rank":   _signal_rank.get(sig, 0),
+            "pct":    pct,
         })
     result.sort(key=lambda x: x["rank"], reverse=True)
     return jsonify({
@@ -1859,7 +1863,7 @@ async function fetchSigs(){
       <div class="sig-row" onclick="openChart('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
-        <span class="s-type">${s.signal}</span>
+        <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+s.pct+'%':'—'}</span>
         <span class="s-badge ${badgeCls(s.signal)}">
           ${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}
         </span>
