@@ -53,12 +53,13 @@ CHART_TTL_SEC       = 0   # Không cache — chart luôn vẽ mới mỗi lần 
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     result  = []
-    cache = _get_history_cache() if _get_history_cache else {}
 
     for sym, entry in alerted.items():
-        sig = entry["signal"] if isinstance(entry, dict) else entry
-        pct = entry.get("pct") if isinstance(entry, dict) else None
-        result.append({"symbol": sym, "signal": sig, "emoji": ..., "rank": ..., "pct": pct})
+        sig   = entry["signal"] if isinstance(entry, dict) else entry
+        pct   = entry.get("pct") if isinstance(entry, dict) else None
+        emoji = _signal_emoji.get(sig, "📌")
+        rank  = _signal_rank.get(sig, 0)
+        result.append({"symbol": sym, "signal": sig, "emoji": emoji, "rank": rank, "pct": pct})
 
     result.sort(key=lambda x: x["rank"], reverse=True)
     return jsonify({
@@ -66,7 +67,6 @@ def api_signals():
         "count":      len(result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
     })
-
 
 @app.route("/api/heatmap")
 def api_heatmap():
