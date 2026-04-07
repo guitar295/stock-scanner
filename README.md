@@ -145,6 +145,14 @@ curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/mai
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py
 ```
+Tạo file Tradingview Lightweight:
+```
+cd ~/scanner
+mkdir -p static
+curl -L "https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" \
+     -o static/lightweight-charts.min.js
+```
+
 Kiểm tra đã có đủ 3 file:
 bash
 ```
