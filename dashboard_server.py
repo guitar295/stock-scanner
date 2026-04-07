@@ -851,7 +851,7 @@ async function loadTVChart(sym){
   const loading=document.getElementById('tv-loading');
   const wrap=document.getElementById('tv-chart-wrap');
   loading.style.display='flex';wrap.style.display='none';
-  loading.innerHTML=`⏳ Đang tải dữ liệu <b>${sym}</b>...`;
+  loading.innerHTML=`⏳ Đang tải dữ liệu  <b>${sym}</b>...`;
 
   try{
     const r=await fetch(`/api/ohlcv/${sym}`);
