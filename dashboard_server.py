@@ -19,7 +19,7 @@ Truy cập: http://YOUR_VPS_IP:8888
 =============================================================================
 """
 
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, send_from_directory
 import threading
 import time
 import os
@@ -28,6 +28,12 @@ import pytz
 
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 app   = Flask(__name__)
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+@app.route("/static/<path:filename>")
+def serve_static(filename):
+    return send_from_directory(STATIC_DIR, filename)
 
 _get_alerted_today  = None
 _get_history_cache  = None
@@ -44,7 +50,7 @@ SIGNAL_TTL_SEC  = 10
 
 _chart_cache: dict = {}
 _chart_lock         = threading.Lock()
-CHART_TTL_SEC       = 0   # Không cache — chart luôn vẽ mới mỗi lần click tab
+CHART_TTL_SEC       = 0
 
 # =============================================================================
 # API ENDPOINTS
