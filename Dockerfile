@@ -16,6 +16,8 @@ COPY scanner_full.py .
 
 COPY dashboard_server.py .
 
+COPY static/ ./static/
+
 ENV MPLBACKEND=Agg
 
 CMD ["python", "-u", "scanner_full.py"]
