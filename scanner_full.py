@@ -265,7 +265,7 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
 
     dc(name, f_hdr, x, w1, HMAP_HDR_FG)
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
-    dc(f"{avg_pct:+.2f}%", f_sector, x + w1, w2, fg_s)
+    dc(f"{avg_pct:+.1f}%", f_sector, x + w1, w2, fg_s)
 
 def _hmap_avg_pct(syms, data):
     vals = [data[s]["pct"] for s in syms if s in data]
