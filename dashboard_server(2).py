@@ -53,24 +53,20 @@ CHART_TTL_SEC       = 0   # Không cache — chart luôn vẽ mới mỗi lần 
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     result  = []
-    cache = _get_history_cache() if _get_history_cache else {}
-    for sym, sig in alerted.items():
-        df = cache.get(sym)
-        pct = round(float(df['close'].iloc[-1] / df['close'].iloc[-2] - 1) * 100, 2) if df is not None and len(df) >= 2 else None
-        result.append({
-            "symbol": sym,
-            "signal": sig,
-            "emoji":  _signal_emoji.get(sig, "📌"),
-            "rank":   _signal_rank.get(sig, 0),
-            "pct":    pct,
-        })
+
+    for sym, entry in alerted.items():
+        sig   = entry["signal"] if isinstance(entry, dict) else entry
+        pct   = entry.get("pct") if isinstance(entry, dict) else None
+        emoji = _signal_emoji.get(sig, "📌")
+        rank  = _signal_rank.get(sig, 0)
+        result.append({"symbol": sym, "signal": sig, "emoji": emoji, "rank": rank, "pct": pct})
+
     result.sort(key=lambda x: x["rank"], reverse=True)
     return jsonify({
         "signals":    result,
         "count":      len(result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
     })
-
 
 @app.route("/api/heatmap")
 def api_heatmap():
@@ -794,7 +790,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     z-index: 10001;
     /* 1. THU NHỎ KÍCH THƯỚC */
     width: 15px;
-    height: 100px;
+    height: 200px;
     border-radius: 6px 0 0 6px;
     /* nền tối rất mờ — ~5% opacity, gần như trong suốt */
     background: rgba(17, 24, 39, 0.02);
