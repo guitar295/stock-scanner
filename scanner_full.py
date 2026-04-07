@@ -269,7 +269,7 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
 
 def _hmap_avg_pct(syms, data):
     vals = [data[s]["pct"] for s in syms if s in data]
-    return round(sum(vals) / len(vals), 2) if vals else 0.0
+    return round(sum(vals) / len(vals), 1) if vals else 0.0
 
 def _hmap_col_height(groups):
     h = HMAP_TOP_BAR + HMAP_MARGIN
@@ -1175,7 +1175,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
-            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 2)}
+            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 1)}
             new_signals.append(symbol)
 
             link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
