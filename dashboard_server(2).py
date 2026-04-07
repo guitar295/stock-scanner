@@ -278,15 +278,12 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border);
   flex-wrap:nowrap;
 }
-/* Hàng 1: tất cả controls */
 .hmap-hdr-row1{
   display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0;
 }
-/* Timestamp: trên PC đẩy sang phải bằng margin-left:auto */
 .hmap-ts-wrap{
   margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;
 }
-/* Mobile: header thành 2 hàng dọc */
 @media screen and (max-width:768px){
   .hmap-panel-hdr{
     flex-direction:column!important;
@@ -330,7 +327,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 }
 .hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* Search bar kiểu pill */
 .hmap-search-wrap{
   position:relative;display:flex;align-items:center;
   flex-shrink:0;
@@ -443,7 +439,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .phdr-right{display:flex;align-items:center;justify-content:flex-end}
 .ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
 
-/* Search trong popup */
 .popup-search-wrap{
   position:relative;display:flex;align-items:center;
 }
@@ -461,7 +456,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .popup-search-input::placeholder{color:var(--muted)}
 .popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
 
-/* Tab order */
 .ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
 .ctab{
   font-size:11px;font-family:var(--font-mono);font-weight:600;
@@ -571,7 +565,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     text-overflow:ellipsis!important;
     max-width:55%!important;
   }
-  /* Override riêng cho timestamp heatmap — không cắt chữ */
   .hmap-ts-wrap{
     white-space:normal!important;
     overflow:visible!important;
@@ -588,7 +581,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     padding:7px 10px!important;
   }
 
-  /* ── Mobile: ảnh chart có thể chạm để phóng to ── */
   .album-slide img {
     cursor: zoom-in !important;
     -webkit-tap-highlight-color: rgba(26,86,219,.15);
@@ -659,7 +651,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   inset: 0;
   overflow: hidden;
 }
-/* Strip ngang: tất cả ảnh xếp liền nhau, di chuyển bằng translateX */
 #lb-strip {
   display: flex;
   flex-direction: row;
@@ -669,7 +660,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #lb-strip.snapping {
   transition: transform 0.32s cubic-bezier(0.25,0.46,0.45,0.94);
 }
-/* Mỗi slide chiếm đúng 1 màn hình */
 .lb-slide {
   flex-shrink: 0;
   width: 100vw;
@@ -689,10 +679,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: none;
-  /* Smooth zoom transition khi reset */
   transition: transform 0.25s ease;
 }
-/* Tắt transition khi đang pinch (JS sẽ toggle class này) */
 .lb-slide img.zooming {
   transition: none !important;
 }
@@ -755,7 +743,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   transition: opacity .15s;
 }
 
-/* ── Zoom hint badge (mobile only) ── */
 #lb-zoom-hint {
   position: absolute;
   bottom: 52px;
@@ -782,10 +769,61 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   height: 100%;
   z-index: 10000;
   display: none;
-  touch-action: pan-y; /* cho phép scroll dọc, không chặn vuốt ngang */
+  touch-action: pan-y;
 }
 #edge-swipe-zone.on {
   display: block;
+}
+
+/* ══ NÚT ĐÓNG FLOATING — CHỈ MOBILE PORTRAIT ══
+   - Mặc định: ẩn hoàn toàn
+   - Chỉ hiện khi: màn hình <= 768px VÀ orientation = portrait
+   - Landscape mobile + Desktop: ẩn tuyệt đối
+   - Màu rất mờ/trong suốt để không gây rối, chỉ bấm khi cần
+*/
+#mob-close-float {
+  display: none;
+}
+@media screen and (max-width: 768px) and (orientation: portrait) {
+  #mob-close-float {
+    display: flex;
+    position: fixed;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10001;
+    /* 1. THU NHỎ KÍCH THƯỚC */
+    width: 15px;
+    height: 100px;
+    border-radius: 6px 0 0 6px;
+    /* nền tối rất mờ — ~5% opacity, gần như trong suốt */
+    background: rgba(17, 24, 39, 0.02);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    /* viền mờ, không border bên phải để dính sát cạnh */
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-right: none;
+    /* chữ ✕ cũng mờ — không đập vào mắt */
+    color: rgba(255, 255, 255, 0.10);
+    font-size: 12px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background .2s, color .2s;
+    touch-action: manipulation;
+    pointer-events: auto;
+  }
+  /* Khi bấm: hiện rõ đỏ để confirm */
+  #mob-close-float:active {
+    background: rgba(17, 24, 39, 0.6);
+    color: rgba(255, 255, 255, 0.8);
+  }
+}
+@media screen and (max-width: 768px) and (orientation: landscape) {
+  #mob-close-float { display: none !important; }
+}
+@media screen and (min-width: 769px) {
+  #mob-close-float { display: none !important; }
 }
 
 </style>
@@ -819,7 +857,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <!-- HEATMAP -->
   <div class="panel">
     <div class="hmap-panel-hdr">
-      <!-- Hàng 1: title + nút + search (luôn cùng 1 hàng trên cả PC lẫn mobile) -->
       <div class="hmap-hdr-row1">
         <span class="panel-title">Heatmap</span>
         <button class="hmap-link-btn" onclick="openUrl('https://dstock.vndirect.com.vn','MARKET')">MARKET</button>
@@ -837,7 +874,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           >
         </div>
       </div>
-      <!-- Hàng 2: timestamp — trên PC nằm cùng hàng (margin-left:auto), trên mobile xuống hàng riêng -->
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
 
@@ -857,10 +893,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 <!-- ══ POPUP CHART ══ -->
 <div class="overlay" id="overlay">
+
+  <!-- Nút đóng floating — CHỈ mobile portrait, màu rất mờ/trong suốt -->
+  <button id="mob-close-float" onclick="closePopup()" aria-label="Đóng">✕</button>
+
   <div class="pbox">
 
     <div class="phdr">
-      <!-- Trái: tên mã + search sát nhau -->
       <div class="phdr-left">
         <span class="ptitle" id="ptitle">Chart</span>
         <div class="popup-search-wrap">
@@ -877,7 +916,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
       </div>
 
-      <!-- Giữa: tabs canh giữa -->
       <div class="phdr-center">
         <div class="ctabs">
           <button class="ctab on"  id="ctab-vs"       onclick="switchTab('vs')">📈 Vietstock</button>
@@ -889,7 +927,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
       </div>
 
-      <!-- Phải: nút đóng -->
       <div class="phdr-right">
         <button class="closebtn" onclick="closePopup()">✕</button>
       </div>
@@ -1127,518 +1164,325 @@ const lb = {
   images: [],
   idx: 0,
   W: 0,
-
-  // ── Carousel swipe state ──
-  dragStartX: 0,
-  dragStartY: 0,
-  dragDx: 0,
-  dragDy: 0,
-  dragging: false,
-  dragDir: '',
-  stripOffset: 0,
-
-  // ── Zoom state (per-slide) ──
-  scale: 1,
-  scaleMin: 1,
-  scaleMax: 4,
-  panX: 0,          // translation offset của ảnh khi zoom
-  panY: 0,
-  // Pinch
-  isPinching: false,
-  pinchStartDist: 0,
-  pinchStartScale: 1,
-  pinchMidX: 0,     // midpoint của 2 ngón (viewport coords)
-  pinchMidY: 0,
-  pinchStartPanX: 0,
-  pinchStartPanY: 0,
-  // Pan khi đang zoom
-  isPanning: false,
-  panStartX: 0,
-  panStartY: 0,
-  panStartPanX: 0,
-  panStartPanY: 0,
-  // Double-tap
-  lastTapTime: 0,
-  lastTapX: 0,
-  lastTapY: 0,
-  // Zoom indicator timer
-  _zoomIndTimer: null,
+  dragStartX: 0, dragStartY: 0, dragDx: 0, dragDy: 0,
+  dragging: false, dragDir: '', stripOffset: 0,
+  scale: 1, scaleMin: 1, scaleMax: 4, panX: 0, panY: 0,
+  isPinching: false, pinchStartDist: 0, pinchStartScale: 1,
+  pinchMidX: 0, pinchMidY: 0, pinchStartPanX: 0, pinchStartPanY: 0,
+  isPanning: false, panStartX: 0, panStartY: 0, panStartPanX: 0, panStartPanY: 0,
+  lastTapTime: 0, lastTapX: 0, lastTapY: 0, _zoomIndTimer: null,
 };
 
-/* Lấy ảnh của slide hiện tại */
 function _lbCurrentImg(){
   const slides = lb.stripEl ? lb.stripEl.querySelectorAll('.lb-slide img') : [];
   return slides[lb.idx] || null;
 }
-
-/* Reset zoom về 1× */
 function _lbResetZoom(animate){
-  lb.scale = 1;
-  lb.panX  = 0;
-  lb.panY  = 0;
-  const img = _lbCurrentImg();
+  lb.scale=1; lb.panX=0; lb.panY=0;
+  const img=_lbCurrentImg();
   if(img){
     if(animate) img.classList.remove('zooming');
     else        img.classList.add('zooming');
-    img.style.transform = 'translate(0px,0px) scale(1)';
+    img.style.transform='translate(0px,0px) scale(1)';
   }
 }
-
-/* Áp dụng zoom+pan lên ảnh hiện tại */
 function _lbApplyZoom(){
-  const img = _lbCurrentImg();
+  const img=_lbCurrentImg();
   if(!img) return;
   img.classList.add('zooming');
-  img.style.transform = `translate(${lb.panX}px,${lb.panY}px) scale(${lb.scale})`;
+  img.style.transform=`translate(${lb.panX}px,${lb.panY}px) scale(${lb.scale})`;
 }
-
-/* Clamp pan để ảnh không ra ngoài vùng nhìn */
 function _lbClampPan(){
-  const img = _lbCurrentImg();
-  if(!img || lb.scale <= 1){ lb.panX=0; lb.panY=0; return; }
-  const rect   = img.getBoundingClientRect();
-  const W      = window.innerWidth;
-  const H      = window.innerHeight;
-  // Kích thước ảnh sau zoom (natural display size * scale)
-  const iW     = (rect.width  / lb.scale) * lb.scale;
-  const iH     = (rect.height / lb.scale) * lb.scale;
-  const maxPanX = Math.max(0, (iW  - W) / 2);
-  const maxPanY = Math.max(0, (iH  - H) / 2);
-  lb.panX = Math.max(-maxPanX, Math.min(maxPanX, lb.panX));
-  lb.panY = Math.max(-maxPanY, Math.min(maxPanY, lb.panY));
+  const img=_lbCurrentImg();
+  if(!img||lb.scale<=1){lb.panX=0;lb.panY=0;return;}
+  const rect=img.getBoundingClientRect();
+  const W=window.innerWidth, H=window.innerHeight;
+  const iW=(rect.width/lb.scale)*lb.scale, iH=(rect.height/lb.scale)*lb.scale;
+  const maxPanX=Math.max(0,(iW-W)/2), maxPanY=Math.max(0,(iH-H)/2);
+  lb.panX=Math.max(-maxPanX,Math.min(maxPanX,lb.panX));
+  lb.panY=Math.max(-maxPanY,Math.min(maxPanY,lb.panY));
 }
 
-/* Zoom indicator */
-/* Zoom indicator đã bỏ */
-
-/* Zoom hint lần đầu */
-let _lbHintShown = false;
+let _lbHintShown=false;
 function _lbShowHint(){
   if(_lbHintShown) return;
-  _lbHintShown = true;
-  const el = lb.zoomHintEl;
+  _lbHintShown=true;
+  const el=lb.zoomHintEl;
   if(!el) return;
   el.classList.add('show');
-  setTimeout(()=> el.classList.remove('show'), 2200);
+  setTimeout(()=>el.classList.remove('show'),2200);
 }
 
 function lbInit(){
-  lb.el           = document.getElementById('mob-lightbox');
-  lb.stripEl      = document.getElementById('lb-strip');
-  lb.labelEl      = document.getElementById('mob-lightbox-label');
-  lb.counterEl    = document.getElementById('mob-lightbox-counter');
-  lb.zoomHintEl   = document.getElementById('lb-zoom-hint');
-
-  const vp = document.getElementById('lb-viewport');
-  vp.addEventListener('touchstart', _lbTS, {passive: false});
-  vp.addEventListener('touchmove',  _lbTM, {passive: false});
-  vp.addEventListener('touchend',   _lbTE, {passive: false});
-  vp.addEventListener('touchcancel',_lbTC, {passive: true});
+  lb.el=document.getElementById('mob-lightbox');
+  lb.stripEl=document.getElementById('lb-strip');
+  lb.labelEl=document.getElementById('mob-lightbox-label');
+  lb.counterEl=document.getElementById('mob-lightbox-counter');
+  lb.zoomHintEl=document.getElementById('lb-zoom-hint');
+  const vp=document.getElementById('lb-viewport');
+  vp.addEventListener('touchstart',_lbTS,{passive:false});
+  vp.addEventListener('touchmove', _lbTM,{passive:false});
+  vp.addEventListener('touchend',  _lbTE,{passive:false});
+  vp.addEventListener('touchcancel',_lbTC,{passive:true});
 }
 
-function lbOpen(images, idx){
+function lbOpen(images,idx){
   if(!lb.el) lbInit();
-  lb.images = images;
-  lb.idx    = idx;
-  lb.W      = window.innerWidth;
-
-  lb.stripEl.innerHTML = images.map((img, i) =>
+  lb.images=images; lb.idx=idx; lb.W=window.innerWidth;
+  lb.stripEl.innerHTML=images.map((img,i)=>
     `<div class="lb-slide"><img src="${img.url}" alt="${img.label}" draggable="false"></div>`
   ).join('');
-  lb.stripEl.style.width = `${lb.W * images.length}px`;
-
-  lb.scale = 1; lb.panX = 0; lb.panY = 0;
-  _lbSnapTo(idx, false);
-  _lbUpdateMeta();
-
+  lb.stripEl.style.width=`${lb.W*images.length}px`;
+  lb.scale=1;lb.panX=0;lb.panY=0;
+  _lbSnapTo(idx,false);_lbUpdateMeta();
   lb.el.classList.add('on');
-  document.body.style.overflow = 'hidden';
-
-  setTimeout(_lbShowHint, 600);
+  document.body.style.overflow='hidden';
+  setTimeout(_lbShowHint,600);
 }
 
 function lbClose(){
   if(!lb.el) return;
   _lbResetZoom(false);
   lb.el.classList.remove('on');
-  document.body.style.overflow = '';
+  document.body.style.overflow='';
 }
 
-function _lbSnapTo(idx, animate){
-  // Reset zoom khi chuyển slide
-  lb.scale = 1; lb.panX = 0; lb.panY = 0;
-  const prevImg = _lbCurrentImg();
-  if(prevImg){ prevImg.classList.add('zooming'); prevImg.style.transform='translate(0,0) scale(1)'; }
-
-  lb.idx = Math.max(0, Math.min(idx, lb.images.length - 1));
-  const target = -lb.idx * lb.W;
-  lb.stripOffset = target;
-
+function _lbSnapTo(idx,animate){
+  lb.scale=1;lb.panX=0;lb.panY=0;
+  const prevImg=_lbCurrentImg();
+  if(prevImg){prevImg.classList.add('zooming');prevImg.style.transform='translate(0,0) scale(1)';}
+  lb.idx=Math.max(0,Math.min(idx,lb.images.length-1));
+  const target=-lb.idx*lb.W;
+  lb.stripOffset=target;
   if(animate){
     lb.stripEl.classList.add('snapping');
-    lb.stripEl.style.transform = `translateX(${target}px)`;
-    setTimeout(() => lb.stripEl.classList.remove('snapping'), 350);
-  } else {
+    lb.stripEl.style.transform=`translateX(${target}px)`;
+    setTimeout(()=>lb.stripEl.classList.remove('snapping'),350);
+  }else{
     lb.stripEl.classList.remove('snapping');
-    lb.stripEl.style.transform = `translateX(${target}px)`;
+    lb.stripEl.style.transform=`translateX(${target}px)`;
   }
   _lbUpdateMeta();
 }
 
 function _lbUpdateMeta(){
   if(!lb.images.length) return;
-  lb.labelEl.textContent = lb.images[lb.idx].label;
-  lb.counterEl.innerHTML = lb.images.map((_, i) =>
+  lb.labelEl.textContent=lb.images[lb.idx].label;
+  lb.counterEl.innerHTML=lb.images.map((_,i)=>
     `<div class="mob-lb-dot${i===lb.idx?' on':''}"></div>`
   ).join('');
 }
 
-// ──────────────────────────────────────────
-// Touch handlers
-// ──────────────────────────────────────────
 function _pinchDist(touches){
-  const dx = touches[0].clientX - touches[1].clientX;
-  const dy = touches[0].clientY - touches[1].clientY;
-  return Math.sqrt(dx*dx + dy*dy);
+  const dx=touches[0].clientX-touches[1].clientX,dy=touches[0].clientY-touches[1].clientY;
+  return Math.sqrt(dx*dx+dy*dy);
 }
 function _pinchMid(touches){
-  return {
-    x: (touches[0].clientX + touches[1].clientX) / 2,
-    y: (touches[0].clientY + touches[1].clientY) / 2,
-  };
+  return{x:(touches[0].clientX+touches[1].clientX)/2,y:(touches[0].clientY+touches[1].clientY)/2};
 }
 
 function _lbTS(e){
-  // ── 2 ngón → pinch zoom ──
-  if(e.touches.length === 2){
+  if(e.touches.length===2){
     e.preventDefault();
-    lb.isPinching      = true;
-    lb.dragging        = false;
-    lb.pinchStartDist  = _pinchDist(e.touches);
-    lb.pinchStartScale = lb.scale;
-    lb.pinchStartPanX  = lb.panX;
-    lb.pinchStartPanY  = lb.panY;
-    const mid          = _pinchMid(e.touches);
-    lb.pinchMidX       = mid.x;
-    lb.pinchMidY       = mid.y;
+    lb.isPinching=true;lb.dragging=false;
+    lb.pinchStartDist=_pinchDist(e.touches);lb.pinchStartScale=lb.scale;
+    lb.pinchStartPanX=lb.panX;lb.pinchStartPanY=lb.panY;
+    const mid=_pinchMid(e.touches);lb.pinchMidX=mid.x;lb.pinchMidY=mid.y;
     return;
   }
-
-  // ── 1 ngón ──
-  if(e.touches.length !== 1) return;
-
-  // Double-tap detection
-  const now = Date.now();
-  const tx  = e.touches[0].clientX;
-  const ty  = e.touches[0].clientY;
-  const dt  = now - lb.lastTapTime;
-  const dd  = Math.hypot(tx - lb.lastTapX, ty - lb.lastTapY);
-  if(dt < 300 && dd < 40){
-    e.preventDefault();
-    _lbDoubleTap(tx, ty);
-    lb.lastTapTime = 0;
-    return;
+  if(e.touches.length!==1) return;
+  const now=Date.now(),tx=e.touches[0].clientX,ty=e.touches[0].clientY;
+  const dt=now-lb.lastTapTime,dd=Math.hypot(tx-lb.lastTapX,ty-lb.lastTapY);
+  if(dt<300&&dd<40){e.preventDefault();_lbDoubleTap(tx,ty);lb.lastTapTime=0;return;}
+  lb.lastTapTime=now;lb.lastTapX=tx;lb.lastTapY=ty;
+  if(lb.scale>1.05){
+    lb.isPanning=true;lb.panStartX=tx;lb.panStartY=ty;
+    lb.panStartPanX=lb.panX;lb.panStartPanY=lb.panY;lb.dragging=false;return;
   }
-  lb.lastTapTime = now;
-  lb.lastTapX    = tx;
-  lb.lastTapY    = ty;
-
-  // Pan khi đang zoom
-  if(lb.scale > 1.05){
-    lb.isPanning    = true;
-    lb.panStartX    = tx;
-    lb.panStartY    = ty;
-    lb.panStartPanX = lb.panX;
-    lb.panStartPanY = lb.panY;
-    lb.dragging     = false;
-    return;
-  }
-
-  // Carousel swipe bình thường
-  lb.dragging   = true;
-  lb.isPanning  = false;
-  lb.dragDir    = '';
-  lb.dragDx     = 0;
-  lb.dragDy     = 0;
-  lb.dragStartX = tx;
-  lb.dragStartY = ty;
-  lb.stripEl.classList.remove('snapping');
+  lb.dragging=true;lb.isPanning=false;lb.dragDir='';lb.dragDx=0;lb.dragDy=0;
+  lb.dragStartX=tx;lb.dragStartY=ty;lb.stripEl.classList.remove('snapping');
 }
 
 function _lbTM(e){
-  // ── Pinch zoom ──
-  if(lb.isPinching && e.touches.length === 2){
+  if(lb.isPinching&&e.touches.length===2){
     e.preventDefault();
-    const dist     = _pinchDist(e.touches);
-    const ratio    = dist / lb.pinchStartDist;
-    lb.scale       = Math.min(lb.scaleMax, Math.max(lb.scaleMin, lb.pinchStartScale * ratio));
-    // Di chuyển pan theo midpoint (đơn giản hoá: chỉ giữ startPan)
-    lb.panX = lb.pinchStartPanX;
-    lb.panY = lb.pinchStartPanY;
-    _lbClampPan();
-    _lbApplyZoom();
-    return;
+    const dist=_pinchDist(e.touches),ratio=dist/lb.pinchStartDist;
+    lb.scale=Math.min(lb.scaleMax,Math.max(lb.scaleMin,lb.pinchStartScale*ratio));
+    lb.panX=lb.pinchStartPanX;lb.panY=lb.pinchStartPanY;
+    _lbClampPan();_lbApplyZoom();return;
   }
-
-  if(e.touches.length !== 1) return;
-  const tx = e.touches[0].clientX;
-  const ty = e.touches[0].clientY;
-
-  // ── Pan khi zoom ──
+  if(e.touches.length!==1) return;
+  const tx=e.touches[0].clientX,ty=e.touches[0].clientY;
   if(lb.isPanning){
     e.preventDefault();
-    lb.panX = lb.panStartPanX + (tx - lb.panStartX);
-    lb.panY = lb.panStartPanY + (ty - lb.panStartY);
-    _lbClampPan();
-    _lbApplyZoom();
-    return;
+    lb.panX=lb.panStartPanX+(tx-lb.panStartX);lb.panY=lb.panStartPanY+(ty-lb.panStartY);
+    _lbClampPan();_lbApplyZoom();return;
   }
-
-  if(!lb.dragging || e.touches.length !== 1) return;
-  const dx = tx - lb.dragStartX;
-  const dy = ty - lb.dragStartY;
-
-  // Xác định hướng kéo lần đầu
-  if(!lb.dragDir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)){
-    lb.dragDir = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
-  }
+  if(!lb.dragging||e.touches.length!==1) return;
+  const dx=tx-lb.dragStartX,dy=ty-lb.dragStartY;
+  if(!lb.dragDir&&(Math.abs(dx)>6||Math.abs(dy)>6))
+    lb.dragDir=Math.abs(dy)>Math.abs(dx)?'v':'h';
   if(!lb.dragDir) return;
-
   e.preventDefault();
-
-  if(lb.dragDir === 'v'){
-    lb.dragDy = dy;
-    const pullDown = Math.max(0, dy);
-    const opacity  = Math.max(0, 1 - pullDown / 280);
-    const scale    = Math.max(0.85, 1 - pullDown / 900);
-    lb.el.style.opacity = opacity;
-    lb.stripEl.style.transform = `translateX(${lb.stripOffset}px) translateY(${pullDown * 0.6}px) scale(${scale})`;
+  if(lb.dragDir==='v'){
+    lb.dragDy=dy;
+    const pullDown=Math.max(0,dy);
+    lb.el.style.opacity=Math.max(0,1-pullDown/280);
+    lb.stripEl.style.transform=`translateX(${lb.stripOffset}px) translateY(${pullDown*.6}px) scale(${Math.max(.85,1-pullDown/900)})`;
     return;
   }
-
-  // Hướng ngang
-  lb.dragDx = dx;
-  let offset = lb.stripOffset + dx;
-  const maxOffset = 0;
-  const minOffset = -(lb.images.length - 1) * lb.W;
-  if(offset > maxOffset) offset = dx * 0.3;
-  if(offset < minOffset) offset = minOffset + (offset - minOffset) * 0.3;
-  lb.stripEl.style.transform = `translateX(${offset}px)`;
+  lb.dragDx=dx;
+  let offset=lb.stripOffset+dx;
+  const maxOffset=0,minOffset=-(lb.images.length-1)*lb.W;
+  if(offset>maxOffset) offset=dx*.3;
+  if(offset<minOffset) offset=minOffset+(offset-minOffset)*.3;
+  lb.stripEl.style.transform=`translateX(${offset}px)`;
 }
 
 function _lbTE(e){
-  // Kết thúc pinch
   if(lb.isPinching){
-    lb.isPinching = false;
-    // Nếu zoom về gần 1 thì reset hẳn
-    if(lb.scale < 1.1){ _lbResetZoom(true); }
-    else {
-      // Bật lại smooth transition sau khi buông
-      const img = _lbCurrentImg();
-      if(img) img.classList.remove('zooming');
-    }
+    lb.isPinching=false;
+    if(lb.scale<1.1){_lbResetZoom(true);}
+    else{const img=_lbCurrentImg();if(img)img.classList.remove('zooming');}
     return;
   }
-
-  // Kết thúc pan
   if(lb.isPanning){
-    lb.isPanning = false;
-    const img = _lbCurrentImg();
-    if(img) img.classList.remove('zooming');
-    return;
+    lb.isPanning=false;
+    const img=_lbCurrentImg();if(img)img.classList.remove('zooming');return;
   }
-
   if(!lb.dragging) return;
-  lb.dragging = false;
-
-  // Vuốt xuống → thoát
-  if(lb.dragDir === 'v'){
-    const pullDown = Math.max(0, lb.dragDy);
-    if(pullDown > 80){
-      lb.stripEl.style.transition = 'transform 0.22s ease';
-      lb.el.style.transition = 'opacity 0.22s ease';
-      lb.stripEl.style.transform = `translateX(${lb.stripOffset}px) translateY(100vh) scale(0.9)`;
-      lb.el.style.opacity = '0';
-      setTimeout(() => {
-        lb.el.style.transition = '';
-        lb.stripEl.style.transition = '';
-        lb.stripEl.style.transform = `translateX(${lb.stripOffset}px)`;
-        lb.el.style.opacity = '';
+  lb.dragging=false;
+  if(lb.dragDir==='v'){
+    const pullDown=Math.max(0,lb.dragDy);
+    if(pullDown>80){
+      lb.stripEl.style.transition='transform 0.22s ease';lb.el.style.transition='opacity 0.22s ease';
+      lb.stripEl.style.transform=`translateX(${lb.stripOffset}px) translateY(100vh) scale(0.9)`;
+      lb.el.style.opacity='0';
+      setTimeout(()=>{
+        lb.el.style.transition='';lb.stripEl.style.transition='';
+        lb.stripEl.style.transform=`translateX(${lb.stripOffset}px)`;lb.el.style.opacity='';
         lbClose();
-      }, 230);
-    } else {
-      lb.stripEl.style.transition = 'transform 0.22s ease';
-      lb.el.style.transition = 'opacity 0.15s ease';
-      lb.stripEl.style.transform = `translateX(${lb.stripOffset}px)`;
-      lb.el.style.opacity = '1';
-      setTimeout(() => {
-        lb.stripEl.style.transition = '';
-        lb.el.style.transition = '';
-      }, 230);
+      },230);
+    }else{
+      lb.stripEl.style.transition='transform 0.22s ease';lb.el.style.transition='opacity 0.15s ease';
+      lb.stripEl.style.transform=`translateX(${lb.stripOffset}px)`;lb.el.style.opacity='1';
+      setTimeout(()=>{lb.stripEl.style.transition='';lb.el.style.transition='';},230);
     }
-    lb.dragDy = 0;
-    lb.dragDir = '';
-    return;
+    lb.dragDy=0;lb.dragDir='';return;
   }
-
-  const dx    = lb.dragDx;
-  const absX  = Math.abs(dx);
-  const THRESHOLD = lb.W * 0.25;
-
-  let nextIdx = lb.idx;
-  if     (absX > THRESHOLD && dx < 0) nextIdx = lb.idx + 1;
-  else if(absX > THRESHOLD && dx > 0) nextIdx = lb.idx - 1;
-  else if(absX > 80 && dx < 0 && lb.idx < lb.images.length - 1) nextIdx = lb.idx + 1;
-  else if(absX > 80 && dx > 0 && lb.idx > 0)                    nextIdx = lb.idx - 1;
-
-  _lbSnapTo(nextIdx, true);
-  lb.dragDx = 0;
-  lb.dragDir = '';
+  const dx=lb.dragDx,absX=Math.abs(dx),THRESHOLD=lb.W*.25;
+  let nextIdx=lb.idx;
+  if     (absX>THRESHOLD&&dx<0) nextIdx=lb.idx+1;
+  else if(absX>THRESHOLD&&dx>0) nextIdx=lb.idx-1;
+  else if(absX>80&&dx<0&&lb.idx<lb.images.length-1) nextIdx=lb.idx+1;
+  else if(absX>80&&dx>0&&lb.idx>0)                  nextIdx=lb.idx-1;
+  _lbSnapTo(nextIdx,true);lb.dragDx=0;lb.dragDir='';
 }
+function _lbTC(){lb.isPinching=false;lb.isPanning=false;lb.dragging=false;}
 
-function _lbTC(){
-  lb.isPinching = false;
-  lb.isPanning  = false;
-  lb.dragging   = false;
-}
-
-/* Double-tap: toggle zoom 1× ↔ 2.5× tại điểm chạm */
-function _lbDoubleTap(tapX, tapY){
-  if(lb.scale > 1.05){
-    // Đang zoom → reset về 1×
-    _lbResetZoom(true);
-  } else {
-    // Zoom vào điểm chạm (2.5×)
-    lb.scale = 2.5;
-    // Tính pan để điểm chạm là tâm
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    lb.panX = (W / 2 - tapX) * (lb.scale - 1);
-    lb.panY = (H / 2 - tapY) * (lb.scale - 1);
+function _lbDoubleTap(tapX,tapY){
+  if(lb.scale>1.05){_lbResetZoom(true);}
+  else{
+    lb.scale=2.5;
+    const W=window.innerWidth,H=window.innerHeight;
+    lb.panX=(W/2-tapX)*(lb.scale-1);lb.panY=(H/2-tapY)*(lb.scale-1);
     _lbClampPan();
-    const img = _lbCurrentImg();
-    if(img){
-      img.classList.remove('zooming');
-      img.style.transform = `translate(${lb.panX}px,${lb.panY}px) scale(${lb.scale})`;
-    }
+    const img=_lbCurrentImg();
+    if(img){img.classList.remove('zooming');img.style.transform=`translate(${lb.panX}px,${lb.panY}px) scale(${lb.scale})`;}
   }
 }
 
-// Esc key để đóng lightbox
-document.addEventListener('keydown', e => {
-  if(e.key === 'Escape' && lb.el && lb.el.classList.contains('on')){ lbClose(); }
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&lb.el&&lb.el.classList.contains('on')) lbClose();
 });
 
 // ═══════════════════════════════════════════════════════
 // ALBUM STATE
 // ═══════════════════════════════════════════════════════
-let _albumIdx=0, _albumTotal=0;
-let _albumImages = [];
+let _albumIdx=0,_albumTotal=0,_albumImages=[];
 
 function _showAlbum(images){
-  _albumImages = images;
+  _albumImages=images;
   const slidesEl=document.getElementById('album-slides');
-  const dotsEl  =document.getElementById('album-dots');
-  slidesEl.innerHTML='';
-  dotsEl.innerHTML='';
+  const dotsEl=document.getElementById('album-dots');
+  slidesEl.innerHTML='';dotsEl.innerHTML='';
   _albumTotal=images.length;
-
-  const isMobile = window.innerWidth <= 768;
-
+  const isMobile=window.innerWidth<=768;
   images.forEach((img,i)=>{
-    const clickAttr = isMobile
-      ? `onclick="lbOpen(_albumImages, ${i})" style="cursor:zoom-in;-webkit-tap-highlight-color:rgba(26,86,219,.15)"`
-      : '';
+    const clickAttr=isMobile?`onclick="lbOpen(_albumImages,${i})" style="cursor:zoom-in;-webkit-tap-highlight-color:rgba(26,86,219,.15)"`:'';
     slidesEl.innerHTML+=`<div class="album-slide${i===0?' on':''}" id="slide-${i}">
       <img src="${img.url}" alt="${img.label}" loading="lazy" ${clickAttr}>
     </div>`;
     dotsEl.innerHTML+=`<div class="album-dot${i===0?' on':''}" id="dot-${i}" onclick="albumGoto(${i})"></div>`;
   });
-  _albumIdx=0;
-  _updateAlbumNav();
+  _albumIdx=0;_updateAlbumNav();
   document.getElementById('album-outer').style.display='flex';
   document.getElementById('scanner-loading').style.display='none';
 }
 
 function albumGoto(i){
-  if(i<0||i>=_albumTotal)return;
+  if(i<0||i>=_albumTotal) return;
   document.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
   document.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i;
-  _updateAlbumNav();
+  _albumIdx=i;_updateAlbumNav();
 }
-
-function albumNav(dir){ albumGoto(_albumIdx+dir); }
+function albumNav(dir){albumGoto(_albumIdx+dir);}
 
 function refreshScannerChart(){
   if(!_sym) return;
   const btn=document.getElementById('btn-refresh');
-  if(btn){ btn.classList.add('spinning'); btn.disabled=true; }
+  if(btn){btn.classList.add('spinning');btn.disabled=true;}
   loadScannerChartForce(_sym);
 }
 
 async function loadScannerChartForce(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML=
-    `<span>🔄 Đang làm mới chart <b>${sym}</b>…</span>`;
-  try{
-    await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});
-  }catch(e){}
+  document.getElementById('scanner-loading').innerHTML=`<span>🔄 Đang làm mới chart <b>${sym}</b>…</span>`;
+  try{await fetch(`/api/chart_cache_clear/${sym}`,{method:'DELETE'}).catch(()=>{});}catch(e){}
   const btn=document.getElementById('btn-refresh');
-  if(btn){ btn.classList.remove('spinning'); btn.disabled=false; }
+  if(btn){btn.classList.remove('spinning');btn.disabled=false;}
   await loadScannerChart(sym);
 }
 
 function _updateAlbumNav(){
-  document.getElementById('btn-prev').classList.toggle('disabled', _albumIdx===0);
-  document.getElementById('btn-next').classList.toggle('disabled', _albumIdx===_albumTotal-1);
+  document.getElementById('btn-prev').classList.toggle('disabled',_albumIdx===0);
+  document.getElementById('btn-next').classList.toggle('disabled',_albumIdx===_albumTotal-1);
 }
 
 let _touchStartX=0;
 document.getElementById('panel-scanner').addEventListener('touchstart',e=>{
-  if(window.innerWidth > 768) _touchStartX=e.touches[0].clientX;
+  if(window.innerWidth>768) _touchStartX=e.touches[0].clientX;
 },{passive:true});
 document.getElementById('panel-scanner').addEventListener('touchend',e=>{
-  if(window.innerWidth > 768){
+  if(window.innerWidth>768){
     const dx=e.changedTouches[0].clientX-_touchStartX;
     if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
   }
 },{passive:true});
 
-document.addEventListener('keydown', e => {
-  const overlayOn = document.getElementById('overlay').classList.contains('on');
-  if (!overlayOn) return;
-  if(document.activeElement === document.getElementById('popup-search-input')) return;
-  if (_tab !== 'scanner') return;
-  if (_albumTotal === 0) return;
-  if (e.key === 'ArrowLeft')  { e.preventDefault(); albumNav(-1); }
-  if (e.key === 'ArrowRight') { e.preventDefault(); albumNav(1);  }
+document.addEventListener('keydown',e=>{
+  const overlayOn=document.getElementById('overlay').classList.contains('on');
+  if(!overlayOn) return;
+  if(document.activeElement===document.getElementById('popup-search-input')) return;
+  if(_tab!=='scanner') return;
+  if(_albumTotal===0) return;
+  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
+  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
 
 async function loadScannerChart(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
-  document.getElementById('scanner-loading').innerHTML=
-    `<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
-
+  document.getElementById('scanner-loading').innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
   try{
     const r=await fetch(`/api/chart_images/${sym}`);
-    if(!r.ok){
-      const j=await r.json().catch(()=>({}));
-      throw new Error(j.error||`HTTP ${r.status}`);
-    }
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
     const j=await r.json();
-    if(j.images && j.images.length>0){
+    if(j.images&&j.images.length>0){
       const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
-      _showAlbum(j.images.map((b64,i)=>({
-        url:`data:image/png;base64,${b64}`,
-        label: labels[i]||`Chart ${i+1}`,
-      })));
-      if(j.cached){
-        const hint=document.querySelector('.album-hint');
-        if(hint) hint.textContent='♻️ Dùng cache — click lại tab để làm mới';
-      }
+      _showAlbum(j.images.map((b64,i)=>({url:`data:image/png;base64,${b64}`,label:labels[i]||`Chart ${i+1}`})));
+      if(j.cached){const hint=document.querySelector('.album-hint');if(hint)hint.textContent='♻️ Dùng cache — click lại tab để làm mới';}
       return;
     }
     throw new Error('no_images');
@@ -1665,37 +1509,37 @@ async function loadScannerChart(sym){
 // ═══════════════════════════════════════════════════════
 // POPUP STATE
 // ═══════════════════════════════════════════════════════
-let _sym='', _tab='vs';
-const IFRAME_TABS = ['vnd-cs','vnd-news','vnd-sum','24h','url'];
+let _sym='',_tab='vs';
+const IFRAME_TABS=['vnd-cs','vnd-news','vnd-sum','24h','url'];
 
-function openUrl(url, label){
-  _sym = 'VNINDEX';
-  _tab = 'url';
-  document.getElementById('ptitle').textContent = label || '🌐 Web';
-  IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
-  document.getElementById('iframe-vs').src = 'https://ta.vietstock.vn/?stockcode=vnindex';
+function openUrl(url,label){
+  _sym='VNINDEX';_tab='url';
+  document.getElementById('ptitle').textContent=label||'🌐 Web';
+  IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
+  document.getElementById('iframe-vs').src='https://ta.vietstock.vn/?stockcode=vnindex';
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
   const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
   allTabs.forEach(t=>{
-    const ct = document.getElementById('ctab-'+t);
-    if(ct) ct.classList.toggle('on', t==='url');
-    document.getElementById('panel-'+t).classList.toggle('on', t==='url');
+    const ct=document.getElementById('ctab-'+t);
+    if(ct) ct.classList.toggle('on',t==='url');
+    document.getElementById('panel-'+t).classList.toggle('on',t==='url');
   });
-  document.getElementById('iframe-url').src = url;
+  document.getElementById('iframe-url').src=url;
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
   document.getElementById('edge-swipe-zone').classList.add('on');
+  // Hiện nút đóng floating (mobile portrait)
+  document.getElementById('mob-close-float').style.display='';
 }
 
 function openChart(sym){
-  _sym=sym.toUpperCase().trim();
-  _tab='vs';
+  _sym=sym.toUpperCase().trim();_tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
   document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
-  IFRAME_TABS.forEach(t=>{ document.getElementById(`iframe-${t}`).src='about:blank'; });
+  IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
@@ -1704,123 +1548,81 @@ function openChart(sym){
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
   document.getElementById('edge-swipe-zone').classList.add('on');
+  // Hiện nút đóng floating (mobile portrait)
+  document.getElementById('mob-close-float').style.display='';
 }
 
 function _activateTab(tab){
   _tab=tab;
   const allTabs=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
   allTabs.forEach(t=>{
-    const ct = document.getElementById('ctab-'+t);
+    const ct=document.getElementById('ctab-'+t);
     if(ct) ct.classList.toggle('on',t===tab);
     document.getElementById('panel-'+t).classList.toggle('on',t===tab);
   });
-
-  if(window.innerWidth <= 768){
-    const row = document.getElementById('mob-tabrow');
-    const activeBtn = document.getElementById('ctab-'+tab);
-    if(row && activeBtn){
-      const BTN_BASE = 'flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:var(--font-mono);font-weight:600;cursor:pointer;background:var(--bg);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s;touch-action:manipulation';
-      const BTN_ON   = 'flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--accent);font-size:12px;font-family:var(--font-mono);font-weight:700;cursor:pointer;background:var(--surface);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 0 0 var(--accent);touch-action:manipulation';
-      row.querySelectorAll('button').forEach(btn => {
-        btn.style.cssText = btn.id === 'ctab-'+tab ? BTN_ON : BTN_BASE;
-      });
-      const btnLeft  = activeBtn.offsetLeft;
-      const btnWidth = activeBtn.offsetWidth;
-      const rowWidth = row.offsetWidth;
-      row.scrollTo({ left: btnLeft - (rowWidth/2) + (btnWidth/2), behavior:'smooth' });
+  if(window.innerWidth<=768){
+    const row=document.getElementById('mob-tabrow');
+    const activeBtn=document.getElementById('ctab-'+tab);
+    if(row&&activeBtn){
+      const BTN_BASE='flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:var(--font-mono);font-weight:600;cursor:pointer;background:var(--bg);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s;touch-action:manipulation';
+      const BTN_ON='flex-shrink:0;flex-grow:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--accent);font-size:12px;font-family:var(--font-mono);font-weight:700;cursor:pointer;background:var(--surface);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 0 0 var(--accent);touch-action:manipulation';
+      row.querySelectorAll('button').forEach(btn=>{btn.style.cssText=btn.id==='ctab-'+tab?BTN_ON:BTN_BASE;});
+      const btnLeft=activeBtn.offsetLeft,btnWidth=activeBtn.offsetWidth,rowWidth=row.offsetWidth;
+      row.scrollTo({left:btnLeft-(rowWidth/2)+(btnWidth/2),behavior:'smooth'});
     }
   }
-
-  if(tab==='vnd-cs'){
-    const f=document.getElementById('iframe-vnd-cs');
-    if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;
-  }
-  if(tab==='vnd-news'){
-    const f=document.getElementById('iframe-vnd-news');
-    if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn&theme=light`;
-  }
-  if(tab==='vnd-sum'){
-    const f=document.getElementById('iframe-vnd-sum');
-    if(f.src==='about:blank')
-      f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}?theme=light`;
-  }
-  if(tab==='24h'){
-    const f=document.getElementById('iframe-24h');
-    if(f.src==='about:blank')
-      f.src=`https://24hmoney.vn/stock/${_sym}/news`;
-  }
-  if(tab==='scanner'){
-    loadScannerChart(_sym);
-  }
+  if(tab==='vnd-cs'){const f=document.getElementById('iframe-vnd-cs');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;}
+  if(tab==='vnd-news'){const f=document.getElementById('iframe-vnd-news');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn&theme=light`;}
+  if(tab==='vnd-sum'){const f=document.getElementById('iframe-vnd-sum');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}?theme=light`;}
+  if(tab==='24h'){const f=document.getElementById('iframe-24h');if(f.src==='about:blank')f.src=`https://24hmoney.vn/stock/${_sym}/news`;}
+  if(tab==='scanner') loadScannerChart(_sym);
 }
 
-function switchTab(tab){ _activateTab(tab); }
+function switchTab(tab){_activateTab(tab);}
 
 function closePopup(){
-  const overlay = document.getElementById('overlay');
-  const pbox = overlay.querySelector('.pbox');
-  
-  // Ẩn ngay lập tức trước mọi thứ
-  pbox.style.visibility = 'hidden';
-  
-  // Xóa src iframe ngay — không chờ
-  document.getElementById('iframe-vs').src = 'about:blank';
-  IFRAME_TABS.forEach(t => { document.getElementById(`iframe-${t}`).src = 'about:blank'; });
-  
-  // Tắt animation để tránh giật
-  pbox.style.animation = 'none';
-  
+  const overlay=document.getElementById('overlay');
+  const pbox=overlay.querySelector('.pbox');
+  pbox.style.visibility='hidden';
+  document.getElementById('iframe-vs').src='about:blank';
+  IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
+  pbox.style.animation='none';
   overlay.classList.remove('on');
-  document.body.style.overflow = '';
+  document.body.style.overflow='';
   document.getElementById('edge-swipe-zone').classList.remove('on');
-  
-  // Reset cho lần mở sau
-  requestAnimationFrame(() => {
-    pbox.style.visibility = '';
-    pbox.style.animation = '';
-  });
+  // Ẩn nút đóng floating (mobile portrait)
+  document.getElementById('mob-close-float').style.display='none';
+  requestAnimationFrame(()=>{pbox.style.visibility='';pbox.style.animation='';});
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
-  if(e.target===document.getElementById('overlay'))closePopup();
+  if(e.target===document.getElementById('overlay')) closePopup();
 });
 
 // MOBILE SWIPE TO CLOSE POPUP
 (function(){
-  if(window.innerWidth > 768) return;
-  const pbox = document.querySelector('.pbox');
-  let startX=0, startY=0, dir='', fired=false;
-
-  pbox.addEventListener('touchstart', function(e){
+  if(window.innerWidth>768) return;
+  const pbox=document.querySelector('.pbox');
+  let startX=0,startY=0,dir='',fired=false;
+  pbox.addEventListener('touchstart',function(e){
     if(!document.getElementById('overlay').classList.contains('on')) return;
-    if(lb.el && lb.el.classList.contains('on')) return;
-    if(e.touches[0].clientX > 40) return; // chỉ nhận từ cạnh trái 40px
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    dir = ''; fired = false;
-  }, {passive:true});
-
-  pbox.addEventListener('touchmove', function(e){
+    if(lb.el&&lb.el.classList.contains('on')) return;
+    if(e.touches[0].clientX>40) return;
+    startX=e.touches[0].clientX;startY=e.touches[0].clientY;dir='';fired=false;
+  },{passive:true});
+  pbox.addEventListener('touchmove',function(e){
     if(fired) return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if(!dir && (Math.abs(dx)>10 || Math.abs(dy)>10))
-      dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-    if(dir === 'h' && dx > 40){
-      fired = true;
-      closePopup();
-    }
-  }, {passive:true});
+    const dx=e.touches[0].clientX-startX,dy=e.touches[0].clientY-startY;
+    if(!dir&&(Math.abs(dx)>10||Math.abs(dy)>10)) dir=Math.abs(dx)>Math.abs(dy)?'h':'v';
+    if(dir==='h'&&dx>40){fired=true;closePopup();}
+  },{passive:true});
 })();
 
 document.addEventListener('keydown',e=>{
-  if(lb.el && lb.el.classList.contains('on')) return;
+  if(lb.el&&lb.el.classList.contains('on')) return;
   if(e.key==='Escape'){
     if(document.activeElement===document.getElementById('popup-search-input')){
-      document.getElementById('popup-search-input').blur();
-      return;
+      document.getElementById('popup-search-input').blur();return;
     }
     closePopup();
   }
@@ -1850,21 +1652,17 @@ function badgeCls(sig){
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
-    document.getElementById('sig-meta').textContent=
-      `Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
+    document.getElementById('sig-meta').textContent=`Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
     const el=document.getElementById('sig-list');
     if(!j.signals.length){
-      el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';
-      return;
+      el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;
     }
     el.innerHTML=j.signals.map(s=>`
       <div class="sig-row" onclick="openChart('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
         <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+s.pct+'%':'—'}</span>
-        <span class="s-badge ${badgeCls(s.signal)}">
-          ${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}
-        </span>
+        <span class="s-badge ${badgeCls(s.signal)}">${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}</span>
       </div>`).join('');
   }catch(e){console.error('fetchSigs:',e)}
 }
@@ -1873,10 +1671,10 @@ async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
     const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
-    const isMob = window.innerWidth <= 768;
-    document.getElementById('hmap-ts').textContent= isMob
-      ? `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`
-      : `Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
+    const isMob=window.innerWidth<=768;
+    document.getElementById('hmap-ts').textContent=isMob
+      ?`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`
+      :`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
     renderHeatmap(j.data||{});
   }catch(e){console.error('fetchHmap:',e)}
 }
@@ -1884,14 +1682,12 @@ async function fetchHmap(){
 // ═══════════════════════════════════════════════════════
 // PROGRESS BAR
 // ═══════════════════════════════════════════════════════
-function startBar(id, sec){
+function startBar(id,sec){
   const el=document.getElementById(id);
   if(!el) return;
-  el.style.transition='none';
-  el.style.width='0%';
+  el.style.transition='none';el.style.width='0%';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    el.style.transition=`width ${sec}s linear`;
-    el.style.width='100%';
+    el.style.transition=`width ${sec}s linear`;el.style.width='100%';
   }));
 }
 
@@ -1900,138 +1696,70 @@ function startBar(id, sec){
 // ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
-  startBar('pbar-sig',  SIG_TTL);
-  startBar('pbar-hmap', HMAP_TTL);
+  startBar('pbar-sig',SIG_TTL);startBar('pbar-hmap',HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
-  setInterval(async()=>{ startBar('pbar-sig',  SIG_TTL);  await fetchSigs(); }, SIG_TTL  * 1000);
-  setInterval(async()=>{ startBar('pbar-hmap', HMAP_TTL); await fetchHmap();}, HMAP_TTL * 1000);
+  setInterval(async()=>{startBar('pbar-sig',SIG_TTL);await fetchSigs();},SIG_TTL*1000);
+  setInterval(async()=>{startBar('pbar-hmap',HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // MOBILE HEADER REBUILD
 // ═══════════════════════════════════════════════════════════════════
 function buildMobileHeader(){
-  if(window.innerWidth > 768) return;
-  const phdr = document.querySelector('.phdr');
-  if(!phdr || phdr.dataset.mob === '1') return;
-  phdr.dataset.mob = '1';
-  phdr.innerHTML = '';
-  phdr.style.cssText = 'display:flex;flex-direction:column;flex-shrink:0;';
+  if(window.innerWidth>768) return;
+  const phdr=document.querySelector('.phdr');
+  if(!phdr||phdr.dataset.mob==='1') return;
+  phdr.dataset.mob='1';phdr.innerHTML='';
+  phdr.style.cssText='display:flex;flex-direction:column;flex-shrink:0;';
 
-  const r1 = document.createElement('div');
-  r1.style.cssText = [
-    'display:flex',
-    'align-items:center',
-    'gap:8px',
-    'padding:8px 12px',
-    'background:var(--surf2)',
-    'border-bottom:1px solid var(--border)',
-  ].join(';');
-  r1.innerHTML = `
-    <span id="ptitle"
-      style="font-family:var(--font-ui);font-size:17px;font-weight:800;
-             color:var(--accent);letter-spacing:1px;flex-shrink:0;">
-      Chart
-    </span>
+  const r1=document.createElement('div');
+  r1.style.cssText=['display:flex','align-items:center','gap:8px','padding:8px 12px','background:var(--surf2)','border-bottom:1px solid var(--border)'].join(';');
+  r1.innerHTML=`
+    <span id="ptitle" style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">Chart</span>
     <div style="position:relative;flex:1;min-width:0;">
-      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
-                   color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
       <input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10"
         autocomplete="off" spellcheck="false"
-        style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;
-               border:1px solid var(--border);background:var(--surface);
-               color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
+        style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
     </div>
-    <button onclick="closePopup()"
-      style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);
-             background:var(--bg);color:var(--muted);font-size:18px;cursor:pointer;
-             display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
   `;
   phdr.appendChild(r1);
 
-  const r2 = document.createElement('div');
-  r2.id = 'mob-tabrow';
-  r2.style.cssText = [
-    'display:flex',
-    'flex-direction:row',
-    'flex-wrap:nowrap',
-    'align-items:center',
-    'overflow-x:scroll',
-    'overflow-y:hidden',
-    '-webkit-overflow-scrolling:touch',
-    'overscroll-behavior-x:contain',
-    'padding:6px 8px',
-    'gap:5px',
-    'background:var(--surf2)',
-    'border-bottom:1px solid var(--border)',
-    'scrollbar-width:none',
-    '-ms-overflow-style:none',
-    'width:100%',
-    'box-sizing:border-box',
-    'min-height:44px',
-  ].join(';');
+  const r2=document.createElement('div');
+  r2.id='mob-tabrow';
+  r2.style.cssText=['display:flex','flex-direction:row','flex-wrap:nowrap','align-items:center','overflow-x:scroll','overflow-y:hidden','-webkit-overflow-scrolling:touch','overscroll-behavior-x:contain','padding:6px 8px','gap:5px','background:var(--surf2)','border-bottom:1px solid var(--border)','scrollbar-width:none','-ms-overflow-style:none','width:100%','box-sizing:border-box','min-height:44px'].join(';');
 
-  const tabs = [
-    { id:'vs',       label:'📈 Vietstock' },
-    { id:'scanner',  label:'🖼 Scanner'   },
-    { id:'vnd-cs',   label:'⚖️ Cơ bản'   },
-    { id:'vnd-news', label:'🗞️ Tin tức'  },
-    { id:'vnd-sum',  label:'📄 Tổng quan' },
-    { id:'24h',      label:'💬 24HMoney'  },
+  const tabs=[
+    {id:'vs',label:'📈 Vietstock'},{id:'scanner',label:'🖼 Scanner'},
+    {id:'vnd-cs',label:'⚖️ Cơ bản'},{id:'vnd-news',label:'🗞️ Tin tức'},
+    {id:'vnd-sum',label:'📄 Tổng quan'},{id:'24h',label:'💬 24HMoney'},
   ];
+  const BTN_BASE=['flex-shrink:0','flex-grow:0','white-space:nowrap','padding:7px 14px','border-radius:6px','border:1px solid var(--border)','font-size:12px','font-family:var(--font-mono)','font-weight:600','cursor:pointer','background:var(--bg)','color:var(--muted)','display:inline-flex','align-items:center','justify-content:center','transition:background .15s,color .15s','touch-action:manipulation'].join(';');
+  const BTN_ON=['flex-shrink:0','flex-grow:0','white-space:nowrap','padding:7px 14px','border-radius:6px','border:1px solid var(--accent)','font-size:12px','font-family:var(--font-mono)','font-weight:700','cursor:pointer','background:var(--surface)','color:var(--accent)','display:inline-flex','align-items:center','justify-content:center','box-shadow:0 2px 0 0 var(--accent)','touch-action:manipulation'].join(';');
 
-  const BTN_BASE = [
-    'flex-shrink:0','flex-grow:0','white-space:nowrap',
-    'padding:7px 14px','border-radius:6px','border:1px solid var(--border)',
-    'font-size:12px','font-family:var(--font-mono)','font-weight:600',
-    'cursor:pointer','background:var(--bg)','color:var(--muted)',
-    'display:inline-flex','align-items:center','justify-content:center',
-    'transition:background .15s,color .15s','touch-action:manipulation',
-  ].join(';');
-
-  const BTN_ON = [
-    'flex-shrink:0','flex-grow:0','white-space:nowrap',
-    'padding:7px 14px','border-radius:6px','border:1px solid var(--accent)',
-    'font-size:12px','font-family:var(--font-mono)','font-weight:700',
-    'cursor:pointer','background:var(--surface)','color:var(--accent)',
-    'display:inline-flex','align-items:center','justify-content:center',
-    'box-shadow:0 2px 0 0 var(--accent)','touch-action:manipulation',
-  ].join(';');
-
-  tabs.forEach(t => {
-    const btn = document.createElement('button');
-    btn.id          = 'ctab-' + t.id;
-    btn.textContent = t.label;
-    btn.style.cssText = (t.id === 'vs') ? BTN_ON : BTN_BASE;
-    if(t.id === 'vs') btn.classList.add('on');
-    btn.onclick = () => switchTab(t.id);
+  tabs.forEach(t=>{
+    const btn=document.createElement('button');
+    btn.id='ctab-'+t.id;btn.textContent=t.label;
+    btn.style.cssText=(t.id==='vs')?BTN_ON:BTN_BASE;
+    if(t.id==='vs') btn.classList.add('on');
+    btn.onclick=()=>switchTab(t.id);
     r2.appendChild(btn);
   });
-
   phdr.appendChild(r2);
 
-  const inp = document.getElementById('popup-search-input');
-  inp.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){
-      const sym = this.value.trim().toUpperCase();
-      if(sym.length >= 2){ this.value=''; this.blur(); openChart(sym); }
-    }
-    if(e.key === 'Escape') this.blur();
+  const inp=document.getElementById('popup-search-input');
+  inp.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){const sym=this.value.trim().toUpperCase();if(sym.length>=2){this.value='';this.blur();openChart(sym);}}
+    if(e.key==='Escape') this.blur();
   });
-  inp.addEventListener('focus', function(){ this.select(); });
+  inp.addEventListener('focus',function(){this.select();});
 }
 
-const _openChartOrig = openChart;
-openChart = function(sym){
-  buildMobileHeader();
-  _openChartOrig(sym);
-};
+const _openChartOrig=openChart;
+openChart=function(sym){buildMobileHeader();_openChartOrig(sym);};
 
-const _openUrlOrig = openUrl;
-openUrl = function(url, label){
-  buildMobileHeader();
-  _openUrlOrig(url, label);
-};
+const _openUrlOrig=openUrl;
+openUrl=function(url,label){buildMobileHeader();_openUrlOrig(url,label);};
 
 init();
 </script>
