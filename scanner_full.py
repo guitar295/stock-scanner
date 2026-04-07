@@ -1140,7 +1140,7 @@ SIGNAL_EMOJI = {
     'MA_CROSS':     '⚪',
 }
 
-def run_scan_cycle(symbols: list, now_time: int, : dict):
+def run_scan_cycle(symbols: list, now_time: int,alerted_today: dict):
     new_signals  = []
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
