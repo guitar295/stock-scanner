@@ -600,7 +600,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b7280;
 }
 
-/* Legend bar — chỉ giữ OHLC và EMA colors, bỏ MA values */
+/* Legend bar — chỉ OHLC + % thay đổi, KHÔNG có EMA labels */
 #tv-legend{
   display:flex;align-items:center;gap:14px;padding:4px 10px;
   background:#ffffff;border-bottom:1px solid #f0f0f0;
@@ -629,18 +629,18 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   min-height:0;
 }
 
-/* Volume panel — cao hơn */
+/* Volume panel — tăng chiều cao */
 #tv-vol-container{
-  height:100px;
+  height:130px;
   flex-shrink:0;
   background:#ffffff;
   border-top:1px solid #f0f0f0;
   position:relative;
 }
 
-/* MACD panel — cao hơn */
+/* MACD panel — tăng chiều cao 1.5x so với trước (110 → 165) */
 #tv-macd-container{
-  height:110px;
+  height:165px;
   flex-shrink:0;
   background:#ffffff;
   border-top:1px solid #f0f0f0;
@@ -699,8 +699,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
   .album-nav-btn{width:26px;height:26px;font-size:12px}
-  #tv-macd-container{height:80px}
-  #tv-vol-container{height:80px}
+  #tv-macd-container{height:120px}
+  #tv-vol-container{height:95px}
 }
 @media screen and (max-width:768px){
   .pbox{width:100vw!important;max-width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;overflow:visible!important;max-height:100dvh!important}
@@ -836,16 +836,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             </label>
           </div>
 
-          <!-- Legend — chỉ OHLC + % thay đổi + EMA color dots -->
+          <!-- Legend — chỉ OHLC + % thay đổi, KHÔNG hiển thị EMA/MA labels hay values -->
           <div id="tv-legend">
             <span style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:#374151;letter-spacing:.5px" id="tv-sym-label">—</span>
-            <!-- EMA color indicators -->
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#e02424"></span><span style="color:#9ca3af;font-size:9px">EMA10</span></span>
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#059669"></span><span style="color:#9ca3af;font-size:9px">EMA20</span></span>
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#7c3aed"></span><span style="color:#9ca3af;font-size:9px">EMA50</span></span>
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#92400e;width:14px"></span><span style="color:#9ca3af;font-size:9px">MA200</span></span>
             <!-- OHLC -->
-            <span style="margin-left:8px" class="tv-leg-item"><span class="tv-leg-label">O</span><span class="tv-leg-val" id="leg-open">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-label">O</span><span class="tv-leg-val" id="leg-open">—</span></span>
             <span class="tv-leg-item"><span class="tv-leg-label">H</span><span class="tv-leg-val" id="leg-high" style="color:#0e9f6e">—</span></span>
             <span class="tv-leg-item"><span class="tv-leg-label">L</span><span class="tv-leg-val" id="leg-low" style="color:#e02424">—</span></span>
             <span class="tv-leg-item"><span class="tv-leg-label">C</span><span class="tv-leg-val" id="leg-close">—</span></span>
@@ -992,10 +987,12 @@ let _tvEma30=null, _tvEma100=null, _tvEma200=null;
 let _tvLastSym='';
 let _tvCurrentTF='D';
 let _tvExtraEMA=false;
-let _tvData=null;       // cache data cho TF hiện tại
+let _tvData=null;
 
-// Số nến hiển thị mặc định
-const TF_BARS={D:250, W:200, '15':200};
+// Số nến hiển thị — toàn bộ data, không cắt
+const TF_BARS={D:99999, W:99999, '15':99999};
+// Số bar trống bên phải mong muốn
+const RIGHT_PADDING_BARS = 30;
 
 const TV_COLORS={
   ema10:       '#e02424',
@@ -1032,6 +1029,38 @@ function _tvResize(){
 
 const _tvResizeObs=new ResizeObserver(()=>_tvResize());
 
+// ── Format thời gian cho title ──
+// FIX #1: Dùng UTC để tránh timezone offset làm lệch ngày
+function _fmtTitleDate(candles, tf) {
+  if(!candles||candles.length===0) return '';
+  const last = candles[candles.length-1];
+  const d = new Date(last.time * 1000);
+  // Dùng UTC cho daily/weekly vì server trả về midnight UTC
+  if(tf==='15'){
+    // 15m: dùng local time vì có giờ phút
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const min = String(d.getMinutes()).padStart(2,'0');
+    return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+  }
+  // Daily/Weekly: dùng UTC date vì timestamp là midnight UTC
+  const dd = String(d.getUTCDate()).padStart(2,'0');
+  const mm = String(d.getUTCMonth()+1).padStart(2,'0');
+  const yyyy = d.getUTCFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+// ── Hàm scroll đến cuối với RIGHT_PADDING_BARS bar trống bên phải ──
+// FIX #5: Đảm bảo khoảng trống 30 bar sau khi render
+function _tvScrollToLastWithPadding(chart) {
+  // Đặt rightOffset = RIGHT_PADDING_BARS trên timeScale
+  chart.timeScale().applyOptions({ rightOffset: RIGHT_PADDING_BARS });
+  // Sau đó scroll về cuối để nến mới nhất hiển thị với padding đúng
+  chart.timeScale().scrollToRealTime();
+}
+
 // ── Gõ mã trực tiếp ──
 let _tvTickerBuf='';
 let _tvTickerTimer=null;
@@ -1066,38 +1095,20 @@ function _tvHandleKey(e){
 }
 document.addEventListener('keydown',_tvHandleKey);
 
-function _sliceLast(arr,n){if(!arr)return[];return arr.length<=n?arr:arr.slice(arr.length-n);}
-
-// ── Format ngày/giờ cho title ──
-function _fmtTitleDate(candles, tf) {
-  if(!candles||candles.length===0) return '';
-  const last = candles[candles.length-1];
-  const d = new Date(last.time * 1000);
-  const dd = String(d.getDate()).padStart(2,'0');
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const yyyy = d.getFullYear();
-  if(tf==='15'){
-    const hh = String(d.getHours()).padStart(2,'0');
-    const min = String(d.getMinutes()).padStart(2,'0');
-    return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
-  }
-  return `${dd}/${mm}/${yyyy}`;
-}
-
 function _buildAndRender(d, tf) {
-  const nBars = TF_BARS[tf]||250;
-  const candles    = _sliceLast(d.candles,    nBars);
-  const volume     = _sliceLast(d.volume,     nBars);
-  const ema10      = _sliceLast(d.ema10,      nBars);
-  const ema20      = _sliceLast(d.ema20,      nBars);
-  const ema50      = _sliceLast(d.ema50,      nBars);
-  const ma200      = _sliceLast(d.ma200,      nBars);
-  const ema30      = _sliceLast(d.ema30,      nBars);
-  const ema100     = _sliceLast(d.ema100,     nBars);
-  const ema200     = _sliceLast(d.ema200,     nBars);
-  const macdLine   = _sliceLast(d.macd_line,  nBars);
-  const macdSig    = _sliceLast(d.macd_signal,nBars);
-  const macdHist   = _sliceLast(d.macd_hist,  nBars);
+  // Dùng toàn bộ data, không cắt — để timeScale tự quản lý visible range
+  const candles    = d.candles    || [];
+  const volume     = d.volume     || [];
+  const ema10      = d.ema10      || [];
+  const ema20      = d.ema20      || [];
+  const ema50      = d.ema50      || [];
+  const ma200      = d.ma200      || [];
+  const ema30      = d.ema30      || [];
+  const ema100     = d.ema100     || [];
+  const ema200     = d.ema200     || [];
+  const macdLine   = d.macd_line  || [];
+  const macdSig    = d.macd_signal|| [];
+  const macdHist   = d.macd_hist  || [];
 
   _tvDestroy();
 
@@ -1105,36 +1116,45 @@ function _buildAndRender(d, tf) {
   const volEl  = document.getElementById('tv-vol-container');
   const macdEl = document.getElementById('tv-macd-container');
 
-  // TimeScale chung — tắt hoàn toàn cho price và volume
-  // Chỉ MACD mới hiển thị timescale dưới cùng
-  const TS_HIDDEN = {
-    rightOffset:      30,     // khoảng trống 30 bar bên phải
+  // ── TimeScale options ──
+  // FIX #3: Ẩn HOÀN TOÀN timescale cho price và volume (kể cả border)
+  const TS_INVISIBLE = {
+    rightOffset:      RIGHT_PADDING_BARS,
     fixLeftEdge:      false,
     fixRightEdge:     false,
     timeVisible:      false,
     secondsVisible:   false,
-    borderVisible:    false,
-    borderColor:      'transparent',
-    drawTicks:        false,
+    borderVisible:    false,   // ẩn border hoàn toàn
+    ticksVisible:     false,   // ẩn tick marks
+    visible:          false,   // ẩn toàn bộ timescale row
   };
-  const TS_MACD = {
-    rightOffset:      30,
+
+  // FIX #3: Chỉ MACD mới có timescale hiển thị
+  const TS_MACD_VISIBLE = {
+    rightOffset:      RIGHT_PADDING_BARS,
     fixLeftEdge:      false,
     fixRightEdge:     false,
     timeVisible:      true,
     secondsVisible:   false,
+    borderVisible:    true,
     borderColor:      '#e5e7eb',
+    ticksVisible:     true,
+    visible:          true,
     tickMarkFormatter: (time, tickMarkType, locale) => {
       const d = new Date(time * 1000);
-      const dd = String(d.getDate()).padStart(2,'0');
-      const mm = String(d.getMonth()+1).padStart(2,'0');
-      const yyyy = d.getFullYear();
       if(tf==='15'){
+        // FIX #1: 15m dùng local time
         const hh = String(d.getHours()).padStart(2,'0');
         const min = String(d.getMinutes()).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        const mm = String(d.getMonth()+1).padStart(2,'0');
         return `${dd}/${mm} ${hh}:${min}`;
       }
-      return `${dd}/${mm}/${yyyy}`;
+      // FIX #1: Daily/Weekly dùng UTC để tránh off-by-one ngày
+      const dd = String(d.getUTCDate()).padStart(2,'0');
+      const mm = String(d.getUTCMonth()+1).padStart(2,'0');
+      const yyyy = d.getUTCFullYear();
+      return tf==='W' ? `${dd}/${mm}/${yyyy}` : `${dd}/${mm}/${yyyy}`;
     },
   };
 
@@ -1149,8 +1169,8 @@ function _buildAndRender(d, tf) {
       fontFamily:  "'IBM Plex Mono',monospace",
     },
     grid: {
-      vertLines: {color:'transparent'},   // ẩn grid dọc
-      horzLines: {color:'transparent'},   // ẩn grid ngang
+      vertLines: {color:'transparent'},
+      horzLines: {color:'transparent'},
     },
     crosshair:     {mode: LightweightCharts.CrosshairMode.Normal},
     rightPriceScale: {
@@ -1158,7 +1178,7 @@ function _buildAndRender(d, tf) {
       scaleMarginTop: 0.06,
       scaleMarginBottom: 0.02,
     },
-    timeScale: TS_HIDDEN,
+    timeScale: TS_INVISIBLE,
     handleScroll: true,
     handleScale:  true,
   });
@@ -1191,8 +1211,8 @@ function _buildAndRender(d, tf) {
   _tvEma200 = _tvChart.addLineSeries({color:TV_COLORS.ema200, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, visible:_tvExtraEMA});
   _tvEma200.setData(ema200);
 
-  // Scroll to realtime để có khoảng trống bên phải
-  _tvChart.timeScale().scrollToRealTime();
+  // FIX #5: scroll về cuối với padding 30 bar
+  _tvScrollToLastWithPadding(_tvChart);
 
   // ── VOLUME CHART — KHÔNG có timescale ──
   _tvVolChart = LightweightCharts.createChart(volEl, {
@@ -1214,7 +1234,7 @@ function _buildAndRender(d, tf) {
       scaleMarginTop: 0.05,
       scaleMarginBottom: 0.0,
     },
-    timeScale: TS_HIDDEN,
+    timeScale: TS_INVISIBLE,
     handleScroll: true,
     handleScale:  true,
   });
@@ -1224,7 +1244,7 @@ function _buildAndRender(d, tf) {
     lastValueVisible: false,
   });
   _tvVolSeries.setData(volume);
-  _tvVolChart.timeScale().scrollToRealTime();
+  _tvScrollToLastWithPadding(_tvVolChart);
 
   // ── MACD CHART — CÓ timescale (dòng thời gian duy nhất) ──
   _tvMacdChart = LightweightCharts.createChart(macdEl, {
@@ -1243,10 +1263,11 @@ function _buildAndRender(d, tf) {
     crosshair: {mode: LightweightCharts.CrosshairMode.Normal},
     rightPriceScale: {
       borderColor:    '#e5e7eb',
-      scaleMarginTop: 0.1,
-      scaleMarginBottom: 0.1,
+      // FIX #4: Tăng scale margin để histogram chiếm không gian lớn hơn
+      scaleMarginTop: 0.05,
+      scaleMarginBottom: 0.05,
     },
-    timeScale: TS_MACD,
+    timeScale: TS_MACD_VISIBLE,
     handleScroll: true,
     handleScale:  true,
   });
@@ -1255,6 +1276,8 @@ function _buildAndRender(d, tf) {
     color:            TV_COLORS.macdHistUp,
     priceLineVisible: false,
     lastValueVisible: false,
+    // FIX #4: base=0 để histogram vươn từ 0 ra ngoài tối đa
+    base:             0,
   });
   _tvHistSeries.setData(macdHist);
   _tvMacdLine = _tvMacdChart.addLineSeries({
@@ -1273,7 +1296,7 @@ function _buildAndRender(d, tf) {
     crosshairMarkerVisible: false,
   });
   _tvSignalLine.setData(macdSig);
-  _tvMacdChart.timeScale().scrollToRealTime();
+  _tvScrollToLastWithPadding(_tvMacdChart);
 
   // ── SYNC timescale 3 chart ──
   function syncRange(src, targets){
@@ -1297,7 +1320,6 @@ function _buildAndRender(d, tf) {
       document.getElementById('leg-high').textContent  = c.high?.toFixed(2)||'—';
       document.getElementById('leg-low').textContent   = c.low?.toFixed(2)||'—';
       document.getElementById('leg-close').textContent = c.close?.toFixed(2)||'—';
-      // % tăng giảm so với nến trước
       const allC = candles;
       const curIdx = allC.findIndex(x=>x.time===param.time);
       if(curIdx>0){
@@ -1308,13 +1330,21 @@ function _buildAndRender(d, tf) {
         pctEl.style.color = pct>=0?'#0e9f6e':'#e02424';
       }
     }
+    // MACD crosshair legend
+    const mh = param.seriesData.get(_tvHistSeries);
+    const ml = param.seriesData.get(_tvMacdLine);
+    const ms = param.seriesData.get(_tvSignalLine);
+    if(mh!==undefined){const hEl=document.getElementById('leg-hist');if(hEl){hEl.textContent=typeof mh.value==='number'?mh.value.toFixed(4):'—';hEl.style.color=mh.value>=0?'rgba(14,159,110,1)':'rgba(224,36,36,1)';}}
+    if(ml!==undefined){const el=document.getElementById('leg-macd');if(el)el.textContent=typeof ml.value==='number'?ml.value.toFixed(4):'—';}
+    if(ms!==undefined){const el=document.getElementById('leg-signal');if(el)el.textContent=typeof ms.value==='number'?ms.value.toFixed(4):'—';}
   });
 
-  // Legend cuối — title với ngày
+  // FIX #2: Legend title — chỉ symbol + timeframe + ngày, KHÔNG EMA/MA
   const dateStr = _fmtTitleDate(candles, tf);
   const tfLabel = tf==='15'?'15m':tf;
   document.getElementById('tv-sym-label').textContent = `${d.symbol} [${tfLabel}]  ${dateStr}`;
 
+  // Legend cuối — OHLC của nến mới nhất
   const last = candles[candles.length-1];
   const prev = candles.length>=2 ? candles[candles.length-2] : last;
   document.getElementById('leg-open').textContent  = last?.open?.toFixed(2)||'—';
@@ -1349,12 +1379,12 @@ function _buildAndRender(d, tf) {
 function _tvApiUrl(sym, tf){
   if(tf==='W')  return `/api/ohlcv_weekly/${sym}`;
   if(tf==='15') return `/api/ohlcv_15m/${sym}`;
-  return `/api/ohlcv/${sym}`;   // D — từ daily cache
+  return `/api/ohlcv/${sym}`;
 }
 
-// ── Switch timeframe — fetch data mới theo TF ──
+// ── Switch timeframe ──
 async function tvSwitchTF(tf){
-  if(tf === _tvCurrentTF && _tvData !== null) return; // không fetch lại nếu đã có
+  if(tf === _tvCurrentTF && _tvData !== null) return;
   _tvCurrentTF = tf;
   ['D','W','15'].forEach(t=>document.getElementById('tf-'+t).classList.toggle('on',t===tf));
 
@@ -1370,7 +1400,6 @@ async function tvSwitchTF(tf){
     _buildAndRender(d, tf);
   } catch(err){
     console.error('tvSwitchTF error:', err);
-    // Hiện lỗi nhỏ trên toolbar
     loadEl.textContent = `❌ ${err.message}`;
     setTimeout(()=>{loadEl.textContent='⏳ đang tải...';loadEl.style.display='none';}, 3000);
     return;
@@ -1387,11 +1416,11 @@ function tvToggleExtraEMA(checked){
   });
 }
 
-// ── Load TV Chart lần đầu khi mở popup (luôn dùng TF hiện tại) ──
+// ── Load TV Chart lần đầu khi mở popup ──
 async function loadTVChart(sym){
   sym = sym.toUpperCase().trim();
   _tvLastSym = sym;
-  _tvData = null; // reset cache TF
+  _tvData = null;
 
   const loading = document.getElementById('tv-loading');
   const wrap    = document.getElementById('tv-chart-wrap');
@@ -1410,6 +1439,14 @@ async function loadTVChart(sym){
     loading.style.display='none';
     wrap.style.display='flex';
 
+    // FIX #5: Sau khi wrap hiển thị, gọi lại resize + scroll để đảm bảo layout đúng
+    requestAnimationFrame(()=>{
+      _tvResize();
+      if(_tvChart)     _tvScrollToLastWithPadding(_tvChart);
+      if(_tvVolChart)  _tvScrollToLastWithPadding(_tvVolChart);
+      if(_tvMacdChart) _tvScrollToLastWithPadding(_tvMacdChart);
+    });
+
   } catch(err){
     loading.innerHTML=`<div style="text-align:center;color:#9ca3af;padding:24px">
       <div style="font-size:22px;margin-bottom:8px">⚠️</div>
@@ -1424,7 +1461,7 @@ async function loadTVChart(sym){
 }
 
 // ═══════════════════════════════════════════════════════
-// MOBILE LIGHTBOX (giữ nguyên)
+// MOBILE LIGHTBOX
 // ═══════════════════════════════════════════════════════
 const lb={el:null,stripEl:null,labelEl:null,counterEl:null,zoomHintEl:null,images:[],idx:0,W:0,dragStartX:0,dragStartY:0,dragDx:0,dragDy:0,dragging:false,dragDir:'',stripOffset:0,scale:1,scaleMin:1,scaleMax:4,panX:0,panY:0,isPinching:false,pinchStartDist:0,pinchStartScale:1,pinchMidX:0,pinchMidY:0,pinchStartPanX:0,pinchStartPanY:0,isPanning:false,panStartX:0,panStartY:0,panStartPanX:0,panStartPanY:0,lastTapTime:0,lastTapX:0,lastTapY:0};
 function _lbCurrentImg(){const slides=lb.stripEl?lb.stripEl.querySelectorAll('.lb-slide img'):[];return slides[lb.idx]||null;}
