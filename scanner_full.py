@@ -1159,13 +1159,12 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if not signal_type:
                 time.sleep(0.3); continue
 
-            prev_rank    = SIGNAL_RANK.get(alerted_today.get(symbol), 0)
+            prev_entry = alerted_today.get(symbol)
+            prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
+            prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
             if prev_rank >= current_rank:
                 time.sleep(0.3); continue
-
-            alerted_today[symbol] = signal_type
-            new_signals.append(symbol)
 
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
@@ -1175,6 +1174,9 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
             vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
+
+            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 2)}
+            new_signals.append(symbol)
 
             link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
             link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
@@ -1561,11 +1563,10 @@ def telegram_listener(stop_event: threading.Event):
 
                     if alerted_today:
                         buttons = []
-                        for k, v in alerted_today.items():
-                            emoji = SIGNAL_EMOJI.get(v, '📌')
-                            buttons.append([
-                                {"text": f"{emoji} #{k}: {v}", "callback_data": f"chart_{k}"},
-                            ])
+                    for k, v in alerted_today.items():
+                        sig   = v["signal"] if isinstance(v, dict) else v
+                        emoji = SIGNAL_EMOJI.get(sig, '📌')
+                        buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
