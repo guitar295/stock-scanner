@@ -1715,7 +1715,7 @@ while True:
             print("🔧 Reload cache lịch sử cho ngày mới...")
             build_history_cache(symbols_to_scan, current_date)
 
-        is_morning   = 85500 <= now_time <= 113000
+        is_morning   =  85500 <= now_time <= 113000
         is_afternoon = 130000 <= now_time <= 150000
 
         if not (is_morning or is_afternoon):
