@@ -265,11 +265,11 @@ def _hmap_draw_group_header(draw, x, y, name, avg_pct, f_hdr, f_sector):
 
     dc(name, f_hdr, x, w1, HMAP_HDR_FG)
     fg_s = HMAP_SECTOR_FG_P if avg_pct > 0 else (HMAP_SECTOR_FG_N if avg_pct < 0 else HMAP_SECTOR_FG_0)
-    dc(f"{avg_pct:+.2f}%", f_sector, x + w1, w2, fg_s)
+    dc(f"{avg_pct:+.1f}%", f_sector, x + w1, w2, fg_s)
 
 def _hmap_avg_pct(syms, data):
     vals = [data[s]["pct"] for s in syms if s in data]
-    return round(sum(vals) / len(vals), 2) if vals else 0.0
+    return round(sum(vals) / len(vals), 1) if vals else 0.0
 
 def _hmap_col_height(groups):
     h = HMAP_TOP_BAR + HMAP_MARGIN
@@ -1159,13 +1159,12 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if not signal_type:
                 time.sleep(0.3); continue
 
-            prev_rank    = SIGNAL_RANK.get(alerted_today.get(symbol), 0)
+            prev_entry = alerted_today.get(symbol)
+            prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
+            prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
             if prev_rank >= current_rank:
                 time.sleep(0.3); continue
-
-            alerted_today[symbol] = signal_type
-            new_signals.append(symbol)
 
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
@@ -1175,6 +1174,9 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
             vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
+
+            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 1)}
+            new_signals.append(symbol)
 
             link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
             link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
@@ -1561,11 +1563,10 @@ def telegram_listener(stop_event: threading.Event):
 
                     if alerted_today:
                         buttons = []
-                        for k, v in alerted_today.items():
-                            emoji = SIGNAL_EMOJI.get(v, '📌')
-                            buttons.append([
-                                {"text": f"{emoji} #{k}: {v}", "callback_data": f"chart_{k}"},
-                            ])
+                    for k, v in alerted_today.items():
+                        sig   = v["signal"] if isinstance(v, dict) else v
+                        emoji = SIGNAL_EMOJI.get(sig, '📌')
+                        buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
@@ -1716,7 +1717,7 @@ while True:
             build_history_cache(symbols_to_scan, current_date)
 
         is_morning   =  85500 <= now_time <= 113000
-        is_afternoon = 130000 <= now_time <= 150000
+        is_afternoon = 130000 <= now_time <= 230000
 
         if not (is_morning or is_afternoon):
             with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
