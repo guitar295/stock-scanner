@@ -1159,7 +1159,7 @@ def run_scan_cycle(symbols: list, now_time: int,alerted_today: dict):
             if not signal_type:
                 time.sleep(0.3); continue
 
-            prev_entry = .get(symbol)
+            prev_entry = alerted_today.get(symbol)
             prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
             prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
