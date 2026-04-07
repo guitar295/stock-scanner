@@ -105,7 +105,7 @@ def api_heatmap():
 def api_ohlcv(symbol):
     """
     Trả về OHLCV + indicators từ history_cache để vẽ TradingView Lightweight Chart.
-    Tính EMA10, EMA20, EMA50, MA200, MACD(12,26,9) từ dữ liệu close.
+    Tính EMA10, EMA20, EMA50, MA200, EMA30, EMA100, EMA200, MACD(12,26,9) từ dữ liệu close.
     """
     symbol = symbol.upper().strip()
     cache  = _get_history_cache() if _get_history_cache else {}
@@ -129,6 +129,9 @@ def api_ohlcv(symbol):
         ema20  = ema(close, 20)
         ema50  = ema(close, 50)
         ma200  = close.rolling(200).mean()
+        ema30  = ema(close, 30)
+        ema100 = ema(close, 100)
+        ema200 = ema(close, 200)
 
         # MACD
         ema12  = ema(close, 12)
@@ -176,6 +179,9 @@ def api_ohlcv(symbol):
             "ema20":       ser(ema20),
             "ema50":       ser(ema50),
             "ma200":       ser(ma200),
+            "ema30":       ser(ema30),
+            "ema100":      ser(ema100),
+            "ema200":      ser(ema200),
             "macd_line":   ser(macd_line),
             "macd_signal": ser(macd_signal),
             "macd_hist":   [{"time": ts(i), "value": round(float(v), 4),
@@ -324,7 +330,7 @@ def start_dashboard(
     print(f"   Tín hiệu refresh : {SIGNAL_TTL_SEC}s (đọc RAM, không gọi API)")
     print(f"   Heatmap refresh  : {HEATMAP_TTL_SEC}s (gọi API, chỉ khi có người mở)")
     print(f"   Scanner Chart    : {'✅ đã đăng ký' if fetch_chart_fn else '❌ chưa đăng ký'} (cache {CHART_TTL_SEC}s)")
-    print(f"   TradingView Tab  : ✅ EMA10/20/50, MA200, VOL, MACD — đọc trực tiếp từ RAM cache")
+    print(f"   TradingView Tab  : ✅ EMA10/20/50, MA200, EMA30/100/200, VOL, MACD — đọc trực tiếp từ RAM cache")
 
     js_path = os.path.join(STATIC_DIR, "lightweight-charts.min.js")
     if os.path.exists(js_path):
@@ -453,11 +459,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
 .phdr-right{display:flex;align-items:center;justify-content:flex-end}
 .ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
-.popup-search-wrap{position:relative;display:flex;align-items:center}
-.popup-search-wrap .ps-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
-.popup-search-input{width:160px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,box-shadow .15s,width .2s}
-.popup-search-input::placeholder{color:var(--muted)}
-.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
 .ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
 .ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);border-bottom-color:var(--accent);font-weight:700}
@@ -475,58 +476,114 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 #panel-tv{overflow:hidden;background:#ffffff;display:none;flex-direction:column}
 #panel-tv.on{display:flex}
 #tv-loading{display:flex;align-items:center;justify-content:center;flex:1;color:#6b7280;font-size:13px;font-family:var(--font-mono);background:#fff}
-#tv-chart-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#ffffff}
 
-/* ── TV TOOLBAR: interval buttons + symbol search ── */
+/* TV Chart wrap: flex column, chia 3 vùng: toolbar | [nến+vol+macd] */
+#tv-chart-wrap{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  background:#ffffff;
+}
+
+/* Toolbar trên cùng: timeframe + EMA toggle */
 #tv-toolbar{
   display:flex;align-items:center;gap:8px;padding:5px 10px;
-  background:#f8f9fb;border-bottom:1px solid #eaedf3;
+  background:#f8f9fb;border-bottom:1px solid #eee;
   flex-shrink:0;flex-wrap:wrap;
 }
-.tv-interval-group{display:flex;gap:3px;align-items:center}
-.tv-interval-btn{
-  font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
-  padding:3px 10px;border-radius:4px;border:1px solid #dde3ee;
+.tv-tf-btn{
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+  padding:3px 9px;border-radius:4px;border:1px solid #dde3ee;
   background:#fff;color:#374151;cursor:pointer;transition:all .15s;
-  white-space:nowrap;line-height:1.4;
 }
-.tv-interval-btn:hover{border-color:#1a56db;color:#1a56db;background:#eef3ff}
-.tv-interval-btn.active{background:#1a56db;color:#fff;border-color:#1a56db}
-.tv-sep{width:1px;height:18px;background:#dde3ee;flex-shrink:0}
-.tv-sym-search-wrap{position:relative;display:flex;align-items:center;margin-left:auto}
-.tv-sym-search-wrap .tv-si{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#9ca3af;font-size:12px;pointer-events:none}
-#tv-sym-input{
-  width:120px;padding:4px 8px 4px 26px;border-radius:16px;
-  border:1px solid #dde3ee;background:#fff;color:#111827;
-  font-family:'IBM Plex Mono',monospace;font-size:11px;outline:none;
-  transition:border-color .15s,box-shadow .15s,width .2s;
-}
-#tv-sym-input::placeholder{color:#9ca3af}
-#tv-sym-input:focus{border-color:#1a56db;box-shadow:0 0 0 2px rgba(26,86,219,.12);width:160px}
+.tv-tf-btn.on{background:#1a56db;color:#fff;border-color:#1a56db;}
+.tv-tf-btn:hover:not(.on){background:#eef3ff;border-color:#1a56db;color:#1a56db;}
 
-/* OHLC info bar — nhỏ gọn, thay thế legend cũ */
-#tv-ohlc-bar{
-  display:flex;align-items:center;gap:10px;padding:3px 10px;
-  background:#fff;border-bottom:1px solid #f3f4f6;
+/* EMA 30/100/200 toggle — nút tròn nhỏ kiểu checkbox */
+.tv-ema-toggle{
+  display:flex;align-items:center;gap:5px;margin-left:6px;
+  cursor:pointer;user-select:none;
+}
+.tv-ema-toggle input[type=checkbox]{
+  appearance:none;-webkit-appearance:none;
+  width:14px;height:14px;border-radius:50%;
+  border:1.5px solid #9ca3af;background:#fff;
+  cursor:pointer;position:relative;transition:all .15s;flex-shrink:0;
+}
+.tv-ema-toggle input[type=checkbox]:checked{
+  background:#7c3aed;border-color:#7c3aed;
+}
+.tv-ema-toggle input[type=checkbox]:checked::after{
+  content:'';position:absolute;top:2px;left:2px;
+  width:6px;height:6px;border-radius:50%;background:#fff;
+}
+.tv-ema-toggle span{
+  font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b7280;
+}
+
+/* Legend bar */
+#tv-legend{
+  display:flex;align-items:center;gap:14px;padding:4px 10px;
+  background:#ffffff;border-bottom:1px solid #f0f0f0;
   font-family:'IBM Plex Mono',monospace;font-size:10px;flex-wrap:wrap;
   flex-shrink:0;
 }
-.tv-ohlc-sym{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;color:#1a56db;letter-spacing:.5px;margin-right:4px}
-.tv-ohlc-lbl{color:#9ca3af}
-.tv-ohlc-val{font-weight:600;color:#111827}
-#tv-ohlc-chg{font-weight:700}
+.tv-leg-item{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.tv-leg-dot{width:10px;height:3px;border-radius:2px;flex-shrink:0}
+.tv-leg-label{color:#9ca3af}
+.tv-leg-val{font-weight:600}
 
-#tv-chart-container{flex:1;position:relative;background:#ffffff;min-height:0}
+/* Khu vực chứa 3 chart xếp dọc: nến | vol | macd */
+#tv-charts-area{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  background:#ffffff;
+}
+
+/* Chart nến chiếm phần lớn */
+#tv-chart-container{
+  flex:1;
+  position:relative;
+  background:#ffffff;
+  min-height:0;
+}
+
+/* Volume panel — cùng chiều cao MACD */
+#tv-vol-container{
+  height:80px;
+  flex-shrink:0;
+  background:#ffffff;
+  border-top:1px solid #f0f0f0;
+  position:relative;
+}
 
 /* MACD panel */
-#tv-macd-container{height:110px;flex-shrink:0;background:#ffffff;border-top:1px solid #f0f0f0;position:relative}
+#tv-macd-container{
+  height:80px;
+  flex-shrink:0;
+  background:#ffffff;
+  border-top:1px solid #f0f0f0;
+  position:relative;
+}
 #tv-macd-legend{
   position:absolute;top:3px;left:8px;z-index:10;
   display:flex;align-items:center;gap:10px;
-  font-family:'IBM Plex Mono',monospace;font-size:9.5px;pointer-events:none;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;pointer-events:none;
 }
-.tv-ml-lbl{color:#9ca3af}
-.tv-ml-val{font-weight:600}
+
+/* Gõ mã trực tiếp — overlay hint */
+#tv-ticker-overlay{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(26,86,219,0.92);color:#fff;
+  font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;
+  letter-spacing:3px;padding:10px 28px;border-radius:8px;
+  display:none;z-index:100;pointer-events:none;
+  min-width:140px;text-align:center;
+  box-shadow:0 4px 24px rgba(26,86,219,0.35);
+}
 
 /* Scanner Chart tab */
 #panel-scanner{overflow:hidden;background:#ffffff;display:none;flex-direction:column}
@@ -564,13 +621,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
   .album-nav-btn{width:26px;height:26px;font-size:12px}
-  .popup-search-input{width:120px}
-  .popup-search-input:focus{width:150px}
-  #tv-macd-container{height:80px}
-  #tv-toolbar{padding:4px 8px;gap:5px}
-  .tv-interval-btn{padding:3px 8px;font-size:10px}
-  #tv-sym-input{width:90px}
-  #tv-sym-input:focus{width:120px}
+  #tv-macd-container{height:60px}
+  #tv-vol-container{height:60px}
 }
 @media screen and (max-width:768px){
   .pbox{width:100vw!important;max-width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;overflow:visible!important;max-height:100dvh!important}
@@ -669,10 +721,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="phdr">
       <div class="phdr-left">
         <span class="ptitle" id="ptitle">Chart</span>
-        <div class="popup-search-wrap">
-          <span class="ps-icon">🔍</span>
-          <input class="popup-search-input" id="popup-search-input" type="text" placeholder="Tìm mã khác" maxlength="10" autocomplete="off" spellcheck="false">
-        </div>
       </div>
       <div class="phdr-center">
         <div class="ctabs">
@@ -696,48 +744,51 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <div id="tv-loading">⏳ Đang tải dữ liệu...</div>
         <div id="tv-chart-wrap" style="display:none">
 
-          <!-- ── TOOLBAR: Interval + Symbol search ── -->
+          <!-- Toolbar: Timeframe + EMA toggle -->
           <div id="tv-toolbar">
-            <div class="tv-interval-group">
-              <button class="tv-interval-btn active" id="ibtn-D"  onclick="tvSetInterval('D')">D</button>
-              <button class="tv-interval-btn"        id="ibtn-W"  onclick="tvSetInterval('W')">W</button>
-              <button class="tv-interval-btn"        id="ibtn-15" onclick="tvSetInterval('15')">15m</button>
-            </div>
-            <div class="tv-sep"></div>
-            <!-- EMA color legend nhỏ gọn -->
-            <span style="display:flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#9ca3af">
-              <span style="display:inline-block;width:18px;height:2px;background:#26a69a;border-radius:2px"></span>EMA10
-              <span style="display:inline-block;width:18px;height:2px;background:#ef5350;border-radius:2px"></span>EMA20
-              <span style="display:inline-block;width:18px;height:2px;background:#ab47bc;border-radius:2px"></span>EMA50
-              <span style="display:inline-block;width:18px;height:2px;background:#b71c1c;border-radius:2px;border-top:1px dashed #b71c1c;opacity:.7"></span>MA200
-            </span>
-            <!-- Symbol search trên chart -->
-            <div class="tv-sym-search-wrap">
-              <span class="tv-si">🔍</span>
-              <input id="tv-sym-input" type="text" placeholder="Nhập mã..." maxlength="10" autocomplete="off" spellcheck="false">
-            </div>
+            <span style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:#6b7280;letter-spacing:1px;text-transform:uppercase;">Khung:</span>
+            <button class="tv-tf-btn on" id="tf-D"  onclick="tvSwitchTF('D')">D</button>
+            <button class="tv-tf-btn"    id="tf-W"  onclick="tvSwitchTF('W')">W</button>
+            <button class="tv-tf-btn"    id="tf-15" onclick="tvSwitchTF('15')">15m</button>
+            <span style="flex:1"></span>
+            <label class="tv-ema-toggle" title="Hiển thị EMA 30 / 100 / 200">
+              <input type="checkbox" id="chk-ema-extra" onchange="tvToggleExtraEMA(this.checked)">
+              <span>EMA 30·100·200</span>
+            </label>
           </div>
 
-          <!-- ── OHLC bar nhỏ gọn ── -->
-          <div id="tv-ohlc-bar">
-            <span class="tv-ohlc-sym" id="tv-sym-label">—</span>
-            <span class="tv-ohlc-lbl">O</span><span class="tv-ohlc-val" id="leg-open">—</span>
-            <span class="tv-ohlc-lbl">H</span><span class="tv-ohlc-val" id="leg-high" style="color:#0e9f6e">—</span>
-            <span class="tv-ohlc-lbl">L</span><span class="tv-ohlc-val" id="leg-low"  style="color:#e02424">—</span>
-            <span class="tv-ohlc-lbl">C</span><span class="tv-ohlc-val" id="leg-close">—</span>
-            <span id="tv-ohlc-chg">—</span>
+          <!-- Legend -->
+          <div id="tv-legend">
+            <span style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:#374151;letter-spacing:.5px" id="tv-sym-label">—</span>
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#e02424"></span><span class="tv-leg-val" id="leg-ema10" style="color:#e02424">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#059669"></span><span class="tv-leg-val" id="leg-ema20" style="color:#059669">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#7c3aed"></span><span class="tv-leg-val" id="leg-ema50" style="color:#7c3aed">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#92400e;width:14px"></span><span class="tv-leg-val" id="leg-ma200" style="color:#92400e">—</span></span>
+            <span class="tv-leg-item" style="margin-left:6px"><span class="tv-leg-label">O</span><span class="tv-leg-val" id="leg-open">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-label">H</span><span class="tv-leg-val" id="leg-high" style="color:#0e9f6e">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-label">L</span><span class="tv-leg-val" id="leg-low" style="color:#e02424">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-label">C</span><span class="tv-leg-val" id="leg-close">—</span></span>
           </div>
 
-          <!-- Main chart -->
-          <div id="tv-chart-container"></div>
+          <!-- 3 chart xếp dọc sát nhau -->
+          <div id="tv-charts-area">
+            <!-- Ticker overlay (gõ mã trực tiếp) -->
+            <div id="tv-ticker-overlay"></div>
 
-          <!-- MACD panel -->
-          <div id="tv-macd-container">
-            <div id="tv-macd-legend">
-              <span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;color:#374151;letter-spacing:.5px">MACD(12,26,9)</span>
-              <span><span class="tv-ml-lbl">MACD</span> <span class="tv-ml-val" id="leg-macd" style="color:#2563eb">—</span></span>
-              <span><span class="tv-ml-lbl">Signal</span> <span class="tv-ml-val" id="leg-signal" style="color:#f97316">—</span></span>
-              <span><span class="tv-ml-lbl">Hist</span> <span class="tv-ml-val" id="leg-hist">—</span></span>
+            <!-- Nến (chiếm phần lớn) -->
+            <div id="tv-chart-container"></div>
+
+            <!-- Volume -->
+            <div id="tv-vol-container"></div>
+
+            <!-- MACD + legend -->
+            <div id="tv-macd-container">
+              <div id="tv-macd-legend">
+                <span style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:#374151;letter-spacing:.5px">MACD(12,26,9)</span>
+                <span class="tv-leg-item"><span class="tv-leg-label" style="font-size:9px">MACD</span><span class="tv-leg-val" id="leg-macd" style="color:#2563eb;font-size:10px">—</span></span>
+                <span class="tv-leg-item"><span class="tv-leg-label" style="font-size:9px">Sig</span><span class="tv-leg-val" id="leg-signal" style="color:#f97316;font-size:10px">—</span></span>
+                <span class="tv-leg-item"><span class="tv-leg-label" style="font-size:9px">Hist</span><span class="tv-leg-val" id="leg-hist" style="font-size:10px">—</span></span>
+              </div>
             </div>
           </div>
         </div>
@@ -792,21 +843,13 @@ async function loadConfig(){
 }
 
 // ═══════════════════════════════════════════════════════
-// SEARCH BARS
+// SEARCH BAR (heatmap only)
 // ═══════════════════════════════════════════════════════
 (function(){
   const inp=document.getElementById('hmap-search-input');
   inp.addEventListener('keydown',function(e){
     if(e.key==='Enter'){const sym=this.value.trim().toUpperCase();if(sym.length>=2){this.value='';this.blur();openChart(sym);}}
     if(e.key==='Escape'){this.value='';this.blur();}
-  });
-  inp.addEventListener('focus',function(){this.select();});
-})();
-(function(){
-  const inp=document.getElementById('popup-search-input');
-  inp.addEventListener('keydown',function(e){
-    if(e.key==='Enter'){const sym=this.value.trim().toUpperCase();if(sym.length>=2){this.value='';this.blur();openChart(sym);}}
-    if(e.key==='Escape'){closePopup();}
   });
   inp.addEventListener('focus',function(){this.select();});
 })();
@@ -864,18 +907,27 @@ function renderHeatmap(data){
 // ═══════════════════════════════════════════════════════
 // TRADINGVIEW LIGHTWEIGHT CHART
 // ═══════════════════════════════════════════════════════
-let _tvChart=null, _tvMainSeries=null, _tvMacdChart=null;
-let _tvHistSeries=null, _tvMacdLine=null, _tvSignalLine=null;
-let _tvVolSeries=null;
+let _tvChart=null, _tvMainSeries=null;
+let _tvVolChart=null, _tvVolSeries=null;
+let _tvMacdChart=null, _tvHistSeries=null, _tvMacdLine=null, _tvSignalLine=null;
+let _tvEma10=null, _tvEma20=null, _tvEma50=null, _tvMa200=null;
+let _tvEma30=null, _tvEma100=null, _tvEma200=null;
 let _tvLastSym='';
-let _tvCurrentInterval='D';   // D | W | 15
+let _tvCurrentTF='D';   // D | W | 15
+let _tvExtraEMA=false;
+let _tvData=null;       // cache raw API data
 
-// Màu EMA giống ảnh tham chiếu (scanner chart style)
+// Số nến hiển thị mặc định theo TF
+const TF_BARS={D:250, W:200, '15':200};
+
 const TV_COLORS={
-  ema10:       '#26a69a',    // teal/green — giống ảnh
-  ema20:       '#ef5350',    // đỏ — giống ảnh
-  ema50:       '#ab47bc',    // tím — giống ảnh
-  ma200:       '#b71c1c',    // đỏ đậm dashed
+  ema10:       '#e02424',
+  ema20:       '#059669',
+  ema50:       '#7c3aed',
+  ma200:       '#92400e',
+  ema30:       '#0ea5e9',
+  ema100:      '#f97316',
+  ema200:      '#64748b',
   macdLine:    '#2563eb',
   macdSignal:  '#f97316',
   macdHistUp:  'rgba(14,159,110,0.7)',
@@ -884,308 +936,293 @@ const TV_COLORS={
   volDn:       'rgba(224,36,36,0.45)',
 };
 
-// Số nến hiển thị mặc định tùy interval
-const TV_DEFAULT_BARS={D:120, W:60, '15':200};
-
 function _tvDestroy(){
-  if(_tvChart)   {try{_tvChart.remove();}catch(e){}  _tvChart=null;}
-  if(_tvMacdChart){try{_tvMacdChart.remove();}catch(e){} _tvMacdChart=null;}
+  if(_tvChart)    {try{_tvChart.remove();}catch(e){}    _tvChart=null;}
+  if(_tvVolChart) {try{_tvVolChart.remove();}catch(e){} _tvVolChart=null;}
+  if(_tvMacdChart){try{_tvMacdChart.remove();}catch(e){}_tvMacdChart=null;}
   _tvMainSeries=null;_tvVolSeries=null;
   _tvHistSeries=null;_tvMacdLine=null;_tvSignalLine=null;
+  _tvEma10=null;_tvEma20=null;_tvEma50=null;_tvMa200=null;
+  _tvEma30=null;_tvEma100=null;_tvEma200=null;
 }
 
 function _tvResize(){
-  const wrap=document.getElementById('tv-chart-wrap');
-  if(!wrap||!_tvChart) return;
   const mainEl=document.getElementById('tv-chart-container');
+  const volEl=document.getElementById('tv-vol-container');
   const macdEl=document.getElementById('tv-macd-container');
-  if(mainEl) _tvChart.applyOptions({width:mainEl.clientWidth,height:mainEl.clientHeight});
-  if(macdEl&&_tvMacdChart) _tvMacdChart.applyOptions({width:macdEl.clientWidth,height:macdEl.clientHeight});
+  if(mainEl&&_tvChart)    _tvChart.applyOptions({width:mainEl.clientWidth,height:mainEl.clientHeight});
+  if(volEl&&_tvVolChart)  _tvVolChart.applyOptions({width:volEl.clientWidth,height:volEl.clientHeight});
+  if(macdEl&&_tvMacdChart)_tvMacdChart.applyOptions({width:macdEl.clientWidth,height:macdEl.clientHeight});
 }
 
 const _tvResizeObs=new ResizeObserver(()=>_tvResize());
 
-// Cập nhật nút interval active
-function _tvUpdateIntervalBtns(iv){
-  ['D','W','15'].forEach(k=>{
-    const btn=document.getElementById('ibtn-'+k);
-    if(btn) btn.classList.toggle('active',k===iv);
+// ── Gõ mã trực tiếp trên chart (như TradingView) ──
+let _tvTickerBuf='';
+let _tvTickerTimer=null;
+const _tvTickerOverlay=document.getElementById('tv-ticker-overlay');
+
+function _tvTickerShow(s){
+  _tvTickerOverlay.textContent=s;
+  _tvTickerOverlay.style.display='block';
+}
+function _tvTickerHide(){
+  _tvTickerOverlay.style.display='none';
+  _tvTickerBuf='';
+}
+
+function _tvHandleKey(e){
+  // Bỏ qua khi đang focus ô input khác
+  const tag=document.activeElement&&document.activeElement.tagName;
+  if(tag==='INPUT'||tag==='TEXTAREA')return;
+  // Chỉ xử lý khi popup TV đang mở
+  if(!document.getElementById('overlay').classList.contains('on'))return;
+  if(_tab!=='tv')return;
+
+  const key=e.key;
+
+  // Chữ cái, số, dấu chấm
+  if(/^[A-Za-z0-9.]$/.test(key)){
+    e.preventDefault();
+    _tvTickerBuf+=key.toUpperCase();
+    _tvTickerShow(_tvTickerBuf);
+    clearTimeout(_tvTickerTimer);
+    _tvTickerTimer=setTimeout(()=>{
+      const sym=_tvTickerBuf.trim();
+      _tvTickerHide();
+      if(sym.length>=2) openChart(sym);
+    },1200);
+    return;
+  }
+  // Enter → xác nhận ngay
+  if(key==='Enter'&&_tvTickerBuf.length>=2){
+    e.preventDefault();
+    clearTimeout(_tvTickerTimer);
+    const sym=_tvTickerBuf.trim();
+    _tvTickerHide();
+    openChart(sym);
+    return;
+  }
+  // Backspace → xóa
+  if(key==='Backspace'&&_tvTickerBuf.length>0){
+    e.preventDefault();
+    _tvTickerBuf=_tvTickerBuf.slice(0,-1);
+    if(_tvTickerBuf.length===0){_tvTickerHide();clearTimeout(_tvTickerTimer);}
+    else _tvTickerShow(_tvTickerBuf);
+    return;
+  }
+  // Escape → hủy
+  if(key==='Escape'&&_tvTickerBuf.length>0){
+    e.preventDefault();
+    _tvTickerHide();
+    clearTimeout(_tvTickerTimer);
+    return;
+  }
+}
+document.addEventListener('keydown',_tvHandleKey);
+
+// ── Slice data to N bars ──
+function _sliceLast(arr,n){if(!arr)return[];return arr.length<=n?arr:arr.slice(arr.length-n);}
+
+function _buildAndRender(d,tf){
+  const nBars=TF_BARS[tf]||250;
+  const candles=_sliceLast(d.candles,nBars);
+  const volume=_sliceLast(d.volume,nBars);
+  const ema10=_sliceLast(d.ema10,nBars);
+  const ema20=_sliceLast(d.ema20,nBars);
+  const ema50=_sliceLast(d.ema50,nBars);
+  const ma200=_sliceLast(d.ma200,nBars);
+  const ema30=_sliceLast(d.ema30,nBars);
+  const ema100=_sliceLast(d.ema100,nBars);
+  const ema200=_sliceLast(d.ema200,nBars);
+  const macdLine=_sliceLast(d.macd_line,nBars);
+  const macdSig=_sliceLast(d.macd_signal,nBars);
+  const macdHist=_sliceLast(d.macd_hist,nBars);
+
+  _tvDestroy();
+
+  const mainEl=document.getElementById('tv-chart-container');
+  const volEl=document.getElementById('tv-vol-container');
+  const macdEl=document.getElementById('tv-macd-container');
+
+  const COMMON_TS={
+    rightOffset:30,
+    fixLeftEdge:false,
+    fixRightEdge:false,
+    timeVisible:false,
+    secondsVisible:false,
+    borderColor:'#e5e7eb',
+  };
+
+  // ── CHART CHÍNH (nến) ──
+  _tvChart=LightweightCharts.createChart(mainEl,{
+    width:mainEl.clientWidth,
+    height:mainEl.clientHeight,
+    layout:{background:{type:'solid',color:'#ffffff'},textColor:'#374151',fontSize:11,fontFamily:"'IBM Plex Mono',monospace"},
+    grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale:{borderColor:'#e5e7eb',scaleMarginTop:0.06,scaleMarginBottom:0.02},
+    timeScale:COMMON_TS,
+    handleScroll:true,
+    handleScale:true,
   });
-}
 
-// Đổi interval — nếu 15m thì không dùng cache
-async function tvSetInterval(iv){
-  if(iv===_tvCurrentInterval&&_tvLastSym) return; // không reload nếu trùng
-  _tvCurrentInterval=iv;
-  _tvUpdateIntervalBtns(iv);
-  if(_tvLastSym) await loadTVChart(_tvLastSym);
-}
+  _tvMainSeries=_tvChart.addCandlestickSeries({
+    upColor:'#0e9f6e',downColor:'#e02424',
+    borderUpColor:'#0e9f6e',borderDownColor:'#e02424',
+    wickUpColor:'#0e9f6e',wickDownColor:'#e02424',
+  });
+  _tvMainSeries.setData(candles);
 
-// Symbol input trong toolbar
-(function(){
-  const inp=document.getElementById('tv-sym-input');
-  if(!inp)return;
-  inp.addEventListener('keydown',function(e){
-    if(e.key==='Enter'){
-      const sym=this.value.trim().toUpperCase();
-      if(sym.length>=2){this.value='';this.blur();openChart(sym);}
+  // EMAs mặc định
+  _tvEma10 =_tvChart.addLineSeries({color:TV_COLORS.ema10, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvEma10.setData(ema10);
+  _tvEma20 =_tvChart.addLineSeries({color:TV_COLORS.ema20, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvEma20.setData(ema20);
+  _tvEma50 =_tvChart.addLineSeries({color:TV_COLORS.ema50, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvEma50.setData(ema50);
+  _tvMa200=_tvChart.addLineSeries({color:TV_COLORS.ma200, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvMa200.setData(ma200);
+
+  // EMAs mở rộng (ẩn theo mặc định)
+  _tvEma30 =_tvChart.addLineSeries({color:TV_COLORS.ema30, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:_tvExtraEMA});
+  _tvEma30.setData(ema30);
+  _tvEma100=_tvChart.addLineSeries({color:TV_COLORS.ema100,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:_tvExtraEMA});
+  _tvEma100.setData(ema100);
+  _tvEma200=_tvChart.addLineSeries({color:TV_COLORS.ema200,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:_tvExtraEMA});
+  _tvEma200.setData(ema200);
+
+  // ── VOLUME CHART ──
+  _tvVolChart=LightweightCharts.createChart(volEl,{
+    width:volEl.clientWidth,
+    height:volEl.clientHeight,
+    layout:{background:{type:'solid',color:'#ffffff'},textColor:'#9ca3af',fontSize:9,fontFamily:"'IBM Plex Mono',monospace"},
+    grid:{vertLines:{color:'#f8f8f8'},horzLines:{color:'#f8f8f8'}},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale:{borderColor:'#e5e7eb',scaleMarginTop:0.05,scaleMarginBottom:0.0},
+    timeScale:{...COMMON_TS,timeVisible:false},
+    handleScroll:true,
+    handleScale:true,
+  });
+  _tvVolSeries=_tvVolChart.addHistogramSeries({
+    priceFormat:{type:'volume'},
+    priceLineVisible:false,
+    lastValueVisible:false,
+  });
+  _tvVolSeries.setData(volume);
+
+  // ── MACD CHART ──
+  _tvMacdChart=LightweightCharts.createChart(macdEl,{
+    width:macdEl.clientWidth,
+    height:macdEl.clientHeight,
+    layout:{background:{type:'solid',color:'#ffffff'},textColor:'#9ca3af',fontSize:9,fontFamily:"'IBM Plex Mono',monospace"},
+    grid:{vertLines:{color:'#f8f8f8'},horzLines:{color:'#f8f8f8'}},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale:{borderColor:'#e5e7eb',scaleMarginTop:0.1,scaleMarginBottom:0.1},
+    // Chỉ MACD mới hiển thị dòng thời gian
+    timeScale:{...COMMON_TS,timeVisible:true,secondsVisible:false},
+    handleScroll:true,
+    handleScale:true,
+  });
+
+  _tvHistSeries=_tvMacdChart.addHistogramSeries({color:TV_COLORS.macdHistUp,priceLineVisible:false,lastValueVisible:false});
+  _tvHistSeries.setData(macdHist);
+  _tvMacdLine=_tvMacdChart.addLineSeries({color:TV_COLORS.macdLine,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvMacdLine.setData(macdLine);
+  _tvSignalLine=_tvMacdChart.addLineSeries({color:TV_COLORS.macdSignal,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvSignalLine.setData(macdSig);
+
+  // ── SYNC timescale 3 chart ──
+  function syncRange(src,targets){
+    src.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+      if(!range)return;
+      targets.forEach(c=>{try{c.timeScale().setVisibleLogicalRange(range);}catch(e){}});
+    });
+  }
+  syncRange(_tvChart,    [_tvVolChart,_tvMacdChart]);
+  syncRange(_tvVolChart, [_tvChart,_tvMacdChart]);
+  syncRange(_tvMacdChart,[_tvChart,_tvVolChart]);
+
+  // Crosshair sync (nến → vol, macd)
+  _tvChart.subscribeCrosshairMove(param=>{
+    if(!param.time)return;
+    if(_tvVolChart)  _tvVolChart.setCrosshairPosition(param.point?.x??0,0,_tvVolSeries);
+    if(_tvMacdChart) _tvMacdChart.setCrosshairPosition(param.point?.x??0,0,_tvHistSeries);
+    const c=param.seriesData.get(_tvMainSeries);
+    if(c){
+      document.getElementById('leg-open').textContent=c.open?.toFixed(2)||'—';
+      document.getElementById('leg-high').textContent=c.high?.toFixed(2)||'—';
+      document.getElementById('leg-low').textContent=c.low?.toFixed(2)||'—';
+      document.getElementById('leg-close').textContent=c.close?.toFixed(2)||'—';
     }
-    if(e.key==='Escape'){this.value='';this.blur();}
   });
-  inp.addEventListener('focus',function(){this.select();});
-})();
 
-// Hàm lấy dữ liệu theo interval
-// D/W: đọc từ history_cache (RAM)
-// 15m: gọi API riêng (không cache)
-async function _tvFetchData(sym, interval){
-  if(interval==='15'){
-    // Gọi API 15m — không lưu cache, endpoint riêng nếu có
-    // Fallback: dùng /api/ohlcv/<sym>?interval=15
-    const r=await fetch(`/api/ohlcv/${sym}?interval=15`);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
-    return await r.json();
+  // Legend giá trị cuối
+  const last=candles[candles.length-1];
+  document.getElementById('tv-sym-label').textContent=`${d.symbol} [${tf==='15'?'15m':tf}]`;
+  document.getElementById('leg-open').textContent=last?.open?.toFixed(2)||'—';
+  document.getElementById('leg-high').textContent=last?.high?.toFixed(2)||'—';
+  document.getElementById('leg-low').textContent=last?.low?.toFixed(2)||'—';
+  document.getElementById('leg-close').textContent=last?.close?.toFixed(2)||'—';
+  const lE10=ema10.at(-1);if(lE10) document.getElementById('leg-ema10').textContent=lE10.value?.toFixed(2)||'—';
+  const lE20=ema20.at(-1);if(lE20) document.getElementById('leg-ema20').textContent=lE20.value?.toFixed(2)||'—';
+  const lE50=ema50.at(-1);if(lE50) document.getElementById('leg-ema50').textContent=lE50.value?.toFixed(2)||'—';
+  const lM200=ma200.at(-1);if(lM200) document.getElementById('leg-ma200').textContent=lM200.value?.toFixed(2)||'—';
+  const lMacd=macdLine.at(-1);if(lMacd) document.getElementById('leg-macd').textContent=lMacd.value?.toFixed(4)||'—';
+  const lSig=macdSig.at(-1);if(lSig) document.getElementById('leg-signal').textContent=lSig.value?.toFixed(4)||'—';
+  const lHist=macdHist.at(-1);
+  if(lHist){
+    const hEl=document.getElementById('leg-hist');
+    hEl.textContent=lHist.value?.toFixed(4)||'—';
+    hEl.style.color=lHist.value>=0?'rgba(14,159,110,1)':'rgba(224,36,36,1)';
   }
-  if(interval==='W'){
-    // Gọi API weekly
-    const r=await fetch(`/api/ohlcv/${sym}?interval=W`);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
-    return await r.json();
-  }
-  // Daily — mặc định
-  const r=await fetch(`/api/ohlcv/${sym}`);
-  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
-  return await r.json();
+
+  // Observer resize
+  _tvResizeObs.disconnect();
+  _tvResizeObs.observe(mainEl);
+  _tvResizeObs.observe(volEl);
+  _tvResizeObs.observe(macdEl);
+}
+
+// ── Switch timeframe (dùng lại data đã tải) ──
+function tvSwitchTF(tf){
+  _tvCurrentTF=tf;
+  ['D','W','15'].forEach(t=>document.getElementById('tf-'+t).classList.toggle('on',t===tf));
+  if(_tvData) _buildAndRender(_tvData,tf);
+}
+
+// ── Toggle EMA 30/100/200 ──
+function tvToggleExtraEMA(checked){
+  _tvExtraEMA=checked;
+  [_tvEma30,_tvEma100,_tvEma200].forEach(s=>{
+    if(s) try{s.applyOptions({visible:checked});}catch(e){}
+  });
 }
 
 async function loadTVChart(sym){
   sym=sym.toUpperCase().trim();
   _tvLastSym=sym;
-  const interval=_tvCurrentInterval||'D';
-  _tvUpdateIntervalBtns(interval);
-
   const loading=document.getElementById('tv-loading');
   const wrap=document.getElementById('tv-chart-wrap');
   loading.style.display='flex';wrap.style.display='none';
-  loading.innerHTML=`⏳ Đang tải  <b style="margin:0 4px">${sym}</b>  [${interval==='15'?'15m':interval}]...`;
+  loading.innerHTML=`⏳ Đang tải dữ liệu  <b>${sym}</b>...`;
 
   try{
-    const d=await _tvFetchData(sym, interval);
+    const r=await fetch(`/api/ohlcv/${sym}`);
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
+    const d=await r.json();
     if(!d.candles||d.candles.length<2) throw new Error('Không đủ dữ liệu');
 
-    _tvDestroy();
+    _tvData=d;
+    _buildAndRender(d,_tvCurrentTF);
 
-    const mainEl=document.getElementById('tv-chart-container');
-    const macdEl=document.getElementById('tv-macd-container');
-
-    // ── CHART CHÍNH ──
-    _tvChart=LightweightCharts.createChart(mainEl,{
-      width:mainEl.clientWidth,
-      height:mainEl.clientHeight,
-      layout:{
-        background:{type:'solid',color:'#ffffff'},
-        textColor:'#6b7280',
-        fontSize:11,
-        fontFamily:"'IBM Plex Mono',monospace",
-      },
-      grid:{
-        vertLines:{color:'#f5f5f5'},
-        horzLines:{color:'#f5f5f5'},
-      },
-      crosshair:{
-        mode:LightweightCharts.CrosshairMode.Normal,
-        vertLine:{color:'#9ca3af',style:2,width:1,labelBackgroundColor:'#374151'},
-        horzLine:{color:'#9ca3af',style:2,width:1,labelBackgroundColor:'#374151'},
-      },
-      rightPriceScale:{
-        borderColor:'#e5e7eb',
-        scaleMarginTop:0.05,
-        scaleMarginBottom:0.02,
-        textColor:'#6b7280',
-      },
-      timeScale:{
-        borderColor:'#e5e7eb',
-        rightOffset:8,
-        barSpacing:interval==='15'?4:interval==='W'?14:8,
-        fixLeftEdge:false,
-        fixRightEdge:false,
-        timeVisible:true,
-        secondsVisible:false,
-        tickMarkFormatter:(time)=>{
-          const d=new Date(time*1000);
-          if(interval==='W'||interval==='D'){
-            return`${d.getDate()}/${d.getMonth()+1}`;
-          }
-          return`${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
-        },
-      },
-      handleScroll:true,
-      handleScale:true,
-    });
-
-    // Candlestick — giữ màu chuẩn đỏ/xanh
-    _tvMainSeries=_tvChart.addCandlestickSeries({
-      upColor:'#26a69a',
-      downColor:'#ef5350',
-      borderUpColor:'#26a69a',
-      borderDownColor:'#ef5350',
-      wickUpColor:'#26a69a',
-      wickDownColor:'#ef5350',
-    });
-    _tvMainSeries.setData(d.candles);
-
-    // Volume histogram — price scale riêng
-    _tvVolSeries=_tvChart.addHistogramSeries({
-      priceFormat:{type:'volume'},
-      priceScaleId:'volume',
-      lastValueVisible:false,
-      priceLineVisible:false,
-    });
-    _tvChart.priceScale('volume').applyOptions({
-      scaleMarginTop:0.82,
-      scaleMarginBottom:0,
-    });
-    if(d.volume&&d.volume.length) _tvVolSeries.setData(d.volume);
-
-    // EMA10 — teal
-    if(d.ema10&&d.ema10.length){
-      const s=_tvChart.addLineSeries({color:TV_COLORS.ema10,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-      s.setData(d.ema10);
-    }
-    // EMA20 — đỏ
-    if(d.ema20&&d.ema20.length){
-      const s=_tvChart.addLineSeries({color:TV_COLORS.ema20,lineWidth:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-      s.setData(d.ema20);
-    }
-    // EMA50 — tím
-    if(d.ema50&&d.ema50.length){
-      const s=_tvChart.addLineSeries({color:TV_COLORS.ema50,lineWidth:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-      s.setData(d.ema50);
-    }
-    // MA200 — đỏ đậm dashed
-    if(d.ma200&&d.ma200.length){
-      const s=_tvChart.addLineSeries({
-        color:TV_COLORS.ma200,lineWidth:1.5,
-        lineStyle:LightweightCharts.LineStyle.Dashed,
-        priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,
-      });
-      s.setData(d.ma200);
-    }
-
-    // ── MACD CHART ──
-    _tvMacdChart=LightweightCharts.createChart(macdEl,{
-      width:macdEl.clientWidth,
-      height:macdEl.clientHeight,
-      layout:{background:{type:'solid',color:'#ffffff'},textColor:'#9ca3af',fontSize:9,fontFamily:"'IBM Plex Mono',monospace"},
-      grid:{vertLines:{color:'#fafafa'},horzLines:{color:'#fafafa'}},
-      crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
-      rightPriceScale:{borderColor:'#e5e7eb',scaleMarginTop:0.1,scaleMarginBottom:0.1,textColor:'#9ca3af'},
-      timeScale:{
-        borderColor:'#e5e7eb',
-        rightOffset:8,
-        barSpacing:interval==='15'?4:interval==='W'?14:8,
-        timeVisible:false,
-      },
-      handleScroll:true,
-      handleScale:true,
-    });
-
-    // MACD histogram
-    _tvHistSeries=_tvMacdChart.addHistogramSeries({color:TV_COLORS.macdHistUp,priceLineVisible:false,lastValueVisible:false});
-    if(d.macd_hist&&d.macd_hist.length) _tvHistSeries.setData(d.macd_hist);
-
-    // MACD line
-    _tvMacdLine=_tvMacdChart.addLineSeries({color:TV_COLORS.macdLine,lineWidth:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    if(d.macd_line&&d.macd_line.length) _tvMacdLine.setData(d.macd_line);
-
-    // Signal line
-    _tvSignalLine=_tvMacdChart.addLineSeries({color:TV_COLORS.macdSignal,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    if(d.macd_signal&&d.macd_signal.length) _tvSignalLine.setData(d.macd_signal);
-
-    // ── Zoom vừa khung — hiển thị N nến cuối ──
-    const barsToShow=TV_DEFAULT_BARS[interval]||120;
-    const totalBars=d.candles.length;
-    if(totalBars>barsToShow){
-      _tvChart.timeScale().setVisibleLogicalRange({
-        from: totalBars-barsToShow,
-        to:   totalBars+5,
-      });
-      _tvMacdChart.timeScale().setVisibleLogicalRange({
-        from: totalBars-barsToShow,
-        to:   totalBars+5,
-      });
-    } else {
-      _tvChart.timeScale().fitContent();
-      _tvMacdChart.timeScale().fitContent();
-    }
-
-    // Sync timescale
-    _tvChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
-      if(range&&_tvMacdChart) _tvMacdChart.timeScale().setVisibleLogicalRange(range);
-    });
-    _tvMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
-      if(range&&_tvChart) _tvChart.timeScale().setVisibleLogicalRange(range);
-    });
-
-    // Crosshair sync + cập nhật OHLC bar
-    _tvChart.subscribeCrosshairMove(param=>{
-      if(!_tvMacdChart) return;
-      if(param.point) _tvMacdChart.setCrosshairPosition(param.point.x,0,_tvHistSeries);
-      if(!param.time) return;
-      const c=param.seriesData.get(_tvMainSeries);
-      if(c){
-        const chg=c.open>0?((c.close-c.open)/c.open*100):0;
-        const chgSign=chg>=0?'+':'';
-        const chgColor=chg>=0?'#0e9f6e':'#e02424';
-        document.getElementById('leg-open').textContent=c.open?.toFixed(2)||'—';
-        document.getElementById('leg-high').textContent=c.high?.toFixed(2)||'—';
-        document.getElementById('leg-low').textContent=c.low?.toFixed(2)||'—';
-        document.getElementById('leg-close').textContent=c.close?.toFixed(2)||'—';
-        const chgEl=document.getElementById('tv-ohlc-chg');
-        chgEl.textContent=`${chgSign}${chg.toFixed(2)}%`;
-        chgEl.style.color=chgColor;
-      }
-      // MACD legend
-      const mh=param.seriesData.get(_tvHistSeries);
-      if(mh){const hEl=document.getElementById('leg-hist');hEl.textContent=mh.value?.toFixed(4)||'—';hEl.style.color=mh.value>=0?'#0e9f6e':'#e02424';}
-      const ml=param.seriesData.get(_tvMacdLine);
-      if(ml) document.getElementById('leg-macd').textContent=ml.value?.toFixed(4)||'—';
-      const ms=param.seriesData.get(_tvSignalLine);
-      if(ms) document.getElementById('leg-signal').textContent=ms.value?.toFixed(4)||'—';
-    });
-
-    // OHLC bar — giá trị cuối
-    const last=d.candles[d.candles.length-1];
-    const chg0=last?.open>0?((last.close-last.open)/last.open*100):0;
-    const chgColor0=chg0>=0?'#0e9f6e':'#e02424';
-    document.getElementById('tv-sym-label').textContent=`${sym} [${interval==='15'?'15m':interval}]`;
-    document.getElementById('leg-open').textContent=last?.open?.toFixed(2)||'—';
-    document.getElementById('leg-high').textContent=last?.high?.toFixed(2)||'—';
-    document.getElementById('leg-low').textContent=last?.low?.toFixed(2)||'—';
-    document.getElementById('leg-close').textContent=last?.close?.toFixed(2)||'—';
-    const chgEl=document.getElementById('tv-ohlc-chg');
-    chgEl.textContent=`${chg0>=0?'+':''}${chg0.toFixed(2)}%`;
-    chgEl.style.color=chgColor0;
-    // MACD legend cuối
-    const lastMacd=d.macd_line?.at(-1);if(lastMacd) document.getElementById('leg-macd').textContent=lastMacd.value?.toFixed(4)||'—';
-    const lastSig=d.macd_signal?.at(-1);if(lastSig) document.getElementById('leg-signal').textContent=lastSig.value?.toFixed(4)||'—';
-    const lastHist=d.macd_hist?.at(-1);
-    if(lastHist){
-      const hEl=document.getElementById('leg-hist');
-      hEl.textContent=lastHist.value?.toFixed(4)||'—';
-      hEl.style.color=lastHist.value>=0?'#0e9f6e':'#e02424';
-    }
-
-    // Observer resize
-    _tvResizeObs.disconnect();
-    _tvResizeObs.observe(mainEl);_tvResizeObs.observe(macdEl);
-
-    loading.style.display='none';wrap.style.display='flex';
+    loading.style.display='none';
+    wrap.style.display='flex';
 
   }catch(err){
     loading.innerHTML=`<div style="text-align:center;color:#9ca3af;padding:24px">
       <div style="font-size:22px;margin-bottom:8px">⚠️</div>
-      <div style="margin-bottom:6px">Không tải được dữ liệu <b style="color:#1a56db">${sym}</b> [${interval}]</div>
+      <div style="margin-bottom:6px">Không tải được dữ liệu <b style="color:#1a56db">${sym}</b></div>
       <div style="font-size:11px;color:#6b7280;margin-bottom:14px">${err.message}</div>
       <button onclick="loadTVChart('${sym}')"
         style="padding:6px 16px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
@@ -1244,7 +1281,7 @@ function _updateAlbumNav(){document.getElementById('btn-prev').classList.toggle(
 let _touchStartX=0;
 document.getElementById('panel-scanner').addEventListener('touchstart',e=>{if(window.innerWidth>768)_touchStartX=e.touches[0].clientX;},{passive:true});
 document.getElementById('panel-scanner').addEventListener('touchend',e=>{if(window.innerWidth>768){const dx=e.changedTouches[0].clientX-_touchStartX;if(Math.abs(dx)>50)albumNav(dx<0?1:-1);}},{passive:true});
-document.addEventListener('keydown',e=>{const overlayOn=document.getElementById('overlay').classList.contains('on');if(!overlayOn)return;if(document.activeElement===document.getElementById('popup-search-input'))return;if(_tab!=='scanner')return;if(_albumTotal===0)return;if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}});
+document.addEventListener('keydown',e=>{const overlayOn=document.getElementById('overlay').classList.contains('on');if(!overlayOn)return;if(_tab!=='scanner')return;if(_albumTotal===0)return;if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}});
 async function loadScannerChart(sym){
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
@@ -1285,7 +1322,6 @@ function openUrl(url,label){
   document.getElementById('iframe-url').src=url;
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
-  document.getElementById('popup-search-input').value='';
   document.getElementById('edge-swipe-zone').classList.add('on');
   document.getElementById('mob-close-float').style.display='';
 }
@@ -1293,7 +1329,6 @@ function openUrl(url,label){
 function openChart(sym){
   _sym=sym.toUpperCase().trim();
   _tab='tv';
-  _tvCurrentInterval=_tvCurrentInterval||'D';   // giữ interval đang chọn
   document.getElementById('ptitle').textContent=`📊 ${_sym}`;
   IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
   document.getElementById('album-outer').style.display='none';
@@ -1302,9 +1337,10 @@ function openChart(sym){
   _activateTab('tv');
   document.getElementById('overlay').classList.add('on');
   document.body.style.overflow='hidden';
-  document.getElementById('popup-search-input').value='';
   document.getElementById('edge-swipe-zone').classList.add('on');
   document.getElementById('mob-close-float').style.display='';
+  // reset ticker buf khi mở mã mới
+  _tvTickerBuf='';_tvTickerHide();
 }
 
 function _activateTab(tab){
@@ -1325,7 +1361,6 @@ function _activateTab(tab){
       row.scrollTo({left:btnLeft-(rowWidth/2)+(btnWidth/2),behavior:'smooth'});
     }
   }
-  // Lazy load per tab
   if(tab==='tv')     loadTVChart(_sym);
   if(tab==='vs')     {const f=document.getElementById('iframe-vs');if(f.src==='about:blank')f.src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;}
   if(tab==='vnd-cs') {const f=document.getElementById('iframe-vnd-cs');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;}
@@ -1338,7 +1373,8 @@ function _activateTab(tab){
 function switchTab(tab){_activateTab(tab);}
 
 function closePopup(){
-  _tvDestroy();
+  _tvDestroy();_tvData=null;
+  _tvTickerHide();clearTimeout(_tvTickerTimer);
   const overlay=document.getElementById('overlay');
   const pbox=overlay.querySelector('.pbox');
   pbox.style.visibility='hidden';
@@ -1361,7 +1397,12 @@ document.getElementById('overlay').addEventListener('click',e=>{if(e.target===do
   pbox.addEventListener('touchstart',function(e){if(!document.getElementById('overlay').classList.contains('on'))return;if(lb.el&&lb.el.classList.contains('on'))return;if(e.touches[0].clientX>40)return;startX=e.touches[0].clientX;startY=e.touches[0].clientY;dir='';fired=false;},{passive:true});
   pbox.addEventListener('touchmove',function(e){if(fired)return;const dx=e.touches[0].clientX-startX,dy=e.touches[0].clientY-startY;if(!dir&&(Math.abs(dx)>10||Math.abs(dy)>10))dir=Math.abs(dx)>Math.abs(dy)?'h':'v';if(dir==='h'&&dx>40){fired=true;closePopup();}},{passive:true});
 })();
-document.addEventListener('keydown',e=>{if(lb.el&&lb.el.classList.contains('on'))return;if(e.key==='Escape'){if(document.activeElement===document.getElementById('popup-search-input')){document.getElementById('popup-search-input').blur();return;}closePopup();}});
+document.addEventListener('keydown',e=>{
+  if(lb.el&&lb.el.classList.contains('on'))return;
+  if(e.key==='Escape'&&_tvTickerBuf.length===0){
+    if(document.getElementById('overlay').classList.contains('on'))closePopup();
+  }
+});
 
 // ═══════════════════════════════════════════════════════
 // CLOCK + BADGE + FETCH
@@ -1401,7 +1442,7 @@ function buildMobileHeader(){
   phdr.style.cssText='display:flex;flex-direction:column;flex-shrink:0;';
   const r1=document.createElement('div');
   r1.style.cssText=['display:flex','align-items:center','gap:8px','padding:8px 12px','background:var(--surf2)','border-bottom:1px solid var(--border)'].join(';');
-  r1.innerHTML=`<span id="ptitle" style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">Chart</span><div style="position:relative;flex:1;min-width:0;"><span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span><input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10" autocomplete="off" spellcheck="false" style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;"></div>`;
+  r1.innerHTML=`<span id="ptitle" style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Chart</span><button class="closebtn" onclick="closePopup()">✕</button>`;
   phdr.appendChild(r1);
   const r2=document.createElement('div');
   r2.id='mob-tabrow';
@@ -1426,12 +1467,6 @@ function buildMobileHeader(){
     r2.appendChild(btn);
   });
   phdr.appendChild(r2);
-  const inp=document.getElementById('popup-search-input');
-  inp.addEventListener('keydown',function(e){
-    if(e.key==='Enter'){const sym=this.value.trim().toUpperCase();if(sym.length>=2){this.value='';this.blur();openChart(sym);}}
-    if(e.key==='Escape')this.blur();
-  });
-  inp.addEventListener('focus',function(){this.select();});
 }
 
 const _openChartOrig=openChart;
