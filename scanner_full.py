@@ -1140,7 +1140,7 @@ SIGNAL_EMOJI = {
     'MA_CROSS':     '⚪',
 }
 
-def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
+def run_scan_cycle(symbols: list, now_time: int, : dict):
     new_signals  = []
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
@@ -1159,7 +1159,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if not signal_type:
                 time.sleep(0.3); continue
 
-            prev_entry = alerted_today.get(symbol)
+            prev_entry = .get(symbol)
             prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
             prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
@@ -1566,7 +1566,9 @@ def telegram_listener(stop_event: threading.Event):
                     for k, v in alerted_today.items():
                         sig   = v["signal"] if isinstance(v, dict) else v
                         emoji = SIGNAL_EMOJI.get(sig, '📌')
-                        buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
+                        buttons.append([
+                            {"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"},
+                            ])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
