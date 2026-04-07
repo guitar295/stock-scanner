@@ -1751,7 +1751,7 @@ while True:
             print(f"[{ts}] Không có tín hiệu mới.")
 
         if alerted_today:
-            summary_str = " | ".join([f"{k}:{v}" for k,v in alerted_today.items()])
+            summary_str = " | ".join([f"{k}:{v['signal']}" for k,v in alerted_today.items()])
             print(f"   📋 Đã báo hôm nay: {summary_str}")
 
         print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
