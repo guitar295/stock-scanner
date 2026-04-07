@@ -1717,7 +1717,7 @@ while True:
             build_history_cache(symbols_to_scan, current_date)
 
         is_morning   =  85500 <= now_time <= 113000
-        is_afternoon = 130000 <= now_time <= 230000
+        is_afternoon = 130000 <= now_time <= 240000
 
         if not (is_morning or is_afternoon):
             with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
