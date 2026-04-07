@@ -794,7 +794,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     z-index: 10001;
     /* 1. THU NHỎ KÍCH THƯỚC */
     width: 15px;
-    height: 100px;
+    height: 200px;
     border-radius: 6px 0 0 6px;
     /* nền tối rất mờ — ~5% opacity, gần như trong suốt */
     background: rgba(17, 24, 39, 0.02);
