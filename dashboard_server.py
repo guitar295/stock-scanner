@@ -29,12 +29,10 @@ import pytz
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 app   = Flask(__name__)
 
-# Thư mục static nằm cùng chỗ với dashboard_server.py
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 @app.route("/static/<path:filename>")
 def serve_static(filename):
-    """Serve file JS/CSS từ thư mục static/ local — không cần internet."""
     return send_from_directory(STATIC_DIR, filename)
 
 _get_alerted_today  = None
@@ -101,97 +99,178 @@ def api_heatmap():
         })
 
 
+def _build_ohlcv_response(symbol, df, indicators=True):
+    """
+    Build OHLCV JSON từ DataFrame đã có indicators.
+    Dùng chung cho Daily, Weekly, 15m.
+    """
+    import pandas as pd
+    import numpy as np
+
+    close  = df['close'].astype(float)
+    highs  = df['high'].astype(float)  if 'high'   in df.columns else close
+    lows   = df['low'].astype(float)   if 'low'    in df.columns else close
+    opens  = df['open'].astype(float)  if 'open'   in df.columns else close
+    volume = df['volume'].astype(float) if 'volume' in df.columns else pd.Series([0]*len(close), index=close.index)
+
+    def ema(s, span):
+        return s.ewm(span=span, adjust=False).mean()
+
+    ema10  = ema(close, 10)
+    ema20  = ema(close, 20)
+    ema50  = ema(close, 50)
+    ma200  = close.rolling(200).mean()
+    ema30  = ema(close, 30)
+    ema100 = ema(close, 100)
+    ema200 = ema(close, 200)
+
+    ema12       = ema(close, 12)
+    ema26       = ema(close, 26)
+    macd_line   = ema12 - ema26
+    macd_signal = ema(macd_line, 9)
+    macd_hist   = macd_line - macd_signal
+
+    def ts(idx):
+        if hasattr(idx, 'timestamp'):
+            return int(idx.timestamp())
+        try:
+            return int(pd.Timestamp(idx).timestamp())
+        except:
+            return 0
+
+    def ser(s):
+        return [{"time": ts(i), "value": round(float(v), 4)} for i, v in s.items() if not pd.isna(v)]
+
+    candles = []
+    idx_list = list(df.index)
+    for i in idx_list:
+        t = ts(i)
+        try:
+            candles.append({
+                "time":  t,
+                "open":  round(float(opens[i]),  2),
+                "high":  round(float(highs[i]),  2),
+                "low":   round(float(lows[i]),   2),
+                "close": round(float(close[i]),  2),
+            })
+        except:
+            pass
+
+    vols = []
+    for i in idx_list:
+        try:
+            pos = idx_list.index(i)
+            color = "rgba(14,159,110,0.5)" if close.iloc[pos] >= opens.iloc[pos] else "rgba(224,36,36,0.5)"
+            vols.append({"time": ts(i), "value": round(float(volume[i]), 0), "color": color})
+        except:
+            pass
+
+    return jsonify({
+        "symbol":      symbol,
+        "candles":     candles,
+        "volume":      vols,
+        "ema10":       ser(ema10),
+        "ema20":       ser(ema20),
+        "ema50":       ser(ema50),
+        "ma200":       ser(ma200),
+        "ema30":       ser(ema30),
+        "ema100":      ser(ema100),
+        "ema200":      ser(ema200),
+        "macd_line":   ser(macd_line),
+        "macd_signal": ser(macd_signal),
+        "macd_hist":   [{"time": ts(i), "value": round(float(v), 4),
+                         "color": "rgba(14,159,110,0.7)" if v >= 0 else "rgba(224,36,36,0.7)"}
+                        for i, v in macd_hist.items() if not pd.isna(v)],
+        "updated_at":  datetime.now(TZ_VN).strftime("%H:%M:%S"),
+    })
+
+
 @app.route("/api/ohlcv/<symbol>")
 def api_ohlcv(symbol):
-    """
-    Trả về OHLCV + indicators từ history_cache để vẽ TradingView Lightweight Chart.
-    Tính EMA10, EMA20, EMA50, MA200, EMA30, EMA100, EMA200, MACD(12,26,9) từ dữ liệu close.
-    """
+    """Daily OHLCV — đọc từ history_cache, bao gồm nến hôm nay nếu có."""
     symbol = symbol.upper().strip()
     cache  = _get_history_cache() if _get_history_cache else {}
     df = cache.get(symbol)
     if df is None or len(df) < 2:
         return jsonify({"error": "no_data"}), 404
-
     try:
-        import pandas as pd
-
-        close = df['close'].astype(float)
-        highs  = df['high'].astype(float)  if 'high'   in df.columns else close
-        lows   = df['low'].astype(float)   if 'low'    in df.columns else close
-        opens  = df['open'].astype(float)  if 'open'   in df.columns else close
-        volume = df['volume'].astype(float) if 'volume' in df.columns else pd.Series([0]*len(close), index=close.index)
-
-        def ema(s, span):
-            return s.ewm(span=span, adjust=False).mean()
-
-        ema10  = ema(close, 10)
-        ema20  = ema(close, 20)
-        ema50  = ema(close, 50)
-        ma200  = close.rolling(200).mean()
-        ema30  = ema(close, 30)
-        ema100 = ema(close, 100)
-        ema200 = ema(close, 200)
-
-        # MACD
-        ema12  = ema(close, 12)
-        ema26  = ema(close, 26)
-        macd_line   = ema12 - ema26
-        macd_signal = ema(macd_line, 9)
-        macd_hist   = macd_line - macd_signal
-
-        def ts(idx):
-            import calendar
-            if hasattr(idx, 'timestamp'):
-                return int(idx.timestamp())
-            try:
-                import pandas as pd
-                return int(pd.Timestamp(idx).timestamp())
-            except:
-                return 0
-
-        def ser(s):
-            return [{"time": ts(i), "value": round(float(v), 4)} for i, v in s.items() if not pd.isna(v)]
-
-        candles = []
-        for i in df.index:
-            t = ts(i)
-            try:
-                candles.append({
-                    "time":  t,
-                    "open":  round(float(opens[i]),  2),
-                    "high":  round(float(highs[i]),  2),
-                    "low":   round(float(lows[i]),   2),
-                    "close": round(float(close[i]),  2),
-                })
-            except:
-                pass
-
-        vols = [{"time": ts(i), "value": round(float(volume[i]), 0),
-                 "color": "rgba(14,159,110,0.5)" if close.iloc[list(df.index).index(i)] >= opens.iloc[list(df.index).index(i)] else "rgba(224,36,36,0.5)"}
-                for i in df.index]
-
-        return jsonify({
-            "symbol":      symbol,
-            "candles":     candles,
-            "volume":      vols,
-            "ema10":       ser(ema10),
-            "ema20":       ser(ema20),
-            "ema50":       ser(ema50),
-            "ma200":       ser(ma200),
-            "ema30":       ser(ema30),
-            "ema100":      ser(ema100),
-            "ema200":      ser(ema200),
-            "macd_line":   ser(macd_line),
-            "macd_signal": ser(macd_signal),
-            "macd_hist":   [{"time": ts(i), "value": round(float(v), 4),
-                             "color": "rgba(14,159,110,0.7)" if v >= 0 else "rgba(224,36,36,0.7)"}
-                            for i, v in macd_hist.items() if not pd.isna(v)],
-            "updated_at":  datetime.now(TZ_VN).strftime("%H:%M:%S"),
-        })
-
+        return _build_ohlcv_response(symbol, df)
     except Exception as e:
         print(f"  [Dashboard] ❌ OHLCV {symbol} lỗi: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ohlcv_weekly/<symbol>")
+def api_ohlcv_weekly(symbol):
+    """
+    Weekly OHLCV — resample từ daily cache.
+    Không cần fetch mới, dùng history_cache đã có.
+    """
+    symbol = symbol.upper().strip()
+    cache  = _get_history_cache() if _get_history_cache else {}
+    df = cache.get(symbol)
+    if df is None or len(df) < 10:
+        return jsonify({"error": "no_data"}), 404
+    try:
+        import pandas as pd
+        df_w = df[['open','high','low','close','volume']].resample('W-FRI').agg({
+            'open':'first','high':'max','low':'min','close':'last','volume':'sum',
+        }).dropna()
+        if len(df_w) < 2:
+            return jsonify({"error": "no_weekly_data"}), 404
+        return _build_ohlcv_response(symbol, df_w)
+    except Exception as e:
+        print(f"  [Dashboard] ❌ OHLCV_WEEKLY {symbol} lỗi: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ohlcv_15m/<symbol>")
+def api_ohlcv_15m(symbol):
+    """
+    15-minute OHLCV — luôn fetch mới từ vnstock, không cache.
+    """
+    symbol = symbol.upper().strip()
+    try:
+        # Import vnstock động (tránh circular import)
+        from vnstock import Quote
+        DATA_SOURCE = 'KBS'
+
+        import pandas as pd
+        import numpy as np
+
+        df_raw = None
+        for attempt in range(3):
+            try:
+                quote  = Quote(symbol=symbol, source=DATA_SOURCE)
+                df_raw = quote.history(length='200', interval='15m')
+                if df_raw is not None and not df_raw.empty:
+                    break
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(2)
+                else:
+                    print(f"  [Dashboard] ❌ 15m fetch {symbol}: {e}")
+
+        if df_raw is None or df_raw.empty:
+            return jsonify({"error": "no_15m_data"}), 404
+
+        df_raw['time'] = pd.to_datetime(df_raw['time'])
+        df_raw.set_index('time', inplace=True)
+        df_raw.columns = [c.lower() for c in df_raw.columns]
+        for col in ['open','high','low','close']:
+            if col not in df_raw.columns:
+                df_raw[col] = np.nan
+        if 'volume' not in df_raw.columns:
+            df_raw['volume'] = 0
+        df_raw = df_raw[['open','high','low','close','volume']].dropna(subset=['close'])
+
+        if len(df_raw) < 5:
+            return jsonify({"error": "insufficient_15m_data"}), 404
+
+        return _build_ohlcv_response(symbol, df_raw)
+
+    except Exception as e:
+        print(f"  [Dashboard] ❌ OHLCV_15M {symbol} lỗi: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -330,7 +409,7 @@ def start_dashboard(
     print(f"   Tín hiệu refresh : {SIGNAL_TTL_SEC}s (đọc RAM, không gọi API)")
     print(f"   Heatmap refresh  : {HEATMAP_TTL_SEC}s (gọi API, chỉ khi có người mở)")
     print(f"   Scanner Chart    : {'✅ đã đăng ký' if fetch_chart_fn else '❌ chưa đăng ký'} (cache {CHART_TTL_SEC}s)")
-    print(f"   TradingView Tab  : ✅ EMA10/20/50, MA200, EMA30/100/200, VOL, MACD — đọc trực tiếp từ RAM cache")
+    print(f"   TradingView Tab  : ✅ Daily/Weekly (cache) | 15m (fetch live)")
 
     js_path = os.path.join(STATIC_DIR, "lightweight-charts.min.js")
     if os.path.exists(js_path):
@@ -477,7 +556,6 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 #panel-tv.on{display:flex}
 #tv-loading{display:flex;align-items:center;justify-content:center;flex:1;color:#6b7280;font-size:13px;font-family:var(--font-mono);background:#fff}
 
-/* TV Chart wrap: flex column, chia 3 vùng: toolbar | [nến+vol+macd] */
 #tv-chart-wrap{
   flex:1;
   display:flex;
@@ -486,7 +564,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   background:#ffffff;
 }
 
-/* Toolbar trên cùng: timeframe + EMA toggle */
+/* Toolbar: timeframe + EMA toggle */
 #tv-toolbar{
   display:flex;align-items:center;gap:8px;padding:5px 10px;
   background:#f8f9fb;border-bottom:1px solid #eee;
@@ -499,8 +577,8 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 }
 .tv-tf-btn.on{background:#1a56db;color:#fff;border-color:#1a56db;}
 .tv-tf-btn:hover:not(.on){background:#eef3ff;border-color:#1a56db;color:#1a56db;}
+.tv-tf-loading{font-size:10px;color:#9ca3af;font-family:'IBM Plex Mono',monospace;display:none}
 
-/* EMA 30/100/200 toggle — nút tròn nhỏ kiểu checkbox */
 .tv-ema-toggle{
   display:flex;align-items:center;gap:5px;margin-left:6px;
   cursor:pointer;user-select:none;
@@ -522,7 +600,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b7280;
 }
 
-/* Legend bar */
+/* Legend bar — chỉ giữ OHLC và EMA colors, bỏ MA values */
 #tv-legend{
   display:flex;align-items:center;gap:14px;padding:4px 10px;
   background:#ffffff;border-bottom:1px solid #f0f0f0;
@@ -534,7 +612,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .tv-leg-label{color:#9ca3af}
 .tv-leg-val{font-weight:600}
 
-/* Khu vực chứa 3 chart xếp dọc: nến | vol | macd */
+/* 3 chart xếp dọc */
 #tv-charts-area{
   flex:1;
   display:flex;
@@ -551,18 +629,18 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   min-height:0;
 }
 
-/* Volume panel — cùng chiều cao MACD */
+/* Volume panel — cao hơn */
 #tv-vol-container{
-  height:80px;
+  height:100px;
   flex-shrink:0;
   background:#ffffff;
   border-top:1px solid #f0f0f0;
   position:relative;
 }
 
-/* MACD panel */
+/* MACD panel — cao hơn */
 #tv-macd-container{
-  height:80px;
+  height:110px;
   flex-shrink:0;
   background:#ffffff;
   border-top:1px solid #f0f0f0;
@@ -574,7 +652,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   font-family:'IBM Plex Mono',monospace;font-size:10px;pointer-events:none;
 }
 
-/* Gõ mã trực tiếp — overlay hint */
+/* Ticker overlay */
 #tv-ticker-overlay{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   background:rgba(26,86,219,0.92);color:#fff;
@@ -621,8 +699,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .pbox{width:100vw;height:100vh;border-radius:0}
   header h1{font-size:15px;letter-spacing:1px}
   .album-nav-btn{width:26px;height:26px;font-size:12px}
-  #tv-macd-container{height:60px}
-  #tv-vol-container{height:60px}
+  #tv-macd-container{height:80px}
+  #tv-vol-container{height:80px}
 }
 @media screen and (max-width:768px){
   .pbox{width:100vw!important;max-width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;overflow:visible!important;max-height:100dvh!important}
@@ -744,12 +822,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <div id="tv-loading">⏳ Đang tải dữ liệu...</div>
         <div id="tv-chart-wrap" style="display:none">
 
-          <!-- Toolbar: Timeframe + EMA toggle -->
+          <!-- Toolbar -->
           <div id="tv-toolbar">
             <span style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:#6b7280;letter-spacing:1px;text-transform:uppercase;">Khung:</span>
             <button class="tv-tf-btn on" id="tf-D"  onclick="tvSwitchTF('D')">D</button>
             <button class="tv-tf-btn"    id="tf-W"  onclick="tvSwitchTF('W')">W</button>
             <button class="tv-tf-btn"    id="tf-15" onclick="tvSwitchTF('15')">15m</button>
+            <span class="tv-tf-loading" id="tv-tf-loading">⏳ đang tải...</span>
             <span style="flex:1"></span>
             <label class="tv-ema-toggle" title="Hiển thị EMA 30 / 100 / 200">
               <input type="checkbox" id="chk-ema-extra" onchange="tvToggleExtraEMA(this.checked)">
@@ -757,30 +836,29 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             </label>
           </div>
 
-          <!-- Legend -->
+          <!-- Legend — chỉ OHLC + % thay đổi + EMA color dots -->
           <div id="tv-legend">
             <span style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:#374151;letter-spacing:.5px" id="tv-sym-label">—</span>
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#e02424"></span><span class="tv-leg-val" id="leg-ema10" style="color:#e02424">—</span></span>
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#059669"></span><span class="tv-leg-val" id="leg-ema20" style="color:#059669">—</span></span>
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#7c3aed"></span><span class="tv-leg-val" id="leg-ema50" style="color:#7c3aed">—</span></span>
-            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#92400e;width:14px"></span><span class="tv-leg-val" id="leg-ma200" style="color:#92400e">—</span></span>
-            <span class="tv-leg-item" style="margin-left:6px"><span class="tv-leg-label">O</span><span class="tv-leg-val" id="leg-open">—</span></span>
+            <!-- EMA color indicators -->
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#e02424"></span><span style="color:#9ca3af;font-size:9px">EMA10</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#059669"></span><span style="color:#9ca3af;font-size:9px">EMA20</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#7c3aed"></span><span style="color:#9ca3af;font-size:9px">EMA50</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-dot" style="background:#92400e;width:14px"></span><span style="color:#9ca3af;font-size:9px">MA200</span></span>
+            <!-- OHLC -->
+            <span style="margin-left:8px" class="tv-leg-item"><span class="tv-leg-label">O</span><span class="tv-leg-val" id="leg-open">—</span></span>
             <span class="tv-leg-item"><span class="tv-leg-label">H</span><span class="tv-leg-val" id="leg-high" style="color:#0e9f6e">—</span></span>
             <span class="tv-leg-item"><span class="tv-leg-label">L</span><span class="tv-leg-val" id="leg-low" style="color:#e02424">—</span></span>
             <span class="tv-leg-item"><span class="tv-leg-label">C</span><span class="tv-leg-val" id="leg-close">—</span></span>
+            <span class="tv-leg-item"><span class="tv-leg-val" id="leg-pct" style="font-weight:700">—</span></span>
           </div>
 
-          <!-- 3 chart xếp dọc sát nhau -->
+          <!-- 3 chart xếp dọc -->
           <div id="tv-charts-area">
-            <!-- Ticker overlay (gõ mã trực tiếp) -->
             <div id="tv-ticker-overlay"></div>
-
-            <!-- Nến (chiếm phần lớn) -->
+            <!-- Nến -->
             <div id="tv-chart-container"></div>
-
             <!-- Volume -->
             <div id="tv-vol-container"></div>
-
             <!-- MACD + legend -->
             <div id="tv-macd-container">
               <div id="tv-macd-legend">
@@ -802,10 +880,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <div class="album-outer" id="album-outer" style="display:none">
           <div class="album-center"><div id="album-slides"></div></div>
           <div class="album-nav-bar">
-            <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)" title="Ảnh trước (←)">&#9664;</button>
+            <button class="album-nav-btn disabled" id="btn-prev" onclick="albumNav(-1)">&#9664;</button>
             <div class="album-dots-wrap" id="album-dots"></div>
-            <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)" title="Ảnh sau (→)">&#9654;</button>
-            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()" title="Làm mới chart"><span class="ri">&#8635;</span></button>
+            <button class="album-nav-btn" id="btn-next" onclick="albumNav(1)">&#9654;</button>
+            <button class="album-refresh-btn" id="btn-refresh" onclick="refreshScannerChart()"><span class="ri">&#8635;</span></button>
           </div>
           <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
         </div>
@@ -819,7 +897,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   </div>
 </div>
 
-<!-- ══ MOBILE LIGHTBOX ══ -->
+<!-- Mobile Lightbox -->
 <div id="mob-lightbox" onclick="lbClose()">
   <div id="lb-viewport" onclick="event.stopPropagation()"><div id="lb-strip"></div></div>
   <div id="mob-lightbox-label">📊 Daily [D]</div>
@@ -829,7 +907,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 </div>
 <div id="edge-swipe-zone"></div>
 
-<!-- TradingView Lightweight Charts — serve local, không cần internet -->
 <script src="/static/lightweight-charts.min.js"></script>
 
 <script>
@@ -843,7 +920,7 @@ async function loadConfig(){
 }
 
 // ═══════════════════════════════════════════════════════
-// SEARCH BAR (heatmap only)
+// SEARCH BAR
 // ═══════════════════════════════════════════════════════
 (function(){
   const inp=document.getElementById('hmap-search-input');
@@ -855,7 +932,7 @@ async function loadConfig(){
 })();
 
 // ═══════════════════════════════════════════════════════
-// HEATMAP CONFIG
+// HEATMAP
 // ═══════════════════════════════════════════════════════
 const HMAP_COLS=[
   {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
@@ -913,11 +990,11 @@ let _tvMacdChart=null, _tvHistSeries=null, _tvMacdLine=null, _tvSignalLine=null;
 let _tvEma10=null, _tvEma20=null, _tvEma50=null, _tvMa200=null;
 let _tvEma30=null, _tvEma100=null, _tvEma200=null;
 let _tvLastSym='';
-let _tvCurrentTF='D';   // D | W | 15
+let _tvCurrentTF='D';
 let _tvExtraEMA=false;
-let _tvData=null;       // cache raw API data
+let _tvData=null;       // cache data cho TF hiện tại
 
-// Số nến hiển thị mặc định theo TF
+// Số nến hiển thị mặc định
 const TF_BARS={D:250, W:200, '15':200};
 
 const TV_COLORS={
@@ -930,10 +1007,8 @@ const TV_COLORS={
   ema200:      '#64748b',
   macdLine:    '#2563eb',
   macdSignal:  '#f97316',
-  macdHistUp:  'rgba(14,159,110,0.7)',
-  macdHistDn:  'rgba(224,36,36,0.7)',
-  volUp:       'rgba(14,159,110,0.45)',
-  volDn:       'rgba(224,36,36,0.45)',
+  macdHistUp:  'rgba(14,159,110,0.75)',
+  macdHistDn:  'rgba(224,36,36,0.75)',
 };
 
 function _tvDestroy(){
@@ -957,224 +1032,310 @@ function _tvResize(){
 
 const _tvResizeObs=new ResizeObserver(()=>_tvResize());
 
-// ── Gõ mã trực tiếp trên chart (như TradingView) ──
+// ── Gõ mã trực tiếp ──
 let _tvTickerBuf='';
 let _tvTickerTimer=null;
 const _tvTickerOverlay=document.getElementById('tv-ticker-overlay');
 
-function _tvTickerShow(s){
-  _tvTickerOverlay.textContent=s;
-  _tvTickerOverlay.style.display='block';
-}
-function _tvTickerHide(){
-  _tvTickerOverlay.style.display='none';
-  _tvTickerBuf='';
-}
+function _tvTickerShow(s){_tvTickerOverlay.textContent=s;_tvTickerOverlay.style.display='block';}
+function _tvTickerHide(){_tvTickerOverlay.style.display='none';_tvTickerBuf='';}
 
 function _tvHandleKey(e){
-  // Bỏ qua khi đang focus ô input khác
   const tag=document.activeElement&&document.activeElement.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA')return;
-  // Chỉ xử lý khi popup TV đang mở
   if(!document.getElementById('overlay').classList.contains('on'))return;
   if(_tab!=='tv')return;
-
   const key=e.key;
-
-  // Chữ cái, số, dấu chấm
   if(/^[A-Za-z0-9.]$/.test(key)){
     e.preventDefault();
     _tvTickerBuf+=key.toUpperCase();
     _tvTickerShow(_tvTickerBuf);
     clearTimeout(_tvTickerTimer);
-    _tvTickerTimer=setTimeout(()=>{
-      const sym=_tvTickerBuf.trim();
-      _tvTickerHide();
-      if(sym.length>=2) openChart(sym);
-    },1200);
+    _tvTickerTimer=setTimeout(()=>{const sym=_tvTickerBuf.trim();_tvTickerHide();if(sym.length>=2)openChart(sym);},1200);
     return;
   }
-  // Enter → xác nhận ngay
   if(key==='Enter'&&_tvTickerBuf.length>=2){
-    e.preventDefault();
-    clearTimeout(_tvTickerTimer);
-    const sym=_tvTickerBuf.trim();
-    _tvTickerHide();
-    openChart(sym);
-    return;
+    e.preventDefault();clearTimeout(_tvTickerTimer);const sym=_tvTickerBuf.trim();_tvTickerHide();openChart(sym);return;
   }
-  // Backspace → xóa
   if(key==='Backspace'&&_tvTickerBuf.length>0){
-    e.preventDefault();
-    _tvTickerBuf=_tvTickerBuf.slice(0,-1);
-    if(_tvTickerBuf.length===0){_tvTickerHide();clearTimeout(_tvTickerTimer);}
-    else _tvTickerShow(_tvTickerBuf);
+    e.preventDefault();_tvTickerBuf=_tvTickerBuf.slice(0,-1);
+    if(_tvTickerBuf.length===0){_tvTickerHide();clearTimeout(_tvTickerTimer);}else _tvTickerShow(_tvTickerBuf);
     return;
   }
-  // Escape → hủy
-  if(key==='Escape'&&_tvTickerBuf.length>0){
-    e.preventDefault();
-    _tvTickerHide();
-    clearTimeout(_tvTickerTimer);
-    return;
-  }
+  if(key==='Escape'&&_tvTickerBuf.length>0){e.preventDefault();_tvTickerHide();clearTimeout(_tvTickerTimer);return;}
 }
 document.addEventListener('keydown',_tvHandleKey);
 
-// ── Slice data to N bars ──
 function _sliceLast(arr,n){if(!arr)return[];return arr.length<=n?arr:arr.slice(arr.length-n);}
 
-function _buildAndRender(d,tf){
-  const nBars=TF_BARS[tf]||250;
-  const candles=_sliceLast(d.candles,nBars);
-  const volume=_sliceLast(d.volume,nBars);
-  const ema10=_sliceLast(d.ema10,nBars);
-  const ema20=_sliceLast(d.ema20,nBars);
-  const ema50=_sliceLast(d.ema50,nBars);
-  const ma200=_sliceLast(d.ma200,nBars);
-  const ema30=_sliceLast(d.ema30,nBars);
-  const ema100=_sliceLast(d.ema100,nBars);
-  const ema200=_sliceLast(d.ema200,nBars);
-  const macdLine=_sliceLast(d.macd_line,nBars);
-  const macdSig=_sliceLast(d.macd_signal,nBars);
-  const macdHist=_sliceLast(d.macd_hist,nBars);
+// ── Format ngày/giờ cho title ──
+function _fmtTitleDate(candles, tf) {
+  if(!candles||candles.length===0) return '';
+  const last = candles[candles.length-1];
+  const d = new Date(last.time * 1000);
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  if(tf==='15'){
+    const hh = String(d.getHours()).padStart(2,'0');
+    const min = String(d.getMinutes()).padStart(2,'0');
+    return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+  }
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function _buildAndRender(d, tf) {
+  const nBars = TF_BARS[tf]||250;
+  const candles    = _sliceLast(d.candles,    nBars);
+  const volume     = _sliceLast(d.volume,     nBars);
+  const ema10      = _sliceLast(d.ema10,      nBars);
+  const ema20      = _sliceLast(d.ema20,      nBars);
+  const ema50      = _sliceLast(d.ema50,      nBars);
+  const ma200      = _sliceLast(d.ma200,      nBars);
+  const ema30      = _sliceLast(d.ema30,      nBars);
+  const ema100     = _sliceLast(d.ema100,     nBars);
+  const ema200     = _sliceLast(d.ema200,     nBars);
+  const macdLine   = _sliceLast(d.macd_line,  nBars);
+  const macdSig    = _sliceLast(d.macd_signal,nBars);
+  const macdHist   = _sliceLast(d.macd_hist,  nBars);
 
   _tvDestroy();
 
-  const mainEl=document.getElementById('tv-chart-container');
-  const volEl=document.getElementById('tv-vol-container');
-  const macdEl=document.getElementById('tv-macd-container');
+  const mainEl = document.getElementById('tv-chart-container');
+  const volEl  = document.getElementById('tv-vol-container');
+  const macdEl = document.getElementById('tv-macd-container');
 
-  const COMMON_TS={
-    rightOffset:30,
-    fixLeftEdge:false,
-    fixRightEdge:false,
-    timeVisible:false,
-    secondsVisible:false,
-    borderColor:'#e5e7eb',
+  // TimeScale chung — tắt hoàn toàn cho price và volume
+  // Chỉ MACD mới hiển thị timescale dưới cùng
+  const TS_HIDDEN = {
+    rightOffset:      30,     // khoảng trống 30 bar bên phải
+    fixLeftEdge:      false,
+    fixRightEdge:     false,
+    timeVisible:      false,
+    secondsVisible:   false,
+    borderVisible:    false,
+    borderColor:      'transparent',
+    drawTicks:        false,
+  };
+  const TS_MACD = {
+    rightOffset:      30,
+    fixLeftEdge:      false,
+    fixRightEdge:     false,
+    timeVisible:      true,
+    secondsVisible:   false,
+    borderColor:      '#e5e7eb',
+    tickMarkFormatter: (time, tickMarkType, locale) => {
+      const d = new Date(time * 1000);
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yyyy = d.getFullYear();
+      if(tf==='15'){
+        const hh = String(d.getHours()).padStart(2,'0');
+        const min = String(d.getMinutes()).padStart(2,'0');
+        return `${dd}/${mm} ${hh}:${min}`;
+      }
+      return `${dd}/${mm}/${yyyy}`;
+    },
   };
 
-  // ── CHART CHÍNH (nến) ──
-  _tvChart=LightweightCharts.createChart(mainEl,{
-    width:mainEl.clientWidth,
-    height:mainEl.clientHeight,
-    layout:{background:{type:'solid',color:'#ffffff'},textColor:'#374151',fontSize:11,fontFamily:"'IBM Plex Mono',monospace"},
-    grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}},
-    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
-    rightPriceScale:{borderColor:'#e5e7eb',scaleMarginTop:0.06,scaleMarginBottom:0.02},
-    timeScale:COMMON_TS,
-    handleScroll:true,
-    handleScale:true,
+  // ── CHART CHÍNH (nến) — KHÔNG có timescale ──
+  _tvChart = LightweightCharts.createChart(mainEl, {
+    width:  mainEl.clientWidth,
+    height: mainEl.clientHeight,
+    layout: {
+      background:  {type:'solid', color:'#ffffff'},
+      textColor:   '#374151',
+      fontSize:    11,
+      fontFamily:  "'IBM Plex Mono',monospace",
+    },
+    grid: {
+      vertLines: {color:'transparent'},   // ẩn grid dọc
+      horzLines: {color:'transparent'},   // ẩn grid ngang
+    },
+    crosshair:     {mode: LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale: {
+      borderColor:    '#e5e7eb',
+      scaleMarginTop: 0.06,
+      scaleMarginBottom: 0.02,
+    },
+    timeScale: TS_HIDDEN,
+    handleScroll: true,
+    handleScale:  true,
   });
 
-  _tvMainSeries=_tvChart.addCandlestickSeries({
-    upColor:'#0e9f6e',downColor:'#e02424',
-    borderUpColor:'#0e9f6e',borderDownColor:'#e02424',
-    wickUpColor:'#0e9f6e',wickDownColor:'#e02424',
+  _tvMainSeries = _tvChart.addCandlestickSeries({
+    upColor:        '#0e9f6e',
+    downColor:      '#e02424',
+    borderUpColor:  '#0e9f6e',
+    borderDownColor:'#e02424',
+    wickUpColor:    '#0e9f6e',
+    wickDownColor:  '#e02424',
   });
   _tvMainSeries.setData(candles);
 
   // EMAs mặc định
-  _tvEma10 =_tvChart.addLineSeries({color:TV_COLORS.ema10, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvEma10  = _tvChart.addLineSeries({color:TV_COLORS.ema10,  lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false});
   _tvEma10.setData(ema10);
-  _tvEma20 =_tvChart.addLineSeries({color:TV_COLORS.ema20, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvEma20  = _tvChart.addLineSeries({color:TV_COLORS.ema20,  lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false});
   _tvEma20.setData(ema20);
-  _tvEma50 =_tvChart.addLineSeries({color:TV_COLORS.ema50, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvEma50  = _tvChart.addLineSeries({color:TV_COLORS.ema50,  lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false});
   _tvEma50.setData(ema50);
-  _tvMa200=_tvChart.addLineSeries({color:TV_COLORS.ma200, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvMa200  = _tvChart.addLineSeries({color:TV_COLORS.ma200,  lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false});
   _tvMa200.setData(ma200);
 
-  // EMAs mở rộng (ẩn theo mặc định)
-  _tvEma30 =_tvChart.addLineSeries({color:TV_COLORS.ema30, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:_tvExtraEMA});
+  // EMAs mở rộng
+  _tvEma30  = _tvChart.addLineSeries({color:TV_COLORS.ema30,  lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, visible:_tvExtraEMA});
   _tvEma30.setData(ema30);
-  _tvEma100=_tvChart.addLineSeries({color:TV_COLORS.ema100,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:_tvExtraEMA});
+  _tvEma100 = _tvChart.addLineSeries({color:TV_COLORS.ema100, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, visible:_tvExtraEMA});
   _tvEma100.setData(ema100);
-  _tvEma200=_tvChart.addLineSeries({color:TV_COLORS.ema200,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:_tvExtraEMA});
+  _tvEma200 = _tvChart.addLineSeries({color:TV_COLORS.ema200, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, visible:_tvExtraEMA});
   _tvEma200.setData(ema200);
 
-  // ── VOLUME CHART ──
-  _tvVolChart=LightweightCharts.createChart(volEl,{
-    width:volEl.clientWidth,
-    height:volEl.clientHeight,
-    layout:{background:{type:'solid',color:'#ffffff'},textColor:'#9ca3af',fontSize:9,fontFamily:"'IBM Plex Mono',monospace"},
-    grid:{vertLines:{color:'#f8f8f8'},horzLines:{color:'#f8f8f8'}},
-    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
-    rightPriceScale:{borderColor:'#e5e7eb',scaleMarginTop:0.05,scaleMarginBottom:0.0},
-    timeScale:{...COMMON_TS,timeVisible:false},
-    handleScroll:true,
-    handleScale:true,
+  // Scroll to realtime để có khoảng trống bên phải
+  _tvChart.timeScale().scrollToRealTime();
+
+  // ── VOLUME CHART — KHÔNG có timescale ──
+  _tvVolChart = LightweightCharts.createChart(volEl, {
+    width:  volEl.clientWidth,
+    height: volEl.clientHeight,
+    layout: {
+      background: {type:'solid', color:'#ffffff'},
+      textColor:  '#9ca3af',
+      fontSize:   9,
+      fontFamily: "'IBM Plex Mono',monospace",
+    },
+    grid: {
+      vertLines: {color:'transparent'},
+      horzLines: {color:'transparent'},
+    },
+    crosshair: {mode: LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale: {
+      borderColor:    '#e5e7eb',
+      scaleMarginTop: 0.05,
+      scaleMarginBottom: 0.0,
+    },
+    timeScale: TS_HIDDEN,
+    handleScroll: true,
+    handleScale:  true,
   });
-  _tvVolSeries=_tvVolChart.addHistogramSeries({
-    priceFormat:{type:'volume'},
-    priceLineVisible:false,
-    lastValueVisible:false,
+  _tvVolSeries = _tvVolChart.addHistogramSeries({
+    priceFormat:      {type:'volume'},
+    priceLineVisible: false,
+    lastValueVisible: false,
   });
   _tvVolSeries.setData(volume);
+  _tvVolChart.timeScale().scrollToRealTime();
 
-  // ── MACD CHART ──
-  _tvMacdChart=LightweightCharts.createChart(macdEl,{
-    width:macdEl.clientWidth,
-    height:macdEl.clientHeight,
-    layout:{background:{type:'solid',color:'#ffffff'},textColor:'#9ca3af',fontSize:9,fontFamily:"'IBM Plex Mono',monospace"},
-    grid:{vertLines:{color:'#f8f8f8'},horzLines:{color:'#f8f8f8'}},
-    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
-    rightPriceScale:{borderColor:'#e5e7eb',scaleMarginTop:0.1,scaleMarginBottom:0.1},
-    // Chỉ MACD mới hiển thị dòng thời gian
-    timeScale:{...COMMON_TS,timeVisible:true,secondsVisible:false},
-    handleScroll:true,
-    handleScale:true,
+  // ── MACD CHART — CÓ timescale (dòng thời gian duy nhất) ──
+  _tvMacdChart = LightweightCharts.createChart(macdEl, {
+    width:  macdEl.clientWidth,
+    height: macdEl.clientHeight,
+    layout: {
+      background: {type:'solid', color:'#ffffff'},
+      textColor:  '#9ca3af',
+      fontSize:   9,
+      fontFamily: "'IBM Plex Mono',monospace",
+    },
+    grid: {
+      vertLines: {color:'transparent'},
+      horzLines: {color:'transparent'},
+    },
+    crosshair: {mode: LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale: {
+      borderColor:    '#e5e7eb',
+      scaleMarginTop: 0.1,
+      scaleMarginBottom: 0.1,
+    },
+    timeScale: TS_MACD,
+    handleScroll: true,
+    handleScale:  true,
   });
 
-  _tvHistSeries=_tvMacdChart.addHistogramSeries({color:TV_COLORS.macdHistUp,priceLineVisible:false,lastValueVisible:false});
+  _tvHistSeries = _tvMacdChart.addHistogramSeries({
+    color:            TV_COLORS.macdHistUp,
+    priceLineVisible: false,
+    lastValueVisible: false,
+  });
   _tvHistSeries.setData(macdHist);
-  _tvMacdLine=_tvMacdChart.addLineSeries({color:TV_COLORS.macdLine,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvMacdLine = _tvMacdChart.addLineSeries({
+    color:            TV_COLORS.macdLine,
+    lineWidth:        1,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+  });
   _tvMacdLine.setData(macdLine);
-  _tvSignalLine=_tvMacdChart.addLineSeries({color:TV_COLORS.macdSignal,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  _tvSignalLine = _tvMacdChart.addLineSeries({
+    color:            TV_COLORS.macdSignal,
+    lineWidth:        1,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+  });
   _tvSignalLine.setData(macdSig);
+  _tvMacdChart.timeScale().scrollToRealTime();
 
   // ── SYNC timescale 3 chart ──
-  function syncRange(src,targets){
+  function syncRange(src, targets){
     src.timeScale().subscribeVisibleLogicalRangeChange(range=>{
       if(!range)return;
       targets.forEach(c=>{try{c.timeScale().setVisibleLogicalRange(range);}catch(e){}});
     });
   }
-  syncRange(_tvChart,    [_tvVolChart,_tvMacdChart]);
-  syncRange(_tvVolChart, [_tvChart,_tvMacdChart]);
-  syncRange(_tvMacdChart,[_tvChart,_tvVolChart]);
+  syncRange(_tvChart,     [_tvVolChart, _tvMacdChart]);
+  syncRange(_tvVolChart,  [_tvChart,    _tvMacdChart]);
+  syncRange(_tvMacdChart, [_tvChart,    _tvVolChart]);
 
-  // Crosshair sync (nến → vol, macd)
+  // Crosshair sync
   _tvChart.subscribeCrosshairMove(param=>{
-    if(!param.time)return;
-    if(_tvVolChart)  _tvVolChart.setCrosshairPosition(param.point?.x??0,0,_tvVolSeries);
-    if(_tvMacdChart) _tvMacdChart.setCrosshairPosition(param.point?.x??0,0,_tvHistSeries);
-    const c=param.seriesData.get(_tvMainSeries);
+    if(!param.time) return;
+    if(_tvVolChart)   _tvVolChart.setCrosshairPosition(param.point?.x??0, 0, _tvVolSeries);
+    if(_tvMacdChart)  _tvMacdChart.setCrosshairPosition(param.point?.x??0, 0, _tvHistSeries);
+    const c = param.seriesData.get(_tvMainSeries);
     if(c){
-      document.getElementById('leg-open').textContent=c.open?.toFixed(2)||'—';
-      document.getElementById('leg-high').textContent=c.high?.toFixed(2)||'—';
-      document.getElementById('leg-low').textContent=c.low?.toFixed(2)||'—';
-      document.getElementById('leg-close').textContent=c.close?.toFixed(2)||'—';
+      document.getElementById('leg-open').textContent  = c.open?.toFixed(2)||'—';
+      document.getElementById('leg-high').textContent  = c.high?.toFixed(2)||'—';
+      document.getElementById('leg-low').textContent   = c.low?.toFixed(2)||'—';
+      document.getElementById('leg-close').textContent = c.close?.toFixed(2)||'—';
+      // % tăng giảm so với nến trước
+      const allC = candles;
+      const curIdx = allC.findIndex(x=>x.time===param.time);
+      if(curIdx>0){
+        const prev = allC[curIdx-1].close;
+        const pct  = ((c.close-prev)/prev*100);
+        const pctEl = document.getElementById('leg-pct');
+        pctEl.textContent = (pct>=0?'+':'')+pct.toFixed(2)+'%';
+        pctEl.style.color = pct>=0?'#0e9f6e':'#e02424';
+      }
     }
   });
 
-  // Legend giá trị cuối
-  const last=candles[candles.length-1];
-  document.getElementById('tv-sym-label').textContent=`${d.symbol} [${tf==='15'?'15m':tf}]`;
-  document.getElementById('leg-open').textContent=last?.open?.toFixed(2)||'—';
-  document.getElementById('leg-high').textContent=last?.high?.toFixed(2)||'—';
-  document.getElementById('leg-low').textContent=last?.low?.toFixed(2)||'—';
-  document.getElementById('leg-close').textContent=last?.close?.toFixed(2)||'—';
-  const lE10=ema10.at(-1);if(lE10) document.getElementById('leg-ema10').textContent=lE10.value?.toFixed(2)||'—';
-  const lE20=ema20.at(-1);if(lE20) document.getElementById('leg-ema20').textContent=lE20.value?.toFixed(2)||'—';
-  const lE50=ema50.at(-1);if(lE50) document.getElementById('leg-ema50').textContent=lE50.value?.toFixed(2)||'—';
-  const lM200=ma200.at(-1);if(lM200) document.getElementById('leg-ma200').textContent=lM200.value?.toFixed(2)||'—';
-  const lMacd=macdLine.at(-1);if(lMacd) document.getElementById('leg-macd').textContent=lMacd.value?.toFixed(4)||'—';
-  const lSig=macdSig.at(-1);if(lSig) document.getElementById('leg-signal').textContent=lSig.value?.toFixed(4)||'—';
-  const lHist=macdHist.at(-1);
+  // Legend cuối — title với ngày
+  const dateStr = _fmtTitleDate(candles, tf);
+  const tfLabel = tf==='15'?'15m':tf;
+  document.getElementById('tv-sym-label').textContent = `${d.symbol} [${tfLabel}]  ${dateStr}`;
+
+  const last = candles[candles.length-1];
+  const prev = candles.length>=2 ? candles[candles.length-2] : last;
+  document.getElementById('leg-open').textContent  = last?.open?.toFixed(2)||'—';
+  document.getElementById('leg-high').textContent  = last?.high?.toFixed(2)||'—';
+  document.getElementById('leg-low').textContent   = last?.low?.toFixed(2)||'—';
+  document.getElementById('leg-close').textContent = last?.close?.toFixed(2)||'—';
+  if(last && prev && prev.close>0){
+    const pct = (last.close-prev.close)/prev.close*100;
+    const pctEl = document.getElementById('leg-pct');
+    pctEl.textContent = (pct>=0?'+':'')+pct.toFixed(2)+'%';
+    pctEl.style.color = pct>=0?'#0e9f6e':'#e02424';
+  }
+
+  // MACD legend cuối
+  const lMacd = macdLine.at(-1);   if(lMacd)  document.getElementById('leg-macd').textContent   = lMacd.value?.toFixed(4)||'—';
+  const lSig  = macdSig.at(-1);    if(lSig)   document.getElementById('leg-signal').textContent  = lSig.value?.toFixed(4)||'—';
+  const lHist = macdHist.at(-1);
   if(lHist){
-    const hEl=document.getElementById('leg-hist');
-    hEl.textContent=lHist.value?.toFixed(4)||'—';
-    hEl.style.color=lHist.value>=0?'rgba(14,159,110,1)':'rgba(224,36,36,1)';
+    const hEl = document.getElementById('leg-hist');
+    hEl.textContent = lHist.value?.toFixed(4)||'—';
+    hEl.style.color = lHist.value>=0?'rgba(14,159,110,1)':'rgba(224,36,36,1)';
   }
 
   // Observer resize
@@ -1184,11 +1345,38 @@ function _buildAndRender(d,tf){
   _tvResizeObs.observe(macdEl);
 }
 
-// ── Switch timeframe (dùng lại data đã tải) ──
-function tvSwitchTF(tf){
-  _tvCurrentTF=tf;
+// ── Chọn API endpoint theo TF ──
+function _tvApiUrl(sym, tf){
+  if(tf==='W')  return `/api/ohlcv_weekly/${sym}`;
+  if(tf==='15') return `/api/ohlcv_15m/${sym}`;
+  return `/api/ohlcv/${sym}`;   // D — từ daily cache
+}
+
+// ── Switch timeframe — fetch data mới theo TF ──
+async function tvSwitchTF(tf){
+  if(tf === _tvCurrentTF && _tvData !== null) return; // không fetch lại nếu đã có
+  _tvCurrentTF = tf;
   ['D','W','15'].forEach(t=>document.getElementById('tf-'+t).classList.toggle('on',t===tf));
-  if(_tvData) _buildAndRender(_tvData,tf);
+
+  const loadEl = document.getElementById('tv-tf-loading');
+  loadEl.style.display = 'inline';
+
+  try {
+    const r = await fetch(_tvApiUrl(_tvLastSym, tf));
+    if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||`HTTP ${r.status}`); }
+    const d = await r.json();
+    if(!d.candles||d.candles.length<2) throw new Error('Không đủ dữ liệu');
+    _tvData = d;
+    _buildAndRender(d, tf);
+  } catch(err){
+    console.error('tvSwitchTF error:', err);
+    // Hiện lỗi nhỏ trên toolbar
+    loadEl.textContent = `❌ ${err.message}`;
+    setTimeout(()=>{loadEl.textContent='⏳ đang tải...';loadEl.style.display='none';}, 3000);
+    return;
+  }
+
+  loadEl.style.display = 'none';
 }
 
 // ── Toggle EMA 30/100/200 ──
@@ -1199,27 +1387,30 @@ function tvToggleExtraEMA(checked){
   });
 }
 
+// ── Load TV Chart lần đầu khi mở popup (luôn dùng TF hiện tại) ──
 async function loadTVChart(sym){
-  sym=sym.toUpperCase().trim();
-  _tvLastSym=sym;
-  const loading=document.getElementById('tv-loading');
-  const wrap=document.getElementById('tv-chart-wrap');
-  loading.style.display='flex';wrap.style.display='none';
-  loading.innerHTML=`⏳ Đang tải dữ liệu  <b>${sym}</b>...`;
+  sym = sym.toUpperCase().trim();
+  _tvLastSym = sym;
+  _tvData = null; // reset cache TF
+
+  const loading = document.getElementById('tv-loading');
+  const wrap    = document.getElementById('tv-chart-wrap');
+  loading.style.display='flex'; wrap.style.display='none';
+  loading.innerHTML=`⏳ Đang tải dữ liệu  <b>${sym}</b> [${_tvCurrentTF==='15'?'15m':_tvCurrentTF}]...`;
 
   try{
-    const r=await fetch(`/api/ohlcv/${sym}`);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
-    const d=await r.json();
+    const r = await fetch(_tvApiUrl(sym, _tvCurrentTF));
+    if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||`HTTP ${r.status}`); }
+    const d = await r.json();
     if(!d.candles||d.candles.length<2) throw new Error('Không đủ dữ liệu');
 
-    _tvData=d;
-    _buildAndRender(d,_tvCurrentTF);
+    _tvData = d;
+    _buildAndRender(d, _tvCurrentTF);
 
     loading.style.display='none';
     wrap.style.display='flex';
 
-  }catch(err){
+  } catch(err){
     loading.innerHTML=`<div style="text-align:center;color:#9ca3af;padding:24px">
       <div style="font-size:22px;margin-bottom:8px">⚠️</div>
       <div style="margin-bottom:6px">Không tải được dữ liệu <b style="color:#1a56db">${sym}</b></div>
@@ -1233,14 +1424,13 @@ async function loadTVChart(sym){
 }
 
 // ═══════════════════════════════════════════════════════
-// MOBILE LIGHTBOX
+// MOBILE LIGHTBOX (giữ nguyên)
 // ═══════════════════════════════════════════════════════
 const lb={el:null,stripEl:null,labelEl:null,counterEl:null,zoomHintEl:null,images:[],idx:0,W:0,dragStartX:0,dragStartY:0,dragDx:0,dragDy:0,dragging:false,dragDir:'',stripOffset:0,scale:1,scaleMin:1,scaleMax:4,panX:0,panY:0,isPinching:false,pinchStartDist:0,pinchStartScale:1,pinchMidX:0,pinchMidY:0,pinchStartPanX:0,pinchStartPanY:0,isPanning:false,panStartX:0,panStartY:0,panStartPanX:0,panStartPanY:0,lastTapTime:0,lastTapX:0,lastTapY:0};
 function _lbCurrentImg(){const slides=lb.stripEl?lb.stripEl.querySelectorAll('.lb-slide img'):[];return slides[lb.idx]||null;}
 function _lbResetZoom(animate){lb.scale=1;lb.panX=0;lb.panY=0;const img=_lbCurrentImg();if(img){if(animate)img.classList.remove('zooming');else img.classList.add('zooming');img.style.transform='translate(0px,0px) scale(1)';}}
 function _lbApplyZoom(){const img=_lbCurrentImg();if(!img)return;img.classList.add('zooming');img.style.transform=`translate(${lb.panX}px,${lb.panY}px) scale(${lb.scale})`;}
 function _lbClampPan(){const img=_lbCurrentImg();if(!img||lb.scale<=1){lb.panX=0;lb.panY=0;return;}const rect=img.getBoundingClientRect();const W=window.innerWidth,H=window.innerHeight;const iW=(rect.width/lb.scale)*lb.scale,iH=(rect.height/lb.scale)*lb.scale;const maxPanX=Math.max(0,(iW-W)/2),maxPanY=Math.max(0,(iH-H)/2);lb.panX=Math.max(-maxPanX,Math.min(maxPanX,lb.panX));lb.panY=Math.max(-maxPanY,Math.min(maxPanY,lb.panY));}
-let _lbHintShown=false;
 function lbInit(){lb.el=document.getElementById('mob-lightbox');lb.stripEl=document.getElementById('lb-strip');lb.labelEl=document.getElementById('mob-lightbox-label');lb.counterEl=document.getElementById('mob-lightbox-counter');lb.zoomHintEl=document.getElementById('lb-zoom-hint');const vp=document.getElementById('lb-viewport');vp.addEventListener('touchstart',_lbTS,{passive:false});vp.addEventListener('touchmove',_lbTM,{passive:false});vp.addEventListener('touchend',_lbTE,{passive:false});vp.addEventListener('touchcancel',_lbTC,{passive:true});}
 function lbOpen(images,idx){if(!lb.el)lbInit();lb.images=images;lb.idx=idx;lb.W=window.innerWidth;lb.stripEl.innerHTML=images.map((img,i)=>`<div class="lb-slide"><img src="${img.url}" alt="${img.label}" draggable="false"></div>`).join('');lb.stripEl.style.width=`${lb.W*images.length}px`;lb.scale=1;lb.panX=0;lb.panY=0;_lbSnapTo(idx,false);_lbUpdateMeta();lb.el.classList.add('on');document.body.style.overflow='hidden';}
 function lbClose(){if(!lb.el)return;_lbResetZoom(false);lb.el.classList.remove('on');document.body.style.overflow='';}
@@ -1339,7 +1529,6 @@ function openChart(sym){
   document.body.style.overflow='hidden';
   document.getElementById('edge-swipe-zone').classList.add('on');
   document.getElementById('mob-close-float').style.display='';
-  // reset ticker buf khi mở mã mới
   _tvTickerBuf='';_tvTickerHide();
 }
 
@@ -1361,12 +1550,12 @@ function _activateTab(tab){
       row.scrollTo({left:btnLeft-(rowWidth/2)+(btnWidth/2),behavior:'smooth'});
     }
   }
-  if(tab==='tv')     loadTVChart(_sym);
-  if(tab==='vs')     {const f=document.getElementById('iframe-vs');if(f.src==='about:blank')f.src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;}
-  if(tab==='vnd-cs') {const f=document.getElementById('iframe-vnd-cs');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;}
+  if(tab==='tv')      loadTVChart(_sym);
+  if(tab==='vs')      {const f=document.getElementById('iframe-vs');if(f.src==='about:blank')f.src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;}
+  if(tab==='vnd-cs')  {const f=document.getElementById('iframe-vnd-cs');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/diem-nhan-co-ban-popup?theme=light`;}
   if(tab==='vnd-news'){const f=document.getElementById('iframe-vnd-news');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}/tin-tuc-ma-popup?type=dn&theme=light`;}
   if(tab==='vnd-sum') {const f=document.getElementById('iframe-vnd-sum');if(f.src==='about:blank')f.src=`https://dstock.vndirect.com.vn/tong-quan/${_sym}?theme=light`;}
-  if(tab==='24h')    {const f=document.getElementById('iframe-24h');if(f.src==='about:blank')f.src=`https://24hmoney.vn/stock/${_sym}/news`;}
+  if(tab==='24h')     {const f=document.getElementById('iframe-24h');if(f.src==='about:blank')f.src=`https://24hmoney.vn/stock/${_sym}/news`;}
   if(tab==='scanner') loadScannerChart(_sym);
 }
 
