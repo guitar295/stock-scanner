@@ -345,7 +345,8 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:0.5;transition:none}
 .panel-body{padding:12px 14px}
 
-.sig-list{display:flex;flex-direction:column;gap:3px}
+.sig-list{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+@media(max-width:768px){.sig-list{display:flex!important;flex-direction:column!important;gap:3px!important;grid-template-columns:unset!important}}
 .sig-row{display:grid;grid-template-columns:28px 68px 1fr 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:all .15s;animation:fadeIn .3s ease;background:var(--surface)}
 @keyframes fadeIn{from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:none}}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
