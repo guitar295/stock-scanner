@@ -1448,6 +1448,13 @@ function _updateAlbumNav(){
 }
 
 let _touchStartX=0;
+document.getElementById('panel-scanner').addEventListener('wheel',e=>{
+  if(Math.abs(e.deltaX)>Math.abs(e.deltaY)&&Math.abs(e.deltaX)>10){
+    e.preventDefault();
+    if(e.deltaX>0) albumNav(1);
+    else           albumNav(-1);
+  }
+},{passive:false});
 document.getElementById('panel-scanner').addEventListener('touchstart',e=>{
   if(window.innerWidth>768) _touchStartX=e.touches[0].clientX;
 },{passive:true});
