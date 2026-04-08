@@ -1563,10 +1563,10 @@ def telegram_listener(stop_event: threading.Event):
 
                     if alerted_today:
                         buttons = []
-                    for k, v in alerted_today.items():
-                        sig   = v["signal"] if isinstance(v, dict) else v
-                        emoji = SIGNAL_EMOJI.get(sig, '📌')
-                        buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
+                        for k, v in alerted_today.items():
+                            sig   = v["signal"] if isinstance(v, dict) else v
+                            emoji = SIGNAL_EMOJI.get(sig, '📌')
+                            buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
@@ -1717,7 +1717,7 @@ while True:
             build_history_cache(symbols_to_scan, current_date)
 
         is_morning   =  85500 <= now_time <= 113000
-        is_afternoon = 130000 <= now_time <= 230000
+        is_afternoon = 130000 <= now_time <= 150000
 
         if not (is_morning or is_afternoon):
             with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
