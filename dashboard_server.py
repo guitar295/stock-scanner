@@ -365,7 +365,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .empty .big{font-size:30px;margin-bottom:8px}
 
 /* ── HEATMAP ─── */
-.hmap-outer{overflow-x:auto;padding-bottom:4px}
+.hmap-outer{overflow-x:auto;padding-bottom:4px;text-align:center}
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hmap-row{display:inline-flex;flex-direction:row;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
