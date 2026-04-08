@@ -1563,7 +1563,14 @@ def telegram_listener(stop_event: threading.Event):
 
                     if alerted_today:
                         buttons = []
-                        for k, v in alerted_today.items():
+                        sorted_signals = sorted(
+                            alerted_today.items(),
+                            key=lambda x: (
+                                -SIGNAL_RANK.get(x[1]["signal"] if isinstance(x[1], dict) else x[1], 0),
+                                x[0]
+                            )
+                        )
+                        for k, v in sorted_signals:
                             sig   = v["signal"] if isinstance(v, dict) else v
                             emoji = SIGNAL_EMOJI.get(sig, '📌')
                             buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
@@ -1717,7 +1724,7 @@ while True:
             build_history_cache(symbols_to_scan, current_date)
 
         is_morning   =  85500 <= now_time <= 113000
-        is_afternoon = 130000 <= now_time <= 150000
+        is_afternoon = 130000 <= now_time <= 160000
 
         if not (is_morning or is_afternoon):
             with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
