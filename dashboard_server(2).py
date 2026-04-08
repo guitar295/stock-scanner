@@ -345,7 +345,8 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:0.5;transition:none}
 .panel-body{padding:12px 14px}
 
-.sig-list{display:flex;flex-direction:column;gap:3px}
+.sig-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+@media(max-width:768px){.sig-list{display:flex!important;flex-direction:column!important;gap:3px!important;grid-template-columns:unset!important}}
 .sig-row{display:grid;grid-template-columns:28px 68px 1fr 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:all .15s;animation:fadeIn .3s ease;background:var(--surface)}
 @keyframes fadeIn{from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:none}}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
@@ -360,7 +361,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .b-BBREAKP     {background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
 .b-BFISH       {background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
 .b-MACROSS     {background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
-.empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px}
+.empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px;grid-column:1/-1}
 .empty .big{font-size:30px;margin-bottom:8px}
 
 /* ── HEATMAP ─── */
@@ -1657,7 +1658,7 @@ async function fetchSigs(){
       <div class="sig-row" onclick="openChart('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
-        <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+s.pct+'%':'—'}</span>
+        <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>
         <span class="s-badge ${badgeCls(s.signal)}">${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}</span>
       </div>`).join('');
   }catch(e){console.error('fetchSigs:',e)}
