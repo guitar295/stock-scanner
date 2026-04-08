@@ -332,7 +332,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   color:var(--muted);font-size:13px;pointer-events:none;
 }
 .hmap-search-input{
-  width:80px;padding:5px 10px 5px 30px;
+  width:100px;padding:5px 10px 5px 30px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;
@@ -444,7 +444,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   color:var(--muted);font-size:12px;pointer-events:none;
 }
 .popup-search-input{
-  width:80px;padding:5px 10px 5px 28px;
+  width:100px;padding:5px 10px 5px 28px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;
@@ -1713,7 +1713,7 @@ function buildMobileHeader(){
   r1.style.cssText=['display:flex','align-items:center','gap:8px','padding:8px 12px','background:var(--surf2)','border-bottom:1px solid var(--border)'].join(';');
   r1.innerHTML=`
     <span id="ptitle" style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">Chart</span>
-    <div style="position:relative;flex:1;min-width:0;">
+    <div style="position:relative;flex:0 0 auto;">
       <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
       <input id="popup-search-input" type="text" placeholder="Tìm mã" maxlength="10"
         autocomplete="off" spellcheck="false"
