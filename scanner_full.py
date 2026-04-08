@@ -1563,10 +1563,10 @@ def telegram_listener(stop_event: threading.Event):
 
                     if alerted_today:
                         buttons = []
-                    for k, v in alerted_today.items():
-                        sig   = v["signal"] if isinstance(v, dict) else v
-                        emoji = SIGNAL_EMOJI.get(sig, '📌')
-                        buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
+                        for k, v in alerted_today.items():
+                            sig   = v["signal"] if isinstance(v, dict) else v
+                            emoji = SIGNAL_EMOJI.get(sig, '📌')
+                            buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
                         reply = "📋 <b>Tín hiệu hôm nay:</b>"
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
