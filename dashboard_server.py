@@ -361,7 +361,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .b-BBREAKP     {background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
 .b-BFISH       {background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
 .b-MACROSS     {background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
-.empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px}
+.empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px;grid-column:1/-1}
 .empty .big{font-size:30px;margin-bottom:8px}
 
 /* ── HEATMAP ─── */
