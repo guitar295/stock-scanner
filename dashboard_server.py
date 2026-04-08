@@ -427,7 +427,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 
 .phdr{
-  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
   padding:7px 14px;gap:0;
   background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0
 }
