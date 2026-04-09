@@ -1210,9 +1210,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
 
-#            notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
-#            send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
-            send_telegram_signal(msg, image_paths=image_paths,notify_text=None)
+            notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
+            send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
 
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
@@ -1725,7 +1724,7 @@ while True:
             build_history_cache(symbols_to_scan, current_date)
 
         is_morning   =  85500 <= now_time <= 113000
-        is_afternoon = 130000 <= now_time <= 170000
+        is_afternoon = 130000 <= now_time <= 150000
 
         if not (is_morning or is_afternoon):
             with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
