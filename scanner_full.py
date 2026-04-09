@@ -1210,7 +1210,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
 
-            notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
+#            notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
             send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
 
         except Exception as e:
