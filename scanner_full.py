@@ -1212,7 +1212,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
 
 #            notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
 #            send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
-            send_telegram_signal(msg, image_paths=image_paths)
+            send_telegram_signal(msg, image_paths=image_paths,notify_text=None)
 
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
