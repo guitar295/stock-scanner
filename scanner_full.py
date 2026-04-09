@@ -425,45 +425,36 @@ def build_weekly_df(df_daily):
     return compute_indicators(df_w)
 
 def send_telegram_signal(msg, image_paths=None):
-    url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    """
+    Gửi 1 album duy nhất (daily + weekly + 15m).
+    Caption đặt ở ảnh đầu (daily) → notification hiển thị nội dung caption.
+    Không dùng notify_text, không tách thành 2 tin nhắn.
+    """
     url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
 
     if not image_paths:
         return
 
     try:
-        # ① Gửi daily riêng — CÓ caption, CÓ thông báo → notification hiển thị msg
-        daily_message_id = None
-        with open(image_paths[0], 'rb') as f:
-            r = requests.post(url_photo, data={
-                'chat_id':    TELEGRAM_CHAT_ID,
-                'caption':    msg or '',
-                'parse_mode': 'HTML',
-            }, files={'photo': f}, timeout=30)
-            if r.status_code == 200:
-                daily_message_id = r.json().get('result', {}).get('message_id')
-        print(f"  ✅ Đã gửi daily chart (msg_id={daily_message_id})")
+        files, media = {}, []
+        for i, path in enumerate(image_paths):
+            key = f"photo{i}"
+            files[key] = open(path, 'rb')
+            item = {"type": "photo", "media": f"attach://{key}"}
+            if i == 0 and msg:
+                item["caption"]    = msg
+                item["parse_mode"] = "HTML"
+            media.append(item)
 
-        # ② Gửi album weekly+15m — reply vào daily, TẮT thông báo
-        album_paths = image_paths[1:]
-        if album_paths and daily_message_id:
-            files, media = {}, []
-            for i, path in enumerate(album_paths):
-                key = f"photo{i}"
-                files[key] = open(path, 'rb')
-                media.append({"type": "photo", "media": f"attach://{key}"})
-            payload = {
-                'chat_id':              TELEGRAM_CHAT_ID,
-                'media':                json.dumps(media),
-                'disable_notification': True,
-                'reply_to_message_id':  daily_message_id,
-            }
-            try:
-                requests.post(url_album, data=payload, files=files, timeout=60)
-                print(f"  ✅ Đã gửi album weekly+15m (reply → {daily_message_id})")
-            finally:
-                for fh in files.values():
-                    fh.close()
+        try:
+            requests.post(url_album, data={
+                'chat_id': TELEGRAM_CHAT_ID,
+                'media':   json.dumps(media),
+            }, files=files, timeout=60)
+            print(f"  ✅ Đã gửi album {len(image_paths)} ảnh: {image_paths[0]}")
+        finally:
+            for fh in files.values():
+                fh.close()
 
     except Exception as e:
         print(f"  ❌ Lỗi gửi Telegram: {e}")
