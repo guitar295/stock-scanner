@@ -424,51 +424,54 @@ def build_weekly_df(df_daily):
     }).dropna()
     return compute_indicators(df_w)
 
-def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=None):
-    if image_path and not image_paths:
-        image_paths = [image_path]
-
+def send_telegram_signal(msg, image_paths=None):
+    """
+    Gửi tín hiệu theo luồng mới:
+    - Chart daily: gửi riêng, kèm caption (msg), CÓ thông báo
+    - Chart weekly + 15m: gửi album, KHÔNG caption, TẮT thông báo
+    """
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     url_album = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
-    url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    if not image_paths:
+        return
 
     try:
-        if notify_text:
-            requests.post(url_msg, data={
-                'chat_id': TELEGRAM_CHAT_ID, 'text': notify_text, 'parse_mode': 'HTML'
-            })
+        # ① Gửi chart daily riêng, kèm caption — CÓ thông báo (mặc định)
+        daily_path = image_paths[0]
+        with open(daily_path, 'rb') as f:
+            requests.post(url_photo, data={
+                'chat_id':    TELEGRAM_CHAT_ID,
+                'caption':    msg or '',
+                'parse_mode': 'HTML',
+            }, files={'photo': f}, timeout=30)
+        print(f"  ✅ Đã gửi daily chart: {daily_path}")
 
-        if image_paths and len(image_paths) == 1:
-            with open(image_paths[0], 'rb') as f:
-                requests.post(url_photo, data={
-                    'chat_id': TELEGRAM_CHAT_ID, 'caption': msg or '',
-                    'parse_mode': 'HTML', 'disable_notification': True,
-                }, files={'photo': f})
-            print(f"  ✅ Đã gửi chart: {image_paths[0]}")
-
-        elif image_paths and len(image_paths) >= 2:
+        # ② Gửi album weekly + 15m — KHÔNG caption, TẮT thông báo
+        album_paths = image_paths[1:]
+        if album_paths:
             files, media = {}, []
-            for i, path in enumerate(image_paths):
-                key = f"photo{i}"; files[key] = open(path, 'rb')
-                item = {"type": "photo", "media": f"attach://{key}"}
-                if i == 0 and msg:
-                    item["caption"] = msg; item["parse_mode"] = "HTML"
-                media.append(item)
+            for i, path in enumerate(album_paths):
+                key = f"photo{i}"
+                files[key] = open(path, 'rb')
+                media.append({"type": "photo", "media": f"attach://{key}"})
             try:
                 requests.post(url_album, data={
-                    'chat_id': TELEGRAM_CHAT_ID, 'media': json.dumps(media),
+                    'chat_id':              TELEGRAM_CHAT_ID,
+                    'media':                json.dumps(media),
                     'disable_notification': True,
-                }, files=files)
-                print(f"  ✅ Đã gửi album: {image_paths[0]}")
+                }, files=files, timeout=60)
+                print(f"  ✅ Đã gửi album weekly+15m: {album_paths}")
             finally:
-                for fh in files.values(): fh.close()
-
-        if image_paths:
-            for path in image_paths:
-                if os.path.exists(path): os.remove(path)
+                for fh in files.values():
+                    fh.close()
 
     except Exception as e:
         print(f"  ❌ Lỗi gửi Telegram: {e}")
+    finally:
+        for path in (image_paths or []):
+            if os.path.exists(path):
+                os.remove(path)
 
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
@@ -1210,8 +1213,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
 
-            notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
-            send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
+            send_telegram_signal(msg, image_paths=image_paths)
 
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
