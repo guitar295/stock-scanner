@@ -332,14 +332,14 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   color:var(--muted);font-size:13px;pointer-events:none;
 }
 .hmap-search-input{
-  width:140px;padding:5px 10px 5px 30px;
+  width:100px;padding:5px 10px 5px 30px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;
   outline:none;transition:border-color .15s,box-shadow .15s,width .2s;
 }
 .hmap-search-input::placeholder{color:var(--muted)}
-.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:170px}
+.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
 
 .pbar-wrap{height:2px;background:transparent;overflow:hidden}
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:0.5;transition:none}
@@ -365,7 +365,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .empty .big{font-size:30px;margin-bottom:8px}
 
 /* ── HEATMAP ─── */
-.hmap-outer{overflow-x:auto;padding-bottom:4px}
+.hmap-outer{overflow-x:auto;padding-bottom:4px;text-align:center}
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hmap-row{display:inline-flex;flex-direction:row;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
@@ -427,7 +427,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 
 .phdr{
-  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
   padding:7px 14px;gap:0;
   background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0
 }
@@ -444,7 +444,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   color:var(--muted);font-size:12px;pointer-events:none;
 }
 .popup-search-input{
-  width:160px;padding:5px 10px 5px 28px;
+  width:100px;padding:5px 10px 5px 28px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;
@@ -864,7 +864,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             class="hmap-search-input"
             id="hmap-search-input"
             type="text"
-            placeholder="Tìm kiếm mã"
+            placeholder="Tìm mã"
             maxlength="10"
             autocomplete="off"
             spellcheck="false"
@@ -905,7 +905,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             class="popup-search-input"
             id="popup-search-input"
             type="text"
-            placeholder="Tìm mã khác"
+            placeholder="Tìm mã"
             maxlength="10"
             autocomplete="off"
             spellcheck="false"
@@ -1713,9 +1713,9 @@ function buildMobileHeader(){
   r1.style.cssText=['display:flex','align-items:center','gap:8px','padding:8px 12px','background:var(--surf2)','border-bottom:1px solid var(--border)'].join(';');
   r1.innerHTML=`
     <span id="ptitle" style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;">Chart</span>
-    <div style="position:relative;flex:1;min-width:0;">
+    <div style="position:relative;flex:0 0 auto;">
       <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;">🔍</span>
-      <input id="popup-search-input" type="text" placeholder="Tìm mã..." maxlength="10"
+      <input id="popup-search-input" type="text" placeholder="Tìm mã" maxlength="10"
         autocomplete="off" spellcheck="false"
         style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;">
     </div>
