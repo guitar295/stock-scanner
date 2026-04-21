@@ -278,6 +278,20 @@ echo "✅ Cập nhật hoàn tất!" && \
 docker logs --tail 20 scanner
 
 ```
+Chạy với tên miền, không expose cổng 8888
+```
+cd ~/scanner && \
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py && \
+sync && sleep 2 && \
+docker stop scanner 2>/dev/null || true && \
+docker rm scanner 2>/dev/null || true && \
+docker build --no-cache -t stock-scanner . && \
+docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env --network web_default stock-scanner && \
+echo "✅ Cập nhật hoàn tất!" && \
+docker logs --tail 20 scanner
+```
+
 Lệnh này tự động làm 6 việc theo thứ tự:
 
 Tải scanner_full.py mới nhất từ GitHub
