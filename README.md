@@ -287,7 +287,7 @@ sync && sleep 2 && \
 docker stop scanner 2>/dev/null || true && \
 docker rm scanner 2>/dev/null || true && \
 docker build --no-cache -t stock-scanner . && \
-docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env --network web_default stock-scanner && \
+docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env --network web_default -p 8888:8888 stock-scanner && \
 echo "✅ Cập nhật hoàn tất!" && \
 docker logs --tail 20 scanner
 ```
