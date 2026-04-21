@@ -1513,7 +1513,7 @@ function openUrl(url,label){
   _sym='VNINDEX';_tab='url';
   document.getElementById('ptitle').textContent=label||'🌐 Web';
   IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
-  document.getElementById('iframe-vs').src='/vietstock/?stockcode=vnindex';
+  document.getElementById('iframe-vs').src='https://ta.vietstock.vn/?stockcode=vnindex';
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
@@ -1535,7 +1535,7 @@ function openUrl(url,label){
 function openChart(sym){
   _sym=sym.toUpperCase().trim();_tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
-  document.getElementById('iframe-vs').src=`/vietstock/?stockcode=${_sym.toLowerCase()}`;
+  document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
   IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
