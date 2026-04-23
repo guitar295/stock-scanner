@@ -1170,7 +1170,7 @@ function mkNganhNgheCol(data){
     </div>`;
   }).join('');
   // Trả về group (không phải col) — sẽ được nhúng vào cột DAU TU CONG
-  return `<div class="hmap-group hmap-sector-group">
+  return `<div class="hmap-group hmap-sector-group" style="margin-top: 20px;">
     <div class="hmap-ghdr"><span class="hmap-gname">NGANH NGHE</span></div>
     ${cells}
   </div>`;
