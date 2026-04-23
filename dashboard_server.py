@@ -401,22 +401,25 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .hc-price{font-size:8.5px;font-weight:400;opacity:.82}
 .hc-pct  {font-size:9.5px;font-weight:400}
 
-/* ── SECTOR COLUMN (NGÀNH NGHỀ) ── */
+/* ── SECTOR GROUP (NGÀNH NGHỀ) — nằm dưới cột DAU TU CONG ── */
+.hmap-sector-group{
+  width:130px;margin:6px auto 0;
+}
 .hmap-sector-cell{
   display:grid;grid-template-columns:1fr auto;
-  align-items:center;height:24px;border-radius:4px;
+  align-items:center;height:22px;border-radius:4px;
   cursor:default;border:1px solid rgba(0,0,0,.1);
-  padding:0 10px;gap:4px;overflow:hidden;
-  transition:filter .12s,transform .1s;
+  padding:0 8px;gap:4px;overflow:hidden;
+  transition:filter .12s;
 }
-.hmap-sector-cell:hover{filter:brightness(.9);transform:scale(1.02);z-index:2;}
+.hmap-sector-cell:hover{filter:brightness(.9);}
 .hsc-name{
-  font-family:var(--font-ui);font-size:9.5px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.4px;
+  font-family:var(--font-ui);font-size:9px;font-weight:400;
+  text-transform:uppercase;letter-spacing:.3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .hsc-pct{
-  font-family:var(--font-mono);font-size:9.5px;font-weight:600;
+  font-family:var(--font-mono);font-size:9px;font-weight:400;
   flex-shrink:0;text-align:right;
 }
 
@@ -1166,11 +1169,10 @@ function mkNganhNgheCol(data){
       <span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span>
     </div>`;
   }).join('');
-  return `<div class="hmap-col">
-    <div class="hmap-group">
-      <div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>
-      ${cells}
-    </div>
+  // Trả về group (không phải col) — sẽ được nhúng vào cột DAU TU CONG
+  return `<div class="hmap-group hmap-sector-group">
+    <div class="hmap-ghdr"><span class="hmap-gname">NGANH NGHE</span></div>
+    ${cells}
   </div>`;
 }
 
@@ -1186,11 +1188,13 @@ function renderHeatmap(data){
     .sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0))
     .slice(0,maxRows);
   const col0=`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,data)}</div>`;
-  const rest=HMAP_COLS.map(cd=>
-    `<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,data)).join('')}</div>`
-  ).join('');
-  // ← THÊM cột NGÀNH NGHỀ ở cuối
-  grid.innerHTML=col0+rest+mkNganhNgheCol(data);
+  // NGANH NGHE được nhúng vào cuối cột DAU TU CONG (cột cuối cùng)
+  const rest=HMAP_COLS.map((cd,i)=>{
+    const groupsHtml=cd.groups.map(g=>mkGroup(g.name,g.syms,data)).join('');
+    const extra=(i===HMAP_COLS.length-1)?mkNganhNgheCol(data):'';
+    return `<div class="hmap-col">${groupsHtml}${extra}</div>`;
+  }).join('');
+  grid.innerHTML=col0+rest;
 }
 
 // ═══════════════════════════════════════════════════════
