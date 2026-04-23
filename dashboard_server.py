@@ -403,7 +403,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 
 /* ── SECTOR GROUP (NGÀNH NGHỀ) — nằm dưới cột DAU TU CONG ── */
 .hmap-sector-group{
-  width:130px;margin:30px auto 0;
+  width:130px;margin:28px auto 0;
 }
 .hmap-sector-cell{
   display:grid;grid-template-columns:1fr auto;
