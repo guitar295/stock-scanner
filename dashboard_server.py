@@ -407,9 +407,9 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 }
 .hmap-sector-cell{
   display:grid;grid-template-columns:1fr auto;
-  align-items:center;height:22px;border-radius:4px;
+  align-items:center;height:24px;border-radius:4px;
   cursor:default;border:1px solid rgba(0,0,0,.1);
-  padding:0 8px;gap:4px;overflow:hidden;
+  padding:0 8px;gap:2px;overflow:hidden;
   transition:filter .12s;
 }
 .hmap-sector-cell:hover{filter:brightness(.9);}
