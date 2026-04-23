@@ -403,7 +403,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 
 /* ── SECTOR GROUP (NGÀNH NGHỀ) — nằm dưới cột DAU TU CONG ── */
 .hmap-sector-group{
-  width:130px;margin:6px auto 0;
+  width:130px;margin:50px auto 0;
 }
 .hmap-sector-cell{
   display:grid;grid-template-columns:1fr auto;
@@ -1170,8 +1170,8 @@ function mkNganhNgheCol(data){
     </div>`;
   }).join('');
   // Trả về group (không phải col) — sẽ được nhúng vào cột DAU TU CONG
-  return `<div class="hmap-group hmap-sector-group" style="margin-top: 50px;">
-    <div class="hmap-ghdr"><span class="hmap-gname">NGANH NGHE</span></div>
+  return `<div class="hmap-group hmap-sector-group">
+    <div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>
     ${cells}
   </div>`;
 }
