@@ -401,6 +401,28 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
 .hc-price{font-size:8.5px;font-weight:400;opacity:.82}
 .hc-pct  {font-size:9.5px;font-weight:400}
 
+/* ── SECTOR GROUP (NGÀNH NGHỀ) — nằm dưới cột DAU TU CONG ── */
+.hmap-sector-group{
+  width:130px;margin:28px auto 0;
+}
+.hmap-sector-cell{
+  display:grid;grid-template-columns:1fr auto;
+  align-items:center;height:24px;border-radius:4px;
+  cursor:default;border:1px solid rgba(0,0,0,.1);
+  padding:0 8px;gap:2px;overflow:hidden;
+  transition:filter .12s;
+}
+.hmap-sector-cell:hover{filter:brightness(.9);}
+.hsc-name{
+  font-family:var(--font-ui);font-size:9px;font-weight:400;
+  text-transform:uppercase;letter-spacing:.3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.hsc-pct{
+  font-family:var(--font-mono);font-size:9px;font-weight:400;
+  flex-shrink:0;text-align:right;
+}
+
 /* ── POPUP ─── */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 @media(max-width:768px){
@@ -772,12 +794,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   display: block;
 }
 
-/* ══ NÚT ĐÓNG FLOATING — CHỈ MOBILE PORTRAIT ══
-   - Mặc định: ẩn hoàn toàn
-   - Chỉ hiện khi: màn hình <= 768px VÀ orientation = portrait
-   - Landscape mobile + Desktop: ẩn tuyệt đối
-   - Màu rất mờ/trong suốt để không gây rối, chỉ bấm khi cần
-*/
 #mob-close-float {
   display: none;
 }
@@ -789,18 +805,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     top: 50%;
     transform: translateY(-50%);
     z-index: 10001;
-    /* 1. THU NHỎ KÍCH THƯỚC */
     width: 15px;
     height: 200px;
     border-radius: 6px 0 0 6px;
-    /* nền tối rất mờ — ~5% opacity, gần như trong suốt */
     background: rgba(17, 24, 39, 0.02);
     backdrop-filter: blur(1px);
     -webkit-backdrop-filter: blur(1px);
-    /* viền mờ, không border bên phải để dính sát cạnh */
     border: 1px solid rgba(255, 255, 255, 0.03);
     border-right: none;
-    /* chữ ✕ cũng mờ — không đập vào mắt */
     color: rgba(255, 255, 255, 0.10);
     font-size: 12px;
     align-items: center;
@@ -810,7 +822,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     touch-action: manipulation;
     pointer-events: auto;
   }
-  /* Khi bấm: hiện rõ đỏ để confirm */
   #mob-close-float:active {
     background: rgba(17, 24, 39, 0.6);
     color: rgba(255, 255, 255, 0.8);
@@ -891,7 +902,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <!-- ══ POPUP CHART ══ -->
 <div class="overlay" id="overlay">
 
-  <!-- Nút đóng floating — CHỈ mobile portrait, màu rất mờ/trong suốt -->
   <button id="mob-close-float" onclick="closePopup()" aria-label="Đóng">✕</button>
 
   <div class="pbox">
@@ -1134,6 +1144,38 @@ function mkGroup(name,syms,data){
   </div>`;
 }
 
+// ═══════════════════════════════════════════════════════
+// NGÀNH NGHỀ COLUMN — top 10 ngành theo % trung bình
+// ═══════════════════════════════════════════════════════
+function mkNganhNgheCol(data){
+  const groups=[];
+  HMAP_COLS.forEach(cd=>{
+    cd.groups.forEach(g=>{
+      if(g.name==='VN30') return; // bỏ VN30 vì không phải ngành
+      const avg=avgPct(g.syms,data);
+      groups.push({name:g.name,avg,syms:g.syms});
+    });
+  });
+  // Sắp xếp giảm dần theo % trung bình
+  groups.sort((a,b)=>b.avg-a.avg);
+  // Lấy top 10
+  const top=groups.slice(0,10);
+  const cells=top.map(g=>{
+    const{bg,fg}=cellStyle(g.avg);
+    const sign=g.avg>=0?'+':'';
+    return `<div class="hmap-sector-cell" style="background:${bg};color:${fg}"
+      title="${g.name}: ${sign}${g.avg.toFixed(2)}%">
+      <span class="hsc-name">${g.name}</span>
+      <span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span>
+    </div>`;
+  }).join('');
+  // Trả về group (không phải col) — sẽ được nhúng vào cột DAU TU CONG
+  return `<div class="hmap-group hmap-sector-group">
+    <div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>
+    ${cells}
+  </div>`;
+}
+
 function renderHeatmap(data){
   const grid=document.getElementById('hmap-grid');
   if(!data||!Object.keys(data).length){
@@ -1146,9 +1188,12 @@ function renderHeatmap(data){
     .sort((a,b)=>((data[b]||{}).pct||0)-((data[a]||{}).pct||0))
     .slice(0,maxRows);
   const col0=`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,data)}</div>`;
-  const rest=HMAP_COLS.map(cd=>
-    `<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,data)).join('')}</div>`
-  ).join('');
+  // NGANH NGHE được nhúng vào cuối cột DAU TU CONG (cột cuối cùng)
+  const rest=HMAP_COLS.map((cd,i)=>{
+    const groupsHtml=cd.groups.map(g=>mkGroup(g.name,g.syms,data)).join('');
+    const extra=(i===HMAP_COLS.length-1)?mkNganhNgheCol(data):'';
+    return `<div class="hmap-col">${groupsHtml}${extra}</div>`;
+  }).join('');
   grid.innerHTML=col0+rest;
 }
 
@@ -1528,7 +1573,6 @@ function openUrl(url,label){
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
   document.getElementById('edge-swipe-zone').classList.add('on');
-  // Hiện nút đóng floating (mobile portrait)
   document.getElementById('mob-close-float').style.display='';
 }
 
@@ -1545,7 +1589,6 @@ function openChart(sym){
   document.body.style.overflow='hidden';
   document.getElementById('popup-search-input').value='';
   document.getElementById('edge-swipe-zone').classList.add('on');
-  // Hiện nút đóng floating (mobile portrait)
   document.getElementById('mob-close-float').style.display='';
 }
 
@@ -1587,7 +1630,6 @@ function closePopup(){
   overlay.classList.remove('on');
   document.body.style.overflow='';
   document.getElementById('edge-swipe-zone').classList.remove('on');
-  // Ẩn nút đóng floating (mobile portrait)
   document.getElementById('mob-close-float').style.display='none';
   requestAnimationFrame(()=>{pbox.style.visibility='';pbox.style.animation='';});
 }
