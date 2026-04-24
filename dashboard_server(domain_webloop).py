@@ -275,7 +275,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   flex-wrap:nowrap;
 }
 .hmap-hdr-row1{
-  display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0;
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
 }
 .hmap-ts-wrap{
   margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;
@@ -943,7 +943,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);
                background:var(--accent);color:#fff;font-size:10px;
                font-family:var(--font-mono);font-weight:600;cursor:pointer;">
-        Mở đầy đủ ↗
+        Full ↗
       </button>
       <button onclick="toggleHoverPreview()"
         style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);
