@@ -546,6 +546,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   min-height:120px;max-height:90vh;
   z-index:500;background:var(--surface);border-top:2px solid var(--accent);
   box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column;
+  overflow:visible;
 }
 #hover-preview-resizer{
   position:absolute;top:0;left:0;right:0;height:6px;
@@ -554,10 +555,25 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 }
 #hover-preview-resizer:hover{background:rgba(26,86,219,.18);}
 #hover-preview-panel .pvhdr{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:6px 14px;background:var(--surf2);border-bottom:1px solid var(--border);
-  flex-shrink:0;
+  position:absolute;top:-28px;right:12px;
+  display:flex;align-items:center;
+  background:var(--surf2);
+  border:1px solid var(--border);border-bottom:none;
+  border-radius:6px 6px 0 0;
+  overflow:hidden;z-index:2;
 }
+#hover-preview-panel .pvhdr span{display:none;}
+#hover-preview-panel .pvhdr button{
+  height:28px;padding:0 10px;border:none;
+  background:transparent;font-family:var(--font-mono);font-size:11px;
+  font-weight:600;cursor:pointer;color:var(--accent);
+  transition:background .15s;
+}
+#hover-preview-panel .pvhdr button+button{
+  border-left:1px solid var(--border);color:var(--muted);padding:0 8px;
+}
+#hover-preview-panel .pvhdr button:hover{background:var(--accent);color:#fff;}
+#hover-preview-panel .pvhdr button+button:hover{background:var(--red);color:#fff;}
 #hover-preview-panel iframe{flex:1;border:none;width:100%;display:block;}
 #hover-preview-btn{
   display:inline-flex;align-items:center;gap:5px;
@@ -934,25 +950,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 </div>
 
 <div id="hover-preview-panel">
-  <div id="hover-preview-resizer"></div>
+  <div id="hover-preview-resizer"></div>  
   <div class="pvhdr">
-    <span style="font-family:var(--font-ui);font-size:13px;font-weight:800;color:var(--accent);letter-spacing:1px;"
-      id="hover-preview-title">—</span>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <button onclick="openChart(_hoverPreviewCurrent)"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);
-               background:var(--accent);color:#fff;font-size:10px;
-               font-family:var(--font-mono);font-weight:600;cursor:pointer;">
-        Mở đầy đủ ↗
-      </button>
-      <button onclick="toggleHoverPreview()"
-        style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);
-               background:var(--bg);color:var(--muted);font-size:14px;
-               cursor:pointer;display:flex;align-items:center;justify-content:center;">
-        ✕
-      </button>
-    </div>
-  </div>
+    <span id="hover-preview-title"></span>
+    <button onclick="openChart(_hoverPreviewCurrent)">Mở đầy đủ ↗</button>
+    <button onclick="toggleHoverPreview()">✕</button>
+  </div>  
   <iframe id="hover-preview-iframe" src="about:blank"></iframe>
 </div>
 <footer id="footer-txt">Scanner Bot Dashboard</footer>
@@ -1564,12 +1567,20 @@ document.getElementById('panel-scanner').addEventListener('touchend',e=>{
 
 document.addEventListener('keydown',e=>{
   const overlayOn=document.getElementById('overlay').classList.contains('on');
-  if(!overlayOn) return;
-  if(document.activeElement===document.getElementById('popup-search-input')) return;
-  if(_tab!=='scanner') return;
-  if(_albumTotal===0) return;
-  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
-  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
+  if(overlayOn){
+    if(document.activeElement===document.getElementById('popup-search-input')) return;
+    if(_tab==='scanner'&&_albumTotal>0){
+      if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
+      if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
+    }
+    return;
+  }
+  if(document.activeElement===document.getElementById('hmap-search-input')) return;
+  if(!_hoverPreviewOn) return;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='ArrowUp'||e.key==='ArrowDown'){
+    e.preventDefault();
+    _hmapNavigate(e.key);
+  }
 });
 
 async function loadScannerChart(sym){
@@ -1916,6 +1927,46 @@ function toggleHoverPreview(){
     document.body.style.cursor = '';
   });
 })();
+
+let _hmapFocusSym = '';
+
+function _hmapNavigate(key){
+  const cells = Array.from(document.querySelectorAll('.hmap-cell'));
+  if(!cells.length) return;
+  let idx = _hmapFocusSym
+    ? cells.findIndex(c=>c.querySelector('.hc-sym')&&c.querySelector('.hc-sym').textContent===_hmapFocusSym)
+    : -1;
+  if(idx===-1) idx=0;
+
+  const cols = [];
+  document.querySelectorAll('.hmap-col').forEach(col=>{
+    const colCells = Array.from(col.querySelectorAll('.hmap-cell'));
+    if(colCells.length) cols.push(colCells);
+  });
+
+  let colIdx=-1, rowIdx=-1;
+  for(let ci=0;ci<cols.length;ci++){
+    const ri=cols[ci].indexOf(cells[idx]);
+    if(ri!==-1){colIdx=ci;rowIdx=ri;break;}
+  }
+  if(colIdx===-1){colIdx=0;rowIdx=0;}
+
+  if(key==='ArrowUp')    rowIdx=Math.max(0,rowIdx-1);
+  if(key==='ArrowDown')  rowIdx=Math.min(cols[colIdx].length-1,rowIdx+1);
+  if(key==='ArrowLeft')  colIdx=Math.max(0,colIdx-1);
+  if(key==='ArrowRight') colIdx=Math.min(cols.length-1,colIdx+1);
+
+  rowIdx=Math.min(rowIdx,cols[colIdx].length-1);
+  const targetCell=cols[colIdx][rowIdx];
+  const sym=targetCell.querySelector('.hc-sym').textContent;
+  _hmapFocusSym=sym;
+
+  cells.forEach(c=>c.style.outline='');
+  targetCell.style.outline='2px solid var(--accent)';
+  targetCell.scrollIntoView({block:'nearest',inline:'nearest'});
+  _hoverPreviewCurrent='';
+  _hoverCell(sym);
+}
 function _hoverCell(sym){
   if(!_hoverPreviewOn) return;
   if(sym === _hoverPreviewCurrent) return;
