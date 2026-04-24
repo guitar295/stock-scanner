@@ -275,7 +275,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   flex-wrap:nowrap;
 }
 .hmap-hdr-row1{
-  display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0;
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
 }
 .hmap-ts-wrap{
   margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;
