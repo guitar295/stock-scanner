@@ -582,7 +582,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hv-gtab.on { background:var(--accent);color:#fff;border-color:var(--accent); }
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hv-body { display:flex;flex:1;overflow:hidden; }
-.hv-symlist { width:90px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
+.hv-symlist { width:90px;flex-shrink:0;overflow-y:auto;overscroll-behavior:contain;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hv-sym-item { display:grid;grid-template-columns:10px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px; }
@@ -1792,8 +1792,11 @@ async function fetchHmap(){
       ?`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`
       :`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
     window._lastHmapData = j.data || {};
+      // Lưu scroll position trước khi render
+    const hmapOuter = document.querySelector('.hmap-outer');
+    const scrollLeft = hmapOuter ? hmapOuter.scrollLeft : 0;
     renderHeatmap(j.data||{});
-    if(_hoverPreviewOn) _hvRenderSymList();
+    if(hmapOuter) hmapOuter.scrollLeft = scrollLeft;
   }catch(e){console.error('fetchHmap:',e)}
 }
 
