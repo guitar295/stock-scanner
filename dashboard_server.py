@@ -1957,27 +1957,14 @@ function _hvRenderSymList(){
     const pct = d && typeof d.pct === 'number' ? d.pct : null;
     const pctStr = pct !== null ? (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%' : '—';
     const color = pct === null ? 'var(--muted)' : pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : '#b45309';
+    
     return `<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}"
       data-sym="${sym}" data-idx="${i}"
-      onmouseenter="_hvHoverSym('${sym}',this)"
       onclick="_hvClickSym('${sym}',this)">
       <span class="hv-sym-name">${sym}</span>
       <span class="hv-sym-pct" style="color:${color}">${pctStr}</span>
     </div>`;
   }).join('');
-}
-
-function _hvHoverSym(sym, el){
-  if(sym === _hoverPreviewCurrent) return;
-  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-  
-  _hoverPreviewTimer = setTimeout(() => {
-    document.querySelectorAll('.hv-sym-item').forEach(e => e.classList.remove('on'));
-    el.classList.add('on');
-    _hoverPreviewCurrent = sym;
-    document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
-    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-  }, 1000);
 }
 
 function _hvClickSym(sym, el){
@@ -1995,38 +1982,27 @@ document.addEventListener('keydown', e => {
   if(!_hoverPreviewOn || _hvActiveGroup === -1 || document.getElementById('overlay')?.classList.contains('on')) return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
-
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
 
-  const syms = _hvGetSortedSyms();
-  if(!syms.length) return;
+  const items = [...document.getElementById('hv-symlist').children];
+  if(!items.length) return;
 
-  let cur = syms.indexOf(_hoverPreviewCurrent);
-  cur = cur === -1 ? 0 : (e.key === 'ArrowDown' ? Math.min(cur + 1, syms.length - 1) : Math.max(cur - 1, 0));
-  
-  const sym = syms[cur];
-  if(sym === _hoverPreviewCurrent) return;
+  let cur = items.findIndex(el => el.classList.contains('on'));
+  let next = cur === -1 ? 0 : (e.key === 'ArrowDown' ? cur + 1 : cur - 1);
+  next = Math.max(0, Math.min(next, items.length - 1));
+  if(next === cur && cur !== -1) return;
 
+  items.forEach(el => el.classList.remove('on'));
+  items[next].classList.add('on');
+
+  const sym = items[next].dataset.sym;
   _hoverPreviewCurrent = sym;
-  const titleEl = document.getElementById('hover-preview-title');
-  if(titleEl) titleEl.textContent = '📈 ' + sym;
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 
-  let targetEl = null;
-  document.querySelectorAll('.hv-sym-item').forEach(el => {
-    const isOn = el.dataset.sym === sym;
-    el.classList.toggle('on', isOn);
-    if(isOn) targetEl = el;
-  });
-
-  if(targetEl){
-    const list = document.getElementById('hv-symlist');
-    const iTop = targetEl.offsetTop, iBot = iTop + targetEl.offsetHeight;
-    const vTop = list.scrollTop, vBot = vTop + list.clientHeight;
-
-    if(iTop < vTop) list.scrollTop = iTop;
-    else if(iBot > vBot) list.scrollTop = iBot - list.clientHeight;
-  }
+  const list = document.getElementById('hv-symlist');
+  const el = items[next];
+  if(el.offsetTop < list.scrollTop) list.scrollTop = el.offsetTop;
+  else if(el.offsetTop + el.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = el.offsetTop + el.offsetHeight - list.clientHeight;
 });
 
 function toggleHoverPreview(){
