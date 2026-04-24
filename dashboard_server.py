@@ -575,15 +575,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 }
 
 /* ══ HOVER PREVIEW — Group Tabs + Symbol List ══ */
-.hv-header { display:flex;flex-direction:column;flex-shrink:0;background:var(--surf2);border-bottom:1px solid var(--border); }
-.hv-header-row1 { display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border); }
-.hv-grouptabs { display:flex;align-items:center;overflow-x:auto;padding:4px 10px;gap:4px;scrollbar-width:none;-ms-overflow-style:none; }
+.hv-header-row1 { display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0; }
+.hv-grouptabs { display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none; }
 .hv-grouptabs::-webkit-scrollbar{display:none}
 .hv-gtab { flex-shrink:0;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s; }
 .hv-gtab.on { background:var(--accent);color:#fff;border-color:var(--accent); }
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hv-body { display:flex;flex:1;overflow:hidden; }
-.hv-symlist { width:126px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
+.hv-symlist { width:90px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hv-sym-item { display:grid;grid-template-columns:52px 1fr;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px; }
@@ -955,18 +954,19 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 <div id="hover-preview-panel">
   <div id="hover-preview-resizer"></div>
-  <div class="hv-header">
-    <div class="hv-header-row1">
-      <span style="font-family:var(--font-ui);font-size:13px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0;" id="hover-preview-title">—</span>
-      <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;">
-        <button onclick="openChart(_hoverPreviewCurrent)" style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Full ↗</button>
-        <button onclick="toggleHoverPreview()" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
-      </div>
-    </div>
+  <div class="hv-header-row1">
     <div class="hv-grouptabs" id="hv-grouptabs"></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;padding-right:6px;">
+      <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
+        style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
+      <button onclick="openChart(_hoverPreviewCurrent)"
+        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Full ↗</button>
+      <button onclick="toggleHoverPreview()"
+        style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+    </div>
   </div>
   <div class="hv-body">
-    <div class="hv-symlist" id="hv-symlist"></div>
+    <div class="hv-symlist" id="hv-symlist" style="display:none;"></div>
     <div id="hover-preview-iframe-wrap">
       <iframe id="hover-preview-iframe" src="about:blank"></iframe>
     </div>
@@ -1885,16 +1885,13 @@ openUrl=function(url,label){buildMobileHeader();_openUrlOrig(url,label);};
 let _hoverPreviewOn = false;
 let _hoverPreviewTimer = null;
 let _hoverPreviewCurrent = '';
-let _hvActiveGroup = 0;
+let _hvActiveGroup = -1;   // -1 = chưa chọn tab nào
+let _hvSortAlpha = false;
 const _hvGroups = [];
 
-// Build group list từ HMAP_COLS
 (function(){
-  // Trading Stocks
-  _hvGroups.push({ name:'TRADING STOCKS', syms: TS_POOL });
-  // VN30
+  _hvGroups.push({ name:'TRADING', syms: TS_POOL });
   _hvGroups.push({ name:'VN30', syms: HMAP_COLS[0].groups[0].syms });
-  // Các nhóm ngành từ các cột còn lại
   HMAP_COLS.forEach(cd => {
     cd.groups.forEach(g => {
       if(g.name === 'VN30') return;
@@ -1906,29 +1903,60 @@ const _hvGroups = [];
 function _hvBuildTabs(){
   const tabsEl = document.getElementById('hv-grouptabs');
   tabsEl.innerHTML = _hvGroups.map((g,i) =>
-    `<button class="hv-gtab${i===_hvActiveGroup?' on':''}" onclick="_hvSelectGroup(${i})">${g.name}</button>`
+    `<button class="hv-gtab" id="hv-gtab-${i}" onclick="_hvSelectGroup(${i})">${g.name}</button>`
   ).join('');
 }
 
 function _hvSelectGroup(idx){
+  if(_hvActiveGroup === idx){
+    // Click lại tab đang active → đóng danh sách
+    _hvActiveGroup = -1;
+    document.querySelectorAll('.hv-gtab').forEach(b => b.classList.remove('on'));
+    document.getElementById('hv-symlist').style.display = 'none';
+    document.getElementById('hv-sort-btn').style.display = 'none';
+    return;
+  }
   _hvActiveGroup = idx;
-  // Update tab highlight
   document.querySelectorAll('.hv-gtab').forEach((b,i) => b.classList.toggle('on', i===idx));
+  document.getElementById('hv-sort-btn').style.display = '';
+  document.getElementById('hv-symlist').style.display = '';
+  _hvRenderSymList();
+}
+
+function _hvGetSortedSyms(){
+  const group = _hvGroups[_hvActiveGroup];
+  if(!group) return [];
+  const hmapData = window._lastHmapData || {};
+  if(_hvSortAlpha){
+    return [...group.syms].sort((a,b) => a.localeCompare(b));
+  } else {
+    return [...group.syms].sort((a,b) => {
+      const pa = hmapData[a] ? (hmapData[a].pct||0) : -999;
+      const pb = hmapData[b] ? (hmapData[b].pct||0) : -999;
+      return pb - pa;
+    });
+  }
+}
+
+function _hvToggleSort(){
+  _hvSortAlpha = !_hvSortAlpha;
+  const btn = document.getElementById('hv-sort-btn');
+  btn.textContent = _hvSortAlpha ? '%↕' : 'A↕Z';
+  btn.style.color = _hvSortAlpha ? 'var(--accent)' : 'var(--muted)';
   _hvRenderSymList();
 }
 
 function _hvRenderSymList(){
-  const group = _hvGroups[_hvActiveGroup];
-  if(!group) return;
-  // Lấy data heatmap hiện tại để hiển thị %
+  if(_hvActiveGroup === -1) return;
   const hmapData = window._lastHmapData || {};
+  const syms = _hvGetSortedSyms();
   const listEl = document.getElementById('hv-symlist');
-  listEl.innerHTML = group.syms.map((sym,i) => {
+  listEl.innerHTML = syms.map((sym,i) => {
     const d = hmapData[sym];
     const pct = d && typeof d.pct === 'number' ? d.pct : null;
     const pctStr = pct !== null ? (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%' : '—';
     const color = pct === null ? 'var(--muted)' : pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : '#b45309';
-    return `<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" 
+    return `<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}"
       data-sym="${sym}" data-idx="${i}"
       onmouseenter="_hvHoverSym('${sym}',this)"
       onclick="_hvClickSym('${sym}',this)">
@@ -1943,36 +1971,31 @@ function _hvHoverSym(sym, el){
   document.querySelectorAll('.hv-sym-item').forEach(e => e.classList.remove('on'));
   el.classList.add('on');
   _hoverPreviewCurrent = sym;
-  document.getElementById('hover-preview-title').textContent = '📈 ' + sym;
+  document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 }
 
-function _hvClickSym(sym, el){
-  _hvHoverSym(sym, el);
-}
+function _hvClickSym(sym, el){ _hvHoverSym(sym, el); }
 
 function _hvScrollActiveIntoView(){
   const el = document.querySelector('.hv-sym-item.on');
   if(el) el.scrollIntoView({block:'nearest'});
 }
 
-// Phím ↑↓ để chuyển mã trong danh sách
 document.addEventListener('keydown', function(e){
-  if(!_hoverPreviewOn) return;
+  if(!_hoverPreviewOn || _hvActiveGroup === -1) return;
   const overlay = document.getElementById('overlay');
   if(overlay && overlay.classList.contains('on')) return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-  const group = _hvGroups[_hvActiveGroup];
-  if(!group || !group.syms.length) return;
+  const syms = _hvGetSortedSyms();
+  if(!syms.length) return;
   e.preventDefault();
-  let cur = group.syms.indexOf(_hoverPreviewCurrent);
+  let cur = syms.indexOf(_hoverPreviewCurrent);
   if(cur === -1) cur = 0;
-  else cur = e.key === 'ArrowDown' ? Math.min(cur+1, group.syms.length-1) : Math.max(cur-1, 0);
-  const sym = group.syms[cur];
-  const items = document.querySelectorAll('.hv-sym-item');
-  items.forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
+  else cur = e.key === 'ArrowDown' ? Math.min(cur+1, syms.length-1) : Math.max(cur-1, 0);
+  const sym = syms[cur];
+  document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
   _hoverPreviewCurrent = sym;
-  document.getElementById('hover-preview-title').textContent = '📈 ' + sym;
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
   _hvScrollActiveIntoView();
 });
@@ -1987,7 +2010,6 @@ function toggleHoverPreview(){
     btn.textContent = '👁 Hover: BẬT';
     panel.style.display = 'flex';
     _hvBuildTabs();
-    _hvRenderSymList();
     wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
   } else {
     btn.classList.remove('on');
@@ -1996,6 +2018,7 @@ function toggleHoverPreview(){
     wrap.style.paddingBottom = '';
     document.getElementById('hover-preview-iframe').src = 'about:blank';
     _hoverPreviewCurrent = '';
+    _hvActiveGroup = -1;
     if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
   }
 }
@@ -2029,9 +2052,7 @@ function _hoverCell(sym){
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
   _hoverPreviewTimer = setTimeout(()=>{
     _hoverPreviewCurrent = sym;
-    document.getElementById('hover-preview-title').textContent = '📈 ' + sym;
     document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-    // Sync highlight trong danh sách nếu đang mở
     document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
     _hvScrollActiveIntoView();
   }, 180);
