@@ -548,8 +548,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column;
 }
 #hover-preview-resizer{
-  position:absolute;top:0;left:0;right:0;height:6px;
-  cursor:ns-resize;z-index:10;
+  position:absolute;top:-6px;left:0;right:0;height:12px;
+  cursor:ns-resize;z-index:20;
   background:transparent;
 }
 #hover-preview-resizer:hover{background:rgba(26,86,219,.18);}
@@ -566,7 +566,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   padding:0;
   overflow:hidden;
   flex-shrink:0;
-  z-index:2;
+  z-index:10;
 }
 #hover-preview-panel iframe{flex:1;border:none;width:100%;display:block;}
 #hover-preview-btn{
