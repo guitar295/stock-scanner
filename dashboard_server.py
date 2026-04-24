@@ -2001,8 +2001,16 @@ document.addEventListener('keydown', e => {
 
   const list = document.getElementById('hv-symlist');
   const el = items[next];
-  if(el.offsetTop < list.scrollTop) list.scrollTop = el.offsetTop;
-  else if(el.offsetTop + el.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = el.offsetTop + el.offsetHeight - list.clientHeight;
+  
+  const relTop = el.offsetTop - list.offsetTop;
+  const h = el.offsetHeight;
+
+  if(relTop - h < list.scrollTop) {
+    list.scrollTop = Math.max(0, relTop - h);
+  } 
+  else if(relTop + h * 2 > list.scrollTop + list.clientHeight) {
+    list.scrollTop = relTop + h * 2 - list.clientHeight;
+  }
 });
 
 function toggleHoverPreview(){
