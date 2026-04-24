@@ -2055,7 +2055,7 @@ function _hoverCell(sym){
     document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
     document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
     _hvScrollActiveIntoView();
-  }, 180);
+  }, 1500); // Thay 180 thành 2000 (2 giây) để tránh nháy chart khi di chuyển chuột nhanh
 }
 
 init();
