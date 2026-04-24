@@ -2011,7 +2011,23 @@ document.addEventListener('keydown', e => {
   if(titleEl) titleEl.textContent = '📈 ' + sym;
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 
-  items[cur].scrollIntoView({block:'nearest', behavior:'smooth'});
+  // TÍNH TOÁN CUỘN THỦ CÔNG CHÍNH XÁC TỪNG PIXEL
+  const listContainer = document.getElementById('hv-symlist');
+  const activeItem = items[cur];
+
+  if (listContainer && activeItem) {
+    const cRect = listContainer.getBoundingClientRect();
+    const iRect = activeItem.getBoundingClientRect();
+
+    // Nếu mã bị khuất ở dưới mép -> Cuộn xuống đúng bằng phần bị khuất
+    if (iRect.bottom > cRect.bottom) {
+      listContainer.scrollTop += (iRect.bottom - cRect.bottom);
+    } 
+    // Nếu mã bị khuất ở trên mép -> Cuộn lên đúng bằng phần bị khuất
+    else if (iRect.top < cRect.top) {
+      listContainer.scrollTop -= (cRect.top - iRect.top);
+    }
+  }
 });
 
 function toggleHoverPreview(){
