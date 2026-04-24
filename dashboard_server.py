@@ -953,7 +953,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div id="hover-preview-resizer"></div>
   <div class="pvhdr">
     <span id="hover-preview-title"></span>
-    <button onclick="openChart(_hoverPreviewCurrent)">Mở đầy đủ ↗</button>
+    <button onclick="openChart(_hoverPreviewCurrent)">Full↗</button>
     <button onclick="toggleHoverPreview()">✕</button>
   </div>
   <iframe id="hover-preview-iframe" src="about:blank"></iframe>
