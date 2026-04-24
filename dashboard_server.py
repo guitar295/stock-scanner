@@ -1572,39 +1572,15 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
 
+// Phím ← → scroll heatmap khi popup ĐÓNG
 document.addEventListener('keydown', e => {
-  if(document.getElementById('overlay').classList.contains('on')) return;
-  if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  if(!_hoverPreviewOn) return;
-
-  // Lấy tất cả cells theo thứ tự DOM
-  const cells = [...document.querySelectorAll('.hmap-cell')];
-  if(!cells.length) return;
-
-  // Tìm cell hiện tại
-  let idx = cells.findIndex(c => c.title.startsWith(_hoverPreviewCurrent + ' '));
-  if(idx < 0) idx = 0;
-
-  // Tìm col hiện tại và col kề
-  const curCol = cells[idx].closest('.hmap-col');
-  const allCols = [...document.querySelectorAll('.hmap-col')];
-  const colIdx = allCols.indexOf(curCol);
-  
-  const targetColIdx = e.key === 'ArrowRight' ? colIdx + 1 : colIdx - 1;
-  if(targetColIdx < 0 || targetColIdx >= allCols.length) return;
-
-  // Lấy cell cùng hàng trong col mới
-  const curColCells = [...curCol.querySelectorAll('.hmap-cell')];
-  const rowInCol = curColCells.indexOf(cells[idx]);
-  const targetColCells = [...allCols[targetColIdx].querySelectorAll('.hmap-cell')];
-  
-  const targetRow = Math.min(rowInCol, targetColCells.length - 1);
-  const targetSym = targetColCells[targetRow]?.title.split(' ')[0];
-  
-  if(targetSym) {
-    e.preventDefault();
-    _hoverCell(targetSym);
-  }
+  const overlayOn = document.getElementById('overlay').classList.contains('on');
+  if (overlayOn) return; // popup đang mở thì bỏ qua
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const outer = document.getElementById('hmap-outer');
+  if (!outer) return;
+  e.preventDefault();
+  outer.scrollBy({ left: e.key === 'ArrowRight' ? 200 : -200, behavior: 'smooth' });
 });
 
 async function loadScannerChart(sym){
