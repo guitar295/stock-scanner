@@ -541,6 +541,31 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .popup-search-input{width:120px}
   .popup-search-input:focus{width:150px}
 }
+#hover-preview-panel{
+  display:none;position:fixed;bottom:0;left:0;right:0;height:52vh;
+  z-index:500;background:var(--surface);border-top:2px solid var(--accent);
+  box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column;
+}
+#hover-preview-panel .pvhdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 14px;background:var(--surf2);border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+#hover-preview-panel iframe{flex:1;border:none;width:100%;display:block;}
+#hover-preview-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:4px 11px;border-radius:5px;border:1px solid var(--border);
+  background:var(--surface);color:var(--muted);
+  font-family:var(--font-mono);font-size:10px;font-weight:600;
+  cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;
+}
+#hover-preview-btn.on{
+  background:var(--accent);color:#fff;border-color:var(--accent);
+}
+@media(max-width:768px){
+  #hover-preview-btn{display:none!important}
+  #hover-preview-panel{display:none!important}
+}
 
 /* ══ CHỈ MOBILE - KHÔNG ảnh hưởng desktop ══ */
 @media screen and (max-width:768px){
@@ -881,6 +906,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             spellcheck="false"
           >
         </div>
+        <button id="hover-preview-btn" onclick="toggleHoverPreview()"
+          title="Bật/tắt xem chart khi hover">
+          👁 Hover: TẮT
+        </button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -897,6 +926,27 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 </div>
 
+<div id="hover-preview-panel">
+  <div class="pvhdr">
+    <span style="font-family:var(--font-ui);font-size:13px;font-weight:800;color:var(--accent);letter-spacing:1px;"
+      id="hover-preview-title">—</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button onclick="openChart(_hoverPreviewCurrent)"
+        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);
+               background:var(--accent);color:#fff;font-size:10px;
+               font-family:var(--font-mono);font-weight:600;cursor:pointer;">
+        Mở đầy đủ ↗
+      </button>
+      <button onclick="toggleHoverPreview()"
+        style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);
+               background:var(--bg);color:var(--muted);font-size:14px;
+               cursor:pointer;display:flex;align-items:center;justify-content:center;">
+        ✕
+      </button>
+    </div>
+  </div>
+  <iframe id="hover-preview-iframe" src="about:blank"></iframe>
+</div>
 <footer id="footer-txt">Scanner Bot Dashboard</footer>
 
 <!-- ══ POPUP CHART ══ -->
@@ -1123,6 +1173,7 @@ function mkCell(sym,data){
   const sign=pct>=0?'+':'';
   return `<div class="hmap-cell" style="background:${bg};color:${fg};"
     onclick="openChart('${sym}')"
+    onmouseenter="_hoverCell('${sym}')"
     title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%">
     <span class="hc-sym">${sym}</span>
     <span class="hc-price">${fmtP(price)}</span>
@@ -1697,7 +1748,7 @@ async function fetchSigs(){
       el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;
     }
     el.innerHTML=j.signals.map(s=>`
-      <div class="sig-row" onclick="openChart('${s.symbol}')">
+      <div class="sig-row" onclick="openChart('${s.symbol}')" onmouseenter="_hoverCell('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
         <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>
@@ -1799,6 +1850,43 @@ openChart=function(sym){buildMobileHeader();_openChartOrig(sym);};
 
 const _openUrlOrig=openUrl;
 openUrl=function(url,label){buildMobileHeader();_openUrlOrig(url,label);};
+
+// ═══════════════════════════════════════════════════════
+// HOVER PREVIEW
+// ═══════════════════════════════════════════════════════
+let _hoverPreviewOn = false;
+let _hoverPreviewTimer = null;
+let _hoverPreviewCurrent = '';
+
+function toggleHoverPreview(){
+  _hoverPreviewOn = !_hoverPreviewOn;
+  const btn   = document.getElementById('hover-preview-btn');
+  const panel = document.getElementById('hover-preview-panel');
+  if(_hoverPreviewOn){
+    btn.classList.add('on');
+    btn.textContent = '👁 Hover: BẬT';
+    panel.style.display = 'flex';
+  } else {
+    btn.classList.remove('on');
+    btn.textContent = '👁 Hover: TẮT';
+    panel.style.display = 'none';
+    document.getElementById('hover-preview-iframe').src = 'about:blank';
+    _hoverPreviewCurrent = '';
+    if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
+  }
+}
+
+function _hoverCell(sym){
+  if(!_hoverPreviewOn) return;
+  if(sym === _hoverPreviewCurrent) return;
+  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
+  _hoverPreviewTimer = setTimeout(()=>{
+    _hoverPreviewCurrent = sym;
+    document.getElementById('hover-preview-title').textContent = '📈 ' + sym;
+    document.getElementById('hover-preview-iframe').src =
+      'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+  }, 180);
+}
 
 init();
 </script>
