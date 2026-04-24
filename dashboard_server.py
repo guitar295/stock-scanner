@@ -548,25 +548,15 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column;
 }
 #hover-preview-resizer{
-  position:absolute;top:-6px;left:0;right:0;height:12px;
-  cursor:ns-resize;z-index:20;
+  position:absolute;top:0;left:0;right:0;height:6px;
+  cursor:ns-resize;z-index:10;
   background:transparent;
 }
 #hover-preview-resizer:hover{background:rgba(26,86,219,.18);}
 #hover-preview-panel .pvhdr{
-  position:absolute;
-  top:-34px;
-  right:0;
-  display:flex;align-items:center;gap:0;
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-bottom:none;
-  border-radius:8px 8px 0 0;
-  box-shadow:-2px -2px 8px rgba(0,0,0,.08);
-  padding:0;
-  overflow:hidden;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 14px;background:var(--surf2);border-bottom:1px solid var(--border);
   flex-shrink:0;
-  z-index:10;
 }
 #hover-preview-panel iframe{flex:1;border:none;width:100%;display:block;}
 #hover-preview-btn{
@@ -946,21 +936,22 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <div id="hover-preview-panel">
   <div id="hover-preview-resizer"></div>
   <div class="pvhdr">
+    <span style="font-family:var(--font-ui);font-size:13px;font-weight:800;color:var(--accent);letter-spacing:1px;"
+      id="hover-preview-title">—</span>
+    <div style="display:flex;gap:8px;align-items:center;">
       <button onclick="openChart(_hoverPreviewCurrent)"
-        style="padding:6px 14px;border:none;border-right:1px solid var(--border);
-               background:var(--accent);color:#fff;font-size:11px;
-               font-family:var(--font-mono);font-weight:700;cursor:pointer;
-               height:34px;letter-spacing:.5px;">
+        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);
+               background:var(--accent);color:#fff;font-size:10px;
+               font-family:var(--font-mono);font-weight:600;cursor:pointer;">
         Full ↗
       </button>
       <button onclick="toggleHoverPreview()"
-        style="padding:6px 12px;border:none;background:var(--bg);
-               color:var(--muted);font-size:15px;cursor:pointer;
-               height:34px;transition:background .15s,color .15s;"
-        onmouseover="this.style.background='#e02424';this.style.color='#fff'"
-        onmouseout="this.style.background='var(--bg)';this.style.color='var(--muted)'">
+        style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);
+               background:var(--bg);color:var(--muted);font-size:14px;
+               cursor:pointer;display:flex;align-items:center;justify-content:center;">
         ✕
       </button>
+    </div>
   </div>
   <iframe id="hover-preview-iframe" src="about:blank"></iframe>
 </div>
