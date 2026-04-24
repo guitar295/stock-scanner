@@ -1996,40 +1996,37 @@ document.addEventListener('keydown', e => {
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
 
-  const items = Array.from(document.querySelectorAll('.hv-sym-item'));
-  if(!items.length) return;
-
-  let cur = items.findIndex(el => el.classList.contains('on'));
-  if(cur === -1) cur = 0;
-
-  let next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
-  if(next < 0) next = 0;
-  if(next >= items.length) next = items.length - 1;
-  if(cur === next) return;
-
-  items[cur].classList.remove('on');
-  const nextItem = items[next];
-  nextItem.classList.add('on');
-
-  const list = document.getElementById('hv-symlist');
-  const itemTop = nextItem.offsetTop;
-  const itemBottom = itemTop + nextItem.offsetHeight;
-  const viewTop = list.scrollTop;
-  const viewBottom = viewTop + list.clientHeight;
-
-  if (itemTop < viewTop) {
-    list.scrollTop = itemTop;
-  } else if (itemBottom > viewBottom) {
-    list.scrollTop = itemBottom - list.clientHeight;
-  }
-
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-  const sym = nextItem.dataset.sym;
-  _hoverPreviewCurrent = sym;
+
+  const syms = _hvGetSortedSyms();
+  if(!syms.length) return;
+
+  let cur = syms.indexOf(_hoverPreviewCurrent);
+  cur = cur === -1 ? 0 : (e.key === 'ArrowDown' ? Math.min(cur + 1, syms.length - 1) : Math.max(cur - 1, 0));
   
+  const sym = syms[cur];
+  if(sym === _hoverPreviewCurrent) return;
+
+  _hoverPreviewCurrent = sym;
   const titleEl = document.getElementById('hover-preview-title');
   if(titleEl) titleEl.textContent = '📈 ' + sym;
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+
+  let targetEl = null;
+  document.querySelectorAll('.hv-sym-item').forEach(el => {
+    const isOn = el.dataset.sym === sym;
+    el.classList.toggle('on', isOn);
+    if(isOn) targetEl = el;
+  });
+
+  if(targetEl){
+    const list = document.getElementById('hv-symlist');
+    const iTop = targetEl.offsetTop, iBot = iTop + targetEl.offsetHeight;
+    const vTop = list.scrollTop, vBot = vTop + list.clientHeight;
+
+    if(iTop < vTop) list.scrollTop = iTop;
+    else if(iBot > vBot) list.scrollTop = iBot - list.clientHeight;
+  }
 });
 
 function toggleHoverPreview(){
