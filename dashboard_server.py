@@ -1887,8 +1887,6 @@ let _hoverPreviewTimer = null;
 let _hoverPreviewCurrent = '';
 let _hvActiveGroup = -1;   // -1 = chưa chọn tab nào
 let _hvSortAlpha = false;
-let _hvKeyIdx = -1;
-let _hvCurrentSymOrder = [];
 const _hvGroups = [];
 
 (function(){
@@ -1952,11 +1950,9 @@ function _hvRenderSymList(){
   if(_hvActiveGroup === -1) return;
   const hmapData = window._lastHmapData || {};
   const syms = _hvGetSortedSyms();
-  _hvCurrentSymOrder = syms;
-  _hvKeyIdx = syms.indexOf(_hoverPreviewCurrent);
-
+  
   const listEl = document.getElementById('hv-symlist');
-  listEl.innerHTML = syms.map((sym, i) => {
+  listEl.innerHTML = syms.map((sym,i) => {
     const d = hmapData[sym];
     const pct = d && typeof d.pct === 'number' ? d.pct : null;
     const pctStr = pct !== null ? (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%' : '—';
@@ -1996,39 +1992,44 @@ function _hvClickSym(sym, el){
 }
 
 document.addEventListener('keydown', e => {
-  if(!_hoverPreviewOn || _hvActiveGroup === -1) return;
-  if(document.getElementById('overlay')?.classList.contains('on')) return;
+  if(!_hoverPreviewOn || _hvActiveGroup === -1 || document.getElementById('overlay')?.classList.contains('on')) return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
 
-  const total = _hvCurrentSymOrder.length;
-  if(!total) return;
+  const items = Array.from(document.querySelectorAll('.hv-sym-item'));
+  if(!items.length) return;
 
-  if(_hvKeyIdx < 0) _hvKeyIdx = 0;
-  else if(e.key === 'ArrowDown') _hvKeyIdx = Math.min(_hvKeyIdx + 1, total - 1);
-  else _hvKeyIdx = Math.max(_hvKeyIdx - 1, 0);
+  let cur = items.findIndex(el => el.classList.contains('on'));
+  if(cur === -1) cur = 0;
+
+  let next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
+  if(next < 0) next = 0;
+  if(next >= items.length) next = items.length - 1;
+  if(cur === next) return;
+
+  items[cur].classList.remove('on');
+  const nextItem = items[next];
+  nextItem.classList.add('on');
+
+  const list = document.getElementById('hv-symlist');
+  const itemTop = nextItem.offsetTop;
+  const itemBottom = itemTop + nextItem.offsetHeight;
+  const viewTop = list.scrollTop;
+  const viewBottom = viewTop + list.clientHeight;
+
+  if (itemTop < viewTop) {
+    list.scrollTop = itemTop;
+  } else if (itemBottom > viewBottom) {
+    list.scrollTop = itemBottom - list.clientHeight;
+  }
 
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-
-  const sym = _hvCurrentSymOrder[_hvKeyIdx];
+  const sym = nextItem.dataset.sym;
   _hoverPreviewCurrent = sym;
-
+  
   const titleEl = document.getElementById('hover-preview-title');
   if(titleEl) titleEl.textContent = '📈 ' + sym;
-  document.getElementById('hover-preview-iframe').src =
-    'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-
-  const items = document.querySelectorAll('.hv-sym-item');
-  items.forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
-
-  const listEl = document.getElementById('hv-symlist');
-  const activeEl = document.querySelector('.hv-sym-item.on');
-  if(listEl && activeEl){
-    const cR = listEl.getBoundingClientRect();
-    const iR = activeEl.getBoundingClientRect();
-    if(iR.bottom > cR.bottom) listEl.scrollTop += iR.bottom - cR.bottom;
-    else if(iR.top < cR.top) listEl.scrollTop -= cR.top - iR.top;
-  }
+  document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 });
 
 function toggleHoverPreview(){
