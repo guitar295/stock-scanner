@@ -1990,20 +1990,25 @@ function _hvClickSym(sym, el){
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 }
 
-document.addEventListener('keydown', function(e){
-  if(!_hoverPreviewOn || _hvActiveGroup === -1) return;
-  const overlay = document.getElementById('overlay');
-  if(overlay && overlay.classList.contains('on')) return;
+document.addEventListener('keydown', e => {
+  if(!_hoverPreviewOn || _hvActiveGroup === -1 || document.getElementById('overlay')?.classList.contains('on')) return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-  const syms = _hvGetSortedSyms();
-  if(!syms.length) return;
   e.preventDefault();
-  let cur = syms.indexOf(_hoverPreviewCurrent);
-  if(cur === -1) cur = 0;
-  else cur = e.key === 'ArrowDown' ? Math.min(cur+1, syms.length-1) : Math.max(cur-1, 0);
-  const sym = syms[cur];
-  document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
+
+  const items = [...document.querySelectorAll('.hv-sym-item')];
+  if(!items.length) return;
+
+  let cur = items.findIndex(el => el.classList.contains('on'));
+  cur = cur === -1 ? 0 : (e.key === 'ArrowDown' ? Math.min(cur+1, items.length-1) : Math.max(cur-1, 0));
+
+  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
+
+  items.forEach((el, idx) => el.classList.toggle('on', idx === cur));
+  const sym = items[cur].dataset.sym;
   _hoverPreviewCurrent = sym;
+  
+  const titleEl = document.getElementById('hover-preview-title');
+  if(titleEl) titleEl.textContent = '📈 ' + sym;
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
   _hvScrollActiveIntoView();
 });
