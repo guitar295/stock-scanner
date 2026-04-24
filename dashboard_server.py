@@ -542,10 +542,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .popup-search-input:focus{width:150px}
 }
 #hover-preview-panel{
-  display:none;position:fixed;bottom:0;left:0;right:0;height:52vh;
+  display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;
+  min-height:120px;max-height:90vh;
   z-index:500;background:var(--surface);border-top:2px solid var(--accent);
   box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column;
 }
+#hover-preview-resizer{
+  position:absolute;top:0;left:0;right:0;height:6px;
+  cursor:ns-resize;z-index:10;
+  background:transparent;
+}
+#hover-preview-resizer:hover{background:rgba(26,86,219,.18);}
 #hover-preview-panel .pvhdr{
   display:flex;align-items:center;justify-content:space-between;
   padding:6px 14px;background:var(--surf2);border-bottom:1px solid var(--border);
@@ -927,6 +934,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 </div>
 
 <div id="hover-preview-panel">
+  <div id="hover-preview-resizer"></div>
   <div class="pvhdr">
     <span style="font-family:var(--font-ui);font-size:13px;font-weight:800;color:var(--accent);letter-spacing:1px;"
       id="hover-preview-title">—</span>
@@ -1862,20 +1870,52 @@ function toggleHoverPreview(){
   _hoverPreviewOn = !_hoverPreviewOn;
   const btn   = document.getElementById('hover-preview-btn');
   const panel = document.getElementById('hover-preview-panel');
+  const wrap  = document.querySelector('.wrap');
   if(_hoverPreviewOn){
     btn.classList.add('on');
     btn.textContent = '👁 Hover: BẬT';
     panel.style.display = 'flex';
+    wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
   } else {
     btn.classList.remove('on');
     btn.textContent = '👁 Hover: TẮT';
     panel.style.display = 'none';
+    wrap.style.paddingBottom = '';
     document.getElementById('hover-preview-iframe').src = 'about:blank';
     _hoverPreviewCurrent = '';
     if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
   }
 }
+(function(){
+  const resizer = document.getElementById('hover-preview-resizer');
+  const panel   = document.getElementById('hover-preview-panel');
+  let _dragging = false, _startY = 0, _startH = 0;
 
+  resizer.addEventListener('mousedown', function(e){
+    _dragging = true;
+    _startY = e.clientY;
+    _startH = panel.offsetHeight;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e){
+    if(!_dragging) return;
+    const delta = _startY - e.clientY;
+    const newH  = Math.min(window.innerHeight * 0.9, Math.max(120, _startH + delta));
+    panel.style.height = newH + 'px';
+    const wrap = document.querySelector('.wrap');
+    if(wrap) wrap.style.paddingBottom = newH + 16 + 'px';
+  });
+
+  document.addEventListener('mouseup', function(){
+    if(!_dragging) return;
+    _dragging = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+})();
 function _hoverCell(sym){
   if(!_hoverPreviewOn) return;
   if(sym === _hoverPreviewCurrent) return;
