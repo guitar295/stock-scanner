@@ -1968,18 +1968,26 @@ function _hvRenderSymList(){
 
 function _hvHoverSym(sym, el){
   if(sym === _hoverPreviewCurrent) return;
+  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
+  
+  _hoverPreviewTimer = setTimeout(() => {
+    document.querySelectorAll('.hv-sym-item').forEach(e => e.classList.remove('on'));
+    el.classList.add('on');
+    _hoverPreviewCurrent = sym;
+    document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
+    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+  }, 1000);
+}
+
+function _hvClickSym(sym, el){
+  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
+  if(sym === _hoverPreviewCurrent) return;
+  
   document.querySelectorAll('.hv-sym-item').forEach(e => e.classList.remove('on'));
   el.classList.add('on');
   _hoverPreviewCurrent = sym;
   document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-}
-
-function _hvClickSym(sym, el){ _hvHoverSym(sym, el); }
-
-function _hvScrollActiveIntoView(){
-  const el = document.querySelector('.hv-sym-item.on');
-  if(el) el.scrollIntoView({block:'nearest'});
 }
 
 document.addEventListener('keydown', function(e){
