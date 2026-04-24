@@ -1198,8 +1198,8 @@ function mkCell(sym,data){
   const{bg,fg}=cellStyle(pct);
   const sign=pct>=0?'+':'';
   return `<div class="hmap-cell" style="background:${bg};color:${fg};"
-    onclick="openChart('${sym}')"
-    onmouseenter="_hoverCell('${sym}')"
+    onclick="_hmapClick('${sym}')"
+    ondblclick="_hmapDblClick('${sym}')"
     title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%">
     <span class="hc-sym">${sym}</span>
     <span class="hc-price">${fmtP(price)}</span>
@@ -1774,7 +1774,9 @@ async function fetchSigs(){
       el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;
     }
     el.innerHTML=j.signals.map(s=>`
-      <div class="sig-row" onclick="openChart('${s.symbol}')" onmouseenter="_hoverCell('${s.symbol}')">
+      <div class="sig-row"
+        onclick="_hmapClick('${s.symbol}')"
+        ondblclick="_hmapDblClick('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
         <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>
@@ -2059,16 +2061,21 @@ function toggleHoverPreview(){
   });
 })();
 
-function _hoverCell(sym){
-  if(!_hoverPreviewOn) return;
-  if(sym === _hoverPreviewCurrent) return;
-  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-  _hoverPreviewTimer = setTimeout(()=>{
+let _hmapClickTimer = null;
+
+function _hmapClick(sym){
+  if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
+  _hmapClickTimer = setTimeout(() => {
+    if(!_hoverPreviewOn) { openChart(sym); return; }
     _hoverPreviewCurrent = sym;
     document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
     document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
-    _hvScrollActiveIntoView();
-  }, 1000); // Thay 180 thành 1000 (1 giây) để tránh nháy chart khi di chuyển chuột nhanh
+  }, 250);
+}
+
+function _hmapDblClick(sym){
+  if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
+  openChart(sym);
 }
 
 init();
