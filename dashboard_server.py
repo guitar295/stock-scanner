@@ -1572,17 +1572,6 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
 
-// Phím ← → scroll heatmap khi popup ĐÓNG
-document.addEventListener('keydown', e => {
-  const overlayOn = document.getElementById('overlay').classList.contains('on');
-  if (overlayOn) return; // popup đang mở thì bỏ qua
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  const outer = document.getElementById('hmap-outer');
-  if (!outer) return;
-  e.preventDefault();
-  outer.scrollBy({ left: e.key === 'ArrowRight' ? 200 : -200, behavior: 'smooth' });
-});
-
 document.addEventListener('keydown', e => {
   if(document.getElementById('overlay').classList.contains('on')) return;
   if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
