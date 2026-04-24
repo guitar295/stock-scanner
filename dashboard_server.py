@@ -2039,12 +2039,17 @@ function toggleHoverPreview(){
   const btn   = document.getElementById('hover-preview-btn');
   const panel = document.getElementById('hover-preview-panel');
   const wrap  = document.querySelector('.wrap');
+
   if(_hoverPreviewOn){
     btn.classList.add('on');
     btn.textContent = '👁 Hover: BẬT';
     panel.style.display = 'flex';
     _hvBuildTabs();
     wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
+    
+    if (_hvActiveGroup === -1) {
+      _hvSelectGroup(0);
+    }
   } else {
     btn.classList.remove('on');
     btn.textContent = '👁 Hover: TẮT';
@@ -2052,7 +2057,10 @@ function toggleHoverPreview(){
     wrap.style.paddingBottom = '';
     document.getElementById('hover-preview-iframe').src = 'about:blank';
     _hoverPreviewCurrent = '';
-    _hvActiveGroup = -1;
+    
+    if(_hvActiveGroup !== -1) {
+      _hvActiveGroup = -1;
+    }
     if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
   }
 }
