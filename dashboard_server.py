@@ -582,14 +582,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hv-gtab.on { background:var(--accent);color:#fff;border-color:var(--accent); }
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hv-body { display:flex;flex:1;overflow:hidden; }
-.hv-symlist { width:90px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
+.hv-symlist { width:100px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hv-sym-item { display:flex;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:8px; }
+.hv-sym-item { display:grid;grid-template-columns:40px 1fr;align-items:center;padding:5px 12px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px; }
 .hv-sym-item:hover,.hv-sym-item.on { background:#eef3ff; }
 .hv-sym-item.on .hv-sym-name { color:var(--accent);font-weight:700; }
 .hv-sym-name { font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--text); }
-.hv-sym-pct { font-family:var(--font-mono);font-size:10px; }
+.hv-sym-pct { font-family:var(--font-mono);font-size:10px;text-align:right; }
 #hover-preview-iframe-wrap { flex:1;overflow:hidden;position:relative; }
 #hover-preview-iframe-wrap iframe { width:100%;height:100%;border:none;display:block; }
 
