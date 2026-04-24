@@ -585,7 +585,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hv-symlist { width:90px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hv-sym-item { display:grid;grid-template-columns:10px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px; }
+.hv-sym-item { display:grid;grid-template-columns:10px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:2px; }
 .hv-sym-item:hover,.hv-sym-item.on { background:#eef3ff; }
 .hv-sym-item.on .hv-sym-name { color:var(--accent);font-weight:700; }
 .hv-sym-name { font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--text); }
@@ -2055,7 +2055,7 @@ function _hoverCell(sym){
     document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
     document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
     _hvScrollActiveIntoView();
-  }, 1500); // Thay 180 thành 2000 (2 giây) để tránh nháy chart khi di chuyển chuột nhanh
+  }, 1000); // Thay 180 thành 1000 (1 giây) để tránh nháy chart khi di chuyển chuột nhanh
 }
 
 init();
