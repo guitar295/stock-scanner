@@ -1198,8 +1198,8 @@ function mkCell(sym,data){
   const{bg,fg}=cellStyle(pct);
   const sign=pct>=0?'+':'';
   return `<div class="hmap-cell" style="background:${bg};color:${fg};"
-    onclick="openChart('${sym}')"
-    onmouseenter="_hoverCell('${sym}')"
+    onclick="_hmapClick('${sym}')"
+    ondblclick="_hmapDblClick('${sym}')"
     title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%">
     <span class="hc-sym">${sym}</span>
     <span class="hc-price">${fmtP(price)}</span>
@@ -1774,7 +1774,9 @@ async function fetchSigs(){
       el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;
     }
     el.innerHTML=j.signals.map(s=>`
-      <div class="sig-row" onclick="openChart('${s.symbol}')" onmouseenter="_hoverCell('${s.symbol}')">
+      <div class="sig-row"
+        onclick="_hmapClick('${s.symbol}')"
+        ondblclick="_hmapDblClick('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
         <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>
@@ -1950,33 +1952,21 @@ function _hvRenderSymList(){
   if(_hvActiveGroup === -1) return;
   const hmapData = window._lastHmapData || {};
   const syms = _hvGetSortedSyms();
+  
   const listEl = document.getElementById('hv-symlist');
   listEl.innerHTML = syms.map((sym,i) => {
     const d = hmapData[sym];
     const pct = d && typeof d.pct === 'number' ? d.pct : null;
     const pctStr = pct !== null ? (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%' : '—';
     const color = pct === null ? 'var(--muted)' : pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : '#b45309';
+    
     return `<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}"
       data-sym="${sym}" data-idx="${i}"
-      onmouseenter="_hvHoverSym('${sym}',this)"
       onclick="_hvClickSym('${sym}',this)">
       <span class="hv-sym-name">${sym}</span>
       <span class="hv-sym-pct" style="color:${color}">${pctStr}</span>
     </div>`;
   }).join('');
-}
-
-function _hvHoverSym(sym, el){
-  if(sym === _hoverPreviewCurrent) return;
-  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-  
-  _hoverPreviewTimer = setTimeout(() => {
-    document.querySelectorAll('.hv-sym-item').forEach(e => e.classList.remove('on'));
-    el.classList.add('on');
-    _hoverPreviewCurrent = sym;
-    document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
-    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-  }, 1000);
 }
 
 function _hvClickSym(sym, el){
@@ -1990,27 +1980,58 @@ function _hvClickSym(sym, el){
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 }
 
+let _iframeDelay = null;
+let _keyThrottle = false;
+
 document.addEventListener('keydown', e => {
   if(!_hoverPreviewOn || _hvActiveGroup === -1 || document.getElementById('overlay')?.classList.contains('on')) return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
 
-  const items = [...document.querySelectorAll('.hv-sym-item')];
-  if(!items.length) return;
-
-  let cur = items.findIndex(el => el.classList.contains('on'));
-  cur = cur === -1 ? 0 : (e.key === 'ArrowDown' ? Math.min(cur+1, items.length-1) : Math.max(cur-1, 0));
+  // 1. GIỚI HẠN TỐC ĐỘ (Throttle): Tránh hiện tượng dội phím, "phi 1 đoạn" khi trình duyệt lag
+  if(_keyThrottle) return;
+  _keyThrottle = true;
+  setTimeout(() => { _keyThrottle = false; }, 60); // Giữ phím sẽ chạy mượt mà ~15 mã/giây
 
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
 
-  items.forEach((el, idx) => el.classList.toggle('on', idx === cur));
-  const sym = items[cur].dataset.sym;
+  const items = [...document.getElementById('hv-symlist').children];
+  if(!items.length) return;
+
+  let cur = items.findIndex(el => el.classList.contains('on'));
+  let next = cur === -1 ? 0 : (e.key === 'ArrowDown' ? cur + 1 : cur - 1);
+  next = Math.max(0, Math.min(next, items.length - 1));
+  if(next === cur && cur !== -1) return;
+
+  items.forEach(el => el.classList.remove('on'));
+  items[next].classList.add('on');
+
+  const sym = items[next].dataset.sym;
   _hoverPreviewCurrent = sym;
   
   const titleEl = document.getElementById('hover-preview-title');
-  if(titleEl) titleEl.textContent = '📈 ' + sym;
-  document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-  _hvScrollActiveIntoView();
+  if (titleEl) titleEl.textContent = '📈 ' + sym;
+
+  // 2. CHỐNG LAG IFRAME (Debounce): Đang giữ phím lướt danh sách thì KHÔNG tải chart.
+  // Chỉ tải chart khi nhả phím hoặc dừng lại 300ms (0.3 giây).
+  if(_iframeDelay) clearTimeout(_iframeDelay);
+  _iframeDelay = setTimeout(() => {
+    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+  }, 300);
+
+  // 3. TÍNH TOÁN CUỘN DANH SÁCH (Chừa 1 dòng trên/dưới)
+  const list = document.getElementById('hv-symlist');
+  const el = items[next];
+  
+  const relTop = el.offsetTop - list.offsetTop;
+  const h = el.offsetHeight;
+
+  if(relTop - h < list.scrollTop) {
+    list.scrollTop = Math.max(0, relTop - h);
+  } 
+  else if(relTop + h * 2 > list.scrollTop + list.clientHeight) {
+    list.scrollTop = relTop + h * 2 - list.clientHeight;
+  }
 });
 
 function toggleHoverPreview(){
@@ -2018,12 +2039,17 @@ function toggleHoverPreview(){
   const btn   = document.getElementById('hover-preview-btn');
   const panel = document.getElementById('hover-preview-panel');
   const wrap  = document.querySelector('.wrap');
+
   if(_hoverPreviewOn){
     btn.classList.add('on');
     btn.textContent = '👁 Hover: BẬT';
     panel.style.display = 'flex';
     _hvBuildTabs();
     wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
+    
+    if (_hvActiveGroup === -1) {
+      _hvSelectGroup(0);
+    }
   } else {
     btn.classList.remove('on');
     btn.textContent = '👁 Hover: TẮT';
@@ -2031,7 +2057,10 @@ function toggleHoverPreview(){
     wrap.style.paddingBottom = '';
     document.getElementById('hover-preview-iframe').src = 'about:blank';
     _hoverPreviewCurrent = '';
-    _hvActiveGroup = -1;
+    
+    if(_hvActiveGroup !== -1) {
+      _hvActiveGroup = -1;
+    }
     if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
   }
 }
@@ -2059,16 +2088,21 @@ function toggleHoverPreview(){
   });
 })();
 
-function _hoverCell(sym){
-  if(!_hoverPreviewOn) return;
-  if(sym === _hoverPreviewCurrent) return;
-  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-  _hoverPreviewTimer = setTimeout(()=>{
+let _hmapClickTimer = null;
+
+function _hmapClick(sym){
+  if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
+  _hmapClickTimer = setTimeout(() => {
+    if(!_hoverPreviewOn) { openChart(sym); return; }
     _hoverPreviewCurrent = sym;
     document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
     document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
-    _hvScrollActiveIntoView();
-  }, 1000); // Thay 180 thành 1000 (1 giây) để tránh nháy chart khi di chuyển chuột nhanh
+  }, 250);
+}
+
+function _hmapDblClick(sym){
+  if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
+  openChart(sym);
 }
 
 init();
