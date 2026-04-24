@@ -2006,11 +2006,12 @@ document.addEventListener('keydown', e => {
   items.forEach((el, idx) => el.classList.toggle('on', idx === cur));
   const sym = items[cur].dataset.sym;
   _hoverPreviewCurrent = sym;
-  
+
   const titleEl = document.getElementById('hover-preview-title');
   if(titleEl) titleEl.textContent = '📈 ' + sym;
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-  _hvScrollActiveIntoView();
+
+  items[cur].scrollIntoView({block:'nearest', behavior:'smooth'});
 });
 
 function toggleHoverPreview(){
