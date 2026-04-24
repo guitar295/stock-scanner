@@ -923,7 +923,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
-      <div class="hmap-outer">
+      <div class="hmap-outer" id="hmap-outer" tabindex="0">
         <div class="hmap-row" id="hmap-grid">
           <div class="empty"><div class="big">🗺</div><div>Đang tải...</div></div>
         </div>
@@ -1570,6 +1570,17 @@ document.addEventListener('keydown',e=>{
   if(_albumTotal===0) return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
+});
+
+// Phím ← → scroll heatmap khi popup ĐÓNG
+document.addEventListener('keydown', e => {
+  const overlayOn = document.getElementById('overlay').classList.contains('on');
+  if (overlayOn) return; // popup đang mở thì bỏ qua
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const outer = document.getElementById('hmap-outer');
+  if (!outer) return;
+  e.preventDefault();
+  outer.scrollBy({ left: e.key === 'ArrowRight' ? 200 : -200, behavior: 'smooth' });
 });
 
 async function loadScannerChart(sym){
