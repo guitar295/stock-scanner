@@ -1980,10 +1980,19 @@ function _hvClickSym(sym, el){
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 }
 
+let _iframeDelay = null;
+let _keyThrottle = false;
+
 document.addEventListener('keydown', e => {
   if(!_hoverPreviewOn || _hvActiveGroup === -1 || document.getElementById('overlay')?.classList.contains('on')) return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
+
+  // 1. GIỚI HẠN TỐC ĐỘ (Throttle): Tránh hiện tượng dội phím, "phi 1 đoạn" khi trình duyệt lag
+  if(_keyThrottle) return;
+  _keyThrottle = true;
+  setTimeout(() => { _keyThrottle = false; }, 60); // Giữ phím sẽ chạy mượt mà ~15 mã/giây
+
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
 
   const items = [...document.getElementById('hv-symlist').children];
@@ -1999,8 +2008,18 @@ document.addEventListener('keydown', e => {
 
   const sym = items[next].dataset.sym;
   _hoverPreviewCurrent = sym;
-  document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+  
+  const titleEl = document.getElementById('hover-preview-title');
+  if (titleEl) titleEl.textContent = '📈 ' + sym;
 
+  // 2. CHỐNG LAG IFRAME (Debounce): Đang giữ phím lướt danh sách thì KHÔNG tải chart.
+  // Chỉ tải chart khi nhả phím hoặc dừng lại 300ms (0.3 giây).
+  if(_iframeDelay) clearTimeout(_iframeDelay);
+  _iframeDelay = setTimeout(() => {
+    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+  }, 300);
+
+  // 3. TÍNH TOÁN CUỘN DANH SÁCH (Chừa 1 dòng trên/dưới)
   const list = document.getElementById('hv-symlist');
   const el = items[next];
   
