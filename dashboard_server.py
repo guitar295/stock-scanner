@@ -1887,6 +1887,8 @@ let _hoverPreviewTimer = null;
 let _hoverPreviewCurrent = '';
 let _hvActiveGroup = -1;   // -1 = chưa chọn tab nào
 let _hvSortAlpha = false;
+let _hvKeyIdx = -1;
+let _hvCurrentSymOrder = [];
 const _hvGroups = [];
 
 (function(){
@@ -1950,8 +1952,11 @@ function _hvRenderSymList(){
   if(_hvActiveGroup === -1) return;
   const hmapData = window._lastHmapData || {};
   const syms = _hvGetSortedSyms();
+  _hvCurrentSymOrder = syms;
+  _hvKeyIdx = syms.indexOf(_hoverPreviewCurrent);
+
   const listEl = document.getElementById('hv-symlist');
-  listEl.innerHTML = syms.map((sym,i) => {
+  listEl.innerHTML = syms.map((sym, i) => {
     const d = hmapData[sym];
     const pct = d && typeof d.pct === 'number' ? d.pct : null;
     const pctStr = pct !== null ? (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%' : '—';
@@ -1991,42 +1996,38 @@ function _hvClickSym(sym, el){
 }
 
 document.addEventListener('keydown', e => {
-  if(!_hoverPreviewOn || _hvActiveGroup === -1 || document.getElementById('overlay')?.classList.contains('on')) return;
+  if(!_hoverPreviewOn || _hvActiveGroup === -1) return;
+  if(document.getElementById('overlay')?.classList.contains('on')) return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
 
-  const items = [...document.querySelectorAll('.hv-sym-item')];
-  if(!items.length) return;
+  const total = _hvCurrentSymOrder.length;
+  if(!total) return;
 
-  let cur = items.findIndex(el => el.classList.contains('on'));
-  cur = cur === -1 ? 0 : (e.key === 'ArrowDown' ? Math.min(cur+1, items.length-1) : Math.max(cur-1, 0));
+  if(_hvKeyIdx < 0) _hvKeyIdx = 0;
+  else if(e.key === 'ArrowDown') _hvKeyIdx = Math.min(_hvKeyIdx + 1, total - 1);
+  else _hvKeyIdx = Math.max(_hvKeyIdx - 1, 0);
 
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
 
-  items.forEach((el, idx) => el.classList.toggle('on', idx === cur));
-  const sym = items[cur].dataset.sym;
+  const sym = _hvCurrentSymOrder[_hvKeyIdx];
   _hoverPreviewCurrent = sym;
 
   const titleEl = document.getElementById('hover-preview-title');
   if(titleEl) titleEl.textContent = '📈 ' + sym;
-  document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+  document.getElementById('hover-preview-iframe').src =
+    'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 
-  // TÍNH TOÁN CUỘN THỦ CÔNG CHÍNH XÁC TỪNG PIXEL
-  const listContainer = document.getElementById('hv-symlist');
-  const activeItem = items[cur];
+  const items = document.querySelectorAll('.hv-sym-item');
+  items.forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
 
-  if (listContainer && activeItem) {
-    const cRect = listContainer.getBoundingClientRect();
-    const iRect = activeItem.getBoundingClientRect();
-
-    // Nếu mã bị khuất ở dưới mép -> Cuộn xuống đúng bằng phần bị khuất
-    if (iRect.bottom > cRect.bottom) {
-      listContainer.scrollTop += (iRect.bottom - cRect.bottom);
-    } 
-    // Nếu mã bị khuất ở trên mép -> Cuộn lên đúng bằng phần bị khuất
-    else if (iRect.top < cRect.top) {
-      listContainer.scrollTop -= (cRect.top - iRect.top);
-    }
+  const listEl = document.getElementById('hv-symlist');
+  const activeEl = document.querySelector('.hv-sym-item.on');
+  if(listEl && activeEl){
+    const cR = listEl.getBoundingClientRect();
+    const iR = activeEl.getBoundingClientRect();
+    if(iR.bottom > cR.bottom) listEl.scrollTop += iR.bottom - cR.bottom;
+    else if(iR.top < cR.top) listEl.scrollTop -= cR.top - iR.top;
   }
 });
 
