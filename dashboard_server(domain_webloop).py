@@ -1091,6 +1091,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   font-family:var(--font-mono);font-size:10px;font-weight:600;
   cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;
 }
+#hover-preview-btn:hover{
+  background:var(--accent);color:#fff;border-color:var(--accent);
+}
 #hover-preview-btn.on{
   background:var(--accent);color:#fff;border-color:var(--accent);
 }
@@ -1101,9 +1104,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ══ HOVER PREVIEW — Group Tabs + Symbol List ══ */
 .hv-header-row1 { display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0; }
-.hv-grouptabs { display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none; }
+.hv-grouptabs { display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none; padding:1px 0; }
 .hv-grouptabs::-webkit-scrollbar{display:none}
-.hv-gtab { flex-shrink:0;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s; }
+.hv-gtab { height:24px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s; }
 .hv-gtab.on { background:var(--accent);color:#fff;border-color:var(--accent); }
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 
@@ -1498,7 +1501,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           Chart: OFF
         </button>
         <button id="hmap-popout-btn" class="hmap-link-btn" onclick="quickPopout()"
-          title="Mở chart ra cửa sổ riêng">
+          title="Mở chart ra cửa sổ riêng"
+          style="color:var(--muted);">
           ⧉
         </button>
       </div>
@@ -1522,19 +1526,23 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div class="hv-header-row1">
     <div class="hv-grouptabs" id="hv-grouptabs"></div>
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;padding-right:6px;">
-      <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
+      <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"      
+        onmouseover="this.style.background='var(--accent)';this.style.color='#fff';this.style.borderColor='var(--accent)'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
+        style="height:24px;padding:0 8px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;transition:all .15s;">A↕Z</button>
       <button onclick="openChart(_hoverPreviewCurrent)"
-        onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
-        onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;"> ⛶ </button>
-      <button id="hv-pop-btn" onclick="popOutHover()" 
-        title="Mở chart ra cửa sổ riêng"
-        onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
-        onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;"> ⧉ </button>
+        onmouseover="this.style.background='var(--accent)';this.style.color='#fff';this.style.borderColor='var(--accent)'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
+        style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;"> ⛶ </button>
+       <button id="hv-pop-btn" onclick="popOutHover()" 
+        title="Mở chart ra cửa sổ riêng"  
+        onmouseover="this.style.background='var(--accent)';this.style.color='#fff';this.style.borderColor='var(--accent)'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
+        style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;"> ⧉ </button>
       <button onclick="toggleHoverPreview()"
-        style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+        onmouseover="this.style.background='var(--red)';this.style.color='#fff';this.style.borderColor='var(--red)'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
+        style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:12px;font-family:var(--font-mono);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:all .15s;"> ✕ </button> 
     </div>
   </div>
   <div class="hv-body">
@@ -1724,7 +1732,7 @@ const HMAP_COLS = [
 ];
 
 const TS_POOL=[
-  "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
+  "AAA","ACB","AGG","ANV","BFC","BID","BMI","BSR","BVB","BVH","BWE",
   "CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE",
   "DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS",
   "GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK",
@@ -2519,7 +2527,7 @@ function _hvToggleSort(){
   _hvSortAlpha = !_hvSortAlpha;
   const btn = document.getElementById('hv-sort-btn');
   btn.textContent = _hvSortAlpha ? '%↕' : 'A↕Z';
-  btn.style.color = _hvSortAlpha ? 'var(--accent)' : 'var(--muted)';
+  btn.style.color = 'var(--muted)';
   _hvRenderSymList();
 }
 
@@ -2771,8 +2779,8 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 #controls{display:flex;gap:4px;align-items:center;flex-shrink:0}
 .ctrl-btn{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap}
 .ctrl-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-#min-btn{background:var(--bg)}
-#min-btn:hover{background:var(--accent);color:#fff}
+#min-btn{background:var(--surface)}
+#min-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 #close-btn:hover{background:#e02424;color:#fff;border-color:#e02424}
 
 #main{display:flex;height:calc(100% - 42px);overflow:hidden}
