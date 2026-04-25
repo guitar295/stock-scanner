@@ -1095,7 +1095,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 .hv-body { display:flex;flex:1;overflow:hidden; }
 .hv-symlist {
-  width:160px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);
+  width:100px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);
   background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent;
 }
 .hv-symlist::-webkit-scrollbar{width:3px}
@@ -1103,19 +1103,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 .hv-sym-item {
   display:grid;
-  grid-template-columns:46px 50px 1fr;
+  grid-template-columns:42px 34px 1fr;
   align-items:center;
-  padding:5px 10px;
+  padding:5px 6px;
   cursor:pointer;
   border-bottom:1px solid rgba(0,0,0,.04);
-  transition:background .1s, box-shadow .1s;
-  gap:6px;
+  transition:background .1s;
+  gap:4px;
 }
 .hv-sym-item:hover,
 .hv-sym-item.on { background:#e8effd; }
-.hv-sym-item.on {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
 .hv-sym-item.on .hv-sym-name {
   color:#0f3fb3;
   font-weight:800;
@@ -2747,7 +2744,7 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 #main{display:flex;height:calc(100% - 42px);overflow:hidden}
 
 #symlist{
-  width:160px;flex-shrink:0;overflow-y:auto;background:var(--bg);
+  width:100px;flex-shrink:0;overflow-y:auto;background:var(--bg);
   border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent
 }
 #symlist::-webkit-scrollbar{width:3px}
@@ -2764,7 +2761,6 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
   gap:6px
 }
 .sym-item:hover,.sym-item.on{background:#dce8ff}
-.sym-item.on{box-shadow:inset 3px 0 0 var(--accent)}
 .sym-item.on .sym-name{color:#0f3fb3;font-weight:800}
 .sym-name{font-size:11px;font-weight:700}
 .sym-pct{font-size:10px;text-align:right;font-weight:700}
@@ -2896,7 +2892,7 @@ document.getElementById('sort-btn').onclick=()=>{
 };
 
 document.getElementById('full-btn').onclick=()=>{
-  window.location.href='/popout_full/' + currentSym;
+  window.open('/popout_full/' + currentSym, '_blank');
 };
 
 document.getElementById('min-btn').onclick=()=>{
