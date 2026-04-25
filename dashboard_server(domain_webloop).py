@@ -1525,10 +1525,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
         style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
       <button onclick="openChart(_hoverPreviewCurrent)"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⛶ </button>
+        onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
+        style="padding:3px 10px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;"> ⛶ </button>
       <button id="hv-pop-btn" onclick="popOutHover()" 
         title="Mở chart ra cửa sổ riêng"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⧉ </button>
+        onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
+        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;"> ⧉ </button>
       <button onclick="toggleHoverPreview()"
         style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
     </div>
@@ -2758,7 +2762,7 @@ function popOutHover() {
 body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}
 
 #header{display:flex;align-items:center;padding:0 12px;background:var(--surf2);color:var(--text);height:42px;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)}
-#sym-display{font-family:var(--font-ui);font-size:17px;font-weight:800;letter-spacing:1.5px;flex-shrink:0;white-space:nowrap;color:var(--accent)}
+#sym-display{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.5px;flex-shrink:0;white-space:nowrap;color:var(--accent)}
 #grouptabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none}
 #grouptabs::-webkit-scrollbar{display:none}
 .gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}
