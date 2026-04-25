@@ -2135,31 +2135,27 @@ let _popoutWin = null;
 function popOutHover() {
   const sym = _hoverPreviewCurrent || 'VNINDEX';
 
-  // Nếu popout đã mở → chỉ focus
   if (_popoutWin && !_popoutWin.closed && _isPopoutMode) {
     _popoutWin.focus();
     return;
   }
 
-  // ẨN hover panel, BẬT chế độ popout
   const hvPanel = document.getElementById('hover-preview-panel');
   hvPanel.style.display = 'none';
   document.querySelector('.wrap').style.paddingBottom = '';
   _isPopoutMode = true;
   _hoverPreviewOn = false;
 
-  // Đổi nút trên dashboard
   const btn = document.getElementById('hover-preview-btn');
   btn.classList.add('on');
   btn.textContent = '👁 Chart: POPOUT';
 
-  // Mở cửa sổ
   const w = Math.min(1400, window.screen.availWidth - 80);
   const h = Math.min(850, window.screen.availHeight - 80);
   const left = 40, top = 40;
 
   _popoutWin = window.open("", "ScannerPopout",
-    `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,menubar=no,toolbar=no`);
+    "width="+w+",height="+h+",left="+left+",top="+top+",resizable=yes,scrollbars=no,menubar=no,toolbar=no");
 
   if (!_popoutWin) {
     alert('Trình duyệt chặn popup!\nHãy cho phép popup từ trang này.');
@@ -2167,659 +2163,490 @@ function popOutHover() {
     return;
   }
 
-  // Serialize groups data
-  const groupsJSON = JSON.stringify(_hvGroups.map(g => ({name:g.name, syms:g.syms})));
+  const groupsJSON = JSON.stringify(_hvGroups.map(function(g){ return {name:g.name, syms:g.syms}; }));
   const dataJSON = JSON.stringify(window._lastHmapData || {});
   const initSym = sym;
   const initGroup = _hvActiveGroup >= 0 ? _hvActiveGroup : 0;
   const initSort = _hvSortAlpha;
 
-   const popoutHTML = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Chart Popout</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
-body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}
-
-#header{display:flex;align-items:center;padding:0 12px;background:var(--accent);color:#fff;height:42px;gap:8px;flex-shrink:0}
-#sym-display{font-family:var(--font-ui);font-size:17px;font-weight:800;letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
-#grouptabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none}
-#grouptabs::-webkit-scrollbar{display:none}
-.gtab{padding:4px 10px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}
-.gtab.on{background:#fff;color:var(--accent);border-color:#fff;font-weight:700}
-.gtab:hover:not(.on){background:rgba(255,255,255,.18)}
-#controls{display:flex;gap:4px;align-items:center;flex-shrink:0}
-.ctrl-btn{padding:4px 10px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap}
-.ctrl-btn:hover{background:rgba(255,255,255,.25)}
-#min-btn{background:rgba(255,255,255,.15)}
-#min-btn:hover{background:rgba(255,255,255,.35)}
-#close-btn:hover{background:#e02424;border-color:#e02424}
-
-#main{display:flex;height:calc(100% - 42px);overflow:hidden}
-
-#symlist{width:162px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-#symlist::-webkit-scrollbar{width:3px}
-#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.sym-item{display:grid;grid-template-columns:46px 44px 1fr;align-items:center;padding:5px 10px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:6px}
-.sym-item:hover,.sym-item.on{background:#e3ecfa}
-.sym-item.on .sym-name{color:var(--accent);font-weight:700}
-.sym-name{font-size:11px;font-weight:600}
-.sym-pct{font-size:10px;text-align:right;font-weight:500}
-.sym-price{font-size:10px;text-align:right;color:var(--text);opacity:.72}
-.pct-pos{color:var(--green)}
-.pct-neg{color:var(--red)}
-.pct-zer{color:#b45309}
-
-/* ===== FULL OVERLAY TRONG POPOUT ===== */
-#po-full-overlay{
-  display:none;position:fixed;inset:0;z-index:99999;
-  background:rgba(255,255,255,.98);
-}
-#po-full-overlay.on{display:flex}
-#po-full-box{
-  width:100%;height:100%;display:flex;flex-direction:column;
-  background:var(--surface);
-}
-#po-full-hdr{
-  display:grid;
-  grid-template-columns:1fr auto 1fr;
-  align-items:center;
-  gap:0;
-  padding:8px 12px;
-  background:var(--surf2);
-  border-bottom:1px solid var(--border);
-}
-.po-full-left{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  min-width:0;
-  justify-content:flex-start;
-}
-#po-full-center{
-  display:flex;
-  align-items:flex-end;
-  justify-content:center;
-  min-width:0;
-}
-.po-full-right{
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  gap:6px;
-}
-#po-full-title{
-  font-family:var(--font-ui);font-size:17px;font-weight:800;
-  color:var(--accent);letter-spacing:1px;white-space:nowrap
-}
-#po-full-search-wrap{position:relative;flex-shrink:0}
-#po-full-search-icon{
-  position:absolute;left:9px;top:50%;transform:translateY(-50%);
-  color:var(--muted);font-size:12px;pointer-events:none;
-}
-#po-full-search-input{
-  width:112px;padding:5px 10px 5px 28px;
-  border-radius:20px;border:1px solid var(--border);
-  background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:11px;outline:none;
-  transition:width .2s,border-color .15s,box-shadow .15s;
-}
-#po-full-search-input:focus{
-  width:170px;border-color:var(--accent);
-  box-shadow:0 0 0 2px rgba(26,86,219,.12);
-}
-#po-full-tabs{
-  display:flex;
-  gap:4px;
-  align-items:flex-end;
-  justify-content:center;
-  overflow-x:auto;
-  min-width:0;
-  max-width:100%;
-  scrollbar-width:none;
-  -ms-overflow-style:none;
-}
-#po-full-tabs::-webkit-scrollbar{display:none}
-.po-ftab{
-  flex-shrink:0;
-  padding:5px 11px;border-radius:5px 5px 0 0;
-  border:1px solid var(--border);border-bottom:2px solid transparent;
-  background:var(--bg);color:var(--muted);
-  font-size:11px;font-family:var(--font-mono);font-weight:600;
-  cursor:pointer;white-space:nowrap;transition:all .15s;
-}
-.po-ftab.on{
-  background:var(--surface);color:var(--accent);
-  border-color:var(--border);border-bottom-color:var(--accent);
-  font-weight:700;
-}
-.po-ftab:hover:not(.on){background:#eef3ff;color:var(--accent)}
-#po-full-close{
-  width:28px;height:28px;border-radius:50%;
-  border:1px solid var(--border);background:var(--bg);
-  color:var(--muted);font-size:16px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;transition:all .15s;
-}
-#po-full-close:hover{background:#e02424;color:#fff;border-color:#e02424}
-#po-full-body{flex:1;position:relative;overflow:hidden;background:#fff}
-.po-full-panel{display:none;position:absolute;inset:0}
-.po-full-panel.on{display:block}
-.po-full-panel iframe{width:100%;height:100%;border:none;display:block}
-
-#chart-wrap{flex:1;overflow:hidden;position:relative;background:#fff}
-#chart-frame{width:100%;height:100%;border:none;display:block}
-#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);font-size:13px;z-index:2;transition:opacity .3s}
-#loading.hide{opacity:0;pointer-events:none}
-
-#search-wrap{position:relative;flex-shrink:0}
-#search-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.5);font-size:11px;pointer-events:none}
-#search-input{width:90px;padding:4px 8px 4px 24px;border-radius:14px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}
-#search-input::placeholder{color:rgba(255,255,255,.4)}
-#search-input:focus{width:140px;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.15)}
-</style>
-</head>
-<body>
-<div id="header">
-  <span id="sym-display">---</span>
-  <div id="search-wrap">
-    <span id="search-icon">🔍</span>
-    <input id="search-input" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
-  </div>
-  <div id="grouptabs"></div>
-  <div id="controls">
-    <button class="ctrl-btn" id="sort-btn" title="Đổi sắp xếp">A↕Z</button>
-    <button class="ctrl-btn" id="full-btn" title="Mở popup chi tiết">Full ↗</button>
-    <button class="ctrl-btn" id="min-btn" title="Thu nhỏ về Dashboard">◂ Min</button>
-    <button class="ctrl-btn" id="close-btn" title="Đóng">✕</button>
-  </div>
-</div>
-<div id="main">
-  <div id="symlist"></div>
-  <div id="chart-wrap">
-    <div id="loading">Đang tải...</div>
-    <iframe id="chart-frame" src="about:blank"></iframe>
-  </div>
-</div>
-
-<!-- === BẮT ĐẦU CHÈN HTML FULL OVERLAY TẠI ĐÂY === -->
-<div id="po-full-overlay">
-  <div id="po-full-box">
-    <div id="po-full-hdr">
-      <div class="po-full-left">
-        <span id="po-full-title">📈 ---</span>
-        <div id="po-full-search-wrap">
-          <span id="po-full-search-icon">🔍</span>
-          <input id="po-full-search-input" type="text" placeholder="Tìm mã"
-                 maxlength="10" autocomplete="off" spellcheck="false">
-        </div>
-      </div>
-
-      <div id="po-full-center">
-        <div id="po-full-tabs">
-          <button class="po-ftab on" id="po-ftab-vs" data-tab="vs">📈 Vietstock</button>
-          <button class="po-ftab" id="po-ftab-scanner" data-tab="scanner">🖼 Scanner Chart</button>
-          <button class="po-ftab" id="po-ftab-vnd-cs" data-tab="vnd-cs">⚖️ Cơ bản</button>
-          <button class="po-ftab" id="po-ftab-vnd-news" data-tab="vnd-news">🗞️ Tin tức</button>
-          <button class="po-ftab" id="po-ftab-vnd-sum" data-tab="vnd-sum">📄 Tổng quan</button>
-          <button class="po-ftab" id="po-ftab-24h" data-tab="24h">💬 24HMoney</button>
-        </div>
-      </div>
-
-      <div class="po-full-right">
-        <button id="po-full-close">✕</button>
-      </div>
-    </div>
-
-    <div id="po-full-body">
-      <div class="po-full-panel on" id="po-full-panel-vs">
-        <iframe id="po-full-iframe-vs" src="about:blank" allowfullscreen></iframe>
-      </div>
-    
-      <div class="po-full-panel" id="po-full-panel-scanner">
-        <div id="po-scanner-loading" style="display:flex;align-items:center;justify-content:center;height:100%;color:#6b7280;font-size:14px;font-family:var(--font-mono)">
-          <span>⏳ Đang tạo chart từ scanner...</span>
-        </div>
-        <div id="po-album-outer" style="display:none;height:100%;flex-direction:column;overflow:hidden;background:#fff">
-          <div id="po-album-center" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px 4px 2px;gap:4px;background:#fff">
-            <div id="po-album-slides"></div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0;background:#fff">
-            <button id="po-btn-prev" onclick="poAlbumNav(-1)" style="width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&#9664;</button>
-            <div id="po-album-dots" style="display:flex;gap:6px;align-items:center"></div>
-            <button id="po-btn-next" onclick="poAlbumNav(1)" style="width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&#9654;</button>
-            <button id="po-btn-refresh" onclick="poRefreshScannerChart()" title="Làm mới chart"
-              style="width:30px;height:30px;padding:0;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;">
-              ⟳
-            </button>
-          </div>
-          <div style="text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0;background:#fff">
-            ◀ ▶ hoặc phím ← → để chuyển ảnh
-          </div>
-        </div>
-      </div>
-    
-      <div class="po-full-panel" id="po-full-panel-vnd-cs">
-        <iframe id="po-full-iframe-vnd-cs" src="about:blank" allowfullscreen></iframe>
-      </div>
-      <div class="po-full-panel" id="po-full-panel-vnd-news">
-        <iframe id="po-full-iframe-vnd-news" src="about:blank" allowfullscreen></iframe>
-      </div>
-      <div class="po-full-panel" id="po-full-panel-vnd-sum">
-        <iframe id="po-full-iframe-vnd-sum" src="about:blank" allowfullscreen></iframe>
-      </div>
-      <div class="po-full-panel" id="po-full-panel-24h">
-        <iframe id="po-full-iframe-24h" src="about:blank" allowfullscreen></iframe>
-      </div>
-    </div>
-  </div>
-</div>
-<!-- === KẾT THÚC CHÈN HTML === -->
-
-<script>
-let hvGroups=${groupsJSON};
-let hmapData=${dataJSON};
-let activeGroup=${initGroup};
-let sortAlpha=${initSort};
-let currentSym='${initSym}';
-
-let poFullTab='vs';
-const PO_FULL_TABS=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
-let poAlbumIdx=0, poAlbumTotal=0, poAlbumImages=[];
-
-function fmtPrice(p){
-  if(typeof p!=='number' || !isFinite(p) || p<=0) return '—';
-  return p<100 ? p.toFixed(2) : p.toFixed(1);
-}
-
-function poFullIsOpen(){
-  return document.getElementById('po-full-overlay').classList.contains('on');
-}
-
-function poFullUrl(tab,sym){
-  const s=(sym||currentSym||'VNINDEX').toUpperCase().trim();
-  if(tab==='vs')       return 'https://ta.vietstock.vn/?stockcode='+s.toLowerCase();
-  if(tab==='vnd-cs')   return 'https://dstock.vndirect.com.vn/tong-quan/'+s+'/diem-nhan-co-ban-popup?theme=light';
-  if(tab==='vnd-news') return 'https://dstock.vndirect.com.vn/tong-quan/'+s+'/tin-tuc-ma-popup?type=dn&theme=light';
-  if(tab==='vnd-sum')  return 'https://dstock.vndirect.com.vn/tong-quan/'+s+'?theme=light';
-  if(tab==='24h')      return 'https://24hmoney.vn/stock/'+s+'/news';
-  return 'about:blank';
-}
-
-function poFullSwitch(tab, force=false){
-  poFullTab=tab;
-
-  PO_FULL_TABS.forEach(t=>{
-    document.getElementById('po-ftab-'+t).classList.toggle('on', t===tab);
-    document.getElementById('po-full-panel-'+t).classList.toggle('on', t===tab);
-  });
-
-  document.getElementById('po-full-title').textContent='📈 '+currentSym;
-
-  if(tab==='scanner'){
-    poLoadScannerChart(currentSym, force);
-    return;
-  }
-
-  const frame=document.getElementById('po-full-iframe-'+tab);
-  const url=poFullUrl(tab,currentSym);
-  if(force || frame.dataset.url!==url){
-    frame.src=url;
-    frame.dataset.url=url;
-  }
-}
-
-function openFullLocal(sym){
-  if(sym) currentSym=sym.toUpperCase().trim();
-  document.getElementById('po-full-search-input').value='';
-  document.getElementById('po-full-title').textContent='📈 '+currentSym;
-  document.getElementById('po-full-overlay').classList.add('on');
-  poFullSwitch(poFullTab || 'vs', true);
-}
-
-function closeFullLocal(){
-  document.getElementById('po-full-overlay').classList.remove('on');
-}
-
-function poFullSetSym(sym, keepTab=true){
-  const next=(sym||'').toUpperCase().trim();
-  if(!next) return;
-
-  currentSym=next;
-  updateDisplay(currentSym);
-  loadChart(currentSym);
-  renderSymList();
-
-  if(window.opener && !window.opener.closed){
-    window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:currentSym},'*');
-  }
-
-  if(poFullIsOpen()){
-    poFullSwitch(keepTab ? poFullTab : 'vs', true);
-  }else{
-    document.getElementById('po-full-title').textContent='📈 '+currentSym;
-  }
-}
-
-function poUpdateAlbumNav(){
-  const prev=document.getElementById('po-btn-prev');
-  const next=document.getElementById('po-btn-next');
-  if(prev) prev.style.opacity = poAlbumIdx===0 ? '.25' : '1';
-  if(next) next.style.opacity = poAlbumIdx===poAlbumTotal-1 ? '.25' : '1';
-  if(prev) prev.style.pointerEvents = poAlbumIdx===0 ? 'none' : '';
-  if(next) next.style.pointerEvents = poAlbumIdx===poAlbumTotal-1 ? 'none' : '';
-}
-
-function poAlbumGoto(i){
-  if(i<0||i>=poAlbumTotal) return;
-  document.querySelectorAll('#po-album-slides .po-album-slide').forEach((s,idx)=>s.style.display=idx===i?'flex':'none');
-  document.querySelectorAll('#po-album-dots .po-album-dot').forEach((d,idx)=>{
-    d.style.background=idx===i?'#1a56db':'#dde3ee';
-    d.style.transform=idx===i?'scale(1.3)':'scale(1)';
-  });
-  poAlbumIdx=i;
-  poUpdateAlbumNav();
-}
-
-function poAlbumNav(dir){
-  poAlbumGoto(poAlbumIdx+dir);
-}
-
-function poShowAlbum(images){
-  poAlbumImages=images;
-  poAlbumTotal=images.length;
-  poAlbumIdx=0;
-
-  const slidesEl=document.getElementById('po-album-slides');
-  const dotsEl=document.getElementById('po-album-dots');
-  slidesEl.innerHTML='';
-  dotsEl.innerHTML='';
-
-  images.forEach((img,i)=>{
-    slidesEl.innerHTML += `
-      <div class="po-album-slide" style="display:${i===0?'flex':'none'};flex-direction:column;align-items:center;gap:8px;width:100%">
-        <img src="${img.url}" alt="${img.label}" loading="lazy"
-             style="max-width:100%;max-height:calc(100vh - 150px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee">
-        <div style="font-size:11px;color:#888;font-family:var(--font-mono)">${img.label}</div>
-      </div>`;
-    dotsEl.innerHTML += `
-      <div class="po-album-dot"
-           onclick="poAlbumGoto(${i})"
-           style="width:8px;height:8px;border-radius:50%;background:${i===0?'#1a56db':'#dde3ee'};cursor:pointer;transition:all .15s;transform:${i===0?'scale(1.3)':'scale(1)'}">
-      </div>`;
-  });
-
-  document.getElementById('po-album-outer').style.display='flex';
-  document.getElementById('po-scanner-loading').style.display='none';
-  poUpdateAlbumNav();
-}
-
-async function poLoadScannerChart(sym, force=false){
-  document.getElementById('po-album-outer').style.display='none';
-  document.getElementById('po-scanner-loading').style.display='flex';
-  document.getElementById('po-scanner-loading').innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
-
-  try{
-    if(force){
-      await fetch('/api/chart_cache_clear/'+sym, {method:'DELETE'}).catch(()=>{});
-    }
-
-    const r=await fetch('/api/chart_images/'+sym);
-    if(!r.ok){
-      const j=await r.json().catch(()=>({}));
-      throw new Error(j.error||('HTTP '+r.status));
-    }
-
-    const j=await r.json();
-    if(j.images && j.images.length>0){
-      const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
-      poShowAlbum(j.images.map((b64,i)=>({
-        url:'data:image/png;base64,'+b64,
-        label:labels[i]||('Chart '+(i+1))
-      })));
-      return;
-    }
-
-    throw new Error('no_images');
-  }catch(e){
-    document.getElementById('po-scanner-loading').innerHTML=`
-      <div style="text-align:center;color:#aaa;padding:24px">
-        <div style="font-size:24px;margin-bottom:10px">⚠️</div>
-        <div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
-        <div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div>
-        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-          <button onclick="poLoadScannerChart('${sym}', true)"
-            style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
-            🔄 Thử lại
-          </button>
-          <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank"
-             style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
-            📈 Stockchart
-          </a>
-        </div>
-      </div>`;
-  }
-}
-
-function poRefreshScannerChart(){
-  if(!currentSym) return;
-  poLoadScannerChart(currentSym, true);
-}
-
-function buildTabs(){
-  const el=document.getElementById('grouptabs');
-  el.innerHTML=hvGroups.map((g,i)=>'<button class="gtab'+(i===activeGroup?' on':'')+'" data-idx="'+i+'">'+g.name+'</button>').join('');
-  el.querySelectorAll('.gtab').forEach(b=>b.onclick=()=>selectGroup(parseInt(b.dataset.idx)));
-}
-
-function selectGroup(idx){
-  activeGroup=idx;
-  document.querySelectorAll('.gtab').forEach((b,i)=>b.classList.toggle('on',i===idx));
-  renderSymList();
-}
-
-function getSorted(){
-  const g=hvGroups[activeGroup];
-  if(!g) return [];
-  if(sortAlpha) return [...g.syms].sort((a,b)=>a.localeCompare(b));
-  return [...g.syms].sort((a,b)=>{
-    const pa=hmapData[a]?(hmapData[a].pct||0):-999;
-    const pb=hmapData[b]?(hmapData[b].pct||0):-999;
-    return pb-pa;
-  });
-}
-
-function renderSymList(){
-  const syms=getSorted();
-  const el=document.getElementById('symlist');
-  el.innerHTML=syms.map(sym=>{
-    const d=hmapData[sym]||{};
-    const pct=typeof d.pct==='number'?d.pct:null;
-    const price=typeof d.price==='number'?fmtPrice(d.price):'—';
-    const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
-    const cls=pct===null?'pct-zer':(pct>0?'pct-pos':(pct<0?'pct-neg':'pct-zer'));
-
-    return '<div class="sym-item'+(sym===currentSym?' on':'')+'" data-sym="'+sym+'" onclick="clickSym(\\''+sym+'\\',this)">'+
-      '<span class="sym-name">'+sym+'</span>'+
-      '<span class="sym-pct '+cls+'">'+pctStr+'</span>'+
-      '<span class="sym-price">'+price+'</span>'+
-    '</div>';
-  }).join('');
-}
-
-function clickSym(sym,el){
-  if(sym===currentSym) return;
-  currentSym=sym;
-  document.querySelectorAll('.sym-item').forEach(e=>e.classList.toggle('on',e.dataset.sym===sym));
-  updateDisplay(sym);
-  loadChart(sym);
-
-  if(poFullIsOpen()){
-    poFullSwitch(poFullTab,true);
-  }
-
-  if(window.opener&&!window.opener.closed){
-    window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
-  }
-}
-
-function updateDisplay(sym){
-  document.getElementById('sym-display').textContent='📈 '+sym;
-  document.title='Chart '+sym;
-}
-
-function loadChart(sym){
-  const frame=document.getElementById('chart-frame');
-  const url='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
-  if(frame.src===url) return;
-  const ld=document.getElementById('loading');
-  ld.classList.remove('hide');
-  frame.onload=()=>ld.classList.add('hide');
-  frame.src=url;
-}
-
-// Controls
-document.getElementById('sort-btn').onclick=()=>{
-  sortAlpha=!sortAlpha;
-  document.getElementById('sort-btn').textContent=sortAlpha?'%↕':'A↕Z';
-  renderSymList();
-};
-document.getElementById('full-btn').onclick=()=>{
-  openFullLocal(currentSym);
-};
-document.getElementById('min-btn').onclick=()=>{
-  if(window.opener&&!window.opener.closed){
-    window.opener.postMessage({type:'POPOUT_MINIMIZE'},'*');
-  }
-  window.close();
-};
-document.getElementById('close-btn').onclick=()=>{
-  if(window.opener&&!window.opener.closed){
-    window.opener.postMessage({type:'POPOUT_CLOSE'},'*');
-  }
-  window.close();
-};
-
-// Search
-document.getElementById('search-input').addEventListener('keydown',function(e){
-  if(e.key==='Enter'){
-    const sym=this.value.trim().toUpperCase();
-    if(sym.length>=2){
-      this.value='';this.blur();
-      currentSym=sym;updateDisplay(sym);loadChart(sym);
-      renderSymList();
-      if(window.opener&&!window.opener.closed){
-        window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
-      }
-    }
-  }
-  if(e.key==='Escape'){this.value='';this.blur();}
-});
-
-// Keyboard navigation
-let _kThrottle=false,_kDelay=null;
-document.addEventListener('keydown',e=>{
-  if(document.activeElement===document.getElementById('search-input')) return;
-  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown') return;
-  e.preventDefault();
-  if(_kThrottle) return;
-  _kThrottle=true;setTimeout(()=>{_kThrottle=false;},60);
-
-  const items=[...document.getElementById('symlist').children];
-  if(!items.length) return;
-  let cur=items.findIndex(el=>el.classList.contains('on'));
-  let next=cur===-1?0:(e.key==='ArrowDown'?cur+1:cur-1);
-  next=Math.max(0,Math.min(next,items.length-1));
-  if(next===cur&&cur!==-1) return;
-
-  items.forEach(el=>el.classList.remove('on'));
-  items[next].classList.add('on');
-  const sym=items[next].dataset.sym;
-  currentSym=sym;updateDisplay(sym);
-
-  if(_kDelay) clearTimeout(_kDelay);
-  _kDelay=setTimeout(()=>{
-    loadChart(sym);
-    if(window.opener&&!window.opener.closed){
-      window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
-    }
-  },300);
-
-  const list=document.getElementById('symlist'),el=items[next];
-  const relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
-  if(relTop-h<list.scrollTop) list.scrollTop=Math.max(0,relTop-h);
-  else if(relTop+h*2>list.scrollTop+list.clientHeight) list.scrollTop=relTop+h*2-list.clientHeight;
-});
-
-// Receive messages from parent
-window.addEventListener('message',function(e){
-  if(e.data.type==='UPDATE_CHART'){
-    currentSym=e.data.symbol;
-    updateDisplay(currentSym);
-    loadChart(currentSym);
-    renderSymList();
-    if(poFullIsOpen()) poFullSwitch(poFullTab,true);
-  }
-  if(e.data.type==='UPDATE_HEATMAP'){
-    hmapData=e.data.data||{};
-    renderSymList();
-  }
-});
-
-// === BẮT ĐẦU CHÈN ĐOẠN G TẠI ĐÂY ===
-document.querySelectorAll('.po-ftab').forEach(btn=>{
-  btn.onclick=()=>poFullSwitch(btn.dataset.tab);
-});
-
-document.getElementById('po-full-close').onclick=()=>closeFullLocal();
-
-document.getElementById('po-full-overlay').addEventListener('click',function(e){
-  if(e.target.id==='po-full-overlay') closeFullLocal();
-});
-
-document.getElementById('po-full-search-input').addEventListener('keydown',function(e){
-  if(e.key==='Enter'){
-    const sym=this.value.trim().toUpperCase();
-    if(sym.length>=2){
-      this.value='';
-      this.blur();
-      poFullSetSym(sym,true);
-    }
-  }
-  if(e.key==='Escape'){
-    closeFullLocal();
-  }
-});
-
-document.addEventListener('keydown',e=>{
-  if(e.key==='Escape' && poFullIsOpen()){
-    e.preventDefault();
-    closeFullLocal();
-    return;
-  }
-});
-// === KẾT THÚC CHÈN ĐOẠN G ===
-
-document.addEventListener('keydown',e=>{
-  if(!poFullIsOpen()) return;
-  if(poFullTab!=='scanner') return;
-  if(e.key==='ArrowLeft'){ e.preventDefault(); poAlbumNav(-1); }
-  if(e.key==='ArrowRight'){ e.preventDefault(); poAlbumNav(1); }
-});
-
-// Init
-buildTabs();renderSymList();updateDisplay(currentSym);loadChart(currentSym);
-<\/script>
-</body>
-</html>`;
+  const popoutHTML = [
+'<!DOCTYPE html>',
+'<html>',
+'<head>',
+'<meta charset="UTF-8">',
+'<title>Chart Popout</title>',
+'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">',
+'<style>',
+'*{margin:0;padding:0;box-sizing:border-box}',
+':root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:"IBM Plex Mono",monospace;--font-ui:"Barlow Condensed",sans-serif}',
+'body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}',
+'#header{display:flex;align-items:center;padding:0 12px;background:var(--accent);color:#fff;height:42px;gap:8px;flex-shrink:0}',
+'#sym-display{font-family:var(--font-ui);font-size:17px;font-weight:800;letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}',
+'#search-wrap{position:relative;flex-shrink:0}',
+'#search-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.5);font-size:11px;pointer-events:none}',
+'#search-input{width:90px;padding:4px 8px 4px 24px;border-radius:14px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}',
+'#search-input::placeholder{color:rgba(255,255,255,.4)}',
+'#search-input:focus{width:140px;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.15)}',
+'#grouptabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none}',
+'#grouptabs::-webkit-scrollbar{display:none}',
+'.gtab{padding:4px 10px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}',
+'.gtab.on{background:#fff;color:var(--accent);border-color:#fff;font-weight:700}',
+'.gtab:hover:not(.on){background:rgba(255,255,255,.18)}',
+'#controls{display:flex;gap:4px;align-items:center;flex-shrink:0}',
+'.ctrl-btn{padding:4px 10px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap}',
+'.ctrl-btn:hover{background:rgba(255,255,255,.25)}',
+'#min-btn{background:rgba(255,255,255,.15)}',
+'#min-btn:hover{background:rgba(255,255,255,.35)}',
+'#close-btn:hover{background:#e02424;border-color:#e02424}',
+'#main{display:flex;height:calc(100% - 42px);overflow:hidden}',
+'#symlist{width:162px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}',
+'#symlist::-webkit-scrollbar{width:3px}',
+'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}',
+'.sym-item{display:grid;grid-template-columns:46px 44px 1fr;align-items:center;padding:5px 10px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:6px}',
+'.sym-item:hover,.sym-item.on{background:#e3ecfa}',
+'.sym-item.on .sym-name{color:var(--accent);font-weight:700}',
+'.sym-name{font-size:11px;font-weight:600}',
+'.sym-pct{font-size:10px;text-align:right;font-weight:500}',
+'.sym-price{font-size:10px;text-align:right;color:var(--text);opacity:.72}',
+'.pct-pos{color:var(--green)}',
+'.pct-neg{color:var(--red)}',
+'.pct-zer{color:#b45309}',
+'#chart-wrap{flex:1;overflow:hidden;position:relative;background:#fff}',
+'#chart-frame{width:100%;height:100%;border:none;display:block}',
+'#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);font-size:13px;z-index:2;transition:opacity .3s}',
+'#loading.hide{opacity:0;pointer-events:none}',
+'#po-full-overlay{display:none;position:fixed;inset:0;z-index:99999;background:rgba(255,255,255,.98)}',
+'#po-full-overlay.on{display:flex}',
+'#po-full-box{width:100%;height:100%;display:flex;flex-direction:column;background:var(--surface)}',
+'#po-full-hdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:0;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border)}',
+'.po-full-left{display:flex;align-items:center;gap:8px;min-width:0;justify-content:flex-start}',
+'#po-full-center{display:flex;align-items:flex-end;justify-content:center;min-width:0}',
+'.po-full-right{display:flex;align-items:center;justify-content:flex-end;gap:6px}',
+'#po-full-title{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;white-space:nowrap}',
+'#po-full-search-wrap{position:relative;flex-shrink:0}',
+'#po-full-search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}',
+'#po-full-search-input{width:112px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:width .2s,border-color .15s,box-shadow .15s}',
+'#po-full-search-input:focus{width:170px;border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}',
+'#po-full-tabs{display:flex;gap:4px;align-items:flex-end;justify-content:center;overflow-x:auto;min-width:0;max-width:100%;scrollbar-width:none;-ms-overflow-style:none}',
+'#po-full-tabs::-webkit-scrollbar{display:none}',
+'.po-ftab{flex-shrink:0;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);font-size:11px;font-family:var(--font-mono);font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s}',
+'.po-ftab.on{background:var(--surface);color:var(--accent);border-color:var(--border);border-bottom-color:var(--accent);font-weight:700}',
+'.po-ftab:hover:not(.on){background:#eef3ff;color:var(--accent)}',
+'#po-full-close{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}',
+'#po-full-close:hover{background:#e02424;color:#fff;border-color:#e02424}',
+'#po-full-body{flex:1;position:relative;overflow:hidden;background:#fff}',
+'.po-full-panel{display:none;position:absolute;inset:0}',
+'.po-full-panel.on{display:block}',
+'.po-full-panel iframe{width:100%;height:100%;border:none;display:block}',
+'#po-full-panel-scanner{overflow:hidden;background:#fff}',
+'#po-full-panel-scanner.on{display:flex!important;flex-direction:column}',
+'#po-scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:#6b7280;font-size:14px;font-family:var(--font-mono)}',
+'#po-album-outer{flex:1;overflow:hidden;background:#fff}',
+'.po-album-slide img{max-width:100%;max-height:calc(100vh - 150px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee}',
+'.po-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none;flex-shrink:0;transition:all .15s}',
+'.po-nav-btn:hover{background:#1a56db;color:#fff;border-color:#1a56db}',
+'.po-nav-btn.disabled{opacity:.25;cursor:default;pointer-events:none}',
+'#po-btn-refresh:hover{background:#0e9f6e!important;color:#fff!important;border-color:#0e9f6e!important}',
+'</style>',
+'</head>',
+'<body>',
+
+'<div id="header">',
+'  <span id="sym-display">---</span>',
+'  <div id="search-wrap">',
+'    <span id="search-icon">🔍</span>',
+'    <input id="search-input" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">',
+'  </div>',
+'  <div id="grouptabs"></div>',
+'  <div id="controls">',
+'    <button class="ctrl-btn" id="sort-btn" title="Đổi sắp xếp">A↕Z</button>',
+'    <button class="ctrl-btn" id="full-btn" title="Mở full">Full ↗</button>',
+'    <button class="ctrl-btn" id="min-btn" title="Thu nhỏ">◂ Min</button>',
+'    <button class="ctrl-btn" id="close-btn" title="Đóng">✕</button>',
+'  </div>',
+'</div>',
+
+'<div id="main">',
+'  <div id="symlist"></div>',
+'  <div id="chart-wrap">',
+'    <div id="loading">Đang tải...</div>',
+'    <iframe id="chart-frame" src="about:blank"></iframe>',
+'  </div>',
+'</div>',
+
+'<div id="po-full-overlay">',
+'  <div id="po-full-box">',
+'    <div id="po-full-hdr">',
+'      <div class="po-full-left">',
+'        <span id="po-full-title">📈 ---</span>',
+'        <div id="po-full-search-wrap">',
+'          <span id="po-full-search-icon">🔍</span>',
+'          <input id="po-full-search-input" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">',
+'        </div>',
+'      </div>',
+'      <div id="po-full-center">',
+'        <div id="po-full-tabs">',
+'          <button class="po-ftab on" id="po-ftab-vs" data-tab="vs">📈 Vietstock</button>',
+'          <button class="po-ftab" id="po-ftab-scanner" data-tab="scanner">🖼 Scanner Chart</button>',
+'          <button class="po-ftab" id="po-ftab-vnd-cs" data-tab="vnd-cs">⚖️ Cơ bản</button>',
+'          <button class="po-ftab" id="po-ftab-vnd-news" data-tab="vnd-news">🗞️ Tin tức</button>',
+'          <button class="po-ftab" id="po-ftab-vnd-sum" data-tab="vnd-sum">📄 Tổng quan</button>',
+'          <button class="po-ftab" id="po-ftab-24h" data-tab="24h">💬 24HMoney</button>',
+'        </div>',
+'      </div>',
+'      <div class="po-full-right">',
+'        <button id="po-full-close">✕</button>',
+'      </div>',
+'    </div>',
+'    <div id="po-full-body">',
+'      <div class="po-full-panel on" id="po-full-panel-vs">',
+'        <iframe id="po-full-iframe-vs" src="about:blank" allowfullscreen></iframe>',
+'      </div>',
+'      <div class="po-full-panel" id="po-full-panel-scanner">',
+'        <div id="po-scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>',
+'        <div id="po-album-outer" style="display:none;height:100%;flex-direction:column;overflow:hidden;background:#fff">',
+'          <div id="po-album-center" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px;gap:4px;background:#fff">',
+'            <div id="po-album-slides"></div>',
+'          </div>',
+'          <div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0;background:#fff">',
+'            <button class="po-nav-btn disabled" id="po-btn-prev" onclick="poAlbumNav(-1)">&#9664;</button>',
+'            <div id="po-album-dots" style="display:flex;gap:6px;align-items:center"></div>',
+'            <button class="po-nav-btn" id="po-btn-next" onclick="poAlbumNav(1)">&#9654;</button>',
+'            <button class="po-nav-btn" id="po-btn-refresh" onclick="poRefreshScannerChart()" title="Làm mới">⟳</button>',
+'          </div>',
+'          <div style="text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;font-family:var(--font-mono);background:#fff">◀ ▶ hoặc phím ← → để chuyển ảnh</div>',
+'        </div>',
+'      </div>',
+'      <div class="po-full-panel" id="po-full-panel-vnd-cs"><iframe id="po-full-iframe-vnd-cs" src="about:blank" allowfullscreen></iframe></div>',
+'      <div class="po-full-panel" id="po-full-panel-vnd-news"><iframe id="po-full-iframe-vnd-news" src="about:blank" allowfullscreen></iframe></div>',
+'      <div class="po-full-panel" id="po-full-panel-vnd-sum"><iframe id="po-full-iframe-vnd-sum" src="about:blank" allowfullscreen></iframe></div>',
+'      <div class="po-full-panel" id="po-full-panel-24h"><iframe id="po-full-iframe-24h" src="about:blank" allowfullscreen></iframe></div>',
+'    </div>',
+'  </div>',
+'</div>',
+
+'<script>',
+'var hvGroups='+groupsJSON+';',
+'var hmapData='+dataJSON+';',
+'var activeGroup='+initGroup+';',
+'var sortAlpha='+initSort+';',
+'var currentSym="'+initSym+'";',
+'',
+'var poFullTab="vs";',
+'var PO_FULL_TABS=["vs","scanner","vnd-cs","vnd-news","vnd-sum","24h"];',
+'var poAlbumIdx=0,poAlbumTotal=0,poAlbumImages=[];',
+'var poScannerReqId=0;',
+'',
+'function fmtPrice(p){',
+'  if(typeof p!=="number"||!isFinite(p)||p<=0) return "—";',
+'  return p<100?p.toFixed(2):p.toFixed(1);',
+'}',
+'',
+'function buildTabs(){',
+'  var el=document.getElementById("grouptabs");',
+'  var html="";',
+'  for(var i=0;i<hvGroups.length;i++){',
+'    html+="<button class=\\"gtab"+(i===activeGroup?" on":"")+ "\\" data-idx=\\""+i+"\\">"+hvGroups[i].name+"</button>";',
+'  }',
+'  el.innerHTML=html;',
+'  var btns=el.querySelectorAll(".gtab");',
+'  for(var j=0;j<btns.length;j++){',
+'    (function(b){b.onclick=function(){selectGroup(parseInt(b.dataset.idx));};})(btns[j]);',
+'  }',
+'}',
+'',
+'function selectGroup(idx){',
+'  activeGroup=idx;',
+'  var btns=document.querySelectorAll(".gtab");',
+'  for(var i=0;i<btns.length;i++) btns[i].classList.toggle("on",i===idx);',
+'  renderSymList();',
+'}',
+'',
+'function getSorted(){',
+'  var g=hvGroups[activeGroup];',
+'  if(!g) return [];',
+'  var arr=g.syms.slice();',
+'  if(sortAlpha) return arr.sort();',
+'  return arr.sort(function(a,b){',
+'    var pa=hmapData[a]?(hmapData[a].pct||0):-999;',
+'    var pb=hmapData[b]?(hmapData[b].pct||0):-999;',
+'    return pb-pa;',
+'  });',
+'}',
+'',
+'function renderSymList(){',
+'  var syms=getSorted(),el=document.getElementById("symlist"),html="";',
+'  for(var i=0;i<syms.length;i++){',
+'    var sym=syms[i],d=hmapData[sym]||{};',
+'    var pct=typeof d.pct==="number"?d.pct:null;',
+'    var price=typeof d.price==="number"?fmtPrice(d.price):"—";',
+'    var pctStr=pct!==null?((pct>=0?"+":"")+pct.toFixed(1)+"%"):"—";',
+'    var cls=pct===null?"pct-zer":(pct>0?"pct-pos":(pct<0?"pct-neg":"pct-zer"));',
+'    html+="<div class=\\"sym-item"+(sym===currentSym?" on":"")+ "\\" data-sym=\\""+sym+"\\">"+',
+'      "<span class=\\"sym-name\\">"+sym+"</span>"+',
+'      "<span class=\\"sym-pct "+cls+"\\">"+pctStr+"</span>"+',
+'      "<span class=\\"sym-price\\">"+price+"</span>"+',
+'    "</div>";',
+'  }',
+'  el.innerHTML=html;',
+'  var rows=el.querySelectorAll(".sym-item");',
+'  for(var j=0;j<rows.length;j++){',
+'    (function(row){row.onclick=function(){clickSym(row.dataset.sym,row);};})(rows[j]);',
+'  }',
+'}',
+'',
+'function clickSym(sym,el){',
+'  if(sym===currentSym) return;',
+'  currentSym=sym;',
+'  var items=document.querySelectorAll(".sym-item");',
+'  for(var i=0;i<items.length;i++) items[i].classList.toggle("on",items[i].dataset.sym===sym);',
+'  updateDisplay(sym);loadChart(sym);',
+'  if(poFullIsOpen()) poFullSwitch(poFullTab,false);',
+'  if(window.opener&&!window.opener.closed) window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");',
+'}',
+'',
+'function updateDisplay(sym){',
+'  document.getElementById("sym-display").textContent="📈 "+sym;',
+'  document.title="Chart "+sym;',
+'  var t=document.getElementById("po-full-title");',
+'  if(t) t.textContent="📈 "+sym;',
+'}',
+'',
+'function loadChart(sym){',
+'  var frame=document.getElementById("chart-frame");',
+'  var url="https://ta.vietstock.vn/?stockcode="+sym.toLowerCase();',
+'  if(frame.src===url) return;',
+'  var ld=document.getElementById("loading");',
+'  ld.classList.remove("hide");',
+'  frame.onload=function(){ld.classList.add("hide");};',
+'  frame.src=url;',
+'}',
+'',
+'function poFullIsOpen(){',
+'  return document.getElementById("po-full-overlay").classList.contains("on");',
+'}',
+'',
+'function poFullUrl(tab,sym){',
+'  var s=(sym||currentSym||"VNINDEX").toUpperCase().trim();',
+'  if(tab==="vs") return "https://ta.vietstock.vn/?stockcode="+s.toLowerCase();',
+'  if(tab==="vnd-cs") return "https://dstock.vndirect.com.vn/tong-quan/"+s+"/diem-nhan-co-ban-popup?theme=light";',
+'  if(tab==="vnd-news") return "https://dstock.vndirect.com.vn/tong-quan/"+s+"/tin-tuc-ma-popup?type=dn&theme=light";',
+'  if(tab==="vnd-sum") return "https://dstock.vndirect.com.vn/tong-quan/"+s+"?theme=light";',
+'  if(tab==="24h") return "https://24hmoney.vn/stock/"+s+"/news";',
+'  return "about:blank";',
+'}',
+'',
+'function poFullSwitch(tab,force){',
+'  poFullTab=tab;',
+'  for(var i=0;i<PO_FULL_TABS.length;i++){',
+'    var t=PO_FULL_TABS[i];',
+'    var b=document.getElementById("po-ftab-"+t);',
+'    var p=document.getElementById("po-full-panel-"+t);',
+'    if(b) b.classList.toggle("on",t===tab);',
+'    if(p) p.classList.toggle("on",t===tab);',
+'  }',
+'  document.getElementById("po-full-title").textContent="📈 "+currentSym;',
+'  if(tab==="scanner"){poLoadScannerChart(currentSym,!!force);return;}',
+'  var frame=document.getElementById("po-full-iframe-"+tab);',
+'  var url=poFullUrl(tab,currentSym);',
+'  if(frame&&(force||frame.dataset.url!==url)){frame.src=url;frame.dataset.url=url;}',
+'}',
+'',
+'function openFullLocal(sym){',
+'  if(sym) currentSym=sym.toUpperCase().trim();',
+'  document.getElementById("po-full-search-input").value="";',
+'  document.getElementById("po-full-title").textContent="📈 "+currentSym;',
+'  document.getElementById("po-full-overlay").classList.add("on");',
+'  poFullSwitch(poFullTab||"vs",true);',
+'}',
+'',
+'function closeFullLocal(){',
+'  document.getElementById("po-full-overlay").classList.remove("on");',
+'}',
+'',
+'function poFullSetSym(sym,keepTab){',
+'  var next=(sym||"").toUpperCase().trim();',
+'  if(!next) return;',
+'  currentSym=next;updateDisplay(next);loadChart(next);renderSymList();',
+'  if(window.opener&&!window.opener.closed) window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:next},"*");',
+'  if(poFullIsOpen()) poFullSwitch(keepTab?poFullTab:"vs",true);',
+'  else document.getElementById("po-full-title").textContent="📈 "+next;',
+'}',
+'',
+'function poUpdateAlbumNav(){',
+'  var prev=document.getElementById("po-btn-prev");',
+'  var next=document.getElementById("po-btn-next");',
+'  if(prev) prev.classList.toggle("disabled",poAlbumIdx===0);',
+'  if(next) next.classList.toggle("disabled",poAlbumIdx===poAlbumTotal-1);',
+'}',
+'',
+'function poAlbumGoto(i){',
+'  if(i<0||i>=poAlbumTotal) return;',
+'  var slides=document.querySelectorAll("#po-album-slides .po-album-slide");',
+'  var dots=document.querySelectorAll("#po-album-dots .po-album-dot");',
+'  for(var j=0;j<slides.length;j++) slides[j].style.display=(j===i)?"flex":"none";',
+'  for(var k=0;k<dots.length;k++){dots[k].style.background=(k===i)?"#1a56db":"#dde3ee";dots[k].style.transform=(k===i)?"scale(1.3)":"scale(1)";}',
+'  poAlbumIdx=i;poUpdateAlbumNav();',
+'}',
+'',
+'function poAlbumNav(dir){poAlbumGoto(poAlbumIdx+dir);}',
+'',
+'function poShowAlbum(images){',
+'  poAlbumImages=images;poAlbumTotal=images.length;poAlbumIdx=0;',
+'  var slidesEl=document.getElementById("po-album-slides");',
+'  var dotsEl=document.getElementById("po-album-dots");',
+'  slidesEl.innerHTML="";dotsEl.innerHTML="";',
+'  for(var i=0;i<images.length;i++){',
+'    slidesEl.innerHTML+="<div class=\\"po-album-slide\\" style=\\"display:"+(i===0?"flex":"none")+";flex-direction:column;align-items:center;gap:8px;width:100%\\">"+',
+'      "<img src=\\""+images[i].url+"\\" alt=\\""+images[i].label+"\\" loading=\\"lazy\\" style=\\"max-width:100%;max-height:calc(100vh - 150px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee\\">"+',
+'      "<div style=\\"font-size:11px;color:#888;font-family:var(--font-mono)\\">"+images[i].label+"</div>"+',
+'    "</div>";',
+'    dotsEl.innerHTML+="<div class=\\"po-album-dot\\" data-idx=\\""+i+"\\" style=\\"width:8px;height:8px;border-radius:50%;background:"+(i===0?"#1a56db":"#dde3ee")+";cursor:pointer;transition:all .15s;transform:"+(i===0?"scale(1.3)":"scale(1)")+"\\" onclick=\\"poAlbumGoto("+i+")\\"></div>";',
+'  }',
+'  document.getElementById("po-album-outer").style.display="flex";',
+'  document.getElementById("po-scanner-loading").style.display="none";',
+'  poUpdateAlbumNav();',
+'}',
+'',
+'function poLoadScannerChart(sym,clearCache){',
+'  var reqId=++poScannerReqId;',
+'  document.getElementById("po-album-outer").style.display="none";',
+'  document.getElementById("po-scanner-loading").style.display="flex";',
+'  document.getElementById("po-scanner-loading").innerHTML="<span>⏳ Đang tạo chart <b>"+sym+"</b>… (5–10 giây)</span>";',
+'  var p=clearCache?fetch("/api/chart_cache_clear/"+encodeURIComponent(sym),{method:"DELETE"}).catch(function(){}):Promise.resolve();',
+'  p.then(function(){',
+'    return fetch("/api/chart_images/"+encodeURIComponent(sym));',
+'  }).then(function(r){',
+'    if(reqId!==poScannerReqId) return;',
+'    if(!r.ok) return r.json().catch(function(){return{};}).then(function(j){throw new Error(j.error||"HTTP "+r.status);});',
+'    return r.json();',
+'  }).then(function(j){',
+'    if(!j||reqId!==poScannerReqId) return;',
+'    if(j.images&&j.images.length>0){',
+'      var labels=j.labels||["📊 Daily [D]","📈 Weekly [W]","⚡ 15m"];',
+'      var imgs=[];',
+'      for(var i=0;i<j.images.length;i++) imgs.push({url:"data:image/png;base64,"+j.images[i],label:labels[i]||("Chart "+(i+1))});',
+'      poShowAlbum(imgs);',
+'      return;',
+'    }',
+'    throw new Error("no_images");',
+'  }).catch(function(e){',
+'    if(reqId!==poScannerReqId) return;',
+'    document.getElementById("po-scanner-loading").innerHTML=',
+'      "<div style=\\"text-align:center;color:#aaa;padding:24px\\">"+',
+'      "<div style=\\"font-size:24px;margin-bottom:10px\\">⚠️</div>"+',
+'      "<div style=\\"margin-bottom:8px\\">Không tải được chart <b style=\\"color:#4d9ff5\\">"+sym+"</b></div>"+',
+'      "<div style=\\"font-size:11px;color:#666;margin-bottom:16px\\">"+(e.message||e)+"</div>"+',
+'      "<button id=\\"po-retry-btn\\" style=\\"padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px\\">🔄 Thử lại</button>"+',
+'      "</div>";',
+'    var rb=document.getElementById("po-retry-btn");',
+'    if(rb) rb.onclick=function(){poLoadScannerChart(sym,true);};',
+'  });',
+'}',
+'',
+'function poRefreshScannerChart(){if(currentSym) poLoadScannerChart(currentSym,true);}',
+'',
+'/* Controls */',
+'document.getElementById("sort-btn").onclick=function(){',
+'  sortAlpha=!sortAlpha;',
+'  document.getElementById("sort-btn").textContent=sortAlpha?"%↕":"A↕Z";',
+'  renderSymList();',
+'};',
+'document.getElementById("full-btn").onclick=function(){openFullLocal(currentSym);};',
+'document.getElementById("min-btn").onclick=function(){',
+'  if(window.opener&&!window.opener.closed) window.opener.postMessage({type:"POPOUT_MINIMIZE"},"*");',
+'  window.close();',
+'};',
+'document.getElementById("close-btn").onclick=function(){',
+'  if(window.opener&&!window.opener.closed) window.opener.postMessage({type:"POPOUT_CLOSE"},"*");',
+'  window.close();',
+'};',
+'',
+'/* Search */',
+'document.getElementById("search-input").addEventListener("keydown",function(e){',
+'  if(e.key==="Enter"){',
+'    var sym=this.value.trim().toUpperCase();',
+'    if(sym.length>=2){this.value="";this.blur();currentSym=sym;updateDisplay(sym);loadChart(sym);renderSymList();',
+'      if(poFullIsOpen()) poFullSwitch(poFullTab,true);',
+'      if(window.opener&&!window.opener.closed) window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");',
+'    }',
+'  }',
+'  if(e.key==="Escape"){this.value="";this.blur();}',
+'});',
+'',
+'/* Keyboard nav */',
+'var _kThrottle=false,_kDelay=null;',
+'document.addEventListener("keydown",function(e){',
+'  if(document.activeElement===document.getElementById("search-input")) return;',
+'  if(document.activeElement===document.getElementById("po-full-search-input")) return;',
+'  if(poFullIsOpen()&&poFullTab==="scanner"){',
+'    if(e.key==="ArrowLeft"){e.preventDefault();poAlbumNav(-1);return;}',
+'    if(e.key==="ArrowRight"){e.preventDefault();poAlbumNav(1);return;}',
+'  }',
+'  if(e.key==="Escape"&&poFullIsOpen()){e.preventDefault();closeFullLocal();return;}',
+'  if(e.key!=="ArrowUp"&&e.key!=="ArrowDown") return;',
+'  e.preventDefault();',
+'  if(_kThrottle) return;',
+'  _kThrottle=true;setTimeout(function(){_kThrottle=false;},60);',
+'  var items=document.getElementById("symlist").children;',
+'  if(!items.length) return;',
+'  var cur=-1;',
+'  for(var i=0;i<items.length;i++){if(items[i].classList.contains("on")){cur=i;break;}}',
+'  var next=cur===-1?0:(e.key==="ArrowDown"?cur+1:cur-1);',
+'  next=Math.max(0,Math.min(next,items.length-1));',
+'  if(next===cur&&cur!==-1) return;',
+'  for(var j=0;j<items.length;j++) items[j].classList.remove("on");',
+'  items[next].classList.add("on");',
+'  var sym=items[next].dataset.sym;',
+'  currentSym=sym;updateDisplay(sym);',
+'  if(_kDelay) clearTimeout(_kDelay);',
+'  _kDelay=setTimeout(function(){',
+'    loadChart(sym);',
+'    if(poFullIsOpen()) poFullSwitch(poFullTab,false);',
+'    if(window.opener&&!window.opener.closed) window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");',
+'  },300);',
+'  var list=document.getElementById("symlist"),el2=items[next];',
+'  var relTop=el2.offsetTop-list.offsetTop,h=el2.offsetHeight;',
+'  if(relTop-h<list.scrollTop) list.scrollTop=Math.max(0,relTop-h);',
+'  else if(relTop+h*2>list.scrollTop+list.clientHeight) list.scrollTop=relTop+h*2-list.clientHeight;',
+'});',
+'',
+'/* Full overlay init */',
+'var ftabs=document.querySelectorAll(".po-ftab");',
+'for(var fi=0;fi<ftabs.length;fi++){',
+'  (function(btn){btn.onclick=function(){poFullSwitch(btn.dataset.tab,false);};})(ftabs[fi]);',
+'}',
+'document.getElementById("po-full-close").onclick=function(){closeFullLocal();};',
+'document.getElementById("po-full-overlay").addEventListener("click",function(e){',
+'  if(e.target.id==="po-full-overlay") closeFullLocal();',
+'});',
+'document.getElementById("po-full-search-input").addEventListener("keydown",function(e){',
+'  if(e.key==="Enter"){',
+'    var sym=this.value.trim().toUpperCase();',
+'    if(sym.length>=2){this.value="";this.blur();poFullSetSym(sym,true);}',
+'  }',
+'  if(e.key==="Escape") closeFullLocal();',
+'});',
+'',
+'/* Messages from parent */',
+'window.addEventListener("message",function(e){',
+'  if(e.data.type==="UPDATE_CHART"){',
+'    currentSym=e.data.symbol;updateDisplay(currentSym);loadChart(currentSym);renderSymList();',
+'    if(poFullIsOpen()) poFullSwitch(poFullTab,true);',
+'  }',
+'  if(e.data.type==="UPDATE_HEATMAP"){hmapData=e.data.data||{};renderSymList();}',
+'});',
+'',
+'/* Init */',
+'buildTabs();renderSymList();updateDisplay(currentSym);loadChart(currentSym);',
+'</script>',
+'</body>',
+'</html>'
+  ].join('\n');
 
   _popoutWin.document.write(popoutHTML);
   _popoutWin.document.close();
 
-  // Theo dõi nếu user đóng popout bằng nút X của trình duyệt
   const _checkClosed = setInterval(() => {
     if (_popoutWin && _popoutWin.closed) {
       clearInterval(_checkClosed);
