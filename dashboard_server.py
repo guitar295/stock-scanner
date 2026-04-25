@@ -1067,7 +1067,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .popup-search-input:focus{width:150px}
 }
 #hover-preview-panel{
-  display:none;position:fixed;bottom:0;left:0;right:0;height:80vh;
+  display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;
   min-height:120px;max-height:90vh;
   z-index:500;background:var(--surface);border-top:2px solid var(--accent);
   box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column;
