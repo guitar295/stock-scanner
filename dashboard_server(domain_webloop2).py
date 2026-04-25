@@ -1109,7 +1109,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 .hv-body { display:flex;flex:1;overflow:hidden; }
 .hv-symlist {
-  width:100px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);
+  width:120px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);
   background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent;
 }
 .hv-symlist::-webkit-scrollbar{width:3px}
@@ -1117,13 +1117,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 .hv-sym-item {
   display:grid;
-  grid-template-columns:38px 40px 1fr;
+  grid-template-columns:35px 30px 1fr;
   align-items:center;
   padding:5px 6px;
   cursor:pointer;
   border-bottom:1px solid rgba(0,0,0,.04);
   transition:background .1s;
-  gap:4px;
+  gap:2px;
 }
 .hv-sym-item:hover,
 .hv-sym-item.on { background:#e8effd; }
@@ -2758,7 +2758,7 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 #main{display:flex;height:calc(100% - 42px);overflow:hidden}
 
 #symlist{
-  width:100px;flex-shrink:0;overflow-y:auto;background:var(--bg);
+  width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);
   border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent
 }
 #symlist::-webkit-scrollbar{width:3px}
@@ -2766,13 +2766,13 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 
 .sym-item{
   display:grid;
-  grid-template-columns:38px 40px 1fr;
+  grid-template-columns:35px 30px 1fr;
   align-items:center;
-  padding:5px 10px;
+  padding:5px 6px;
   cursor:pointer;
   border-bottom:1px solid rgba(0,0,0,.04);
   transition:background .12s, box-shadow .12s;
-  gap:4px
+  gap:2px
 }
 .sym-item:hover,.sym-item.on{background:#dce8ff}
 .sym-item.on .sym-name{color:#0f3fb3;font-weight:800}
