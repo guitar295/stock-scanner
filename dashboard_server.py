@@ -1497,6 +1497,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           title="Bật/tắt xem chart khi hover">
           👁 Chart: TẮT
         </button>
+        <button id="hmap-popout-btn" class="hmap-link-btn" onclick="quickPopout()"
+          title="Mở chart ra cửa sổ riêng">
+          ⧉ Popout
+        </button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -2604,6 +2608,18 @@ document.addEventListener('keydown', e => {
     list.scrollTop = relTop + h * 2 - list.clientHeight;
   }
 });
+
+function quickPopout(){
+  if(_isPopoutMode && _popoutWin && !_popoutWin.closed){
+    _popoutWin.focus();
+    return;
+  }
+  if(!_hoverPreviewOn){
+    _hoverPreviewOn = true;
+    _hvActiveGroup = 0;
+  }
+  popOutHover();
+}
 
 function toggleHoverPreview(){
   if (_isPopoutMode) {
