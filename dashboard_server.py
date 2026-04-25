@@ -276,29 +276,11 @@ body{
   display:grid;
   grid-template-columns:1fr auto 1fr;
   align-items:center;
-  padding:3px 14px;
+  padding:7px 14px;
   background:var(--surf2);
   border-bottom:1px solid var(--border);
   gap:0;
   flex-shrink:0;
-}
-.phdr.embedded{
-  padding:2px 10px;
-}
-.phdr.embedded .phdr-left{
-  display:none !important;
-}
-.phdr.embedded .ctab{
-  padding:3px 9px;
-  font-size:10px;
-}
-.closebtn{
-  transition:all .15s;
-}
-.phdr.embedded .closebtn{
-  width:24px;
-  height:24px;
-  font-size:13px;
 }
 .phdr-left{display:flex;align-items:center;gap:8px;justify-content:flex-start}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
@@ -765,16 +747,6 @@ window.addEventListener('message',function(e){
     setSymbol(e.data.symbol);
   }
 });
-
-(function(){
-  try{
-    if(window.self !== window.top){
-      document.querySelector('.phdr').classList.add('embedded');
-    }
-  }catch(e){
-    document.querySelector('.phdr').classList.add('embedded');
-  }
-})();
 
 setSymbol(_sym);
 </script>
