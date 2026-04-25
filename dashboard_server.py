@@ -275,7 +275,7 @@ header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spaci
   flex-wrap:nowrap;
 }
 .hmap-hdr-row1{
-  display:flex;align-items:center;gap:8px;flex-shrink:0;
+  display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0;
 }
 .hmap-ts-wrap{
   margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;
@@ -541,57 +541,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .popup-search-input{width:120px}
   .popup-search-input:focus{width:150px}
 }
-#hover-preview-panel{
-  display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;
-  min-height:120px;max-height:90vh;
-  z-index:500;background:var(--surface);border-top:2px solid var(--accent);
-  box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column;
-}
-#hover-preview-resizer{
-  position:absolute;top:0;left:0;right:0;height:6px;
-  cursor:ns-resize;z-index:10;
-  background:transparent;
-}
-#hover-preview-resizer:hover{background:rgba(26,86,219,.18);}
-#hover-preview-panel .pvhdr{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:6px 14px;background:var(--surf2);border-bottom:1px solid var(--border);
-  flex-shrink:0;
-}
-#hover-preview-panel iframe{flex:1;border:none;width:100%;display:block;}
-#hover-preview-btn{
-  display:inline-flex;align-items:center;gap:5px;
-  padding:4px 11px;border-radius:5px;border:1px solid var(--border);
-  background:var(--surface);color:var(--muted);
-  font-family:var(--font-mono);font-size:10px;font-weight:600;
-  cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;
-}
-#hover-preview-btn.on{
-  background:var(--accent);color:#fff;border-color:var(--accent);
-}
-@media(max-width:768px){
-  #hover-preview-btn{display:none!important}
-  #hover-preview-panel{display:none!important}
-}
-
-/* ══ HOVER PREVIEW — Group Tabs + Symbol List ══ */
-.hv-header-row1 { display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0; }
-.hv-grouptabs { display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none; }
-.hv-grouptabs::-webkit-scrollbar{display:none}
-.hv-gtab { flex-shrink:0;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s; }
-.hv-gtab.on { background:var(--accent);color:#fff;border-color:var(--accent); }
-.hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
-.hv-body { display:flex;flex:1;overflow:hidden; }
-.hv-symlist { width:100px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
-.hv-symlist::-webkit-scrollbar{width:3px}
-.hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hv-sym-item { display:grid;grid-template-columns:40px 1fr;align-items:center;padding:5px 12px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px; }
-.hv-sym-item:hover,.hv-sym-item.on { background:#eef3ff; }
-.hv-sym-item.on .hv-sym-name { color:var(--accent);font-weight:700; }
-.hv-sym-name { font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--text); }
-.hv-sym-pct { font-family:var(--font-mono);font-size:10px;text-align:right; }
-#hover-preview-iframe-wrap { flex:1;overflow:hidden;position:relative; }
-#hover-preview-iframe-wrap iframe { width:100%;height:100%;border:none;display:block; }
 
 /* ══ CHỈ MOBILE - KHÔNG ảnh hưởng desktop ══ */
 @media screen and (max-width:768px){
@@ -932,10 +881,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             spellcheck="false"
           >
         </div>
-        <button id="hover-preview-btn" onclick="toggleHoverPreview()"
-          title="Bật/tắt xem chart khi hover">
-          👁 Hover: TẮT
-        </button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -950,27 +895,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
   </div>
 
-</div>
-
-<div id="hover-preview-panel">
-  <div id="hover-preview-resizer"></div>
-  <div class="hv-header-row1">
-    <div class="hv-grouptabs" id="hv-grouptabs"></div>
-    <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;padding-right:6px;">
-      <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
-      <button onclick="openChart(_hoverPreviewCurrent)"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Full ↗</button>
-      <button onclick="toggleHoverPreview()"
-        style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
-    </div>
-  </div>
-  <div class="hv-body">
-    <div class="hv-symlist" id="hv-symlist" style="display:none;"></div>
-    <div id="hover-preview-iframe-wrap">
-      <iframe id="hover-preview-iframe" src="about:blank"></iframe>
-    </div>
-  </div>
 </div>
 
 <footer id="footer-txt">Scanner Bot Dashboard</footer>
@@ -1198,8 +1122,7 @@ function mkCell(sym,data){
   const{bg,fg}=cellStyle(pct);
   const sign=pct>=0?'+':'';
   return `<div class="hmap-cell" style="background:${bg};color:${fg};"
-    onclick="_hmapClick('${sym}')"
-    ondblclick="_hmapDblClick('${sym}')"
+    onclick="openChart('${sym}')"
     title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%">
     <span class="hc-sym">${sym}</span>
     <span class="hc-price">${fmtP(price)}</span>
@@ -1774,9 +1697,7 @@ async function fetchSigs(){
       el.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;
     }
     el.innerHTML=j.signals.map(s=>`
-      <div class="sig-row"
-        onclick="_hmapClick('${s.symbol}')"
-        ondblclick="_hmapDblClick('${s.symbol}')">
+      <div class="sig-row" onclick="openChart('${s.symbol}')">
         <span class="s-emoji">${s.emoji}</span>
         <span class="s-sym">${s.symbol}</span>
         <span class="s-type" style="font-weight:600;color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>
@@ -1793,9 +1714,7 @@ async function fetchHmap(){
     document.getElementById('hmap-ts').textContent=isMob
       ?`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`
       :`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
-    window._lastHmapData = j.data || {};
     renderHeatmap(j.data||{});
-    if(_hoverPreviewOn) _hvRenderSymList();
   }catch(e){console.error('fetchHmap:',e)}
 }
 
@@ -1880,230 +1799,6 @@ openChart=function(sym){buildMobileHeader();_openChartOrig(sym);};
 
 const _openUrlOrig=openUrl;
 openUrl=function(url,label){buildMobileHeader();_openUrlOrig(url,label);};
-
-// ═══════════════════════════════════════════════════════
-// HOVER PREVIEW
-// ═══════════════════════════════════════════════════════
-let _hoverPreviewOn = false;
-let _hoverPreviewTimer = null;
-let _hoverPreviewCurrent = '';
-let _hvActiveGroup = -1;   // -1 = chưa chọn tab nào
-let _hvSortAlpha = false;
-const _hvGroups = [];
-
-(function(){
-  _hvGroups.push({ name:'TRADING', syms: TS_POOL });
-  _hvGroups.push({ name:'VN30', syms: HMAP_COLS[0].groups[0].syms });
-  HMAP_COLS.forEach(cd => {
-    cd.groups.forEach(g => {
-      if(g.name === 'VN30') return;
-      _hvGroups.push({ name: g.name, syms: g.syms });
-    });
-  });
-})();
-
-function _hvBuildTabs(){
-  const tabsEl = document.getElementById('hv-grouptabs');
-  tabsEl.innerHTML = _hvGroups.map((g,i) =>
-    `<button class="hv-gtab" id="hv-gtab-${i}" onclick="_hvSelectGroup(${i})">${g.name}</button>`
-  ).join('');
-}
-
-function _hvSelectGroup(idx){
-  if(_hvActiveGroup === idx){
-    // Click lại tab đang active → đóng danh sách
-    _hvActiveGroup = -1;
-    document.querySelectorAll('.hv-gtab').forEach(b => b.classList.remove('on'));
-    document.getElementById('hv-symlist').style.display = 'none';
-    document.getElementById('hv-sort-btn').style.display = 'none';
-    return;
-  }
-  _hvActiveGroup = idx;
-  document.querySelectorAll('.hv-gtab').forEach((b,i) => b.classList.toggle('on', i===idx));
-  document.getElementById('hv-sort-btn').style.display = '';
-  document.getElementById('hv-symlist').style.display = '';
-  _hvRenderSymList();
-}
-
-function _hvGetSortedSyms(){
-  const group = _hvGroups[_hvActiveGroup];
-  if(!group) return [];
-  const hmapData = window._lastHmapData || {};
-  if(_hvSortAlpha){
-    return [...group.syms].sort((a,b) => a.localeCompare(b));
-  } else {
-    return [...group.syms].sort((a,b) => {
-      const pa = hmapData[a] ? (hmapData[a].pct||0) : -999;
-      const pb = hmapData[b] ? (hmapData[b].pct||0) : -999;
-      return pb - pa;
-    });
-  }
-}
-
-function _hvToggleSort(){
-  _hvSortAlpha = !_hvSortAlpha;
-  const btn = document.getElementById('hv-sort-btn');
-  btn.textContent = _hvSortAlpha ? '%↕' : 'A↕Z';
-  btn.style.color = _hvSortAlpha ? 'var(--accent)' : 'var(--muted)';
-  _hvRenderSymList();
-}
-
-function _hvRenderSymList(){
-  if(_hvActiveGroup === -1) return;
-  const hmapData = window._lastHmapData || {};
-  const syms = _hvGetSortedSyms();
-  
-  const listEl = document.getElementById('hv-symlist');
-  listEl.innerHTML = syms.map((sym,i) => {
-    const d = hmapData[sym];
-    const pct = d && typeof d.pct === 'number' ? d.pct : null;
-    const pctStr = pct !== null ? (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%' : '—';
-    const color = pct === null ? 'var(--muted)' : pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : '#b45309';
-    
-    return `<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}"
-      data-sym="${sym}" data-idx="${i}"
-      onclick="_hvClickSym('${sym}',this)">
-      <span class="hv-sym-name">${sym}</span>
-      <span class="hv-sym-pct" style="color:${color}">${pctStr}</span>
-    </div>`;
-  }).join('');
-}
-
-function _hvClickSym(sym, el){
-  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-  if(sym === _hoverPreviewCurrent) return;
-  
-  document.querySelectorAll('.hv-sym-item').forEach(e => e.classList.remove('on'));
-  el.classList.add('on');
-  _hoverPreviewCurrent = sym;
-  document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
-  document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-}
-
-let _iframeDelay = null;
-let _keyThrottle = false;
-
-document.addEventListener('keydown', e => {
-  if(!_hoverPreviewOn || _hvActiveGroup === -1 || document.getElementById('overlay')?.classList.contains('on')) return;
-  if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-  e.preventDefault();
-
-  // 1. GIỚI HẠN TỐC ĐỘ (Throttle): Tránh hiện tượng dội phím, "phi 1 đoạn" khi trình duyệt lag
-  if(_keyThrottle) return;
-  _keyThrottle = true;
-  setTimeout(() => { _keyThrottle = false; }, 60); // Giữ phím sẽ chạy mượt mà ~15 mã/giây
-
-  if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-
-  const items = [...document.getElementById('hv-symlist').children];
-  if(!items.length) return;
-
-  let cur = items.findIndex(el => el.classList.contains('on'));
-  let next = cur === -1 ? 0 : (e.key === 'ArrowDown' ? cur + 1 : cur - 1);
-  next = Math.max(0, Math.min(next, items.length - 1));
-  if(next === cur && cur !== -1) return;
-
-  items.forEach(el => el.classList.remove('on'));
-  items[next].classList.add('on');
-
-  const sym = items[next].dataset.sym;
-  _hoverPreviewCurrent = sym;
-  
-  const titleEl = document.getElementById('hover-preview-title');
-  if (titleEl) titleEl.textContent = '📈 ' + sym;
-
-  // 2. CHỐNG LAG IFRAME (Debounce): Đang giữ phím lướt danh sách thì KHÔNG tải chart.
-  // Chỉ tải chart khi nhả phím hoặc dừng lại 300ms (0.3 giây).
-  if(_iframeDelay) clearTimeout(_iframeDelay);
-  _iframeDelay = setTimeout(() => {
-    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-  }, 300);
-
-  // 3. TÍNH TOÁN CUỘN DANH SÁCH (Chừa 1 dòng trên/dưới)
-  const list = document.getElementById('hv-symlist');
-  const el = items[next];
-  
-  const relTop = el.offsetTop - list.offsetTop;
-  const h = el.offsetHeight;
-
-  if(relTop - h < list.scrollTop) {
-    list.scrollTop = Math.max(0, relTop - h);
-  } 
-  else if(relTop + h * 2 > list.scrollTop + list.clientHeight) {
-    list.scrollTop = relTop + h * 2 - list.clientHeight;
-  }
-});
-
-function toggleHoverPreview(){
-  _hoverPreviewOn = !_hoverPreviewOn;
-  const btn   = document.getElementById('hover-preview-btn');
-  const panel = document.getElementById('hover-preview-panel');
-  const wrap  = document.querySelector('.wrap');
-
-  if(_hoverPreviewOn){
-    btn.classList.add('on');
-    btn.textContent = '👁 Hover: BẬT';
-    panel.style.display = 'flex';
-    _hvBuildTabs();
-    wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
-    
-    if (_hvActiveGroup === -1) {
-      _hvSelectGroup(0);
-    }
-  } else {
-    btn.classList.remove('on');
-    btn.textContent = '👁 Hover: TẮT';
-    panel.style.display = 'none';
-    wrap.style.paddingBottom = '';
-    document.getElementById('hover-preview-iframe').src = 'about:blank';
-    _hoverPreviewCurrent = '';
-    
-    if(_hvActiveGroup !== -1) {
-      _hvActiveGroup = -1;
-    }
-    if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
-  }
-}
-
-(function(){
-  const resizer = document.getElementById('hover-preview-resizer');
-  const panel   = document.getElementById('hover-preview-panel');
-  let _dragging = false, _startY = 0, _startH = 0;
-  resizer.addEventListener('mousedown', function(e){
-    _dragging = true; _startY = e.clientY; _startH = panel.offsetHeight;
-    document.body.style.userSelect = 'none'; document.body.style.cursor = 'ns-resize';
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', function(e){
-    if(!_dragging) return;
-    const delta = _startY - e.clientY;
-    const newH  = Math.min(window.innerHeight * 0.9, Math.max(120, _startH + delta));
-    panel.style.height = newH + 'px';
-    const w = document.querySelector('.wrap');
-    if(w) w.style.paddingBottom = newH + 16 + 'px';
-  });
-  document.addEventListener('mouseup', function(){
-    if(!_dragging) return;
-    _dragging = false; document.body.style.userSelect = ''; document.body.style.cursor = '';
-  });
-})();
-
-let _hmapClickTimer = null;
-
-function _hmapClick(sym){
-  if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
-  _hmapClickTimer = setTimeout(() => {
-    if(!_hoverPreviewOn) { openChart(sym); return; }
-    _hoverPreviewCurrent = sym;
-    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
-    document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
-  }, 250);
-}
-
-function _hmapDblClick(sym){
-  if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
-  openChart(sym);
-}
 
 init();
 </script>
