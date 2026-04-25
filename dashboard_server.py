@@ -1542,7 +1542,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button onclick="toggleHoverPreview()"
         onmouseover="this.style.background='var(--red)';this.style.color='#fff';this.style.borderColor='var(--red)'"
         onmouseout="this.style.background='#fff';this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
-        style="width:28px;height:24px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:12px;font-family:var(--font-mono);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:all .15s;">✕</button> 
+        style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:12px;font-family:var(--font-mono);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:all .15s;"> ✕ </button> 
     </div>
   </div>
   <div class="hv-body">
