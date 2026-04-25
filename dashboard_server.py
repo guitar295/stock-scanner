@@ -1726,7 +1726,7 @@ const HMAP_COLS = [
 ];
 
 const TS_POOL=[
-  "AAA","ACB","AGG","ANV","BCG","BFC","BID","BMI","BSR","BVB","BVH","BWE",
+  "AAA","ACB","AGG","ANV","BFC","BID","BMI","BSR","BVB","BVH","BWE",
   "CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE",
   "DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS",
   "GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK",
