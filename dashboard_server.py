@@ -2711,8 +2711,8 @@ function popOutHover() {
   btn.classList.add('on');
   btn.textContent = '👁 Chart: POPOUT';
 
-  const w = Math.min(1400, window.screen.availWidth - 80);
-  const h = Math.min(1200, window.screen.availHeight - 80);
+  const w = Math.min(1800, window.screen.availWidth - 80);
+  const h = Math.min(1800, window.screen.availHeight - 80);
   const left = 40, top = 40;
 
   _popoutWin = window.open("", "ScannerPopout",
