@@ -2163,7 +2163,7 @@ function popOutHover() {
   const initGroup = _hvActiveGroup >= 0 ? _hvActiveGroup : 0;
   const initSort = _hvSortAlpha;
 
-  const popoutHTML = `<!DOCTYPE html>
+   const popoutHTML = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -2218,21 +2218,21 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 <div id="header">
   <span id="sym-display">---</span>
   <div id="search-wrap">
-    <span id="search-icon">&#128269;</span>
-    <input id="search-input" type="text" placeholder="T\\u00ecm m\\u00e3" maxlength="10" autocomplete="off" spellcheck="false">
+    <span id="search-icon">🔍</span>
+    <input id="search-input" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
   </div>
   <div id="grouptabs"></div>
   <div id="controls">
-    <button class="ctrl-btn" id="sort-btn" title="\\u0110\\u1ed5i s\\u1eafp x\\u1ebfp">A\\u2195Z</button>
-    <button class="ctrl-btn" id="full-btn" title="M\\u1edf popup chi ti\\u1ebft">Full \\u2197</button>
-    <button class="ctrl-btn" id="min-btn" title="Thu nh\\u1ecf v\\u1ec1 Dashboard">\\u25C2 Min</button>
-    <button class="ctrl-btn" id="close-btn" title="\\u0110\\u00f3ng">\\u2715</button>
+    <button class="ctrl-btn" id="sort-btn" title="Đổi sắp xếp">A↕Z</button>
+    <button class="ctrl-btn" id="full-btn" title="Mở popup chi tiết">Full ↗</button>
+    <button class="ctrl-btn" id="min-btn" title="Thu nhỏ về Dashboard">◂ Min</button>
+    <button class="ctrl-btn" id="close-btn" title="Đóng">✕</button>
   </div>
 </div>
 <div id="main">
   <div id="symlist"></div>
   <div id="chart-wrap">
-    <div id="loading">\\u0110ang t\\u1ea3i...</div>
+    <div id="loading">Đang tải...</div>
     <iframe id="chart-frame" src="about:blank"></iframe>
   </div>
 </div>
@@ -2272,7 +2272,7 @@ function renderSymList(){
   el.innerHTML=syms.map(sym=>{
     const d=hmapData[sym];
     const pct=d&&typeof d.pct==='number'?d.pct:null;
-    const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'\\u2014';
+    const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
     const cls=pct===null?'pct-zer':(pct>0?'pct-pos':(pct<0?'pct-neg':'pct-zer'));
     return '<div class="sym-item'+(sym===currentSym?' on':'')+'" data-sym="'+sym+'" onclick="clickSym(\\''+sym+'\\',this)"><span class="sym-name">'+sym+'</span><span class="sym-pct '+cls+'">'+pctStr+'</span></div>';
   }).join('');
@@ -2290,7 +2290,7 @@ function clickSym(sym,el){
 }
 
 function updateDisplay(sym){
-  document.getElementById('sym-display').textContent='\\u{1F4C8} '+sym;
+  document.getElementById('sym-display').textContent='📈 '+sym;
   document.title='Chart '+sym;
 }
 
@@ -2307,7 +2307,7 @@ function loadChart(sym){
 // Controls
 document.getElementById('sort-btn').onclick=()=>{
   sortAlpha=!sortAlpha;
-  document.getElementById('sort-btn').textContent=sortAlpha?'%\\u2195':'A\\u2195Z';
+  document.getElementById('sort-btn').textContent=sortAlpha?'%↕':'A↕Z';
   renderSymList();
 };
 document.getElementById('full-btn').onclick=()=>{
