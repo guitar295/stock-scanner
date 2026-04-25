@@ -2981,7 +2981,7 @@ buildTabs();
 renderSymList();
 updateDisplay(currentSym);
 loadChart(currentSym);
-</script>
+<\/script>
 </body>
 </html>`;
 
