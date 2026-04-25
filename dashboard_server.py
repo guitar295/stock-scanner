@@ -2821,7 +2821,7 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
   <div id="grouptabs"></div>
   <div id="controls">
     <button class="ctrl-btn" id="sort-btn" title="Đổi sắp xếp">A↕Z</button>
-    <button class="ctrl-btn" id="full-btn" title="Mở full ngay trong cửa sổ popout">Full ↗</button>
+    <button class="ctrl-btn" id="full-btn" title="Mở full ngay trong cửa sổ popout"> ⛶ </button>
     <button class="ctrl-btn" id="min-btn" title="Thu nhỏ về Dashboard"> ❐ </button>
     <button class="ctrl-btn" id="close-btn" title="Đóng">✕</button>
   </div>
