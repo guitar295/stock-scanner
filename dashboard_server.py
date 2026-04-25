@@ -582,14 +582,15 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hv-gtab.on { background:var(--accent);color:#fff;border-color:var(--accent); }
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hv-body { display:flex;flex:1;overflow:hidden; }
-.hv-symlist { width:100px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
+.hv-symlist { width:156px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hv-sym-item { display:grid;grid-template-columns:40px 1fr;align-items:center;padding:5px 12px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px; }
+.hv-sym-item { display:grid;grid-template-columns:44px 44px 1fr;align-items:center;padding:5px 10px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:6px; }
 .hv-sym-item:hover,.hv-sym-item.on { background:#eef3ff; }
 .hv-sym-item.on .hv-sym-name { color:var(--accent);font-weight:700; }
 .hv-sym-name { font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--text); }
 .hv-sym-pct { font-family:var(--font-mono);font-size:10px;text-align:right; }
+.hv-sym-price { font-family:var(--font-mono);font-size:10px;text-align:right;color:var(--text);opacity:.72; }
 #hover-preview-iframe-wrap { flex:1;overflow:hidden;position:relative; }
 #hover-preview-iframe-wrap iframe { width:100%;height:100%;border:none;display:block; }
 
@@ -1961,8 +1962,9 @@ function _hvRenderSymList(){
   
   const listEl = document.getElementById('hv-symlist');
   listEl.innerHTML = syms.map((sym,i) => {
-    const d = hmapData[sym];
-    const pct = d && typeof d.pct === 'number' ? d.pct : null;
+    const d = hmapData[sym] || {};
+    const pct = typeof d.pct === 'number' ? d.pct : null;
+    const price = typeof d.price === 'number' ? fmtP(d.price) : '—';
     const pctStr = pct !== null ? (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%' : '—';
     const color = pct === null ? 'var(--muted)' : pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : '#b45309';
     
@@ -1971,6 +1973,7 @@ function _hvRenderSymList(){
       onclick="_hvClickSym('${sym}',this)">
       <span class="hv-sym-name">${sym}</span>
       <span class="hv-sym-pct" style="color:${color}">${pctStr}</span>
+      <span class="hv-sym-price">${price}</span>
     </div>`;
   }).join('');
 }
@@ -2198,17 +2201,84 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 
 #main{display:flex;height:calc(100% - 42px);overflow:hidden}
 
-#symlist{width:130px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+#symlist{width:162px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 #symlist::-webkit-scrollbar{width:3px}
 #symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.sym-item{display:grid;grid-template-columns:46px 1fr;align-items:center;padding:5px 10px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:4px}
+.sym-item{display:grid;grid-template-columns:46px 44px 1fr;align-items:center;padding:5px 10px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:6px}
 .sym-item:hover,.sym-item.on{background:#e3ecfa}
 .sym-item.on .sym-name{color:var(--accent);font-weight:700}
 .sym-name{font-size:11px;font-weight:600}
 .sym-pct{font-size:10px;text-align:right;font-weight:500}
+.sym-price{font-size:10px;text-align:right;color:var(--text);opacity:.72}
 .pct-pos{color:var(--green)}
 .pct-neg{color:var(--red)}
 .pct-zer{color:#b45309}
+
+/* ===== FULL OVERLAY TRONG POPOUT ===== */
+#po-full-overlay{
+  display:none;position:fixed;inset:0;z-index:99999;
+  background:rgba(255,255,255,.98);
+}
+#po-full-overlay.on{display:flex}
+#po-full-box{
+  width:100%;height:100%;display:flex;flex-direction:column;
+  background:var(--surface);
+}
+#po-full-hdr{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  gap:10px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border)
+}
+.po-full-left{display:flex;align-items:center;gap:8px;min-width:0}
+#po-full-title{
+  font-family:var(--font-ui);font-size:17px;font-weight:800;
+  color:var(--accent);letter-spacing:1px;white-space:nowrap
+}
+#po-full-search-wrap{position:relative;flex-shrink:0}
+#po-full-search-icon{
+  position:absolute;left:9px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:12px;pointer-events:none;
+}
+#po-full-search-input{
+  width:112px;padding:5px 10px 5px 28px;
+  border-radius:20px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  font-family:var(--font-mono);font-size:11px;outline:none;
+  transition:width .2s,border-color .15s,box-shadow .15s;
+}
+#po-full-search-input:focus{
+  width:170px;border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(26,86,219,.12);
+}
+#po-full-tabs{
+  display:flex;gap:4px;align-items:center;overflow-x:auto;min-width:0;
+  scrollbar-width:none;-ms-overflow-style:none;
+}
+#po-full-tabs::-webkit-scrollbar{display:none}
+.po-ftab{
+  flex-shrink:0;
+  padding:5px 11px;border-radius:5px 5px 0 0;
+  border:1px solid var(--border);border-bottom:2px solid transparent;
+  background:var(--bg);color:var(--muted);
+  font-size:11px;font-family:var(--font-mono);font-weight:600;
+  cursor:pointer;white-space:nowrap;transition:all .15s;
+}
+.po-ftab.on{
+  background:var(--surface);color:var(--accent);
+  border-color:var(--border);border-bottom-color:var(--accent);
+  font-weight:700;
+}
+.po-ftab:hover:not(.on){background:#eef3ff;color:var(--accent)}
+#po-full-close{
+  width:28px;height:28px;border-radius:50%;
+  border:1px solid var(--border);background:var(--bg);
+  color:var(--muted);font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;
+}
+#po-full-close:hover{background:#e02424;color:#fff;border-color:#e02424}
+#po-full-body{flex:1;position:relative;overflow:hidden;background:#fff}
+.po-full-panel{display:none;position:absolute;inset:0}
+.po-full-panel.on{display:block}
+.po-full-panel iframe{width:100%;height:100%;border:none;display:block}
 
 #chart-wrap{flex:1;overflow:hidden;position:relative;background:#fff}
 #chart-frame{width:100%;height:100%;border:none;display:block}
@@ -2244,12 +2314,129 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
     <iframe id="chart-frame" src="about:blank"></iframe>
   </div>
 </div>
+
+<!-- === BẮT ĐẦU CHÈN HTML FULL OVERLAY TẠI ĐÂY === -->
+<div id="po-full-overlay">
+  <div id="po-full-box">
+    <div id="po-full-hdr">
+      <div class="po-full-left">
+        <span id="po-full-title">📈 ---</span>
+        <div id="po-full-search-wrap">
+          <span id="po-full-search-icon">🔍</span>
+          <input id="po-full-search-input" type="text" placeholder="Tìm mã"
+                 maxlength="10" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <div id="po-full-tabs">
+        <button class="po-ftab on" id="po-ftab-vs" data-tab="vs">📈 Vietstock</button>
+        <button class="po-ftab" id="po-ftab-vnd-cs" data-tab="vnd-cs">⚖️ Cơ bản</button>
+        <button class="po-ftab" id="po-ftab-vnd-news" data-tab="vnd-news">🗞️ Tin tức</button>
+        <button class="po-ftab" id="po-ftab-vnd-sum" data-tab="vnd-sum">📄 Tổng quan</button>
+        <button class="po-ftab" id="po-ftab-24h" data-tab="24h">💬 24HMoney</button>
+      </div>
+
+      <button id="po-full-close">✕</button>
+    </div>
+
+    <div id="po-full-body">
+      <div class="po-full-panel on" id="po-full-panel-vs">
+        <iframe id="po-full-iframe-vs" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <div class="po-full-panel" id="po-full-panel-vnd-cs">
+        <iframe id="po-full-iframe-vnd-cs" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <div class="po-full-panel" id="po-full-panel-vnd-news">
+        <iframe id="po-full-iframe-vnd-news" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <div class="po-full-panel" id="po-full-panel-vnd-sum">
+        <iframe id="po-full-iframe-vnd-sum" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <div class="po-full-panel" id="po-full-panel-24h">
+        <iframe id="po-full-iframe-24h" src="about:blank" allowfullscreen></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- === KẾT THÚC CHÈN HTML === -->
+
 <script>
 let hvGroups=${groupsJSON};
 let hmapData=${dataJSON};
 let activeGroup=${initGroup};
 let sortAlpha=${initSort};
 let currentSym='${initSym}';
+
+let poFullTab='vs';
+const PO_FULL_TABS=['vs','vnd-cs','vnd-news','vnd-sum','24h'];
+
+function fmtPrice(p){
+  if(typeof p!=='number' || !isFinite(p) || p<=0) return '—';
+  return p<100 ? p.toFixed(2) : p.toFixed(1);
+}
+
+function poFullIsOpen(){
+  return document.getElementById('po-full-overlay').classList.contains('on');
+}
+
+function poFullUrl(tab,sym){
+  const s=(sym||currentSym||'VNINDEX').toUpperCase().trim();
+  if(tab==='vs')       return 'https://ta.vietstock.vn/?stockcode='+s.toLowerCase();
+  if(tab==='vnd-cs')   return 'https://dstock.vndirect.com.vn/tong-quan/'+s+'/diem-nhan-co-ban-popup?theme=light';
+  if(tab==='vnd-news') return 'https://dstock.vndirect.com.vn/tong-quan/'+s+'/tin-tuc-ma-popup?type=dn&theme=light';
+  if(tab==='vnd-sum')  return 'https://dstock.vndirect.com.vn/tong-quan/'+s+'?theme=light';
+  if(tab==='24h')      return 'https://24hmoney.vn/stock/'+s+'/news';
+  return 'about:blank';
+}
+
+function poFullSwitch(tab, force=false){
+  poFullTab=tab;
+  PO_FULL_TABS.forEach(t=>{
+    document.getElementById('po-ftab-'+t).classList.toggle('on', t===tab);
+    document.getElementById('po-full-panel-'+t).classList.toggle('on', t===tab);
+  });
+
+  const frame=document.getElementById('po-full-iframe-'+tab);
+  const url=poFullUrl(tab,currentSym);
+  if(force || frame.dataset.url!==url){
+    frame.src=url;
+    frame.dataset.url=url;
+  }
+
+  document.getElementById('po-full-title').textContent='📈 '+currentSym;
+}
+
+function openFullLocal(sym){
+  if(sym) currentSym=sym.toUpperCase().trim();
+  document.getElementById('po-full-search-input').value='';
+  document.getElementById('po-full-title').textContent='📈 '+currentSym;
+  document.getElementById('po-full-overlay').classList.add('on');
+  poFullSwitch(poFullTab || 'vs', true);
+}
+
+function closeFullLocal(){
+  document.getElementById('po-full-overlay').classList.remove('on');
+}
+
+function poFullSetSym(sym, keepTab=true){
+  const next=(sym||'').toUpperCase().trim();
+  if(!next) return;
+
+  currentSym=next;
+  updateDisplay(currentSym);
+  loadChart(currentSym);
+  renderSymList();
+
+  if(window.opener && !window.opener.closed){
+    window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:currentSym},'*');
+  }
+
+  if(poFullIsOpen()){
+    poFullSwitch(keepTab ? poFullTab : 'vs', true);
+  }else{
+    document.getElementById('po-full-title').textContent='📈 '+currentSym;
+  }
+}
 
 function buildTabs(){
   const el=document.getElementById('grouptabs');
@@ -2278,11 +2465,17 @@ function renderSymList(){
   const syms=getSorted();
   const el=document.getElementById('symlist');
   el.innerHTML=syms.map(sym=>{
-    const d=hmapData[sym];
-    const pct=d&&typeof d.pct==='number'?d.pct:null;
+    const d=hmapData[sym]||{};
+    const pct=typeof d.pct==='number'?d.pct:null;
+    const price=typeof d.price==='number'?fmtPrice(d.price):'—';
     const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
     const cls=pct===null?'pct-zer':(pct>0?'pct-pos':(pct<0?'pct-neg':'pct-zer'));
-    return '<div class="sym-item'+(sym===currentSym?' on':'')+'" data-sym="'+sym+'" onclick="clickSym(\\''+sym+'\\',this)"><span class="sym-name">'+sym+'</span><span class="sym-pct '+cls+'">'+pctStr+'</span></div>';
+
+    return '<div class="sym-item'+(sym===currentSym?' on':'')+'" data-sym="'+sym+'" onclick="clickSym(\\''+sym+'\\',this)">'+
+      '<span class="sym-name">'+sym+'</span>'+
+      '<span class="sym-pct '+cls+'">'+pctStr+'</span>'+
+      '<span class="sym-price">'+price+'</span>'+
+    '</div>';
   }).join('');
 }
 
@@ -2292,6 +2485,11 @@ function clickSym(sym,el){
   document.querySelectorAll('.sym-item').forEach(e=>e.classList.toggle('on',e.dataset.sym===sym));
   updateDisplay(sym);
   loadChart(sym);
+
+  if(poFullIsOpen()){
+    poFullSwitch(poFullTab,true);
+  }
+
   if(window.opener&&!window.opener.closed){
     window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
   }
@@ -2319,9 +2517,7 @@ document.getElementById('sort-btn').onclick=()=>{
   renderSymList();
 };
 document.getElementById('full-btn').onclick=()=>{
-  if(window.opener&&!window.opener.closed){
-    window.opener.postMessage({type:'POPOUT_OPEN_FULL',symbol:currentSym},'*');
-  }
+  openFullLocal(currentSym);
 };
 document.getElementById('min-btn').onclick=()=>{
   if(window.opener&&!window.opener.closed){
@@ -2390,12 +2586,51 @@ document.addEventListener('keydown',e=>{
 // Receive messages from parent
 window.addEventListener('message',function(e){
   if(e.data.type==='UPDATE_CHART'){
-    currentSym=e.data.symbol;updateDisplay(currentSym);loadChart(currentSym);renderSymList();
+    currentSym=e.data.symbol;
+    updateDisplay(currentSym);
+    loadChart(currentSym);
+    renderSymList();
+    if(poFullIsOpen()) poFullSwitch(poFullTab,true);
   }
   if(e.data.type==='UPDATE_HEATMAP'){
-    hmapData=e.data.data||{};renderSymList();
+    hmapData=e.data.data||{};
+    renderSymList();
   }
 });
+
+// === BẮT ĐẦU CHÈN ĐOẠN G TẠI ĐÂY ===
+document.querySelectorAll('.po-ftab').forEach(btn=>{
+  btn.onclick=()=>poFullSwitch(btn.dataset.tab);
+});
+
+document.getElementById('po-full-close').onclick=()=>closeFullLocal();
+
+document.getElementById('po-full-overlay').addEventListener('click',function(e){
+  if(e.target.id==='po-full-overlay') closeFullLocal();
+});
+
+document.getElementById('po-full-search-input').addEventListener('keydown',function(e){
+  if(e.key==='Enter'){
+    const sym=this.value.trim().toUpperCase();
+    if(sym.length>=2){
+      this.value='';
+      this.blur();
+      poFullSetSym(sym,true);
+    }
+  }
+  if(e.key==='Escape'){
+    closeFullLocal();
+  }
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && poFullIsOpen()){
+    e.preventDefault();
+    closeFullLocal();
+    return;
+  }
+});
+// === KẾT THÚC CHÈN ĐOẠN G ===
 
 // Init
 buildTabs();renderSymList();updateDisplay(currentSym);loadChart(currentSym);
