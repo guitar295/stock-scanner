@@ -1525,10 +1525,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
         style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
       <button onclick="openChart(_hoverPreviewCurrent)"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Full ↗</button>
+        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⛶ </button>
       <button id="hv-pop-btn" onclick="popOutHover()" 
         title="Mở chart ra cửa sổ riêng"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Pop ⧉</button>
+        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⧉ </button>
       <button onclick="toggleHoverPreview()"
         style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
     </div>
@@ -2822,7 +2822,7 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
   <div id="controls">
     <button class="ctrl-btn" id="sort-btn" title="Đổi sắp xếp">A↕Z</button>
     <button class="ctrl-btn" id="full-btn" title="Mở full ngay trong cửa sổ popout">Full ↗</button>
-    <button class="ctrl-btn" id="min-btn" title="Thu nhỏ về Dashboard">◂ Min</button>
+    <button class="ctrl-btn" id="min-btn" title="Thu nhỏ về Dashboard"> ❐ </button>
     <button class="ctrl-btn" id="close-btn" title="Đóng">✕</button>
   </div>
 </div>
