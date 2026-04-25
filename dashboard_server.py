@@ -1529,16 +1529,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button onclick="openChart(_hoverPreviewCurrent)"
         onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
         onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;"> ⛶ </button>
+        style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;"> ⛶ </button>
       <button id="hv-pop-btn" onclick="popOutHover()" 
         title="Mở chart ra cửa sổ riêng"
         onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
         onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;"> ⧉ </button>
+        style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;"> ⧉ </button>
       <button onclick="toggleHoverPreview()"
         onmouseover="this.style.background='var(--red)';this.style.color='#fff';this.style.borderColor='var(--red)'"
         onmouseout="this.style.background='#fff';this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
-        style="width:24px;height:24px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;">✕</button>
+        style="width:24px;height:24px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:12px;font-family:var(--font-mono);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:all .15s;">✕</button>
     </div>
   </div>
   <div class="hv-body">
