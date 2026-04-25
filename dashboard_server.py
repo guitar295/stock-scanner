@@ -961,6 +961,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
       <button onclick="openChart(_hoverPreviewCurrent)"
         style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Full ↗</button>
+      <button id="hv-pop-btn" onclick="popOutHover()" 
+        title="Mở chart ra cửa sổ riêng"
+        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Pop ⧉</button>
       <button onclick="toggleHoverPreview()"
         style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
     </div>
@@ -1972,10 +1975,10 @@ function _hvRenderSymList(){
 function _hvClickSym(sym, el){
   if(_hoverPreviewTimer) clearTimeout(_hoverPreviewTimer);
   if(sym === _hoverPreviewCurrent) return;
-  
   document.querySelectorAll('.hv-sym-item').forEach(e => e.classList.remove('on'));
   el.classList.add('on');
   _hoverPreviewCurrent = sym;
+  updatePopout(sym);
   document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
   document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
 }
@@ -2017,6 +2020,7 @@ document.addEventListener('keydown', e => {
   if(_iframeDelay) clearTimeout(_iframeDelay);
   _iframeDelay = setTimeout(() => {
     document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+    updatePopout(sym); 
   }, 300);
 
   // 3. TÍNH TOÁN CUỘN DANH SÁCH (Chừa 1 dòng trên/dưới)
@@ -2093,6 +2097,7 @@ let _hmapClickTimer = null;
 function _hmapClick(sym){
   if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
   _hmapClickTimer = setTimeout(() => {
+    updatePopout(sym);
     if(!_hoverPreviewOn) { openChart(sym); return; }
     _hoverPreviewCurrent = sym;
     document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
@@ -2102,7 +2107,78 @@ function _hmapClick(sym){
 
 function _hmapDblClick(sym){
   if(_hmapClickTimer) clearTimeout(_hmapClickTimer);
+  updatePopout(sym); 
   openChart(sym);
+}
+
+let _popoutWin = null;
+
+function popOutHover() {
+  const sym = _hoverPreviewCurrent || 'VNINDEX';
+  
+  // Nếu cửa sổ đã mở và chưa bị đóng, thì chỉ cần focus và cập nhật mã
+  if (_popoutWin && !_popoutWin.closed) {
+    _popoutWin.focus();
+    updatePopout(sym);
+    return;
+  }
+
+  // Cấu hình cửa sổ mới (kích thước, vị trí)
+  const w = 1100, h = 750;
+  const left = (window.screen.width / 2) - (w / 2);
+  const top = (window.screen.height / 2) - (h / 2);
+  
+  _popoutWin = window.open("", "ScannerPopout", `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+
+  // Tạo nội dung HTML cho cửa sổ con
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Chart Popout</title>
+      <style>
+        body, html { margin:0; padding:0; height:100%; overflow:hidden; font-family: sans-serif; background:#f4f6fb; }
+        #header { height:40px; background:#1a56db; color:white; display:flex; align-items:center; padding:0 15px; font-weight:bold; font-family: monospace; letter-spacing:1px; }
+        iframe { width:100%; height: calc(100% - 40px); border:none; }
+        #sym-display { font-size: 18px; margin-right: 15px; }
+        .tag { font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; }
+      </style>
+    </head>
+    <body>
+      <div id="header">
+        <span id="sym-display">---</span>
+        <span class="tag">LIVE SYNC ON</span>
+      </div>
+      <iframe id="chart-iframe" src="about:blank"></iframe>
+      <script>
+        // Lắng nghe lệnh cập nhật từ cửa sổ chính
+        window.addEventListener('message', function(e) {
+          if (e.data.type === 'UPDATE_CHART') {
+            document.getElementById('sym-display').textContent = '📈 ' + e.data.symbol;
+            document.title = 'Chart ' + e.data.symbol;
+            const url = 'https://ta.vietstock.vn/?stockcode=' + e.data.symbol.toLowerCase();
+            if (document.getElementById('chart-iframe').src !== url) {
+              document.getElementById('chart-iframe').src = url;
+            }
+          }
+        });
+      <\/script>
+    </body>
+    </html>
+  `;
+  
+  _popoutWin.document.write(html);
+  _popoutWin.document.close();
+
+  // Đợi iframe load xong rồi gửi mã hiện tại sang
+  setTimeout(() => updatePopout(sym), 300);
+}
+
+// Hàm gửi dữ liệu sang cửa sổ con
+function updatePopout(sym) {
+  if (_popoutWin && !_popoutWin.closed) {
+    _popoutWin.postMessage({ type: 'UPDATE_CHART', symbol: sym }, '*');
+  }
 }
 
 init();
