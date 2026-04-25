@@ -535,7 +535,7 @@ function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();
   if(!_sym) return;
 
-  document.getElementById('ptitle').textContent='📈 ' + _sym;
+  document.getElementById('ptitle').textContent=_sym;
   document.title=_sym + ' • Full Chart';
 
   document.getElementById('iframe-vs').src='https://ta.vietstock.vn/?stockcode=' + _sym.toLowerCase();
@@ -2223,7 +2223,7 @@ function openUrl(url,label){
 
 function openChart(sym){
   _sym=sym.toUpperCase().trim();_tab='vs';
-  document.getElementById('ptitle').textContent=`📈 ${_sym}`;
+  document.getElementById('ptitle').textContent=_sym;
   document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
   IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
   document.getElementById('album-outer').style.display='none';
