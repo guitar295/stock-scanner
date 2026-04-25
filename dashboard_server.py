@@ -454,7 +454,7 @@ body{
     </div>
 
     <div class="phdr-right">
-      <button class="closebtn" onclick="window.close()">✕</button>
+        <button class="closebtn" onclick="handleClose()">✕</button>
     </div>
   </div>
 
@@ -509,12 +509,26 @@ const IFRAME_TABS=['vnd-cs','vnd-news','vnd-sum','24h'];
 
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 
-function notifyOpener(sym){
+function notifyHost(sym){
   try{
+    if(window.self !== window.top){
+      window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
+      return;
+    }
     if(window.opener && !window.opener.closed){
       window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
     }
   }catch(e){}
+}
+
+function handleClose(){
+  try{
+    if(window.self !== window.top){
+      window.parent.postMessage({type:'EMBEDDED_FULL_CLOSE',symbol:_sym},'*');
+      return;
+    }
+  }catch(e){}
+  window.close();
 }
 
 function setSymbol(sym){
@@ -539,7 +553,7 @@ function setSymbol(sym){
     history.replaceState(null,'','/popout_full/' + _sym);
   }catch(e){}
 
-  notifyOpener(_sym);
+  notifyHost(_sym);
 }
 
 function _activateTab(tab){
@@ -1103,7 +1117,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 .hv-sym-item {
   display:grid;
-  grid-template-columns:42px 34px 1fr;
+  grid-template-columns:38px 40px 1fr;
   align-items:center;
   padding:5px 6px;
   cursor:pointer;
@@ -2752,13 +2766,13 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 
 .sym-item{
   display:grid;
-  grid-template-columns:46px 50px 1fr;
+  grid-template-columns:38px 40px 1fr;
   align-items:center;
   padding:5px 10px;
   cursor:pointer;
   border-bottom:1px solid rgba(0,0,0,.04);
   transition:background .12s, box-shadow .12s;
-  gap:6px
+  gap:4px
 }
 .sym-item:hover,.sym-item.on{background:#dce8ff}
 .sym-item.on .sym-name{color:#0f3fb3;font-weight:800}
@@ -2811,6 +2825,7 @@ let hmapData=${dataJSON};
 let activeGroup=${initGroup};
 let sortAlpha=${initSort};
 let currentSym='${initSym}';
+let isFullMode=false;
 
 function formatPrice(v){
   if(v===null || v===undefined || isNaN(v) || v<=0) return '—';
@@ -2877,12 +2892,29 @@ function updateDisplay(sym){
 
 function loadChart(sym){
   const frame=document.getElementById('chart-frame');
-  const url='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+  const url = isFullMode
+    ? (window.location.origin + '/popout_full/' + sym)
+    : ('https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase());
+
   if(frame.src===url) return;
+
   const ld=document.getElementById('loading');
   ld.classList.remove('hide');
   frame.onload=()=>ld.classList.add('hide');
   frame.src=url;
+}
+
+function openFullInFrame(){
+  isFullMode = true;
+  loadChart(currentSym);
+}
+
+function closeFullInFrame(sym){
+  if(sym) currentSym = sym;
+  isFullMode = false;
+  updateDisplay(currentSym);
+  renderSymList();
+  loadChart(currentSym);
 }
 
 document.getElementById('sort-btn').onclick=()=>{
@@ -2892,7 +2924,7 @@ document.getElementById('sort-btn').onclick=()=>{
 };
 
 document.getElementById('full-btn').onclick=()=>{
-  window.open('/popout_full/' + currentSym, '_blank');
+  openFullInFrame();
 };
 
 document.getElementById('min-btn').onclick=()=>{
@@ -2970,6 +3002,14 @@ window.addEventListener('message',function(e){
   if(e.data.type==='UPDATE_HEATMAP'){
     hmapData=e.data.data||{};
     renderSymList();
+  }
+  if(e.data.type==='EMBEDDED_FULL_SYMBOL'){
+    currentSym=(e.data.symbol||currentSym).toUpperCase();
+    updateDisplay(currentSym);
+    renderSymList();
+  }
+  if(e.data.type==='EMBEDDED_FULL_CLOSE'){
+    closeFullInFrame(e.data.symbol||currentSym);
   }
 });
 
