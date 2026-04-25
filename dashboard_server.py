@@ -1523,7 +1523,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="hv-grouptabs" id="hv-grouptabs"></div>
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;padding-right:6px;">
       <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
+        onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
+        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;transition:all .15s;">A↕Z</button>
       <button onclick="openChart(_hoverPreviewCurrent)"
         onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
         onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
@@ -2519,7 +2521,7 @@ function _hvToggleSort(){
   _hvSortAlpha = !_hvSortAlpha;
   const btn = document.getElementById('hv-sort-btn');
   btn.textContent = _hvSortAlpha ? '%↕' : 'A↕Z';
-  btn.style.color = _hvSortAlpha ? 'var(--accent)' : 'var(--muted)';
+  btn.style.color = 'var(--accent)';
   _hvRenderSymList();
 }
 
