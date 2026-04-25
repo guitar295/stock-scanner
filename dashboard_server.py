@@ -934,7 +934,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
         <button id="hover-preview-btn" onclick="toggleHoverPreview()"
           title="Bật/tắt xem chart khi hover">
-          👁 Hover: TẮT
+          👁 Chart: TẮT
         </button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
@@ -2042,7 +2042,7 @@ function toggleHoverPreview(){
 
   if(_hoverPreviewOn){
     btn.classList.add('on');
-    btn.textContent = '👁 Hover: BẬT';
+    btn.textContent = '👁 Chart: BẬT';
     panel.style.display = 'flex';
     _hvBuildTabs();
     wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
@@ -2052,7 +2052,7 @@ function toggleHoverPreview(){
     }
   } else {
     btn.classList.remove('on');
-    btn.textContent = '👁 Hover: TẮT';
+    btn.textContent = '👁 Chart: TẮT';
     panel.style.display = 'none';
     wrap.style.paddingBottom = '';
     document.getElementById('hover-preview-iframe').src = 'about:blank';
