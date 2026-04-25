@@ -2046,6 +2046,7 @@ function toggleHoverPreview(){
     minimizePopout();
     return;
   }
+
   _hoverPreviewOn = !_hoverPreviewOn;
   const btn   = document.getElementById('hover-preview-btn');
   const panel = document.getElementById('hover-preview-panel');
@@ -2058,9 +2059,16 @@ function toggleHoverPreview(){
     _hvBuildTabs();
     wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
     
+    // LUÔN LUÔN set về VNINDEX mỗi khi mở lên
+    _hoverPreviewCurrent = 'VNINDEX';
+    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=vnindex';
+    
     if (_hvActiveGroup === -1) {
       _hvSelectGroup(0);
+    } else {
+      _hvRenderSymList(); // Render lại list để xóa highlight mã cũ
     }
+    
   } else {
     btn.classList.remove('on');
     btn.textContent = '👁 Chart: TẮT';
