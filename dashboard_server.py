@@ -1525,7 +1525,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
         style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
       <button onclick="openChart(_hoverPreviewCurrent)"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⛶ </button>
+        style="padding:3px 10px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⛶ </button>
       <button id="hv-pop-btn" onclick="popOutHover()" 
         title="Mở chart ra cửa sổ riêng"
         style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⧉ </button>
