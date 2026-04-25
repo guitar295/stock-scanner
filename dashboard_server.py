@@ -1536,7 +1536,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         onmouseout="this.style.background='#fff';this.style.color='var(--accent)'"
         style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;"> ⧉ </button>
       <button onclick="toggleHoverPreview()"
-        style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+        onmouseover="this.style.background='var(--red)';this.style.color='#fff';this.style.borderColor='var(--red)'"
+        onmouseout="this.style.background='#fff';this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+        style="width:24px;height:24px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;">✕</button>
     </div>
   </div>
   <div class="hv-body">
