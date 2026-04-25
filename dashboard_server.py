@@ -1103,10 +1103,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 }
 
 /* ══ HOVER PREVIEW — Group Tabs + Symbol List ══ */
-.hv-header-row1 { display:flex;align-items:center;gap:4px;padding:2px 6px 2px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0; }
-.hv-grouptabs { display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none; }
+.hv-header-row1 { display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0; }
+.hv-grouptabs { display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none; padding:1px 0; }
 .hv-grouptabs::-webkit-scrollbar{display:none}
-.hv-gtab { flex-shrink:0;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s; }
+.hv-gtab { height:24px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s; }
 .hv-gtab.on { background:var(--accent);color:#fff;border-color:var(--accent); }
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 
