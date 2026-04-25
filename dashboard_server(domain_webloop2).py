@@ -1495,7 +1495,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
         <button id="hover-preview-btn" onclick="toggleHoverPreview()"
           title="Bật/tắt xem chart khi hover">
-          👁 Chart: TẮT
+          Chart: OFF
+        </button>
+        <button id="hmap-popout-btn" class="hmap-link-btn" onclick="quickPopout()"
+          title="Mở chart ra cửa sổ riêng">
+          ⧉
         </button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
@@ -1521,10 +1525,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button id="hv-sort-btn" onclick="_hvToggleSort()" title="Đổi cách sắp xếp"
         style="padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:none;">A↕Z</button>
       <button onclick="openChart(_hoverPreviewCurrent)"
-        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Full ↗</button>
+        style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⛶ </button>
       <button id="hv-pop-btn" onclick="popOutHover()" 
         title="Mở chart ra cửa sổ riêng"
-        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;">Pop ⧉</button>
+        style="padding:3px 8px;border-radius:4px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;"> ⧉ </button>
       <button onclick="toggleHoverPreview()"
         style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
     </div>
@@ -2605,6 +2609,18 @@ document.addEventListener('keydown', e => {
   }
 });
 
+function quickPopout(){
+  if(_isPopoutMode && _popoutWin && !_popoutWin.closed){
+    _popoutWin.focus();
+    return;
+  }
+  if(!_hoverPreviewOn){
+    _hoverPreviewOn = true;
+    _hvActiveGroup = 0;
+  }
+  popOutHover();
+}
+
 function toggleHoverPreview(){
   if (_isPopoutMode) {
     minimizePopout();
@@ -2618,7 +2634,7 @@ function toggleHoverPreview(){
 
   if(_hoverPreviewOn){
     btn.classList.add('on');
-    btn.textContent = '👁 Chart: BẬT';
+    btn.textContent = 'Chart: ON';
     panel.style.display = 'flex';
     _hvBuildTabs();
     wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
@@ -2635,7 +2651,7 @@ function toggleHoverPreview(){
     
   } else {
     btn.classList.remove('on');
-    btn.textContent = '👁 Chart: TẮT';
+    btn.textContent = 'Chart: OFF';
     panel.style.display = 'none';
     wrap.style.paddingBottom = '';
     document.getElementById('hover-preview-iframe').src = 'about:blank';
@@ -2709,11 +2725,11 @@ function popOutHover() {
 
   const btn = document.getElementById('hover-preview-btn');
   btn.classList.add('on');
-  btn.textContent = '👁 Chart: POPOUT';
+  btn.textContent = 'Chart: POP';
 
   const w = Math.min(1400, window.screen.availWidth - 80);
-  const h = Math.min(850, window.screen.availHeight - 80);
-  const left = 40, top = 40;
+  const h = Math.min(1000, window.screen.availHeight - 60);
+  const left = 40, top = 20;
 
   _popoutWin = window.open("", "ScannerPopout",
     `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,menubar=no,toolbar=no`);
@@ -2805,8 +2821,8 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
   <div id="grouptabs"></div>
   <div id="controls">
     <button class="ctrl-btn" id="sort-btn" title="Đổi sắp xếp">A↕Z</button>
-    <button class="ctrl-btn" id="full-btn" title="Mở full ngay trong cửa sổ popout">Full ↗</button>
-    <button class="ctrl-btn" id="min-btn" title="Thu nhỏ về Dashboard">◂ Min</button>
+    <button class="ctrl-btn" id="full-btn" title="Mở full ngay trong cửa sổ popout"> ⛶ </button>
+    <button class="ctrl-btn" id="min-btn" title="Thu nhỏ về Dashboard"> ❐ </button>
     <button class="ctrl-btn" id="close-btn" title="Đóng">✕</button>
   </div>
 </div>
@@ -3046,7 +3062,7 @@ function minimizePopout() {
   _hoverPreviewOn = true;
   const btn = document.getElementById('hover-preview-btn');
   btn.classList.add('on');
-  btn.textContent = '👁 Chart: BẬT';
+  btn.textContent = 'Chart: ON';
 
   const panel = document.getElementById('hover-preview-panel');
   panel.style.display = 'flex';
@@ -3098,7 +3114,7 @@ window.addEventListener('message', function(e) {
     _popoutWin = null;
     const btn = document.getElementById('hover-preview-btn');
     btn.classList.remove('on');
-    btn.textContent = '👁 Chart: TẮT';
+    btn.textContent = 'Chart: OFF';
     document.querySelector('.wrap').style.paddingBottom = '';
   }
   else if (e.data.type === 'POPOUT_OPEN_FULL') {
