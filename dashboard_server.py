@@ -2757,19 +2757,19 @@ function popOutHover() {
 :root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}
 
-#header{display:flex;align-items:center;padding:0 12px;background:var(--accent);color:#fff;height:42px;gap:8px;flex-shrink:0}
-#sym-display{font-family:var(--font-ui);font-size:17px;font-weight:800;letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
+#header{display:flex;align-items:center;padding:0 12px;background:var(--surf2);color:var(--text);height:36px;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)}
+#sym-display{font-family:var(--font-ui);font-size:14px;font-weight:700;letter-spacing:1px;flex-shrink:0;white-space:nowrap;color:var(--accent)}
 #grouptabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none}
 #grouptabs::-webkit-scrollbar{display:none}
-.gtab{padding:4px 10px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}
-.gtab.on{background:#fff;color:var(--accent);border-color:#fff;font-weight:700}
-.gtab:hover:not(.on){background:rgba(255,255,255,.18)}
+.gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}
+.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+.gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 #controls{display:flex;gap:4px;align-items:center;flex-shrink:0}
-.ctrl-btn{padding:4px 10px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap}
-.ctrl-btn:hover{background:rgba(255,255,255,.25)}
-#min-btn{background:rgba(255,255,255,.15)}
-#min-btn:hover{background:rgba(255,255,255,.35)}
-#close-btn:hover{background:#e02424;border-color:#e02424}
+.ctrl-btn{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap}
+.ctrl-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+#min-btn{background:var(--bg)}
+#min-btn:hover{background:var(--accent);color:#fff}
+#close-btn:hover{background:#e02424;color:#fff;border-color:#e02424}
 
 #main{display:flex;height:calc(100% - 42px);overflow:hidden}
 
@@ -2805,10 +2805,10 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
 #loading.hide{opacity:0;pointer-events:none}
 
 #search-wrap{position:relative;flex-shrink:0}
-#search-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.5);font-size:11px;pointer-events:none}
-#search-input{width:90px;padding:4px 8px 4px 24px;border-radius:14px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}
-#search-input::placeholder{color:rgba(255,255,255,.4)}
-#search-input:focus{width:140px;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.15)}
+#search-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none}
+#search-input{width:90px;padding:4px 8px 4px 24px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}
+#search-input::placeholder{color:var(--muted)}
+#search-input:focus{width:140px;border-color:var(--accent);background:var(--surface)}
 </style>
 </head>
 <body>
@@ -2902,7 +2902,7 @@ function clickSym(sym,el){
 }
 
 function updateDisplay(sym){
-  document.getElementById('sym-display').textContent='📈 '+sym;
+  document.getElementById('sym-display').textContent=sym;
   document.title='Chart '+sym;
 }
 
