@@ -2768,7 +2768,7 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
   display:grid;
   grid-template-columns:35px 30px 1fr;
   align-items:center;
-  padding:5px 10px;
+  padding:5px 6px;
   cursor:pointer;
   border-bottom:1px solid rgba(0,0,0,.04);
   transition:background .12s, box-shadow .12s;
