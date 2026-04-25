@@ -1619,7 +1619,7 @@ async function loadScannerChart(sym){
             style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
             🔄 Thử lại
           </button>
-          <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank"
+          <a href="https://stockchart.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank"
              style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
             📈 Stockchart
           </a>
@@ -1638,7 +1638,7 @@ function openUrl(url,label){
   _sym='VNINDEX';_tab='url';
   document.getElementById('ptitle').textContent=label||'🌐 Web';
   IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
-  document.getElementById('iframe-vs').src='https://ta.vietstock.vn/?stockcode=vnindex';
+  document.getElementById('iframe-vs').src='https://stockchart.vietstock.vn/?stockcode=vnindex';
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
   document.getElementById('scanner-loading').innerHTML='<span>⏳ Đang tải...</span>';
@@ -1659,7 +1659,7 @@ function openUrl(url,label){
 function openChart(sym){
   _sym=sym.toUpperCase().trim();_tab='vs';
   document.getElementById('ptitle').textContent=`📈 ${_sym}`;
-  document.getElementById('iframe-vs').src=`https://ta.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
+  document.getElementById('iframe-vs').src=`https://stockchart.vietstock.vn/?stockcode=${_sym.toLowerCase()}`;
   IFRAME_TABS.forEach(t=>{document.getElementById(`iframe-${t}`).src='about:blank';});
   document.getElementById('album-outer').style.display='none';
   document.getElementById('scanner-loading').style.display='flex';
@@ -1983,7 +1983,7 @@ function _hvClickSym(sym, el){
   _hoverPreviewCurrent = sym;
   updatePopout(sym);
   document.getElementById('hover-preview-title') && (document.getElementById('hover-preview-title').textContent = '📈 ' + sym);
-  document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+  document.getElementById('hover-preview-iframe').src = 'https://stockchart.vietstock.vn/?stockcode=' + sym.toLowerCase();
 }
 
 let _iframeDelay = null;
@@ -2022,7 +2022,7 @@ document.addEventListener('keydown', e => {
   // Chỉ tải chart khi nhả phím hoặc dừng lại 300ms (0.3 giây).
   if(_iframeDelay) clearTimeout(_iframeDelay);
   _iframeDelay = setTimeout(() => {
-    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+    document.getElementById('hover-preview-iframe').src = 'https://stockchart.vietstock.vn/?stockcode=' + sym.toLowerCase();
     updatePopout(sym); 
   }, 300);
 
@@ -2061,7 +2061,7 @@ function toggleHoverPreview(){
     
     // LUÔN LUÔN set về VNINDEX mỗi khi mở lên
     _hoverPreviewCurrent = 'VNINDEX';
-    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=vnindex';
+    document.getElementById('hover-preview-iframe').src = 'https://stockchart.vietstock.vn/?stockcode=vnindex';
     
     if (_hvActiveGroup === -1) {
       _hvSelectGroup(0);
@@ -2116,7 +2116,7 @@ function _hmapClick(sym){
     if (_isPopoutMode) return; 
     if(!_hoverPreviewOn) { openChart(sym); return; }
     _hoverPreviewCurrent = sym;
-    document.getElementById('hover-preview-iframe').src = 'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+    document.getElementById('hover-preview-iframe').src = 'https://stockchart.vietstock.vn/?stockcode=' + sym.toLowerCase();
     document.querySelectorAll('.hv-sym-item').forEach(el => el.classList.toggle('on', el.dataset.sym === sym));
   }, 250);
 }
@@ -2304,7 +2304,7 @@ function updateDisplay(sym){
 
 function loadChart(sym){
   const frame=document.getElementById('chart-frame');
-  const url='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+  const url='https://stockchart.vietstock.vn/?stockcode='+sym.toLowerCase();
   if(frame.src===url) return;
   const ld=document.getElementById('loading');
   ld.classList.remove('hide');
@@ -2449,7 +2449,7 @@ function minimizePopout() {
   // Load lại chart cho mã đang xem
   if (_hoverPreviewCurrent) {
     document.getElementById('hover-preview-iframe').src =
-      'https://ta.vietstock.vn/?stockcode=' + _hoverPreviewCurrent.toLowerCase();
+      'https://stockchart.vietstock.vn/?stockcode=' + _hoverPreviewCurrent.toLowerCase();
   }
 }
 
@@ -2470,7 +2470,7 @@ window.addEventListener('message', function(e) {
       document.querySelectorAll('.hv-sym-item').forEach(el =>
         el.classList.toggle('on', el.dataset.sym === sym));
       document.getElementById('hover-preview-iframe').src =
-        'https://ta.vietstock.vn/?stockcode=' + sym.toLowerCase();
+        'https://stockchart.vietstock.vn/?stockcode=' + sym.toLowerCase();
     }
   }
   else if (e.data.type === 'POPOUT_MINIMIZE') {
