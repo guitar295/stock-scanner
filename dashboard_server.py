@@ -1495,11 +1495,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
         <button id="hover-preview-btn" onclick="toggleHoverPreview()"
           title="Bật/tắt xem chart khi hover">
-          👁 Chart: TẮT
+          👁 Chart: OFF
         </button>
         <button id="hmap-popout-btn" class="hmap-link-btn" onclick="quickPopout()"
           title="Mở chart ra cửa sổ riêng">
-          ⧉ Popout
+          ⧉
         </button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
@@ -2634,7 +2634,7 @@ function toggleHoverPreview(){
 
   if(_hoverPreviewOn){
     btn.classList.add('on');
-    btn.textContent = '👁 Chart: BẬT';
+    btn.textContent = '👁 Chart: ON';
     panel.style.display = 'flex';
     _hvBuildTabs();
     wrap.style.paddingBottom = panel.offsetHeight + 16 + 'px';
@@ -2651,7 +2651,7 @@ function toggleHoverPreview(){
     
   } else {
     btn.classList.remove('on');
-    btn.textContent = '👁 Chart: TẮT';
+    btn.textContent = '👁 Chart: OFF';
     panel.style.display = 'none';
     wrap.style.paddingBottom = '';
     document.getElementById('hover-preview-iframe').src = 'about:blank';
@@ -2725,11 +2725,11 @@ function popOutHover() {
 
   const btn = document.getElementById('hover-preview-btn');
   btn.classList.add('on');
-  btn.textContent = '👁 Chart: POPOUT';
+  btn.textContent = '👁 Chart: POP';
 
-  const w = Math.min(1800, window.screen.availWidth - 80);
-  const h = Math.min(1800, window.screen.availHeight - 80);
-  const left = 40, top = 40;
+  const w = Math.min(1400, window.screen.availWidth - 80);
+  const h = Math.min(1000, window.screen.availHeight - 20);
+  const left = 40, top = 10;
 
   _popoutWin = window.open("", "ScannerPopout",
     `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,menubar=no,toolbar=no`);
@@ -3062,7 +3062,7 @@ function minimizePopout() {
   _hoverPreviewOn = true;
   const btn = document.getElementById('hover-preview-btn');
   btn.classList.add('on');
-  btn.textContent = '👁 Chart: BẬT';
+  btn.textContent = '👁 Chart: ON';
 
   const panel = document.getElementById('hover-preview-panel');
   panel.style.display = 'flex';
@@ -3114,7 +3114,7 @@ window.addEventListener('message', function(e) {
     _popoutWin = null;
     const btn = document.getElementById('hover-preview-btn');
     btn.classList.remove('on');
-    btn.textContent = '👁 Chart: TẮT';
+    btn.textContent = '👁 Chart: OFF';
     document.querySelector('.wrap').style.paddingBottom = '';
   }
   else if (e.data.type === 'POPOUT_OPEN_FULL') {
