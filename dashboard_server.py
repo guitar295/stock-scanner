@@ -2758,7 +2758,7 @@ function popOutHover() {
 body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}
 
 #header{display:flex;align-items:center;padding:0 12px;background:var(--surf2);color:var(--text);height:42px;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)}
-#sym-display{font-family:var(--font-ui);font-size:14px;font-weight:700;letter-spacing:1px;flex-shrink:0;white-space:nowrap;color:var(--accent)}
+#sym-display{font-family:var(--font-ui);font-size:17px;font-weight:800;letter-spacing:1.5px;flex-shrink:0;white-space:nowrap;color:var(--accent)}
 #grouptabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none}
 #grouptabs::-webkit-scrollbar{display:none}
 .gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}
