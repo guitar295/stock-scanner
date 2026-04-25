@@ -2225,10 +2225,33 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
   background:var(--surface);
 }
 #po-full-hdr{
-  display:grid;grid-template-columns:auto 1fr auto;align-items:center;
-  gap:10px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border)
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  gap:0;
+  padding:8px 12px;
+  background:var(--surf2);
+  border-bottom:1px solid var(--border);
 }
-.po-full-left{display:flex;align-items:center;gap:8px;min-width:0}
+.po-full-left{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  justify-content:flex-start;
+}
+#po-full-center{
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  min-width:0;
+}
+.po-full-right{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+}
 #po-full-title{
   font-family:var(--font-ui);font-size:17px;font-weight:800;
   color:var(--accent);letter-spacing:1px;white-space:nowrap
@@ -2250,8 +2273,15 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
   box-shadow:0 0 0 2px rgba(26,86,219,.12);
 }
 #po-full-tabs{
-  display:flex;gap:4px;align-items:center;overflow-x:auto;min-width:0;
-  scrollbar-width:none;-ms-overflow-style:none;
+  display:flex;
+  gap:4px;
+  align-items:flex-end;
+  justify-content:center;
+  overflow-x:auto;
+  min-width:0;
+  max-width:100%;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
 }
 #po-full-tabs::-webkit-scrollbar{display:none}
 .po-ftab{
@@ -2328,21 +2358,50 @@ body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--fon
         </div>
       </div>
 
-      <div id="po-full-tabs">
-        <button class="po-ftab on" id="po-ftab-vs" data-tab="vs">📈 Vietstock</button>
-        <button class="po-ftab" id="po-ftab-vnd-cs" data-tab="vnd-cs">⚖️ Cơ bản</button>
-        <button class="po-ftab" id="po-ftab-vnd-news" data-tab="vnd-news">🗞️ Tin tức</button>
-        <button class="po-ftab" id="po-ftab-vnd-sum" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="po-ftab" id="po-ftab-24h" data-tab="24h">💬 24HMoney</button>
+      <div id="po-full-center">
+        <div id="po-full-tabs">
+          <button class="po-ftab on" id="po-ftab-vs" data-tab="vs">📈 Vietstock</button>
+          <button class="po-ftab" id="po-ftab-scanner" data-tab="scanner">🖼 Scanner Chart</button>
+          <button class="po-ftab" id="po-ftab-vnd-cs" data-tab="vnd-cs">⚖️ Cơ bản</button>
+          <button class="po-ftab" id="po-ftab-vnd-news" data-tab="vnd-news">🗞️ Tin tức</button>
+          <button class="po-ftab" id="po-ftab-vnd-sum" data-tab="vnd-sum">📄 Tổng quan</button>
+          <button class="po-ftab" id="po-ftab-24h" data-tab="24h">💬 24HMoney</button>
+        </div>
       </div>
 
-      <button id="po-full-close">✕</button>
+      <div class="po-full-right">
+        <button id="po-full-close">✕</button>
+      </div>
     </div>
 
     <div id="po-full-body">
       <div class="po-full-panel on" id="po-full-panel-vs">
         <iframe id="po-full-iframe-vs" src="about:blank" allowfullscreen></iframe>
       </div>
+    
+      <div class="po-full-panel" id="po-full-panel-scanner">
+        <div id="po-scanner-loading" style="display:flex;align-items:center;justify-content:center;height:100%;color:#6b7280;font-size:14px;font-family:var(--font-mono)">
+          <span>⏳ Đang tạo chart từ scanner...</span>
+        </div>
+        <div id="po-album-outer" style="display:none;height:100%;flex-direction:column;overflow:hidden;background:#fff">
+          <div id="po-album-center" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px 4px 2px;gap:4px;background:#fff">
+            <div id="po-album-slides"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0;background:#fff">
+            <button id="po-btn-prev" onclick="poAlbumNav(-1)" style="width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&#9664;</button>
+            <div id="po-album-dots" style="display:flex;gap:6px;align-items:center"></div>
+            <button id="po-btn-next" onclick="poAlbumNav(1)" style="width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&#9654;</button>
+            <button id="po-btn-refresh" onclick="poRefreshScannerChart()" title="Làm mới chart"
+              style="width:30px;height:30px;padding:0;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:#6b7280;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+              ⟳
+            </button>
+          </div>
+          <div style="text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;font-family:var(--font-mono);flex-shrink:0;background:#fff">
+            ◀ ▶ hoặc phím ← → để chuyển ảnh
+          </div>
+        </div>
+      </div>
+    
       <div class="po-full-panel" id="po-full-panel-vnd-cs">
         <iframe id="po-full-iframe-vnd-cs" src="about:blank" allowfullscreen></iframe>
       </div>
@@ -2368,7 +2427,8 @@ let sortAlpha=${initSort};
 let currentSym='${initSym}';
 
 let poFullTab='vs';
-const PO_FULL_TABS=['vs','vnd-cs','vnd-news','vnd-sum','24h'];
+const PO_FULL_TABS=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+let poAlbumIdx=0, poAlbumTotal=0, poAlbumImages=[];
 
 function fmtPrice(p){
   if(typeof p!=='number' || !isFinite(p) || p<=0) return '—';
@@ -2391,10 +2451,18 @@ function poFullUrl(tab,sym){
 
 function poFullSwitch(tab, force=false){
   poFullTab=tab;
+
   PO_FULL_TABS.forEach(t=>{
     document.getElementById('po-ftab-'+t).classList.toggle('on', t===tab);
     document.getElementById('po-full-panel-'+t).classList.toggle('on', t===tab);
   });
+
+  document.getElementById('po-full-title').textContent='📈 '+currentSym;
+
+  if(tab==='scanner'){
+    poLoadScannerChart(currentSym, force);
+    return;
+  }
 
   const frame=document.getElementById('po-full-iframe-'+tab);
   const url=poFullUrl(tab,currentSym);
@@ -2402,8 +2470,6 @@ function poFullSwitch(tab, force=false){
     frame.src=url;
     frame.dataset.url=url;
   }
-
-  document.getElementById('po-full-title').textContent='📈 '+currentSym;
 }
 
 function openFullLocal(sym){
@@ -2436,6 +2502,111 @@ function poFullSetSym(sym, keepTab=true){
   }else{
     document.getElementById('po-full-title').textContent='📈 '+currentSym;
   }
+}
+
+function poUpdateAlbumNav(){
+  const prev=document.getElementById('po-btn-prev');
+  const next=document.getElementById('po-btn-next');
+  if(prev) prev.style.opacity = poAlbumIdx===0 ? '.25' : '1';
+  if(next) next.style.opacity = poAlbumIdx===poAlbumTotal-1 ? '.25' : '1';
+  if(prev) prev.style.pointerEvents = poAlbumIdx===0 ? 'none' : '';
+  if(next) next.style.pointerEvents = poAlbumIdx===poAlbumTotal-1 ? 'none' : '';
+}
+
+function poAlbumGoto(i){
+  if(i<0||i>=poAlbumTotal) return;
+  document.querySelectorAll('#po-album-slides .po-album-slide').forEach((s,idx)=>s.style.display=idx===i?'flex':'none');
+  document.querySelectorAll('#po-album-dots .po-album-dot').forEach((d,idx)=>{
+    d.style.background=idx===i?'#1a56db':'#dde3ee';
+    d.style.transform=idx===i?'scale(1.3)':'scale(1)';
+  });
+  poAlbumIdx=i;
+  poUpdateAlbumNav();
+}
+
+function poAlbumNav(dir){
+  poAlbumGoto(poAlbumIdx+dir);
+}
+
+function poShowAlbum(images){
+  poAlbumImages=images;
+  poAlbumTotal=images.length;
+  poAlbumIdx=0;
+
+  const slidesEl=document.getElementById('po-album-slides');
+  const dotsEl=document.getElementById('po-album-dots');
+  slidesEl.innerHTML='';
+  dotsEl.innerHTML='';
+
+  images.forEach((img,i)=>{
+    slidesEl.innerHTML += `
+      <div class="po-album-slide" style="display:${i===0?'flex':'none'};flex-direction:column;align-items:center;gap:8px;width:100%">
+        <img src="${img.url}" alt="${img.label}" loading="lazy"
+             style="max-width:100%;max-height:calc(100vh - 150px);object-fit:contain;border-radius:3px;border:1px solid #dde3ee">
+        <div style="font-size:11px;color:#888;font-family:var(--font-mono)">${img.label}</div>
+      </div>`;
+    dotsEl.innerHTML += `
+      <div class="po-album-dot"
+           onclick="poAlbumGoto(${i})"
+           style="width:8px;height:8px;border-radius:50%;background:${i===0?'#1a56db':'#dde3ee'};cursor:pointer;transition:all .15s;transform:${i===0?'scale(1.3)':'scale(1)'}">
+      </div>`;
+  });
+
+  document.getElementById('po-album-outer').style.display='flex';
+  document.getElementById('po-scanner-loading').style.display='none';
+  poUpdateAlbumNav();
+}
+
+async function poLoadScannerChart(sym, force=false){
+  document.getElementById('po-album-outer').style.display='none';
+  document.getElementById('po-scanner-loading').style.display='flex';
+  document.getElementById('po-scanner-loading').innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
+
+  try{
+    if(force){
+      await fetch('/api/chart_cache_clear/'+sym, {method:'DELETE'}).catch(()=>{});
+    }
+
+    const r=await fetch('/api/chart_images/'+sym);
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      throw new Error(j.error||('HTTP '+r.status));
+    }
+
+    const j=await r.json();
+    if(j.images && j.images.length>0){
+      const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
+      poShowAlbum(j.images.map((b64,i)=>({
+        url:'data:image/png;base64,'+b64,
+        label:labels[i]||('Chart '+(i+1))
+      })));
+      return;
+    }
+
+    throw new Error('no_images');
+  }catch(e){
+    document.getElementById('po-scanner-loading').innerHTML=`
+      <div style="text-align:center;color:#aaa;padding:24px">
+        <div style="font-size:24px;margin-bottom:10px">⚠️</div>
+        <div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
+        <div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button onclick="poLoadScannerChart('${sym}', true)"
+            style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">
+            🔄 Thử lại
+          </button>
+          <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank"
+             style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">
+            📈 Stockchart
+          </a>
+        </div>
+      </div>`;
+  }
+}
+
+function poRefreshScannerChart(){
+  if(!currentSym) return;
+  poLoadScannerChart(currentSym, true);
 }
 
 function buildTabs(){
@@ -2631,6 +2802,13 @@ document.addEventListener('keydown',e=>{
   }
 });
 // === KẾT THÚC CHÈN ĐOẠN G ===
+
+document.addEventListener('keydown',e=>{
+  if(!poFullIsOpen()) return;
+  if(poFullTab!=='scanner') return;
+  if(e.key==='ArrowLeft'){ e.preventDefault(); poAlbumNav(-1); }
+  if(e.key==='ArrowRight'){ e.preventDefault(); poAlbumNav(1); }
+});
 
 // Init
 buildTabs();renderSymList();updateDisplay(currentSym);loadChart(currentSym);
