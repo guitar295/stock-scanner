@@ -221,6 +221,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+@media (min-width: 769px) {
+    body.embedded-popout-desktop .phdr-left {
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+  }
 @media(max-width:980px){
   .phdr{grid-template-columns:1fr;gap:8px}
   .phdr-left,.phdr-center,.phdr-right{justify-content:center}
@@ -302,12 +308,14 @@ const IFRAME_MAP={
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
-function _applyEmbeddedPopoutMobileMode(){
-  const on = (window.self !== window.top) && (window.innerWidth <= 768);
-  document.body.classList.toggle('embedded-popout-mobile-full', on);
+function _applyEmbeddedMode(){
+  const isEmbedded = (window.self !== window.top);
+  const isMobile = (window.innerWidth <= 768);
+  document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
+  document.body.classList.toggle('embedded-popout-desktop', isEmbedded && !isMobile);
 }
-window.addEventListener('resize', _applyEmbeddedPopoutMobileMode);
-window.addEventListener('orientationchange', _applyEmbeddedPopoutMobileMode);
+window.addEventListener('resize', _applyEmbeddedMode);
+window.addEventListener('orientationchange', _applyEmbeddedMode);
 function notifyHost(sym){
   try{
     if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
@@ -400,7 +408,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
 window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
-_applyEmbeddedPopoutMobileMode();
+_applyEmbeddedMode();
 setSymbol(_sym);
 </script>
 </body>
