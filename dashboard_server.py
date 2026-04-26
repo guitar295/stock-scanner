@@ -1823,7 +1823,7 @@ function _buildPopoutHTML(initSym){
     +'});'
     +'_$("sort-btn").addEventListener("click",function(){'
     +'  sa=!sa;'
-    +'  this.textContent=sa?"%\u2195":"A\u21951Z";'
+    +'  this.textContent=sa?"%↕":"A↕Z";'
     +'  render();'
     +'});'
     +'_$("full-btn").addEventListener("click",function(){full=true;loadChart(cur);});'
