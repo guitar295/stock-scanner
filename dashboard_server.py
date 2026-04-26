@@ -637,11 +637,15 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
-  #hmap-popout-btn{-webkit-tap-highlight-color:transparent}
-  #hmap-popout-btn:hover, #hmap-popout-btn:focus, #hmap-popout-btn:active{
-    background:var(--surface) !important;
-    color:var(--muted) !important;
-    border-color:var(--border) !important;
+  #hmap-popout-btn:hover, #hmap-popout-btn:focus {
+    background: var(--surface) !important;
+    color: var(--muted) !important;
+    border-color: var(--border) !important;
+  }
+  #hmap-popout-btn:active {
+    background: var(--surf2) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
   }
 }
 
