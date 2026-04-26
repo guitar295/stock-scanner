@@ -734,10 +734,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #mob-close-float{display:none}
 
 @media screen and (max-width:768px) and (orientation:portrait){
-  /* FIX #3: Hiện header portrait giống landscape (1 hàng: tên + search + tabs cuộn + X) */
-  .mob-hdr-row1{display:flex}
-  .mob-tab-row{display:flex}
-  .mob-hdr-landscape{display:none !important}
+  .mob-hdr-row1{display:none !important}
+  .mob-tab-row{display:none !important}
+  .mob-hdr-landscape{display:flex !important}
 
   /* FIX #4: nút X gần như hoàn toàn trong suốt */
   #mob-close-float{
