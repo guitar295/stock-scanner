@@ -226,13 +226,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
   .phdr-left,.phdr-center,.phdr-right{justify-content:center}
 }
 @media(max-width:768px){
-  body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:0 !important}
-  body.embedded-popout-mobile-full .phdr-left,body.embedded-popout-mobile-full .phdr-right{display:none !important}
-  body.embedded-popout-mobile-full .phdr-center{display:flex !important;align-items:center !important;justify-content:flex-start !important;width:100%;min-width:0}
+  body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:4px !important}
+  body.embedded-popout-mobile-full .phdr-left{display:none !important}
+  body.embedded-popout-mobile-full .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
+  body.embedded-popout-mobile-full .phdr-right{display:flex !important;flex-shrink:0}
   body.embedded-popout-mobile-full .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none}
   body.embedded-popout-mobile-full .ctabs::-webkit-scrollbar{display:none}
-  body.embedded-popout-mobile-full .ctab{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
+  body.embedded-popout-mobile-full .ctab{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
   body.embedded-popout-mobile-full .ctab.on{border-color:var(--accent);box-shadow:0 2px 0 var(--accent)}
+  body.embedded-popout-mobile-full .closebtn{width:30px;height:30px;border-radius:4px}
 }
 </style>
 </head>
