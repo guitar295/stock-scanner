@@ -1,7 +1,5 @@
 """
-=============================================================================
 DASHBOARD SERVER
-=============================================================================
 """
 
 from flask import Flask, jsonify, Response
@@ -11,44 +9,43 @@ from datetime import datetime
 import pytz
 
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
-app   = Flask(__name__)
+app = Flask(__name__)
 
 _get_alerted_today = None
 _get_history_cache = None
-_cache_lock        = None
-_fetch_heatmap_fn  = None
-_fetch_chart_fn    = None
-_signal_emoji      = {}
-_signal_rank       = {}
+_cache_lock = None
+_fetch_heatmap_fn = None
+_fetch_chart_fn = None
+_signal_emoji = {}
+_signal_rank = {}
 
-_heatmap_cache  = {"data": {}, "ts": "", "updated_at": 0}
-_heatmap_lock   = threading.Lock()
+_heatmap_cache = {"data": {}, "ts": "", "updated_at": 0}
+_heatmap_lock = threading.Lock()
 HEATMAP_TTL_SEC = 120
-SIGNAL_TTL_SEC  = 10
+SIGNAL_TTL_SEC = 10
 
 _chart_cache: dict = {}
-_chart_lock         = threading.Lock()
-CHART_TTL_SEC       = 0
+_chart_lock = threading.Lock()
+CHART_TTL_SEC = 0
 
 # =============================================================================
 # API
 # =============================================================================
-
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
-    result  = []
+    result = []
     for sym, entry in alerted.items():
-        sig   = entry["signal"] if isinstance(entry, dict) else entry
-        pct   = entry.get("pct") if isinstance(entry, dict) else None
+        sig = entry["signal"] if isinstance(entry, dict) else entry
+        pct = entry.get("pct") if isinstance(entry, dict) else None
         emoji = _signal_emoji.get(sig, "📌")
         rank  = _signal_rank.get(sig, 0)
         result.append({"symbol": sym, "signal": sig, "emoji": emoji,
                         "rank": rank, "pct": pct})
     result.sort(key=lambda x: x["rank"], reverse=True)
     return jsonify({
-        "signals":    result,
-        "count":      len(result),
+        "signals": result,
+        "count":   len(result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
     })
 
@@ -59,23 +56,23 @@ def api_heatmap():
         if now - _heatmap_cache["updated_at"] > HEATMAP_TTL_SEC and _fetch_heatmap_fn:
             try:
                 data, ts_str = _fetch_heatmap_fn()
-                _heatmap_cache["data"]       = data
-                _heatmap_cache["ts"]         = ts_str
+                _heatmap_cache["data"] = data
+                _heatmap_cache["ts"]   = ts_str
                 _heatmap_cache["updated_at"] = time.time()
             except Exception as e:
                 print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
         snap_time = _heatmap_cache["updated_at"]
-        return jsonify({
-            "data":       _heatmap_cache["data"],
-            "timestamp":  _heatmap_cache["ts"],
-            "cached_age": int(now - snap_time),
-        })
+    return jsonify({
+        "data":      _heatmap_cache["data"],
+        "timestamp": _heatmap_cache["ts"],
+        "cached_age": int(now - snap_time),
+    })
 
 @app.route("/api/chart_images/<symbol>")
 def api_chart_images(symbol):
     import base64
     symbol = symbol.upper().strip()
-    now    = time.time()
+    now = time.time()
     with _chart_lock:
         cached = _chart_cache.get(symbol)
         if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
@@ -104,7 +101,7 @@ def api_chart_images(symbol):
 @app.route("/api/cache_info")
 def api_cache_info():
     cache = _get_history_cache() if _get_history_cache else {}
-    info  = []
+    info = []
     with _cache_lock:
         for sym, df in list(cache.items())[:10]:
             if df is not None and len(df) > 0:
@@ -144,7 +141,6 @@ def index():
 # =============================================================================
 # START
 # =============================================================================
-
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
                     fetch_chart_fn=None, port=8888):
@@ -165,12 +161,11 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
 
     threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HMAP_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
+    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
 
 # =============================================================================
 # POPOUT FULL HTML
 # =============================================================================
-
 POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -184,8 +179,6 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
 .page{height:100vh;display:flex;flex-direction:column}
-
-/* ── Desktop header ── */
 .phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 .phdr-left{display:flex;align-items:center;gap:8px}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
@@ -201,80 +194,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 .closebtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
-
-/* ── Mobile portrait header: Row1 tên+search ── */
-.mob-phdr-row1{
-  display:none;
-  align-items:center;gap:6px;
-  padding:8px 10px 6px;
-  background:var(--surf2);
-  border-bottom:1px solid var(--border);
-  flex-shrink:0;
-}
-.mob-psym{
-  font-family:var(--font-ui);font-size:20px;font-weight:800;
-  color:var(--accent);letter-spacing:1px;flex-shrink:0;white-space:nowrap;
-}
-.mob-psearch-wrap{position:relative;flex-shrink:0}
-.mob-psearch-wrap .s-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none}
-.mob-psearch{
-  width:80px;padding:5px 6px 5px 24px;
-  border-radius:20px;border:1px solid var(--border);
-  background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:11px;outline:none;
-}
-
-/* ── Mobile portrait header: Row2 tabs cuộn ── */
-.mob-phdr-tabs{
-  display:none;
-  flex-direction:row;flex-wrap:nowrap;align-items:center;
-  overflow-x:auto;overflow-y:hidden;
-  -webkit-overflow-scrolling:touch;
-  overscroll-behavior-x:contain;
-  padding:4px 8px;gap:4px;
-  background:var(--surf2);
-  border-bottom:1px solid var(--border);
-  scrollbar-width:none;-ms-overflow-style:none;
-  flex-shrink:0;
-}
-.mob-phdr-tabs::-webkit-scrollbar{display:none}
-.mob-ptab{
-  flex-shrink:0;white-space:nowrap;
-  padding:6px 12px;border-radius:6px;
-  border:1px solid var(--border);
-  font-size:12px;font-family:var(--font-mono);font-weight:600;
-  cursor:pointer;background:var(--bg);color:var(--muted);
-  display:inline-flex;align-items:center;
-  min-height:36px;touch-action:manipulation;
-  transition:all .15s;
-}
-.mob-ptab.on{
-  background:var(--surface);color:var(--accent);
-  border-color:var(--accent);font-weight:700;
-  box-shadow:0 2px 0 var(--accent);
-}
-
-/* ── Nút X float portrait — rất trong suốt ── */
-#pf-close-float{
-  display:none;
-  position:fixed;right:0;top:50%;transform:translateY(-50%);
-  z-index:10001;
-  width:11px;
-  height:320px;
-  border-radius:6px 0 0 6px;
-  background:rgba(17,24,39,.03);
-  border:1px solid rgba(17,24,39,.04);
-  border-right:none;
-  color:rgba(0,0,0,.08);
-  font-size:9px;
-  align-items:center;justify-content:center;
-  cursor:pointer;
-  touch-action:manipulation;
-  -webkit-tap-highlight-color:transparent;
-  writing-mode:vertical-rl;
-}
-#pf-close-float:active{background:rgba(17,24,39,.18);color:rgba(0,0,0,.4);}
-
 .pbody{flex:1;overflow:hidden;position:relative;background:#fff}
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
@@ -302,28 +221,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-
-/* ── Responsive ── */
-@media screen and (max-width:768px) and (orientation:portrait){
-  /* Ẩn desktop header, hiện mobile rows */
-  .phdr{display:none !important}
-  .mob-phdr-row1{display:flex !important}
-  .mob-phdr-tabs{display:flex !important}
-  #pf-close-float{display:flex !important}
-  .album-slide img{max-height:calc(100dvh - 100px)}
-}
-@media screen and (max-width:768px) and (orientation:landscape){
-  /* Landscape: giữ desktop header hoặc tạo compact version */
-  .phdr{padding:4px 10px}
-  .ptitle{font-size:14px}
-  .album-slide img{max-height:calc(100dvh - 50px)}
+@media(max-width:980px){
+  .phdr{grid-template-columns:1fr;gap:8px}
+  .phdr-left,.phdr-center,.phdr-right{justify-content:center}
 }
 </style>
 </head>
 <body>
 <div class="page">
-
-  <!-- Desktop header -->
   <div class="phdr">
     <div class="phdr-left">
       <span class="ptitle" id="ptitle">📈 __SYMBOL__</span>
@@ -343,32 +248,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
       </div>
     </div>
     <div class="phdr-right">
-      <button class="closebtn" id="close-btn-desk">✕</button>
+      <button class="closebtn" id="close-btn">✕</button>
     </div>
   </div>
-
-  <!-- Mobile portrait: Row 1 — tên mã + search -->
-  <div class="mob-phdr-row1" id="mob-phdr-row1">
-    <span class="mob-psym" id="mob-ptitle">📈 __SYMBOL__</span>
-    <div class="mob-psearch-wrap">
-      <span class="s-icon">🔍</span>
-      <input class="mob-psearch" id="mob-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
-    </div>
-  </div>
-
-  <!-- Mobile portrait: Row 2 — tabs cuộn -->
-  <div class="mob-phdr-tabs" id="mob-phdr-tabs">
-    <button class="mob-ptab on" data-tab="vs">📈 Vietstock</button>
-    <button class="mob-ptab" data-tab="scanner">🖼 Scanner</button>
-    <button class="mob-ptab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-    <button class="mob-ptab" data-tab="vnd-news">🗞️ Tin tức</button>
-    <button class="mob-ptab" data-tab="vnd-sum">📄 Tổng quan</button>
-    <button class="mob-ptab" data-tab="24h">💬 24HMoney</button>
-  </div>
-
-  <!-- Nút X float portrait — rất trong suốt -->
-  <button id="pf-close-float" aria-label="Đóng">✕</button>
-
   <div class="pbody">
     <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
     <div class="tpanel" id="panel-scanner">
@@ -390,23 +272,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
     <div class="tpanel" id="panel-24h"><iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe></div>
   </div>
 </div>
-
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
 const DOM={
-  ptitle:$('ptitle'),mobPtitle:$('mob-ptitle'),
-  ifVs:$('iframe-vs'),
+  ptitle:$('ptitle'),ifVs:$('iframe-vs'),
   loading:$('scanner-loading'),outer:$('album-outer'),
   slides:$('album-slides'),dots:$('album-dots'),
   btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
   ctabs:$('ctabs'),search:$('search-input'),
-  mobSearch:$('mob-search'),
-  mobTabs:$('mob-phdr-tabs'),
-  pfClose:$('pf-close-float'),
 };
 const IFRAME_MAP={
-  'vnd-cs':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
+  'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
   'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
   '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
@@ -414,7 +291,6 @@ const IFRAME_MAP={
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
-
 function notifyHost(sym){
   try{
     if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
@@ -426,33 +302,20 @@ function handleClose(){
   window.close();
 }
 
-/* ── Tab activation ── */
 DOM.ctabs.addEventListener('click',e=>{
   const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);
-});
-DOM.mobTabs.addEventListener('click',e=>{
-  const btn=e.target.closest('.mob-ptab');if(btn)_activateTab(btn.dataset.tab);
 });
 function _activateTab(tab){
   _tab=tab;
   DOM.ctabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  DOM.mobTabs.querySelectorAll('.mob-ptab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
   if(IFRAME_MAP[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_MAP[tab](_sym);}
   if(tab==='scanner')loadScannerChart(_sym);
-  /* Scroll tab vào view (mobile portrait) */
-  const activeBtn=DOM.mobTabs.querySelector('.mob-ptab.on');
-  if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
-}
-
-function _updateSymDisplay(sym){
-  DOM.ptitle.textContent='📈 '+sym;
-  DOM.mobPtitle.textContent='📈 '+sym;
 }
 
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
-  _updateSymDisplay(_sym);
+  DOM.ptitle.textContent=_sym;
   document.title=_sym+' • Full Chart';
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -507,32 +370,18 @@ async function loadScannerChart(sym){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-
-/* ── Search ── */
-function _bindSearch(el,fn){
-  if(!el)return;
-  el.addEventListener('keydown',function(e){
-    if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();fn(s);}}
-    if(e.key==='Escape'){this.value='';this.blur();}
-  });
-  el.addEventListener('focus',function(){this.select();});
-}
-_bindSearch(DOM.search,sym=>setSymbol(sym));
-_bindSearch(DOM.mobSearch,sym=>setSymbol(sym));
-
-/* ── Close ── */
-$('close-btn-desk').addEventListener('click',handleClose);
-DOM.pfClose.addEventListener('click',handleClose);
-
-/* ── Keyboard ── */
+DOM.search.addEventListener('keydown',function(e){
+  if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();setSymbol(s);}}
+  if(e.key==='Escape'){this.value='';this.blur();}
+});
+DOM.search.addEventListener('focus',function(){this.select();});
+$('close-btn').addEventListener('click',handleClose);
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){handleClose();return;}
-  if(document.activeElement===DOM.search||document.activeElement===DOM.mobSearch)return;
-  if(_tab!=='scanner'||_albumTotal===0)return;
+  if(e.key==='Escape'){window.close();return;}
+  if(document.activeElement===DOM.search||_tab!=='scanner'||_albumTotal===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
-
 window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
 setSymbol(_sym);
 </script>
@@ -543,7 +392,6 @@ setSymbol(_sym);
 # =============================================================================
 # DASHBOARD HTML
 # =============================================================================
-
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -554,7 +402,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <style>
 /* ═══════════════════════════════════════════
    VARIABLES & RESET
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 :root{
   --bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;
   --accent:#1a56db;--green:#0e9f6e;--red:#e02424;
@@ -565,8 +413,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 
 /* ═══════════════════════════════════════════
-   HEADER
-═══════════════════════════════════════════ */
+   HEADER — desktop
+   ═══════════════════════════════════════════ */
 header{
   display:flex;align-items:center;justify-content:space-between;
   padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);
@@ -585,7 +433,7 @@ header h1{
 
 /* ═══════════════════════════════════════════
    LAYOUT
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 .wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
 .panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
@@ -598,7 +446,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    HEATMAP HEADER
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 .hmap-panel-hdr{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .hmap-hdr-row1{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .hmap-ts-wrap{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted)}
@@ -611,7 +459,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    SIGNALS
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 .sig-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
 .sig-row{display:grid;grid-template-columns:28px 68px 1fr 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
@@ -631,7 +479,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    HEATMAP GRID
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 .hmap-outer{overflow-x:auto;padding-bottom:4px;text-align:center}
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
@@ -654,7 +502,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
 .pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:99vw;max-width:1800px;height:94vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease}
@@ -680,8 +528,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
 /* ═══════════════════════════════════════════
-   ALBUM
-═══════════════════════════════════════════ */
+   ALBUM — dùng chung
+   ═══════════════════════════════════════════ */
 #panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
 .scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
@@ -705,27 +553,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    HOVER PREVIEW
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 #hover-preview-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;min-height:120px;max-height:90vh;z-index:500;background:var(--surface);border-top:2px solid var(--accent);box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column}
 #hover-preview-resizer{position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;z-index:10}
 #hover-preview-resizer:hover{background:rgba(26,86,219,.18)}
 .hv-header-row1{display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 .hv-grouptabs{display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;padding:1px 0}
 .hv-grouptabs::-webkit-scrollbar{display:none}
-.hv-gtab{
-  height:32px;
-  line-height:32px;
-  display:inline-flex;align-items:center;justify-content:center;
-  flex-shrink:0;padding:0 12px;
-  border-radius:4px;border:1px solid var(--border);
-  background:var(--bg);color:var(--muted);
-  font-family:var(--font-mono);font-size:10px;font-weight:600;
-  cursor:pointer;white-space:nowrap;
-  transition:all .15s;
-  touch-action:manipulation;
-  -webkit-tap-highlight-color:transparent;
-  user-select:none;
-}
+.hv-gtab{height:24px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s}
 .hv-gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hv-body{display:flex;flex:1;overflow:hidden}
@@ -748,7 +583,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    MOBILE PORTRAIT
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 @media(max-width:768px){
   header{padding:8px 14px;gap:4px}
   header h1{font-size:15px;letter-spacing:1.5px}
@@ -756,36 +591,29 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   .overlay{backdrop-filter:none;background:rgba(17,24,39,0)}
   .pbox{width:100vw;height:100dvh;border-radius:0;border:none;animation:none}
+  /* Ẩn desktop header trong popup */
   .phdr{display:flex;flex-direction:column;flex-shrink:0}
   .phdr-left,.phdr-center,.phdr-right{display:none}
 
   .sig-list{display:flex;flex-direction:column;gap:3px}
-
-  /* ── Heatmap header mobile ── */
+  /* heatmap header mobile */
   .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
   .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
-
-  /* FIX 1: Timestamp hiển thị đầy đủ — wrap thành 2 dòng nếu cần */
+  /* FIX #1: search hiển thị vừa đủ chữ "Tìm mã" */
+  .hmap-search-input{width:80px !important}
+  .hmap-search-input:focus{width:80px !important}
+  /* FIX #2: timestamp hiển thị đầy đủ, không cắt */
   .hmap-ts-wrap{
     white-space:normal !important;
     overflow:visible !important;
-    text-overflow:unset !important;
+    text-overflow:clip !important;
     width:100% !important;
     margin-left:0 !important;
     display:block !important;
     font-size:10px !important;
-    line-height:1.5 !important;
-  }
-
-  /* FIX 2: Search box đủ rộng để hiển thị "Tìm mã" */
-  .hmap-search-input{
-    width:84px !important;
-    min-width:84px !important;
-  }
-  .hmap-search-input:focus{
-    width:84px !important;
+    line-height:1.4 !important;
   }
 
   #hover-preview-btn,#hover-preview-panel{display:none !important}
@@ -795,7 +623,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    MOBILE POPUP HEADER — portrait
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 .mob-hdr-row1{
   display:flex;align-items:center;gap:6px;
   padding:8px 10px 6px;
@@ -815,6 +643,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;outline:none;
 }
+
+/* Row dưới: tabs cuộn */
 .mob-tab-row{
   display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;
   overflow-x:auto;overflow-y:hidden;
@@ -845,7 +675,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 /* ═══════════════════════════════════════════
    MOBILE POPUP HEADER — landscape
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 .mob-hdr-landscape{
   display:none;
   flex-direction:row;align-items:center;
@@ -865,6 +695,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:10px;outline:none;
 }
+/* Tabs cuộn giữa */
 .mob-land-tabs{
   display:flex;flex-direction:row;flex-wrap:nowrap;
   overflow-x:auto;overflow-y:hidden;
@@ -886,6 +717,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   background:var(--surface);color:var(--accent);
   border-color:var(--accent);font-weight:700;
 }
+/* Nút X vuông cố định phải */
 .mob-land-close{
   flex-shrink:0;width:30px;height:30px;
   border-radius:4px;border:1px solid var(--border);
@@ -897,16 +729,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .mob-land-close:hover,.mob-land-close:active{background:var(--red);color:#fff;border-color:var(--red)}
 
 /* ═══════════════════════════════════════════
-   Nút X float — portrait only
-═══════════════════════════════════════════ */
+   Nút X bên cạnh phải — portrait only
+   ═══════════════════════════════════════════ */
 #mob-close-float{display:none}
 
 @media screen and (max-width:768px) and (orientation:portrait){
+  /* FIX #3: Hiện header portrait giống landscape (1 hàng: tên + search + tabs cuộn + X) */
   .mob-hdr-row1{display:flex}
   .mob-tab-row{display:flex}
   .mob-hdr-landscape{display:none !important}
 
-  /* FIX 4: Nút X dashboard popup — rất trong suốt */
+  /* FIX #4: nút X gần như hoàn toàn trong suốt */
   #mob-close-float{
     display:flex;
     position:fixed;right:0;top:50%;transform:translateY(-50%);
@@ -917,7 +750,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     background:rgba(17,24,39,.03);
     border:1px solid rgba(17,24,39,.04);
     border-right:none;
-    color:rgba(0,0,0,.08);
+    color:rgba(0,0,0,.06);
     font-size:9px;
     align-items:center;justify-content:center;
     cursor:pointer;
@@ -926,8 +759,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     writing-mode:vertical-rl;
   }
   #mob-close-float:active{
-    background:rgba(17,24,39,.18);
-    color:rgba(0,0,0,.4);
+    background:rgba(17,24,39,.15);
+    color:rgba(0,0,0,.3);
   }
 
   .hv-header-row1{padding:6px 8px 6px 12px}
@@ -938,31 +771,35 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 }
 
 @media screen and (max-width:768px) and (orientation:landscape){
+  /* Ẩn portrait rows */
   .mob-hdr-row1{display:none !important}
   .mob-tab-row{display:none !important}
+  /* Hiện landscape row */
   .mob-hdr-landscape{display:flex !important}
-  #mob-close-float{display:none !important}
+
+  #mob-close-float{
+    display:none !important;
+  }
+
+  /* Album img cao hơn khi landscape */
   .album-slide img{max-height:calc(100dvh - 50px)}
 
-  /* FIX 5: Tabs popout landscape dễ bấm hơn */
-  .mob-land-tab{
+  /* FIX #5 Landscape: hover preview tabs dễ nhấn hơn — tăng chiều cao và vùng chạm */
+  .hv-gtab{
     height:36px !important;
+    min-height:36px !important;
     padding:0 12px !important;
-    font-size:12px !important;
-    min-width:44px;
+    font-size:11px !important;
   }
-  .mob-land-tabs{
-    padding:3px 0 !important;
-    align-items:center;
-  }
-  .mob-hdr-landscape{
-    height:46px !important;
+  .hv-header-row1{
+    padding:2px 6px 2px 10px !important;
+    min-height:40px !important;
   }
 }
 
 /* ═══════════════════════════════════════════
    MOBILE LIGHTBOX
-═══════════════════════════════════════════ */
+   ═══════════════════════════════════════════ */
 #mob-lightbox{display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow:hidden;touch-action:none}
 #mob-lightbox.on{display:block}
 #lb-viewport{position:absolute;inset:0;overflow:hidden}
@@ -983,6 +820,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #edge-swipe-zone{position:fixed;left:0;top:0;width:30px;height:100%;z-index:10000;display:none;touch-action:pan-y}
 #edge-swipe-zone.on{display:block}
 
+/* Scrollbar global */
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -1028,7 +866,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
       </div>
-      <!-- FIX 2: timestamp — cho phép wrap thành 2 dòng trên mobile -->
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
@@ -1067,9 +904,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <!-- POPUP -->
 <div class="overlay" id="overlay">
   <button id="mob-close-float" aria-label="Đóng">✕</button>
-
   <div class="pbox" id="pbox">
-    <!-- Desktop header -->
+    <!-- Desktop header (ẩn trên mobile qua CSS) -->
     <div class="phdr" id="popup-phdr">
       <div class="phdr-left">
         <span class="ptitle" id="ptitle">Chart</span>
@@ -1093,7 +929,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       </div>
     </div>
 
-    <!-- Mobile portrait: Row 1 -->
+    <!-- Mobile portrait header — Row 1: tên + search -->
     <div class="mob-hdr-row1" id="mob-hdr-row1" style="display:none">
       <span class="mob-sym-title" id="mob-ptitle">Chart</span>
       <div class="mob-search-wrap">
@@ -1102,7 +938,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       </div>
     </div>
 
-    <!-- Mobile portrait: Row 2 tabs -->
+    <!-- Mobile portrait header — Row 2: tabs cuộn -->
     <div class="mob-tab-row" id="mob-tab-row" style="display:none">
       <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
       <button class="mob-tab-btn" data-tab="scanner">🖼 Scanner</button>
@@ -1112,7 +948,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button class="mob-tab-btn" data-tab="24h">💬 24HMoney</button>
     </div>
 
-    <!-- Mobile landscape header -->
+    <!-- Mobile landscape header — 1 hàng -->
     <div class="mob-hdr-landscape" id="mob-hdr-landscape">
       <span class="mob-land-sym" id="mob-land-sym">Chart</span>
       <div class="mob-land-search-wrap">
@@ -1127,6 +963,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
         <button class="mob-land-tab" data-tab="24h">💬 24HMoney</button>
       </div>
+      <!-- X vuông cố định phải -->
       <button class="mob-land-close" id="mob-land-close">✕</button>
     </div>
 
@@ -1166,21 +1003,30 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 <script>
 'use strict';
+// ═══════════════════════════════════════════════════════
+// DOM CACHE
+// ═══════════════════════════════════════════════════════
 const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   overlay:$('overlay'),pbox:$('pbox'),
+  // Desktop popup header
   ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
+  // Mobile portrait rows
   mobHdrRow1:$('mob-hdr-row1'),mobPtitle:$('mob-ptitle'),mobSearch:$('mob-search'),
   mobTabRow:$('mob-tab-row'),
+  // Mobile landscape row
   mobHdrLand:$('mob-hdr-landscape'),mobLandSym:$('mob-land-sym'),
   mobLandSearch:$('mob-land-search'),mobLandTabs:$('mob-land-tabs'),
+  // iframes
   ifVs:$('iframe-vs'),
+  // album
   loading:$('scanner-loading'),albumOuter:$('album-outer'),
   albumSlides:$('album-slides'),albumDots:$('album-dots'),
   btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
+  // hover
   hpPanel:$('hover-preview-panel'),hpIframe:$('hover-preview-iframe'),
   hpGrouptabs:$('hv-grouptabs'),hpSymlist:$('hv-symlist'),hpSortBtn:$('hv-sort-btn'),
   edgeZone:$('edge-swipe-zone'),mobClose:$('mob-close-float'),
@@ -1189,13 +1035,14 @@ const DOM={
   lbLabel:$('mob-lightbox-label'),lbCounter:$('mob-lightbox-counter'),
   lbZoomHint:$('lb-zoom-hint'),
 };
-
+// ═══════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
 const IFRAME_LAZY={
-  'vnd-cs':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
+  'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
   'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
   '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
@@ -1208,7 +1055,6 @@ const MOB_TABS=[
   ['vs','📈 Vietstock'],['scanner','🖼 Scanner'],['vnd-cs','⚖️ Cơ bản'],
   ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 24HMoney'],
 ];
-
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
@@ -1216,8 +1062,9 @@ let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
 let _iframeDelay=null,_keyThrottle=false;
-
-/* ── HEATMAP DATA ── */
+// ═══════════════════════════════════════════════════════
+// HEATMAP DATA
+// ═══════════════════════════════════════════════════════
 const HMAP_COLS=[
   {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
   {groups:[{name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},{name:"DAU KHI",syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]}]},
@@ -1228,8 +1075,9 @@ const HMAP_COLS=[
   {groups:[{name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]}]},
 ];
 const TS_POOL=["AAA","ACB","AGG","ANV","BFC","BID","BMI","BSR","BVB","BVH","BWE","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE","DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS","GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK","HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG","LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE"];
-
-/* ── HEATMAP RENDER ── */
+// ═══════════════════════════════════════════════════════
+// HEATMAP RENDER
+// ═══════════════════════════════════════════════════════
 function cellStyle(pct){
   let r,g,b;
   if(pct>=6.5){r=250;g=170;b=225}else if(pct>=4){r=160;g=220;b=170}
@@ -1242,7 +1090,6 @@ function cellStyle(pct){
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
 function sortByPct(syms,d){return[...syms].sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0));}
 function fmtP(p){return(!p||p<=0)?'—':(p<100?p.toFixed(2):p.toFixed(1));}
-
 function mkCell(sym,d){
   const e=d[sym]||{},pct=typeof e.pct==='number'?e.pct:0,price=typeof e.price==='number'?e.price:0;
   const{bg,fg}=cellStyle(pct),sign=pct>=0?'+':'';
@@ -1269,7 +1116,7 @@ function renderHeatmap(d){
   });
   DOM.hmapGrid.innerHTML=parts.join('');
 }
-
+// Event delegation heatmap
 DOM.hmapGrid.addEventListener('click',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell)return;
   const sym=cell.dataset.sym;
@@ -1293,7 +1140,7 @@ function _hmapDesktopClick(sym){
     DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
   },220);
 }
-
+// Event delegation sig-list
 DOM.sigList.addEventListener('click',e=>{
   const row=e.target.closest('.sig-row');if(!row)return;
   const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
@@ -1302,34 +1149,34 @@ DOM.sigList.addEventListener('dblclick',e=>{
   const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);openChart(row.dataset.sym);
 });
-
-/* ── CLOCK & CONFIG ── */
+// ═══════════════════════════════════════════════════════
+// CLOCK & CONFIG
+// ═══════════════════════════════════════════════════════
 function tick(){
   const n=new Date();
-  DOM.clock.textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+'  '+n.toLocaleDateString('vi-VN');
+  DOM.clock.textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+' '+n.toLocaleDateString('vi-VN');
 }
 setInterval(tick,1000);tick();
-
 async function loadConfig(){
   try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;}catch(e){}
-  DOM.footer.textContent=`Scanner Bot Dashboard  •  Tín hiệu tự động làm mới sau ${SIG_TTL}s  •  Heatmap tự động làm mới sau ${HMAP_TTL}s`;
+  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap tự động làm mới sau ${HMAP_TTL}s`;
 }
-
-/* ── FETCH ── */
+// ═══════════════════════════════════════════════════════
+// FETCH
+// ═══════════════════════════════════════════════════════
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
-    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu`;
+    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu`;
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}</span></div>`).join('');
   }catch(e){console.error('fetchSigs:',e);}
 }
-
 async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
     const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
-    DOM.hmapTs.textContent=`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`;
+    DOM.hmapTs.textContent=`Data: ${j.timestamp||'--'} • Cập nhật: ${now}`;
     window._lastHmapData=j.data||{};
     renderHeatmap(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
@@ -1337,14 +1184,14 @@ async function fetchHmap(){
       _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
   }catch(e){console.error('fetchHmap:',e);}
 }
-
 function startBar(elOrId,sec){
   const el=typeof elOrId==='string'?$(elOrId):elOrId;if(!el)return;
   el.style.transition='none';el.style.width='0%';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
 }
-
-/* ── SEARCH ── */
+// ═══════════════════════════════════════════════════════
+// SEARCH helper
+// ═══════════════════════════════════════════════════════
 function _bindSearch(el,onEnter){
   if(!el)return;
   el.addEventListener('keydown',function(e){
@@ -1354,13 +1201,13 @@ function _bindSearch(el,onEnter){
   el.addEventListener('focus',function(){this.select();});
 }
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
-
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-popout-btn').addEventListener('click',()=>quickPopout());
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
-
-/* ── ALBUM ── */
+// ═══════════════════════════════════════════════════════
+// ALBUM
+// ═══════════════════════════════════════════════════════
 function _showAlbum(images){
   _albumImages=images;_albumTotal=images.length;_albumIdx=0;
   const mob=IS_MOBILE();
@@ -1393,7 +1240,6 @@ $('panel-scanner').addEventListener('touchend',e=>{
   if(_scanRaf)cancelAnimationFrame(_scanRaf);
   _scanRaf=requestAnimationFrame(()=>{const dx=e.changedTouches[0].clientX-_scanTouchX;if(Math.abs(dx)>50)albumNav(dx<0?1:-1);});
 },{passive:true});
-
 DOM.btnRef.addEventListener('click',async()=>{
   if(!_sym)return;
   DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
@@ -1416,31 +1262,42 @@ async function loadScannerChart(sym){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-
-/* ── TAB ACTIVATION ── */
+// ═══════════════════════════════════════════════════════
+// POPUP — tab activation (dùng chung cho cả 3 header)
+// ═══════════════════════════════════════════════════════
 function _activateTab(tab){
   _tab=tab;
+  // Desktop tabs
   DOM.popupCtabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Mobile portrait tabs
   DOM.mobTabRow.querySelectorAll('.mob-tab-btn').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Mobile landscape tabs
   DOM.mobLandTabs.querySelectorAll('.mob-land-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Panels
   TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
+  // Lazy iframes
   if(IFRAME_LAZY[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_LAZY[tab](_sym);}
   if(tab==='scanner')loadScannerChart(_sym);
+  // Scroll active tab into view (portrait)
   if(IS_MOBILE()&&!IS_LANDSCAPE()){
     const activeBtn=DOM.mobTabRow.querySelector('.mob-tab-btn.on');
     if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
   }
+  // Scroll active tab into view (landscape)
   if(IS_MOBILE()&&IS_LANDSCAPE()){
     const activeBtn=DOM.mobLandTabs.querySelector('.mob-land-tab.on');
     if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
   }
 }
-
+// Event delegation — desktop tabs
 DOM.popupCtabs.addEventListener('click',e=>{const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);});
+// Event delegation — mobile portrait tabs
 DOM.mobTabRow.addEventListener('click',e=>{const btn=e.target.closest('.mob-tab-btn');if(btn)_activateTab(btn.dataset.tab);});
+// Event delegation — mobile landscape tabs
 DOM.mobLandTabs.addEventListener('click',e=>{const btn=e.target.closest('.mob-land-tab');if(btn)_activateTab(btn.dataset.tab);});
-
-/* ── POPUP ── */
+// ═══════════════════════════════════════════════════════
+// POPUP OPEN / CLOSE
+// ═══════════════════════════════════════════════════════
 function _updateSymDisplay(sym){
   DOM.ptitle.textContent=sym;
   DOM.mobPtitle.textContent=sym;
@@ -1455,8 +1312,11 @@ function _openPopup(){
   DOM.overlay.classList.add('on');
   document.body.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
-  if(IS_MOBILE()&&!IS_LANDSCAPE()) DOM.mobClose.style.display='flex';
-  else DOM.mobClose.style.display='none';
+  // Portrait: show float close
+  if(IS_MOBILE()&&!IS_LANDSCAPE())
+    DOM.mobClose.style.display='flex';
+  else
+    DOM.mobClose.style.display='none';
 }
 function openChart(sym){
   _sym=sym.toUpperCase().trim();_tab='vs';
@@ -1466,6 +1326,7 @@ function openChart(sym){
   _resetScannerUI();
   _activateTab('vs');
   _openPopup();
+  // Clear search inputs
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 function openUrl(url,label){
@@ -1493,16 +1354,16 @@ function closePopup(){
   DOM.mobClose.style.display='none';
   requestAnimationFrame(()=>{pbox.style.visibility='';pbox.style.animation='';});
 }
-
+// Close buttons
 $('popup-close-btn').addEventListener('click',closePopup);
 DOM.mobClose.addEventListener('click',closePopup);
 $('mob-land-close').addEventListener('click',closePopup);
 DOM.overlay.addEventListener('click',e=>{if(e.target===DOM.overlay)closePopup();});
-
+// Search bindings
 _bindSearch(DOM.popupSearch,sym=>openChart(sym));
 _bindSearch(DOM.mobSearch,sym=>openChart(sym));
 _bindSearch(DOM.mobLandSearch,sym=>openChart(sym));
-
+// Mobile swipe right to close
 if(IS_MOBILE()){
   let _swX=0,_swDir='',_swFired=false;
   DOM.pbox.addEventListener('touchstart',e=>{
@@ -1517,16 +1378,18 @@ if(IS_MOBILE()){
     if(_swDir==='h'&&dx>50){_swFired=true;closePopup();}
   },{passive:true});
 }
-
+// Orientation change
 window.addEventListener('orientationchange',()=>{
   setTimeout(()=>{
     if(DOM.overlay.classList.contains('on')){
-      if(IS_MOBILE()&&!IS_LANDSCAPE()) DOM.mobClose.style.display='flex';
-      else DOM.mobClose.style.display='none';
+      if(IS_MOBILE()&&!IS_LANDSCAPE())
+        DOM.mobClose.style.display='flex';
+      else
+        DOM.mobClose.style.display='none';
     }
   },300);
 });
-
+// Keyboard
 document.addEventListener('keydown',e=>{
   if(DOM.lb.classList.contains('on'))return;
   if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
@@ -1537,8 +1400,9 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
-
-/* ── LIGHTBOX ── */
+// ═══════════════════════════════════════════════════════
+// LIGHTBOX
+// ═══════════════════════════════════════════════════════
 const lb=DOM.lb;
 const lbS={
   idx:0,W:0,images:[],
@@ -1655,15 +1519,15 @@ lbVP.addEventListener('touchmove',_lbTM,{passive:false});
 lbVP.addEventListener('touchend',_lbTE,{passive:false});
 lbVP.addEventListener('touchcancel',()=>{lbS.isPinching=false;lbS.isPanning=false;lbS.dragging=false;lbS.pending=false;},{passive:true});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&lb.classList.contains('on'))lbClose();});
-
-/* ── HOVER PREVIEW ── */
+// ═══════════════════════════════════════════════════════
+// HOVER PREVIEW
+// ═══════════════════════════════════════════════════════
 const _hvGroups=[];
 (function(){
   _hvGroups.push({name:'TRADING',syms:TS_POOL});
   _hvGroups.push({name:'VN30',syms:HMAP_COLS[0].groups[0].syms});
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')_hvGroups.push({name:g.name,syms:g.syms});}));
 })();
-
 function _hvBuildTabs(){
   DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`).join('');
 }
@@ -1709,7 +1573,6 @@ DOM.hpSymlist.addEventListener('click',e=>{
   item.classList.add('on');_hoverPreviewCurrent=sym;updatePopout(sym);
   DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
 });
-
 document.addEventListener('keydown',e=>{
   if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
   if(DOM.overlay.classList.contains('on'))return;
@@ -1729,7 +1592,6 @@ document.addEventListener('keydown',e=>{
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
 });
-
 function _closeHoverPanel(){
   _hoverPreviewOn=false;
   $('hover-preview-btn').classList.remove('on');$('hover-preview-btn').textContent='Chart: OFF';
@@ -1740,7 +1602,6 @@ function _closeHoverPanel(){
 $('hv-close-btn').addEventListener('click',_closeHoverPanel);
 $('hv-full-btn').addEventListener('click',()=>openChart(_hoverPreviewCurrent||'VNINDEX'));
 $('hv-pop-btn').addEventListener('click',()=>popOutHover());
-
 function toggleHoverPreview(){
   if(_isPopoutMode){minimizePopout();return;}
   if(_hoverPreviewOn){_closeHoverPanel();return;}
@@ -1752,21 +1613,20 @@ function toggleHoverPreview(){
   DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode=vnindex';
   if(_hvActiveGroup===-1)_hvSelectGroup(0);else _hvRenderSymList();
 }
-
 (function(){
   const resizer=$('hover-preview-resizer');let drag=false,startY=0,startH=0;
   resizer.addEventListener('mousedown',e=>{drag=true;startY=e.clientY;startH=DOM.hpPanel.offsetHeight;document.body.style.userSelect='none';document.body.style.cursor='ns-resize';e.preventDefault();});
   document.addEventListener('mousemove',e=>{if(!drag)return;const newH=Math.min(window.innerHeight*.9,Math.max(120,startH+(startY-e.clientY)));DOM.hpPanel.style.height=newH+'px';DOM.wrap.style.paddingBottom=newH+16+'px';});
   document.addEventListener('mouseup',()=>{if(!drag)return;drag=false;document.body.style.userSelect='';document.body.style.cursor='';});
 })();
-
 function quickPopout(){
   if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
   if(!_hoverPreviewOn){_hoverPreviewOn=true;_hvActiveGroup=0;}
   popOutHover();
 }
-
-/* ── POPOUT WINDOW ── */
+// ═══════════════════════════════════════════════════════
+// POPOUT WINDOW
+// ═══════════════════════════════════════════════════════
 function popOutHover(){
   const sym=_hoverPreviewCurrent||'VNINDEX';
   if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
@@ -1780,7 +1640,6 @@ function popOutHover(){
   _popoutWin.document.close();
   const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)minimizePopout();}},1000);
 }
-
 function _buildPopoutHTML(initSym){
   const gJ=JSON.stringify(_hvGroups.map(g=>({name:g.name,syms:g.syms})));
   const dJ=JSON.stringify(window._lastHmapData||{});
@@ -1793,33 +1652,23 @@ function _buildPopoutHTML(initSym){
     +'*{margin:0;padding:0;box-sizing:border-box}'
     +':root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:\'IBM Plex Mono\',monospace;--font-ui:\'Barlow Condensed\',sans-serif}'
     +'body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}'
-    +'#hdr{display:flex;align-items:center;padding:0 10px;background:var(--surf2);height:46px;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0}'
+    +'#hdr{display:flex;align-items:center;padding:0 10px;background:var(--surf2);height:42px;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0}'
     +'#sym{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.5px;color:var(--accent);flex-shrink:0;white-space:nowrap}'
     +'#sw{position:relative;flex-shrink:0}'
     +'#si-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}'
     +'#si{width:85px;padding:4px 6px 4px 22px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}'
     +'#si::placeholder{color:var(--muted)}'
     +'#si:focus{width:130px;border-color:var(--accent)}'
-    +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none;align-items:center;padding:4px 0}'
+    +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
     +'#gtabs::-webkit-scrollbar{display:none}'
-    /* FIX 5: tabs landscape dễ bấm — height lớn hơn, padding đủ rộng */
-    +'.gtab{'
-    +'  padding:0 12px;height:34px;line-height:34px;'
-    +'  border-radius:4px;border:1px solid var(--border);'
-    +'  background:var(--bg);color:var(--muted);'
-    +'  font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;'
-    +'  transition:all .15s;flex-shrink:0;font-family:var(--font-mono);'
-    +'  display:inline-flex;align-items:center;justify-content:center;'
-    +'  touch-action:manipulation;-webkit-tap-highlight-color:transparent;'
-    +'  user-select:none;'
-    +'}'
+    +'.gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
     +'.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}'
     +'.gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}'
     +'#ctrls{display:flex;gap:3px;align-items:center;flex-shrink:0}'
-    +'.ctrl{padding:0 10px;height:32px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation}'
+    +'.ctrl{padding:0 10px;height:28px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}'
     +'.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}'
     +'.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}'
-    +'#main{display:flex;height:calc(100% - 46px);overflow:hidden}'
+    +'#main{display:flex;height:calc(100% - 42px);overflow:hidden}'
     +'#symlist{width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
     +'#symlist::-webkit-scrollbar{width:3px}'
     +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
@@ -2014,7 +1863,9 @@ window.addEventListener('message',e=>{
   }
 });
 
-/* ── INIT ── */
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
