@@ -225,48 +225,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
   .phdr{grid-template-columns:1fr;gap:8px}
   .phdr-left,.phdr-center,.phdr-right{justify-content:center}
 }
-@media(max-width:768px){
-  body.embedded-mobile-full .phdr{
-    display:flex !important;
-    grid-template-columns:none !important;
-    gap:0 !important;
-    padding:4px 6px !important;
-  }
-  body.embedded-mobile-full .phdr-left,
-  body.embedded-mobile-full .phdr-right{
-    display:none !important;
-  }
-  body.embedded-mobile-full .phdr-center{
-    display:flex !important;
-    justify-content:flex-start !important;
-    width:100%;
-    min-width:0;
-  }
-  body.embedded-mobile-full .ctabs{
-    display:flex;
-    flex-wrap:nowrap !important;
-    overflow-x:auto;
-    overflow-y:hidden;
-    justify-content:flex-start !important;
-    gap:4px;
-    width:100%;
-    scrollbar-width:none;
-    -ms-overflow-style:none;
-  }
-  body.embedded-mobile-full .ctabs::-webkit-scrollbar{display:none}
-  body.embedded-mobile-full .ctab{
-    flex-shrink:0;
-    display:inline-flex;
-    align-items:center;
-    height:34px;
-    padding:0 12px;
-    border-radius:6px;
-    font-size:12px;
-  }
-  body.embedded-mobile-full .ctab.on{
-    box-shadow:0 2px 0 var(--accent);
-  }
-}
 </style>
 </head>
 <body>
@@ -333,12 +291,6 @@ const IFRAME_MAP={
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
-function _syncEmbeddedMobileFull(){
-  const on = (window.self!==window.top) && (window.innerWidth<=768);
-  document.body.classList.toggle('embedded-mobile-full', on);
-}
-window.addEventListener('resize', _syncEmbeddedMobileFull);
-window.addEventListener('orientationchange', _syncEmbeddedMobileFull);
 function notifyHost(sym){
   try{
     if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
@@ -431,7 +383,6 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
 window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
-_syncEmbeddedMobileFull();
 setSymbol(_sym);
 </script>
 </body>
@@ -651,22 +602,19 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
   /* FIX #1: search hiển thị vừa đủ chữ "Tìm mã" */
-  .hmap-search-input{width:90px !important}
-  .hmap-search-input:focus{width:90px !important}
+  .hmap-search-input{width:80px !important}
+  .hmap-search-input:focus{width:80px !important}
+  /* FIX #2: timestamp hiển thị đầy đủ, không cắt */
   .hmap-ts-wrap{
-    white-space:nowrap !important;
-    overflow-x:auto !important;
-    overflow-y:hidden !important;
+    white-space:normal !important;
+    overflow:visible !important;
     text-overflow:clip !important;
     width:100% !important;
     margin-left:0 !important;
     display:block !important;
-    font-size:9px !important;
-    line-height:1.3 !important;
-    -webkit-overflow-scrolling:touch;
-    scrollbar-width:none;
+    font-size:10px !important;
+    line-height:1.4 !important;
   }
-  .hmap-ts-wrap::-webkit-scrollbar{display:none}
 
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
@@ -693,7 +641,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   width:72px;padding:5px 6px 5px 24px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:16px;outline:none;
+  font-family:var(--font-mono);font-size:11px;outline:none;
 }
 
 /* Row dưới: tabs cuộn */
@@ -745,7 +693,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   width:68px;padding:4px 6px 4px 22px;
   border-radius:16px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:16px;outline:none;
+  font-family:var(--font-mono);font-size:10px;outline:none;
 }
 /* Tabs cuộn giữa */
 .mob-land-tabs{
@@ -1735,7 +1683,6 @@ function _buildPopoutHTML(initSym){
     +'#cf{width:100%;height:100%;border:none;display:block}'
     +'#ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);font-size:13px;z-index:2;transition:opacity .3s}'
     +'#ld.hide{opacity:0;pointer-events:none}'
-    +'@media(max-width:768px){#hdr{align-items:stretch;padding:2px 10px 0;height:46px}#gtabs{align-items:stretch;padding-top:1px}.gtab{display:inline-flex;align-items:center;justify-content:center;height:32px;padding:0 10px}}'
     +'</style></head><body>'
     +'<div id="hdr">'
     +'<span id="sym">'+initSym+'</span>'
