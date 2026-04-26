@@ -1665,7 +1665,7 @@ function _buildPopoutHTML(initSym){
     +'#si::placeholder{color:var(--muted)}'
     +'#si:focus{width:130px;border-color:var(--accent)}'
     +'@media(max-width:768px){'
-    +'  #si{width:68px !important; transition:border-color .15s !important}'
+    +'  #si{width:68px !important; font-size:16px !important; transition:border-color .15s !important}'
     +'  #si:focus{width:68px !important; box-shadow:0 0 0 2px rgba(26,86,219,.12)}'
     +'}'
     +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
