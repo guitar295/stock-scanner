@@ -609,34 +609,40 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   .overlay{backdrop-filter:none;background:rgba(17,24,39,0)}
   .pbox{width:100vw;height:100dvh;border-radius:0;border:none;animation:none}
-  /* Ẩn desktop header trong popup */
   .phdr{display:flex;flex-direction:column;flex-shrink:0}
   .phdr-left,.phdr-center,.phdr-right{display:none}
 
   .sig-list{display:flex;flex-direction:column;gap:3px}
-  /* heatmap header mobile */
   .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
   .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
-  /* FIX #1: search hiển thị vừa đủ chữ "Tìm mã" */
   .hmap-search-input{width:90px !important}
   .hmap-search-input:focus{width:90px !important}
-  /* FIX #2: timestamp hiển thị đầy đủ, không cắt */
   .hmap-ts-wrap{
-    white-space:normal !important;
-    overflow:visible !important;
+    white-space:nowrap !important;
+    overflow-x:auto !important;
+    overflow-y:hidden !important;
     text-overflow:clip !important;
     width:100% !important;
+    max-width:100% !important;
     margin-left:0 !important;
     display:block !important;
     font-size:10px !important;
     line-height:1.4 !important;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
   }
-
+  .hmap-ts-wrap::-webkit-scrollbar{display:none}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+  #hmap-popout-btn{-webkit-tap-highlight-color:transparent}
+  #hmap-popout-btn:hover, #hmap-popout-btn:focus, #hmap-popout-btn:active{
+    background:var(--surface) !important;
+    color:var(--muted) !important;
+    border-color:var(--border) !important;
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -1226,7 +1232,7 @@ function _bindSearch(el,onEnter){
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
-$('hmap-popout-btn').addEventListener('click',()=>quickPopout());
+$('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 // ═══════════════════════════════════════════════════════
 // ALBUM
