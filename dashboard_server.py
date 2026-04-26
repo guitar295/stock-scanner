@@ -602,8 +602,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
   /* FIX #1: search hiển thị vừa đủ chữ "Tìm mã" */
-  .hmap-search-input{width:80px !important}
-  .hmap-search-input:focus{width:80px !important}
+  .hmap-search-input{width:90px !important}
+  .hmap-search-input:focus{width:90px !important}
   /* FIX #2: timestamp hiển thị đầy đủ, không cắt */
   .hmap-ts-wrap{
     white-space:normal !important;
