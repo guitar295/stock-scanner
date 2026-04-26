@@ -165,7 +165,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
 
     threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HMAP_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
+    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
 
 # =============================================================================
 # POPOUT FULL HTML
@@ -223,6 +223,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .album-refresh-btn.spinning span{display:inline-block;animation:spin .7s linear infinite}
 .album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 6px;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 @media(max-width:980px){
@@ -306,6 +307,7 @@ function handleClose(){
   try{if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_CLOSE',symbol:_sym},'*');}catch(e){}
   window.close();
 }
+
 DOM.ctabs.addEventListener('click',e=>{
   const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);
 });
@@ -316,6 +318,7 @@ function _activateTab(tab){
   if(IFRAME_MAP[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_MAP[tab](_sym);}
   if(tab==='scanner')loadScannerChart(_sym);
 }
+
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
   DOM.ptitle.textContent=_sym;
@@ -329,6 +332,7 @@ function setSymbol(sym){
   try{history.replaceState(null,'','/popout_full/'+_sym);}catch(e){}
   notifyHost(_sym);
 }
+
 function _showAlbum(images){
   _albumImages=images;_albumTotal=images.length;_albumIdx=0;
   DOM.slides.innerHTML=images.map((img,i)=>`<div class="album-slide${i===0?' on':''}" data-idx="${i}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`).join('');
@@ -403,47 +407,40 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <title>Scanner Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════
+/* ═══════════════════════════════════════════
    VARIABLES & RESET
-═══════════════════════════════════ */
+═══════════════════════════════════════════ */
 :root{
   --bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;
   --accent:#1a56db;--green:#0e9f6e;--red:#e02424;
   --text:#111827;--muted:#6b7280;--shadow:rgba(0,0,0,.07);
-  --font-mono:'IBM Plex Mono',monospace;
-  --font-ui:'Barlow Condensed',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 
-/* ═══════════════════════════════════
-   HEADER
-═══════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   HEADER — desktop
+═══════════════════════════════════════════ */
 header{
   display:flex;align-items:center;justify-content:space-between;
-  padding:11px 22px;background:var(--surface);
-  border-bottom:1px solid var(--border);
-  position:sticky;top:0;z-index:100;
-  box-shadow:0 1px 6px var(--shadow);
+  padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow);
   flex-wrap:wrap;gap:6px;
 }
 header h1{
   font-family:var(--font-ui);font-size:19px;font-weight:800;
   letter-spacing:2.5px;color:var(--accent);text-transform:uppercase;
-  white-space:nowrap;
+  white-space:nowrap; /* P1-1: giữ tiêu đề 1 hàng */
 }
 .hdr-right{display:flex;gap:18px;align-items:center;flex-shrink:0}
 #clock{color:var(--muted);font-size:11px;white-space:nowrap}
-.dot-live{
-  width:8px;height:8px;border-radius:50%;
-  background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);
-  animation:pulse 2s ease-in-out infinite;flex-shrink:0;
-}
+.dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* ═══════════════════════════════════
+/* ═══════════════════════════════════════════
    LAYOUT
-═══════════════════════════════════ */
+═══════════════════════════════════════════ */
 .wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
 .panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
@@ -454,51 +451,25 @@ header h1{
 .panel-body{padding:12px 14px}
 footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
 
-/* ═══════════════════════════════════
-   HEATMAP HEADER — desktop
-═══════════════════════════════════ */
-.hmap-panel-hdr{
-  display:flex;align-items:center;gap:6px;
-  padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border);
-}
+/* ═══════════════════════════════════════════
+   HEATMAP HEADER
+═══════════════════════════════════════════ */
+.hmap-panel-hdr{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .hmap-hdr-row1{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.hmap-ts-wrap{
-  margin-left:auto;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;font-size:10px;color:var(--muted);
-}
-.hmap-link-btn{
-  display:inline-flex;align-items:center;padding:4px 11px;
-  border-radius:5px;border:1px solid var(--border);
-  background:var(--surface);color:var(--accent);
-  font-family:var(--font-mono);font-size:10px;font-weight:600;
-  cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s;
-}
+/* P1-2: timestamp luôn 1 hàng trên desktop */
+.hmap-ts-wrap{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted)}
+.hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--accent);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
 .hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
-.hmap-search-wrap .s-icon{
-  position:absolute;left:9px;top:50%;transform:translateY(-50%);
-  color:var(--muted);font-size:12px;pointer-events:none;
-}
-.hmap-search-input{
-  width:100px;padding:5px 8px 5px 26px;
-  border-radius:20px;border:1px solid var(--border);
-  background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:11px;
-  outline:none;transition:border-color .15s,width .2s;
-}
+.hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
+.hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
 
-/* ═══════════════════════════════════
+/* ═══════════════════════════════════════════
    SIGNALS
-═══════════════════════════════════ */
+═══════════════════════════════════════════ */
 .sig-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
-.sig-row{
-  display:grid;grid-template-columns:28px 68px 1fr 106px;
-  align-items:center;padding:7px 10px;border-radius:5px;
-  border:1px solid var(--border);cursor:pointer;
-  transition:background .15s,border-color .15s,box-shadow .15s;
-  background:var(--surface);
-}
+.sig-row{display:grid;grid-template-columns:28px 68px 1fr 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .sig-row:hover .s-sym{color:var(--accent)}
 .s-emoji{font-size:14px;text-align:center}
@@ -514,9 +485,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px;grid-column:1/-1}
 .empty .big{font-size:30px;margin-bottom:8px}
 
-/* ═══════════════════════════════════
+/* ═══════════════════════════════════════════
    HEATMAP GRID
-═══════════════════════════════════ */
+═══════════════════════════════════════════ */
 .hmap-outer{overflow-x:auto;padding-bottom:4px;text-align:center}
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
@@ -537,9 +508,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
 
-/* ═══════════════════════════════════
+/* ═══════════════════════════════════════════
    POPUP — desktop
-═══════════════════════════════════ */
+═══════════════════════════════════════════ */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
 .pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:99vw;max-width:1800px;height:94vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease}
@@ -564,9 +535,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
-/* ═══════════════════════════════════
+/* ═══════════════════════════════════════════
    ALBUM — dùng chung
-═══════════════════════════════════ */
+═══════════════════════════════════════════ */
 #panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
 .scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
@@ -588,33 +559,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* ═══════════════════════════════════
+/* ═══════════════════════════════════════════
    HOVER PREVIEW
-═══════════════════════════════════ */
+═══════════════════════════════════════════ */
 #hover-preview-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;min-height:120px;max-height:90vh;z-index:500;background:var(--surface);border-top:2px solid var(--accent);box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column}
 #hover-preview-resizer{position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;z-index:10}
 #hover-preview-resizer:hover{background:rgba(26,86,219,.18)}
 .hv-header-row1{display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 .hv-grouptabs{display:flex;align-items:center;overflow-x:auto;gap:3px;flex:1;min-width:0;scrollbar-width:none;padding:1px 0}
 .hv-grouptabs::-webkit-scrollbar{display:none}
-
-/* FIX Popout tabs khó bấm: tăng touch target */
-.hv-gtab{
-  /* Tăng height và dùng padding dọc để vùng bấm đủ lớn */
-  min-height:36px;
-  display:inline-flex;align-items:center;justify-content:center;
-  flex-shrink:0;padding:0 12px;
-  border-radius:4px;border:1px solid var(--border);
-  background:var(--bg);color:var(--muted);
-  font-family:var(--font-mono);font-size:10px;font-weight:600;
-  cursor:pointer;white-space:nowrap;transition:all .15s;
-  /* Mở rộng vùng hit mà không làm thay đổi visual */
-  -webkit-tap-highlight-color:rgba(26,86,219,.1);
-  touch-action:manipulation;
-}
+.hv-gtab{height:24px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s}
 .hv-gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
-
 .hv-body{display:flex;flex:1;overflow:hidden}
 .hv-symlist{width:120px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .hv-symlist::-webkit-scrollbar{width:3px}
@@ -627,85 +583,61 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hv-sym-price{font-family:var(--font-mono);font-size:10px;text-align:right;color:#374151}
 #hover-preview-iframe-wrap{flex:1;overflow:hidden;position:relative}
 #hover-preview-iframe-wrap iframe{width:100%;height:100%;border:none;display:block}
-.hv-ctrl{
-  height:36px;padding:0 10px;border-radius:4px;
-  border:1px solid var(--border);background:var(--surface);color:var(--muted);
-  font-size:10px;font-family:var(--font-mono);font-weight:600;
-  cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
-  transition:all .15s;white-space:nowrap;flex-shrink:0;
-  touch-action:manipulation;
-}
+.hv-ctrl{height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;white-space:nowrap;flex-shrink:0}
 .hv-ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hv-ctrl.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
-#hover-preview-btn{
-  display:inline-flex;align-items:center;gap:5px;padding:4px 11px;
-  border-radius:5px;border:1px solid var(--border);
-  background:var(--surface);color:var(--muted);
-  font-family:var(--font-mono);font-size:10px;font-weight:600;
-  cursor:pointer;white-space:nowrap;transition:all .15s;
-}
+#hover-preview-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s}
 #hover-preview-btn:hover,#hover-preview-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* ═══════════════════════════════════
-   MOBILE PORTRAIT — base fixes
-═══════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   MOBILE PORTRAIT
+═══════════════════════════════════════════ */
 @media(max-width:768px){
+  /* Header */
   header{padding:8px 14px;gap:4px}
   header h1{font-size:15px;letter-spacing:1.5px}
+  /* P1-1: clock xuống hàng nếu cần, nhưng h1 không wrap */
   #clock{font-size:10px}
 
   .overlay{backdrop-filter:none;background:rgba(17,24,39,0)}
   .pbox{width:100vw;height:100dvh;border-radius:0;border:none;animation:none}
-
-  /* Ẩn desktop popup header */
-  .phdr{display:none}
+  /* Ẩn desktop header trong popup */
+  .phdr{display:flex;flex-direction:column;flex-shrink:0}
+  .phdr-left,.phdr-center,.phdr-right{display:none}
 
   .sig-list{display:flex;flex-direction:column;gap:3px}
-
-  /* Heatmap header mobile */
-  .hmap-panel-hdr{
-    flex-direction:column;align-items:flex-start;
-    gap:4px;padding:7px 10px;
-  }
-  .hmap-hdr-row1{
-    width:100%;overflow-x:auto;scrollbar-width:none;gap:6px;
-    display:flex;align-items:center;
-  }
+  /* P1-2: heatmap header mobile */
+  .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
+  .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
-
-  /* FIX 1: Search "Tìm mã" đủ rộng hiển thị placeholder */
-  /* "Tìm mã" ~ 4 ký tự × ~8px + padding icon 26px + padding right 8px ≈ 82px */
-  .hmap-search-input{width:88px !important}
-  .hmap-search-input:focus{width:88px !important}
-
-  /* FIX 2: Timestamp không bị cắt — hiển thị đủ 1 hàng */
+  /* P1-2: timestamp 1 hàng, không wrap */
   .hmap-ts-wrap{
     white-space:nowrap !important;
-    overflow:visible !important;      /* bỏ overflow:hidden */
-    text-overflow:clip !important;    /* bỏ ellipsis */
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
     width:100% !important;
     margin-left:0 !important;
     display:block !important;
     font-size:10px !important;
     line-height:1.4 !important;
-    /* Nếu màn hình quá hẹp, cho phép xuống dòng tại dấu • */
-    word-break:keep-all;
-    overflow-wrap:normal;
   }
+  /* P1-3: search nhỏ vừa đủ "Tìm mã" */
+  .hmap-search-input{width:70px !important}
+  .hmap-search-input:focus{width:70px !important}
 
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
-  .panel-meta{font-size:9px}
+  .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
 }
 
-/* ═══════════════════════════════════
-   MOBILE POPUP HEADER — PORTRAIT ROW 1
-   Tên mã + search
-═══════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   MOBILE POPUP HEADER — portrait
+   P1-3: tabs cuộn, search nhỏ, tên mã to
+═══════════════════════════════════════════ */
+/* Row trên: Tên mã + search */
 .mob-hdr-row1{
-  display:none; /* JS sẽ bật khi cần */
-  align-items:center;gap:6px;
+  display:flex;align-items:center;gap:6px;
   padding:8px 10px 6px;
   background:var(--surf2);
   border-bottom:1px solid var(--border);
@@ -715,27 +647,20 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   font-family:var(--font-ui);font-size:20px;font-weight:800;
   color:var(--accent);letter-spacing:1px;flex-shrink:0;white-space:nowrap;
 }
-/* FIX 3: search vừa đủ "Tìm mã" */
+/* P1-3: search vừa đủ chứa "Tìm mã" ~ 72px */
 .mob-search-wrap{position:relative;flex-shrink:0}
-.mob-search-wrap .s-icon{
-  position:absolute;left:8px;top:50%;transform:translateY(-50%);
-  color:var(--muted);font-size:11px;pointer-events:none;
-}
+.mob-search-wrap .s-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none}
 .mob-search-input{
-  width:84px; /* đủ hiển thị "Tìm mã" */
-  padding:6px 8px 6px 26px;
+  width:72px;padding:5px 6px 5px 24px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;outline:none;
 }
 
-/* ═══════════════════════════════════
-   MOBILE POPUP HEADER — PORTRAIT ROW 2
-   Tabs cuộn ngang
-═══════════════════════════════════ */
+/* Row dưới: tabs cuộn */
+/* P1-3: tabs cuộn ngang, bắt đầu từ Vietstock */
 .mob-tab-row{
-  display:none; /* JS sẽ bật khi cần */
-  flex-direction:row;flex-wrap:nowrap;align-items:center;
+  display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;
   overflow-x:auto;overflow-y:hidden;
   -webkit-overflow-scrolling:touch;
   overscroll-behavior-x:contain;
@@ -753,7 +678,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   font-size:12px;font-family:var(--font-mono);font-weight:600;
   cursor:pointer;background:var(--bg);color:var(--muted);
   display:inline-flex;align-items:center;
-  min-height:38px;touch-action:manipulation;
+  min-height:36px;touch-action:manipulation;
   transition:all .15s;
 }
 .mob-tab-btn.on{
@@ -762,12 +687,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   box-shadow:0 2px 0 var(--accent);
 }
 
-/* ═══════════════════════════════════
-   MOBILE POPUP HEADER — LANDSCAPE
-   1 hàng: sym + search + tabs cuộn + X vuông
-═══════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   MOBILE POPUP HEADER — landscape
+   P2-1: tất cả 1 hàng, tabs cuộn, X cố định phải
+═══════════════════════════════════════════ */
 .mob-hdr-landscape{
-  display:none;
+  display:none; /* ẩn trên portrait & desktop */
   flex-direction:row;align-items:center;
   padding:0 6px 0 8px;
   background:var(--surf2);border-bottom:1px solid var(--border);
@@ -778,19 +703,19 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   color:var(--accent);white-space:nowrap;flex-shrink:0;letter-spacing:.8px;
 }
 .mob-land-search-wrap{position:relative;flex-shrink:0}
-.mob-land-search-wrap .s-icon{
-  position:absolute;left:7px;top:50%;transform:translateY(-50%);
-  color:var(--muted);font-size:10px;pointer-events:none;
-}
+.mob-land-search-wrap .s-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}
 .mob-land-search{
   width:68px;padding:4px 6px 4px 22px;
   border-radius:16px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:10px;outline:none;
 }
+/* Tabs cuộn giữa */
 .mob-land-tabs{
-  display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
-  -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  display:flex;flex-direction:row;flex-wrap:nowrap;
+  overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;-ms-overflow-style:none;
   gap:3px;flex:1;min-width:0;align-items:center;padding:2px 0;
 }
 .mob-land-tabs::-webkit-scrollbar{display:none}
@@ -807,38 +732,41 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   background:var(--surface);color:var(--accent);
   border-color:var(--accent);font-weight:700;
 }
+/* Nút X dạng vuông cố định phải */
 .mob-land-close{
-  flex-shrink:0;width:30px;height:30px;border-radius:4px;
-  border:1px solid var(--border);background:var(--bg);color:var(--muted);
+  flex-shrink:0;width:30px;height:30px;
+  border-radius:4px;border:1px solid var(--border);
+  background:var(--bg);color:var(--muted);
   font-size:14px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:all .15s;touch-action:manipulation;
 }
 .mob-land-close:hover,.mob-land-close:active{background:var(--red);color:#fff;border-color:var(--red)}
 
-/* ═══════════════════════════════════
-   PORTRAIT-SPECIFIC
-═══════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   P1-4: Nút X bên cạnh phải — portrait only
+═══════════════════════════════════════════ */
+#mob-close-float{display:none}
+
 @media screen and (max-width:768px) and (orientation:portrait){
-  /* Bật portrait header rows */
+  /* Hiện mob-hdr-row1 + mob-tab-row */
   .mob-hdr-row1{display:flex}
   .mob-tab-row{display:flex}
   .mob-hdr-landscape{display:none !important}
 
-  /* FIX 4: nút X cạnh phải — gần trong suốt hoàn toàn */
+  /* P1-4: nút X mỏng, cao, gần trong suốt */
   #mob-close-float{
     display:flex;
     position:fixed;right:0;top:50%;transform:translateY(-50%);
     z-index:10001;
-    width:10px;
-    height:340px;
-    border-radius:5px 0 0 5px;
-    /* Gần như vô hình — chỉ cần biết là có */
-    background:rgba(0,0,0,.03);
-    border:1px solid rgba(0,0,0,.04);
+    width:11px;          /* 1/2 chiều rộng cũ (22px→11px) */
+    height:320px;        /* gấp 4 chiều cao cũ (80px→320px) */
+    border-radius:6px 0 0 6px;
+    background:rgba(17,24,39,.06);   /* gần như trong suốt */
+    border:1px solid rgba(17,24,39,.08);
     border-right:none;
-    color:rgba(0,0,0,.08);
-    font-size:7px;
+    color:rgba(0,0,0,.12);
+    font-size:9px;
     align-items:center;justify-content:center;
     cursor:pointer;
     touch-action:manipulation;
@@ -846,30 +774,38 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     writing-mode:vertical-rl;
   }
   #mob-close-float:active{
-    background:rgba(0,0,0,.15);
-    color:rgba(0,0,0,.3);
+    background:rgba(17,24,39,.25);
+    color:rgba(0,0,0,.5);
   }
 
-  /* Hover preview tabs to hơn cho portrait */
-  .hv-gtab{min-height:40px;font-size:11px;padding:0 12px}
-  .hv-ctrl{height:40px}
-  .hv-header-row1{padding:5px 8px 5px 10px}
+  /* P1-5: Popout header portrait — to hơn */
+  /* (áp dụng cho hover preview header) */
+  .hv-header-row1{padding:6px 8px 6px 12px}
+  .hv-gtab{height:28px;font-size:11px;padding:0 12px}
+  .hv-sym-name{font-size:12px}
+  .hv-sym-pct{font-size:11px}
+  .hv-sym-price{font-size:11px}
 }
 
-/* ═══════════════════════════════════
-   LANDSCAPE-SPECIFIC
-═══════════════════════════════════ */
 @media screen and (max-width:768px) and (orientation:landscape){
+  /* Ẩn portrait rows */
   .mob-hdr-row1{display:none !important}
   .mob-tab-row{display:none !important}
+  /* Hiện landscape row */
   .mob-hdr-landscape{display:flex !important}
-  #mob-close-float{display:none !important}
+
+  /* P2-1: nút close float landscape = góc trên phải, vuông */
+  #mob-close-float{
+    display:none !important; /* landscape dùng mob-land-close thay thế */
+  }
+
+  /* Album img cao hơn khi landscape */
   .album-slide img{max-height:calc(100dvh - 50px)}
 }
 
-/* ═══════════════════════════════════
-   LIGHTBOX
-═══════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   MOBILE LIGHTBOX
+═══════════════════════════════════════════ */
 #mob-lightbox{display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow:hidden;touch-action:none}
 #mob-lightbox.on{display:block}
 #lb-viewport{position:absolute;inset:0;overflow:hidden}
@@ -931,13 +867,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="hmap-link-btn" id="btn-vnindex">VNINDEX</button>
         <div class="hmap-search-wrap">
           <span class="s-icon">🔍</span>
-          <input class="hmap-search-input" id="hmap-search" type="text"
-            placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+          <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
       </div>
-      <!-- FIX 2: timestamp — JS set text 1 dòng, CSS không cắt -->
+      <!-- P1-2: timestamp 1 hàng -->
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
@@ -975,18 +910,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 <!-- POPUP -->
 <div class="overlay" id="overlay">
-  <!-- FIX 4: nút X cực mỏng, gần vô hình -->
-  <button id="mob-close-float" style="display:none" aria-label="Đóng">✕</button>
+  <!-- P1-4: nút X dọc cạnh phải, gần trong suốt -->
+  <button id="mob-close-float" aria-label="Đóng">✕</button>
 
   <div class="pbox" id="pbox">
-    <!-- Desktop header -->
+    <!-- Desktop header (ẩn trên mobile qua CSS) -->
     <div class="phdr" id="popup-phdr">
       <div class="phdr-left">
         <span class="ptitle" id="ptitle">Chart</span>
         <div class="popup-search-wrap">
           <span class="s-icon">🔍</span>
-          <input class="popup-search-input" id="popup-search" type="text"
-            placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+          <input class="popup-search-input" id="popup-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
       </div>
       <div class="phdr-center">
@@ -1004,19 +938,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       </div>
     </div>
 
-    <!-- FIX 3: Mobile portrait — Row 1: tên mã + search -->
-    <div class="mob-hdr-row1" id="mob-hdr-row1">
+    <!-- P1-3: Mobile portrait header — Row 1: tên + search -->
+    <div class="mob-hdr-row1" id="mob-hdr-row1" style="display:none">
       <span class="mob-sym-title" id="mob-ptitle">Chart</span>
       <div class="mob-search-wrap">
         <span class="s-icon">🔍</span>
-        <input class="mob-search-input" id="mob-search" type="text"
-          placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+        <input class="mob-search-input" id="mob-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
       </div>
     </div>
 
-    <!-- FIX 3: Mobile portrait — Row 2: tabs cuộn -->
-    <div class="mob-tab-row" id="mob-tab-row">
-      <button class="mob-tab-btn on"  data-tab="vs">📈 Vietstock</button>
+    <!-- P1-3: Mobile portrait header — Row 2: tabs cuộn -->
+    <div class="mob-tab-row" id="mob-tab-row" style="display:none">
+      <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
       <button class="mob-tab-btn" data-tab="scanner">🖼 Scanner</button>
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
       <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
@@ -1024,22 +957,22 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button class="mob-tab-btn" data-tab="24h">💬 24HMoney</button>
     </div>
 
-    <!-- Mobile landscape header — 1 hàng -->
+    <!-- P2-1: Mobile landscape header — 1 hàng -->
     <div class="mob-hdr-landscape" id="mob-hdr-landscape">
       <span class="mob-land-sym" id="mob-land-sym">Chart</span>
       <div class="mob-land-search-wrap">
         <span class="s-icon">🔍</span>
-        <input class="mob-land-search" id="mob-land-search" type="text"
-          placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+        <input class="mob-land-search" id="mob-land-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
       </div>
       <div class="mob-land-tabs" id="mob-land-tabs">
-        <button class="mob-land-tab on"  data-tab="vs">📈 Vietstock</button>
+        <button class="mob-land-tab on" data-tab="vs">📈 Vietstock</button>
         <button class="mob-land-tab" data-tab="scanner">🖼 Scanner</button>
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
         <button class="mob-land-tab" data-tab="24h">💬 24HMoney</button>
       </div>
+      <!-- X vuông cố định phải -->
       <button class="mob-land-close" id="mob-land-close">✕</button>
     </div>
 
@@ -1088,15 +1021,21 @@ const DOM={
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   overlay:$('overlay'),pbox:$('pbox'),
+  // Desktop popup header
   ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
+  // Mobile portrait rows
   mobHdrRow1:$('mob-hdr-row1'),mobPtitle:$('mob-ptitle'),mobSearch:$('mob-search'),
   mobTabRow:$('mob-tab-row'),
+  // Mobile landscape row
   mobHdrLand:$('mob-hdr-landscape'),mobLandSym:$('mob-land-sym'),
   mobLandSearch:$('mob-land-search'),mobLandTabs:$('mob-land-tabs'),
+  // iframes
   ifVs:$('iframe-vs'),
+  // album
   loading:$('scanner-loading'),albumOuter:$('album-outer'),
   albumSlides:$('album-slides'),albumDots:$('album-dots'),
   btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
+  // hover
   hpPanel:$('hover-preview-panel'),hpIframe:$('hover-preview-iframe'),
   hpGrouptabs:$('hv-grouptabs'),hpSymlist:$('hv-symlist'),hpSortBtn:$('hv-sort-btn'),
   edgeZone:$('edge-swipe-zone'),mobClose:$('mob-close-float'),
@@ -1110,7 +1049,7 @@ const DOM={
 // HELPERS
 // ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
-const IS_PORTRAIT=()=>window.innerHeight>window.innerWidth;
+const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
 
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
 const IFRAME_LAZY={
@@ -1123,6 +1062,10 @@ const BADGE_MAP={
   'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
   'BOTTOMBREAKP':'b-BBREAKP','BOTTOMFISH':'b-BFISH','MA_CROSS':'b-MACROSS'
 };
+const MOB_TABS=[
+  ['vs','📈 Vietstock'],['scanner','🖼 Scanner'],['vnd-cs','⚖️ Cơ bản'],
+  ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 24HMoney'],
+];
 
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
@@ -1165,11 +1108,11 @@ function fmtP(p){return(!p||p<=0)?'—':(p<100?p.toFixed(2):p.toFixed(1));}
 function mkCell(sym,d){
   const e=d[sym]||{},pct=typeof e.pct==='number'?e.pct:0,price=typeof e.price==='number'?e.price:0;
   const{bg,fg}=cellStyle(pct),sign=pct>=0?'+':'';
-  return`<div class="hmap-cell" data-sym="${sym}" style="background:${bg};color:${fg}" title="${sym}|${fmtP(price)}|${sign}${pct.toFixed(2)}%"><span class="hc-sym">${sym}</span><span class="hc-price">${fmtP(price)}</span><span class="hc-pct">${sign}${pct.toFixed(1)}%</span></div>`;
+  return `<div class="hmap-cell" data-sym="${sym}" style="background:${bg};color:${fg}" title="${sym}|${fmtP(price)}|${sign}${pct.toFixed(2)}%"><span class="hc-sym">${sym}</span><span class="hc-price">${fmtP(price)}</span><span class="hc-pct">${sign}${pct.toFixed(1)}%</span></div>`;
 }
 function mkGroup(name,syms,d){
   const avg=avgPct(syms,d),sign=avg>=0?'+':'',cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
-  return`<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">${name}</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(syms,d).map(s=>mkCell(s,d)).join('')}</div>`;
+  return `<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">${name}</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(syms,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
 function mkSectorCol(d){
   const groups=[];
@@ -1183,16 +1126,16 @@ function renderHeatmap(d){
   const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
   const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
   HMAP_COLS.forEach((cd,i)=>{
-    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${i===HMAP_COLS.length-1?mkSectorCol(d):''}</div>`);
+    const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
+    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${extra}</div>`);
   });
   DOM.hmapGrid.innerHTML=parts.join('');
 }
 
-// Event delegation heatmap
+// Event delegation heatmap — FIX: mobile single tap = openChart ngay
 DOM.hmapGrid.addEventListener('click',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell)return;
   const sym=cell.dataset.sym;
-  // FIX: Mobile portrait single tap = openChart ngay
   if(IS_MOBILE()){openChart(sym);return;}
   _hmapDesktopClick(sym);
 });
@@ -1217,7 +1160,7 @@ function _hmapDesktopClick(sym){
 // Event delegation sig-list
 DOM.sigList.addEventListener('click',e=>{
   const row=e.target.closest('.sig-row');if(!row)return;
-  if(IS_MOBILE())openChart(row.dataset.sym);else _hmapDesktopClick(row.dataset.sym);
+  const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
 });
 DOM.sigList.addEventListener('dblclick',e=>{
   const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
@@ -1254,7 +1197,7 @@ async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
     const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
-    // FIX 2: Luôn 1 dòng, không cắt
+    // P1-2: luôn 1 hàng, dùng • thay xuống dòng
     DOM.hmapTs.textContent=`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`;
     window._lastHmapData=j.data||{};
     renderHeatmap(j.data||{});
@@ -1264,14 +1207,14 @@ async function fetchHmap(){
   }catch(e){console.error('fetchHmap:',e);}
 }
 
-function startBar(el,sec){
-  if(!el)return;
+function startBar(elOrId,sec){
+  const el=typeof elOrId==='string'?$(elOrId):elOrId;if(!el)return;
   el.style.transition='none';el.style.width='0%';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
 }
 
 // ═══════════════════════════════════════════════════════
-// SEARCH
+// SEARCH helper
 // ═══════════════════════════════════════════════════════
 function _bindSearch(el,onEnter){
   if(!el)return;
@@ -1282,6 +1225,7 @@ function _bindSearch(el,onEnter){
   el.addEventListener('focus',function(){this.select();});
 }
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
+
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-popout-btn').addEventListener('click',()=>quickPopout());
@@ -1322,6 +1266,7 @@ $('panel-scanner').addEventListener('touchend',e=>{
   if(_scanRaf)cancelAnimationFrame(_scanRaf);
   _scanRaf=requestAnimationFrame(()=>{const dx=e.changedTouches[0].clientX-_scanTouchX;if(Math.abs(dx)>50)albumNav(dx<0?1:-1);});
 },{passive:true});
+
 DOM.btnRef.addEventListener('click',async()=>{
   if(!_sym)return;
   DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
@@ -1346,32 +1291,39 @@ async function loadScannerChart(sym){
 }
 
 // ═══════════════════════════════════════════════════════
-// POPUP — tab activation
+// POPUP — tab activation (dùng chung cho cả 3 header)
 // ═══════════════════════════════════════════════════════
 function _activateTab(tab){
   _tab=tab;
-  // Sync tất cả tab containers
+  // Desktop tabs
   DOM.popupCtabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Mobile portrait tabs
   DOM.mobTabRow.querySelectorAll('.mob-tab-btn').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Mobile landscape tabs
   DOM.mobLandTabs.querySelectorAll('.mob-land-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Panels
   TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
+  // Lazy iframes
   if(IFRAME_LAZY[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_LAZY[tab](_sym);}
   if(tab==='scanner')loadScannerChart(_sym);
-  // Scroll tab vào view
-  const scrollTabIntoView=(container,selector)=>{
-    const btn=container.querySelector(selector+'.on');
-    if(btn)btn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
-  };
-  if(IS_MOBILE()){
-    if(IS_PORTRAIT())scrollTabIntoView(DOM.mobTabRow,'.mob-tab-btn');
-    else scrollTabIntoView(DOM.mobLandTabs,'.mob-land-tab');
+  // Scroll active tab into view (portrait)
+  if(IS_MOBILE()&&!IS_LANDSCAPE()){
+    const activeBtn=DOM.mobTabRow.querySelector('.mob-tab-btn.on');
+    if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  }
+  // Scroll active tab into view (landscape)
+  if(IS_MOBILE()&&IS_LANDSCAPE()){
+    const activeBtn=DOM.mobLandTabs.querySelector('.mob-land-tab.on');
+    if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
   }
 }
 
-// Event delegation cho tất cả tab containers
-DOM.popupCtabs.addEventListener('click',e=>{const b=e.target.closest('.ctab');if(b)_activateTab(b.dataset.tab);});
-DOM.mobTabRow.addEventListener('click',e=>{const b=e.target.closest('.mob-tab-btn');if(b)_activateTab(b.dataset.tab);});
-DOM.mobLandTabs.addEventListener('click',e=>{const b=e.target.closest('.mob-land-tab');if(b)_activateTab(b.dataset.tab);});
+// Event delegation — desktop tabs
+DOM.popupCtabs.addEventListener('click',e=>{const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);});
+// Event delegation — mobile portrait tabs
+DOM.mobTabRow.addEventListener('click',e=>{const btn=e.target.closest('.mob-tab-btn');if(btn)_activateTab(btn.dataset.tab);});
+// Event delegation — mobile landscape tabs
+DOM.mobLandTabs.addEventListener('click',e=>{const btn=e.target.closest('.mob-land-tab');if(btn)_activateTab(btn.dataset.tab);});
 
 // ═══════════════════════════════════════════════════════
 // POPUP OPEN / CLOSE
@@ -1392,12 +1344,9 @@ function _openPopup(){
   DOM.overlay.classList.add('on');
   document.body.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
-  // FIX 4: chỉ hiện nút X float khi portrait
-  if(IS_MOBILE()&&IS_PORTRAIT()){
-    DOM.mobClose.style.display='flex';
-  }else{
-    DOM.mobClose.style.display='none';
-  }
+  // Portrait: show float close
+  if(IS_MOBILE()&&!IS_LANDSCAPE()) DOM.mobClose.style.display='flex';
+  else DOM.mobClose.style.display='none';
 }
 
 function openChart(sym){
@@ -1408,9 +1357,7 @@ function openChart(sym){
   _resetScannerUI();
   _activateTab('vs');
   _openPopup();
-  // Bind search sau khi popup mở
-  _bindSearch(DOM.mobSearch,s=>openChart(s));
-  _bindSearch(DOM.mobLandSearch,s=>openChart(s));
+  // Clear search inputs
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 
@@ -1441,15 +1388,18 @@ function closePopup(){
   requestAnimationFrame(()=>{pbox.style.visibility='';pbox.style.animation='';});
 }
 
+// Close buttons
 $('popup-close-btn').addEventListener('click',closePopup);
 DOM.mobClose.addEventListener('click',closePopup);
 $('mob-land-close').addEventListener('click',closePopup);
 DOM.overlay.addEventListener('click',e=>{if(e.target===DOM.overlay)closePopup();});
 
-// Bind popup searches một lần (desktop)
+// Search bindings — tất cả search inputs trong popup
 _bindSearch(DOM.popupSearch,sym=>openChart(sym));
+_bindSearch(DOM.mobSearch,sym=>openChart(sym));
+_bindSearch(DOM.mobLandSearch,sym=>openChart(sym));
 
-// Mobile swipe right from left edge
+// Mobile swipe right to close
 if(IS_MOBILE()){
   let _swX=0,_swDir='',_swFired=false;
   DOM.pbox.addEventListener('touchstart',e=>{
@@ -1465,11 +1415,11 @@ if(IS_MOBILE()){
   },{passive:true});
 }
 
-// Orientation change
+// Orientation change — update close float visibility
 window.addEventListener('orientationchange',()=>{
   setTimeout(()=>{
     if(DOM.overlay.classList.contains('on')){
-      if(IS_MOBILE()&&IS_PORTRAIT())DOM.mobClose.style.display='flex';
+      if(IS_MOBILE()&&!IS_LANDSCAPE()) DOM.mobClose.style.display='flex';
       else DOM.mobClose.style.display='none';
     }
   },300);
@@ -1480,7 +1430,8 @@ document.addEventListener('keydown',e=>{
   if(DOM.lb.classList.contains('on'))return;
   if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
   if(!DOM.overlay.classList.contains('on'))return;
-  if([DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch].includes(document.activeElement))return;
+  const activeSearch=[DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch];
+  if(activeSearch.includes(document.activeElement))return;
   if(_tab!=='scanner'||_albumTotal===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
@@ -1547,7 +1498,8 @@ function _lbTS(e){
 function _lbTM(e){
   if(lbS.isPinching&&e.touches.length===2){
     e.preventDefault();if(lbS.pending)return;lbS.pending=true;
-    const ns=Math.min(4,Math.max(1,lbS.pinchStartScale*(_pd(e.touches)/lbS.pinchStartDist)));
+    const ratio=_pd(e.touches)/lbS.pinchStartDist;
+    const ns=Math.min(4,Math.max(1,lbS.pinchStartScale*ratio));
     requestAnimationFrame(()=>{lbS.scale=ns;lbS.panX=lbS.pinchStartPanX;lbS.panY=lbS.pinchStartPanY;_lbClamp();_lbApplyZoom();lbS.pending=false;});
     return;
   }
@@ -1616,19 +1568,11 @@ const _hvGroups=[];
 })();
 
 function _hvBuildTabs(){
-  DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>
-    `<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`
-  ).join('');
+  DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`).join('');
 }
-DOM.hpGrouptabs.addEventListener('click',e=>{
-  const btn=e.target.closest('.hv-gtab');if(btn)_hvSelectGroup(+btn.dataset.idx);
-});
+DOM.hpGrouptabs.addEventListener('click',e=>{const btn=e.target.closest('.hv-gtab');if(btn)_hvSelectGroup(+btn.dataset.idx);});
 function _hvSelectGroup(idx){
-  if(_hvActiveGroup===idx){
-    _hvActiveGroup=-1;
-    DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach(b=>b.classList.remove('on'));
-    DOM.hpSymlist.style.display='none';DOM.hpSortBtn.style.display='none';return;
-  }
+  if(_hvActiveGroup===idx){_hvActiveGroup=-1;DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach(b=>b.classList.remove('on'));DOM.hpSymlist.style.display='none';DOM.hpSortBtn.style.display='none';return;}
   _hvActiveGroup=idx;
   DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===idx));
   DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
@@ -1639,9 +1583,7 @@ function _hvGetSorted(){
   if(_hvSortAlpha)return[...g.syms].sort((a,b)=>a.localeCompare(b));
   return[...g.syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
 }
-DOM.hpSortBtn.addEventListener('click',()=>{
-  _hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();
-});
+DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
 function _hvRenderSymList(){
   if(_hvActiveGroup===-1)return;
   const d=window._lastHmapData||{};
@@ -1730,6 +1672,7 @@ function quickPopout(){
 
 // ═══════════════════════════════════════════════════════
 // POPOUT WINDOW
+// P2-2: Fix các nút trong popout không hoạt động
 // ═══════════════════════════════════════════════════════
 function popOutHover(){
   const sym=_hoverPreviewCurrent||'VNINDEX';
@@ -1749,6 +1692,8 @@ function _buildPopoutHTML(initSym){
   const gJ=JSON.stringify(_hvGroups.map(g=>({name:g.name,syms:g.syms})));
   const dJ=JSON.stringify(window._lastHmapData||{});
   const ig=_hvActiveGroup>=0?_hvActiveGroup:0;
+  // P2-2: Toàn bộ JS trong popout được viết cẩn thận, không dùng template literal lồng nhau
+  // Dùng string concat để tránh xung đột escape
   return '<!DOCTYPE html><html><head>'
     +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
     +'<title>Chart \u2014 '+initSym+'</title>'
@@ -1764,7 +1709,7 @@ function _buildPopoutHTML(initSym){
     +'#si{width:85px;padding:4px 6px 4px 22px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}'
     +'#si::placeholder{color:var(--muted)}'
     +'#si:focus{width:130px;border-color:var(--accent)}'
-    +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none}'
+    +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
     +'#gtabs::-webkit-scrollbar{display:none}'
     +'.gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
     +'.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}'
@@ -1797,7 +1742,7 @@ function _buildPopoutHTML(initSym){
     +'<div id="ctrls">'
     +'<button class="ctrl" id="sort-btn">A\u21951Z</button>'
     +'<button class="ctrl" id="full-btn"> \u29C6 </button>'
-    +'<button class="ctrl" id="min-btn"> \u2750 </button>'
+    +'<button class="ctrl" id="min-btn" title="Thu nh\u1ECF"> \u2750 </button>'
     +'<button class="ctrl close" id="close-btn">\u2715</button>'
     +'</div></div>'
     +'<div id="main">'
@@ -1813,28 +1758,46 @@ function _buildPopoutHTML(initSym){
     +'var sa='+(_hvSortAlpha?'true':'false')+';'
     +'var cur="'+initSym+'";'
     +'var full=false;'
+    // fmtP
     +'function fp(v){return(!v||v<=0)?"--":(v<100?Number(v).toFixed(2):Number(v).toFixed(1));}'
+    // buildTabs
     +'function buildTabs(){'
-    +'  _$("gtabs").innerHTML=groups.map(function(g,i){'
-    +'    return\'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+g.name+"</button>";'
+    +'  var el=_$("gtabs");'
+    +'  var html=groups.map(function(g,i){'
+    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+g.name+"</button>";'
     +'  }).join("");'
+    +'  el.innerHTML=html;'
     +'}'
-    +'function selGroup(idx){ag=idx;document.querySelectorAll(".gtab").forEach(function(b,i){b.classList.toggle("on",i===idx);});render();}'
+    // selectGroup
+    +'function selGroup(idx){'
+    +'  ag=idx;'
+    +'  document.querySelectorAll(".gtab").forEach(function(b,i){b.classList.toggle("on",i===idx);});'
+    +'  render();'
+    +'}'
+    // getSorted
     +'function getSorted(){'
-    +'  var g=groups[ag];if(!g)return[];'
+    +'  var g=groups[ag];if(!g)return [];'
     +'  if(sa)return g.syms.slice().sort(function(a,b){return a.localeCompare(b);});'
-    +'  return g.syms.slice().sort(function(a,b){var pa=hdata[a]?hdata[a].pct||0:-999,pb=hdata[b]?hdata[b].pct||0:-999;return pb-pa;});'
+    +'  return g.syms.slice().sort(function(a,b){'
+    +'    var pa=hdata[a]?hdata[a].pct||0:-999;'
+    +'    var pb=hdata[b]?hdata[b].pct||0:-999;'
+    +'    return pb-pa;'
+    +'  });'
     +'}'
+    // render symlist
     +'function render(){'
-    +'  _$("symlist").innerHTML=getSorted().map(function(sym){'
-    +'    var d=hdata[sym],pct=d&&typeof d.pct==="number"?d.pct:null;'
+    +'  var syms=getSorted();'
+    +'  _$("symlist").innerHTML=syms.map(function(sym){'
+    +'    var d=hdata[sym];'
+    +'    var pct=d&&typeof d.pct==="number"?d.pct:null;'
     +'    var pctStr=pct!==null?((pct>=0?"+":"")+pct.toFixed(1)+"%"):"--";'
     +'    var cls=pct===null?"zer":pct>0?"pos":pct<0?"neg":"zer";'
-    +'    return\'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'"><span class="sn">\'+sym+"</span>"'
+    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'"><span class="sn">\'+sym+"</span>"'
     +'      +\'<span class="sp \'+cls+\'">\'+pctStr+"</span>"'
     +'      +\'<span class="spr">\'+fp(d&&d.price)+"</span></div>";'
     +'  }).join("");'
     +'}'
+    // patch (for UPDATE_HEATMAP — no rebuild)
     +'function patch(nd){'
     +'  hdata=nd;'
     +'  document.querySelectorAll(".si").forEach(function(el){'
@@ -1845,8 +1808,10 @@ function _buildPopoutHTML(initSym){
     +'    if(spr&&typeof d.price==="number")spr.textContent=fp(d.price);'
     +'  });'
     +'}'
+    // clickSym (via delegation)
     +'function clickSym(sym){'
-    +'  if(sym===cur)return;cur=sym;'
+    +'  if(sym===cur)return;'
+    +'  cur=sym;'
     +'  document.querySelectorAll(".si").forEach(function(e){e.classList.toggle("on",e.dataset.sym===sym);});'
     +'  setSym(sym);'
     +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
@@ -1860,39 +1825,75 @@ function _buildPopoutHTML(initSym){
     +'  cf.onload=function(){ld.classList.add("hide");};'
     +'  cf.src=url;'
     +'}'
-    +'_$("gtabs").addEventListener("click",function(e){var b=e.target.closest(".gtab");if(!b)return;selGroup(parseInt(b.dataset.idx));});'
-    +'_$("symlist").addEventListener("click",function(e){var item=e.target.closest(".si");if(!item)return;clickSym(item.dataset.sym);});'
-    +'_$("sort-btn").addEventListener("click",function(){sa=!sa;this.textContent=sa?"%\u2195":"A\u21951Z";render();});'
+    // Event delegation - gtabs
+    +'_$("gtabs").addEventListener("click",function(e){'
+    +'  var b=e.target.closest(".gtab");if(!b)return;'
+    +'  selGroup(parseInt(b.dataset.idx));'
+    +'});'
+    // Event delegation - symlist
+    +'_$("symlist").addEventListener("click",function(e){'
+    +'  var item=e.target.closest(".si");if(!item)return;'
+    +'  clickSym(item.dataset.sym);'
+    +'});'
+    // sort btn
+    +'_$("sort-btn").addEventListener("click",function(){'
+    +'  sa=!sa;'
+    +'  this.textContent=sa?"%\u2195":"A\u21951Z";'
+    +'  render();'
+    +'});'
+    // full btn
     +'_$("full-btn").addEventListener("click",function(){full=true;loadChart(cur);});'
-    +'_$("min-btn").addEventListener("click",function(){if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_MINIMIZE"},"*");window.close();});'
-    +'_$("close-btn").addEventListener("click",function(){if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_CLOSE"},"*");window.close();});'
+    // min btn
+    +'_$("min-btn").addEventListener("click",function(){'
+    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_MINIMIZE"},"*");'
+    +'  window.close();'
+    +'});'
+    // close btn — FIX: gửi POPOUT_CLOSE, không minimize
+    +'_$("close-btn").addEventListener("click",function(){'
+    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_CLOSE"},"*");'
+    +'  window.close();'
+    +'});'
+    // search
     +'_$("si").addEventListener("keydown",function(e){'
-    +'  if(e.key==="Enter"){var s=this.value.trim().toUpperCase();if(s.length>=2){this.value="";this.blur();cur=s;setSym(s);render();if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:s},"*");}}'
+    +'  if(e.key==="Enter"){'
+    +'    var s=this.value.trim().toUpperCase();'
+    +'    if(s.length>=2){this.value="";this.blur();cur=s;setSym(s);render();'
+    +'      if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:s},"*");}'
+    +'  }'
     +'  if(e.key==="Escape"){this.value="";this.blur();}'
     +'});'
+    // arrow key nav
     +'var _kt=false,_kd=null;'
     +'document.addEventListener("keydown",function(e){'
     +'  if(document.activeElement===_$("si"))return;'
     +'  if(e.key!=="ArrowUp"&&e.key!=="ArrowDown")return;'
-    +'  e.preventDefault();if(_kt)return;_kt=true;setTimeout(function(){_kt=false;},60);'
+    +'  e.preventDefault();'
+    +'  if(_kt)return;_kt=true;setTimeout(function(){_kt=false;},60);'
     +'  var items=[].slice.call(_$("symlist").children);if(!items.length)return;'
     +'  var c=items.findIndex(function(el){return el.classList.contains("on");});'
     +'  var n=c===-1?0:(e.key==="ArrowDown"?c+1:c-1);'
-    +'  n=Math.max(0,Math.min(n,items.length-1));if(n===c&&c!==-1)return;'
+    +'  n=Math.max(0,Math.min(n,items.length-1));'
+    +'  if(n===c&&c!==-1)return;'
     +'  items.forEach(function(el){el.classList.remove("on");});items[n].classList.add("on");'
     +'  var sym=items[n].dataset.sym;cur=sym;_$("sym").textContent=sym;document.title="Chart "+sym;'
     +'  if(_kd)clearTimeout(_kd);'
-    +'  _kd=setTimeout(function(){loadChart(sym);if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");},300);'
-    +'  var list=_$("symlist"),el=items[n],rt=el.offsetTop-list.offsetTop,h=el.offsetHeight;'
+    +'  _kd=setTimeout(function(){'
+    +'    loadChart(sym);'
+    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
+    +'  },300);'
+    +'  var list=_$("symlist"),el=items[n];'
+    +'  var rt=el.offsetTop-list.offsetTop,h=el.offsetHeight;'
     +'  if(rt-h<list.scrollTop)list.scrollTop=Math.max(0,rt-h);'
     +'  else if(rt+h*2>list.scrollTop+list.clientHeight)list.scrollTop=rt+h*2-list.clientHeight;'
     +'});'
+    // message handler
     +'window.addEventListener("message",function(e){'
     +'  if(e.data.type==="UPDATE_CHART"){cur=e.data.symbol;setSym(cur);render();}'
     +'  if(e.data.type==="UPDATE_HEATMAP"){patch(e.data.data||{});}'
     +'  if(e.data.type==="EMBEDDED_FULL_SYMBOL"){cur=(e.data.symbol||cur).toUpperCase();_$("sym").textContent=cur;render();}'
     +'  if(e.data.type==="EMBEDDED_FULL_CLOSE"){full=false;cur=(e.data.symbol||cur).toUpperCase();setSym(cur);render();}'
     +'});'
+    // init
     +'buildTabs();render();setSym(cur);'
     +'<\/script></body></html>';
 }
@@ -1913,6 +1914,7 @@ function minimizePopout(){
 }
 function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');}
 
+// FIX: POPOUT_CLOSE = đóng thật, không mở lại hover
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _hoverPreviewCurrent=e.data.symbol;
