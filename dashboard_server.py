@@ -54,7 +54,6 @@ def api_signals():
 
 @app.route("/api/heatmap")
 def api_heatmap():
-    # Python opt: cache time.time() vào biến local
     now = time.time()
     with _heatmap_lock:
         if now - _heatmap_cache["updated_at"] > HEATMAP_TTL_SEC and _fetch_heatmap_fn:
@@ -65,7 +64,7 @@ def api_heatmap():
                 _heatmap_cache["updated_at"] = time.time()
             except Exception as e:
                 print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
-        snap_time = _heatmap_cache["updated_at"]   # cache local, tránh gọi lại
+        snap_time = _heatmap_cache["updated_at"]
         return jsonify({
             "data":       _heatmap_cache["data"],
             "timestamp":  _heatmap_cache["ts"],
@@ -91,7 +90,7 @@ def api_chart_images(symbol):
         if not png_list:
             return jsonify({"error": "no_data"}), 404
         b64_list = [base64.b64encode(b).decode() for b in png_list]
-        fetch_time = time.time()          # cache local
+        fetch_time = time.time()
         with _chart_lock:
             _chart_cache[symbol] = {"images": b64_list, "labels": labels,
                                     "updated_at": fetch_time}
@@ -169,7 +168,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
 
 # =============================================================================
-# POPOUT FULL
+# POPOUT FULL HTML
 # =============================================================================
 
 POPOUT_FULL_HTML = r"""<!DOCTYPE html>
@@ -185,7 +184,6 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
 .page{height:100vh;display:flex;flex-direction:column}
-/* ── Header ── */
 .phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 .phdr-left{display:flex;align-items:center;gap:8px}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
@@ -195,19 +193,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
 .search-input{width:108px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .search-input:focus{width:180px;border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
-/* ── Tabs ── */
 .ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap;justify-content:center}
 .ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .ctab.on{background:var(--surface);color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 .closebtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
-/* ── Body / Panels ── */
 .pbody{flex:1;overflow:hidden;position:relative;background:#fff}
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
-/* ── Album (shared, defined once) ── */
 #panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
 .scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
@@ -228,6 +223,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .album-refresh-btn.spinning span{display:inline-block;animation:spin .7s linear infinite}
 .album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 6px;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 @media(max-width:980px){
@@ -283,170 +279,116 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 </div>
 <script>
 'use strict';
-// ── DOM cache ──
-const $ = id => document.getElementById(id);
-const DOM = {
-  ptitle:   $('ptitle'),
-  ifVs:     $('iframe-vs'),
-  loading:  $('scanner-loading'),
-  outer:    $('album-outer'),
-  slides:   $('album-slides'),
-  dots:     $('album-dots'),
-  btnPrev:  $('btn-prev'),
-  btnNext:  $('btn-next'),
-  btnRef:   $('btn-refresh'),
-  ctabs:    $('ctabs'),
-  search:   $('search-input'),
+const $=id=>document.getElementById(id);
+const DOM={
+  ptitle:$('ptitle'),ifVs:$('iframe-vs'),
+  loading:$('scanner-loading'),outer:$('album-outer'),
+  slides:$('album-slides'),dots:$('album-dots'),
+  btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
+  ctabs:$('ctabs'),search:$('search-input'),
 };
-const IFRAME_MAP = {
-  'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
-  'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':      s=>`https://24hmoney.vn/stock/${s}/news`,
+const IFRAME_MAP={
+  'vnd-cs':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
+  'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
+  'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
+  '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
 };
-const TABS_ALL = ['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+let _sym='__SYMBOL__',_tab='vs';
+let _albumIdx=0,_albumTotal=0,_albumImages=[];
 
-let _sym = '__SYMBOL__', _tab = 'vs';
-let _albumIdx = 0, _albumTotal = 0, _albumImages = [];
-
-// ── Notify host ──
-function notifyHost(sym) {
-  try {
-    if (window.self !== window.top)
-      return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
-    if (window.opener && !window.opener.closed)
-      window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
-  } catch(e){}
+function notifyHost(sym){
+  try{
+    if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
+    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
+  }catch(e){}
 }
-function handleClose() {
-  try {
-    if (window.self !== window.top)
-      return window.parent.postMessage({type:'EMBEDDED_FULL_CLOSE',symbol:_sym},'*');
-  } catch(e){}
+function handleClose(){
+  try{if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_CLOSE',symbol:_sym},'*');}catch(e){}
   window.close();
 }
 
-// ── Tab switching (event delegation on ctabs) ──
-DOM.ctabs.addEventListener('click', e => {
-  const btn = e.target.closest('.ctab');
-  if (btn) _activateTab(btn.dataset.tab);
+DOM.ctabs.addEventListener('click',e=>{
+  const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);
 });
-
-function _activateTab(tab) {
-  _tab = tab;
-  DOM.ctabs.querySelectorAll('.ctab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  TABS_ALL.forEach(t => document.getElementById('panel-'+t).classList.toggle('on', t === tab));
-  if (IFRAME_MAP[tab]) {
-    const f = $('iframe-'+tab);
-    if (f && f.src === 'about:blank') f.src = IFRAME_MAP[tab](_sym);
-  }
-  if (tab === 'scanner') loadScannerChart(_sym);
+function _activateTab(tab){
+  _tab=tab;
+  DOM.ctabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
+  if(IFRAME_MAP[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_MAP[tab](_sym);}
+  if(tab==='scanner')loadScannerChart(_sym);
 }
 
-// ── Symbol ──
-function setSymbol(sym) {
-  _sym = (sym||'').toUpperCase().trim();
-  if (!_sym) return;
-  DOM.ptitle.textContent = _sym;
-  document.title = _sym + ' • Full Chart';
-  DOM.ifVs.src = 'https://ta.vietstock.vn/?stockcode=' + _sym.toLowerCase();
-  Object.keys(IFRAME_MAP).forEach(t => { const f=$('iframe-'+t); if(f) f.src='about:blank'; });
-  DOM.outer.style.display = 'none';
-  DOM.loading.style.display = 'flex';
-  DOM.loading.innerHTML = '<span>⏳ Đang tạo chart từ scanner...</span>';
+function setSymbol(sym){
+  _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
+  DOM.ptitle.textContent=_sym;
+  document.title=_sym+' • Full Chart';
+  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
+  Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  DOM.outer.style.display='none';
+  DOM.loading.style.display='flex';
+  DOM.loading.innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
   _activateTab('vs');
-  try { history.replaceState(null,'','/popout_full/'+_sym); } catch(e){}
+  try{history.replaceState(null,'','/popout_full/'+_sym);}catch(e){}
   notifyHost(_sym);
 }
 
-// ── Album ──
-function _showAlbum(images) {
-  _albumImages = images; _albumTotal = images.length; _albumIdx = 0;
-  // JS opt: array join thay vì innerHTML +=
-  DOM.slides.innerHTML = images.map((img,i) =>
-    `<div class="album-slide${i===0?' on':''}" data-idx="${i}">
-      <img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async">
-    </div>`).join('');
-  DOM.dots.innerHTML = images.map((_,i) =>
-    `<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
+function _showAlbum(images){
+  _albumImages=images;_albumTotal=images.length;_albumIdx=0;
+  DOM.slides.innerHTML=images.map((img,i)=>`<div class="album-slide${i===0?' on':''}" data-idx="${i}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`).join('');
+  DOM.dots.innerHTML=images.map((_,i)=>`<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
   _updateAlbumNav();
-  DOM.outer.style.display = 'flex';
-  DOM.loading.style.display = 'none';
+  DOM.outer.style.display='flex';DOM.loading.style.display='none';
 }
-
-// Event delegation cho dots
-DOM.dots.addEventListener('click', e => {
-  const d = e.target.closest('.album-dot');
-  if (d) albumGoto(+d.dataset.idx);
-});
-DOM.btnPrev.addEventListener('click', () => albumNav(-1));
-DOM.btnNext.addEventListener('click', () => albumNav(1));
-
-function albumGoto(i) {
-  if (i < 0 || i >= _albumTotal) return;
-  DOM.slides.querySelectorAll('.album-slide').forEach((s,idx) => s.classList.toggle('on', idx===i));
-  DOM.dots.querySelectorAll('.album-dot').forEach((d,idx) => d.classList.toggle('on', idx===i));
-  _albumIdx = i; _updateAlbumNav();
+DOM.dots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
+DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
+DOM.btnNext.addEventListener('click',()=>albumNav(1));
+function albumGoto(i){
+  if(i<0||i>=_albumTotal)return;
+  DOM.slides.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
+  DOM.dots.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
+  _albumIdx=i;_updateAlbumNav();
 }
-function albumNav(dir) { albumGoto(_albumIdx + dir); }
-function _updateAlbumNav() {
-  DOM.btnPrev.classList.toggle('disabled', _albumIdx === 0);
-  DOM.btnNext.classList.toggle('disabled', _albumIdx === _albumTotal-1);
+function albumNav(dir){albumGoto(_albumIdx+dir);}
+function _updateAlbumNav(){
+  DOM.btnPrev.classList.toggle('disabled',_albumIdx===0);
+  DOM.btnNext.classList.toggle('disabled',_albumIdx===_albumTotal-1);
 }
-
-// ── Scanner chart ──
-DOM.btnRef.addEventListener('click', async () => {
-  if (!_sym) return;
-  DOM.btnRef.classList.add('spinning'); DOM.btnRef.disabled = true;
-  try { await fetch('/api/chart_cache_clear/'+_sym,{method:'DELETE'}); } catch(e){}
-  DOM.btnRef.classList.remove('spinning'); DOM.btnRef.disabled = false;
+DOM.btnRef.addEventListener('click',async()=>{
+  if(!_sym)return;
+  DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
+  try{await fetch('/api/chart_cache_clear/'+_sym,{method:'DELETE'});}catch(e){}
+  DOM.btnRef.classList.remove('spinning');DOM.btnRef.disabled=false;
   await loadScannerChart(_sym);
 });
-
-async function loadScannerChart(sym) {
-  DOM.outer.style.display = 'none';
-  DOM.loading.style.display = 'flex';
-  DOM.loading.innerHTML = `<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
-  try {
-    const r = await fetch('/api/chart_images/'+sym);
-    if (!r.ok) { const j=await r.json().catch(()=>({})); throw new Error(j.error||'HTTP '+r.status); }
-    const j = await r.json();
-    if (!j.images?.length) throw new Error('no_images');
-    const labels = j.labels || ['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
+async function loadScannerChart(sym){
+  DOM.outer.style.display='none';DOM.loading.style.display='flex';
+  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
+  try{
+    const r=await fetch('/api/chart_images/'+sym);
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
+    const j=await r.json();
+    if(!j.images?.length)throw new Error('no_images');
+    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    if (j.cached) { const h=DOM.outer.querySelector('.album-hint'); if(h) h.textContent='♻️ Dùng cache'; }
-  } catch(e) {
-    DOM.loading.innerHTML = `<div style="text-align:center;color:#aaa;padding:24px">
-      <div style="font-size:24px;margin-bottom:10px">⚠️</div>
-      <div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
-      <div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div>
-      <div style="display:flex;gap:8px;justify-content:center">
-        <button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button>
-        <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a>
-      </div></div>`;
+    if(j.cached){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
+  }catch(e){
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-
-// ── Search ──
-DOM.search.addEventListener('keydown', function(e) {
-  if (e.key==='Enter') { const s=this.value.trim().toUpperCase(); if(s.length>=2){this.value='';this.blur();setSymbol(s);} }
-  if (e.key==='Escape') { this.value=''; this.blur(); }
+DOM.search.addEventListener('keydown',function(e){
+  if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();setSymbol(s);}}
+  if(e.key==='Escape'){this.value='';this.blur();}
 });
-DOM.search.addEventListener('focus', function(){this.select();});
-$('close-btn').addEventListener('click', handleClose);
-
-// ── Keyboard ──
-document.addEventListener('keydown', e => {
-  if (e.key==='Escape') { window.close(); return; }
-  if (document.activeElement===DOM.search || _tab!=='scanner' || _albumTotal===0) return;
-  if (e.key==='ArrowLeft') { e.preventDefault(); albumNav(-1); }
-  if (e.key==='ArrowRight'){ e.preventDefault(); albumNav(1); }
+DOM.search.addEventListener('focus',function(){this.select();});
+$('close-btn').addEventListener('click',handleClose);
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){window.close();return;}
+  if(document.activeElement===DOM.search||_tab!=='scanner'||_albumTotal===0)return;
+  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
+  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
-
-window.addEventListener('message', e => {
-  if (e.data.type==='UPDATE_CHART' && e.data.symbol) setSymbol(e.data.symbol);
-});
-
+window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
 setSymbol(_sym);
 </script>
 </body>
@@ -478,14 +420,27 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 
 /* ═══════════════════════════════════════════
+   HEADER — desktop
+═══════════════════════════════════════════ */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow);
+  flex-wrap:wrap;gap:6px;
+}
+header h1{
+  font-family:var(--font-ui);font-size:19px;font-weight:800;
+  letter-spacing:2.5px;color:var(--accent);text-transform:uppercase;
+  white-space:nowrap; /* P1-1: giữ tiêu đề 1 hàng */
+}
+.hdr-right{display:flex;gap:18px;align-items:center;flex-shrink:0}
+#clock{color:var(--muted);font-size:11px;white-space:nowrap}
+.dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ═══════════════════════════════════════════
    LAYOUT
 ═══════════════════════════════════════════ */
-header{display:flex;align-items:center;justify-content:space-between;padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow)}
-header h1{font-family:var(--font-ui);font-size:19px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
-.hdr-right{display:flex;gap:18px;align-items:center}
-#clock{color:var(--muted);font-size:11px}
-.dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);animation:pulse 2s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
 .panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
@@ -501,6 +456,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 ═══════════════════════════════════════════ */
 .hmap-panel-hdr{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .hmap-hdr-row1{display:flex;align-items:center;gap:8px;flex-shrink:0}
+/* P1-2: timestamp luôn 1 hàng trên desktop */
 .hmap-ts-wrap{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted)}
 .hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--accent);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
 .hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -528,7 +484,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .b-MACROSS{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px;grid-column:1/-1}
 .empty .big{font-size:30px;margin-bottom:8px}
-@keyframes fadeIn{from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:none}}
 
 /* ═══════════════════════════════════════════
    HEATMAP GRID
@@ -554,7 +509,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
 
 /* ═══════════════════════════════════════════
-   POPUP
+   POPUP — desktop
 ═══════════════════════════════════════════ */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
@@ -581,7 +536,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
 /* ═══════════════════════════════════════════
-   ALBUM — định nghĩa 1 lần dùng chung (CSS opt: bỏ duplicate)
+   ALBUM — dùng chung
 ═══════════════════════════════════════════ */
 #panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
@@ -605,7 +560,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ═══════════════════════════════════════════
-   HOVER PREVIEW PANEL
+   HOVER PREVIEW
 ═══════════════════════════════════════════ */
 #hover-preview-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;min-height:120px;max-height:90vh;z-index:500;background:var(--surface);border-top:2px solid var(--accent);box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column}
 #hover-preview-resizer{position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;z-index:10}
@@ -628,7 +583,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hv-sym-price{font-family:var(--font-mono);font-size:10px;text-align:right;color:#374151}
 #hover-preview-iframe-wrap{flex:1;overflow:hidden;position:relative}
 #hover-preview-iframe-wrap iframe{width:100%;height:100%;border:none;display:block}
-/* Shared control button style */
 .hv-ctrl{height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;white-space:nowrap;flex-shrink:0}
 .hv-ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hv-ctrl.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
@@ -636,41 +590,218 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #hover-preview-btn:hover,#hover-preview-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 
 /* ═══════════════════════════════════════════
-   MOBILE
+   MOBILE PORTRAIT
 ═══════════════════════════════════════════ */
 @media(max-width:768px){
+  /* Header */
+  header{padding:8px 14px;gap:4px}
+  header h1{font-size:15px;letter-spacing:1.5px}
+  /* P1-1: clock xuống hàng nếu cần, nhưng h1 không wrap */
+  #clock{font-size:10px}
+
   .overlay{backdrop-filter:none;background:rgba(17,24,39,0)}
-  .pbox{width:100vw;height:100vh;border-radius:0;border:none}
-  .phdr{display:flex;flex-direction:column}
+  .pbox{width:100vw;height:100dvh;border-radius:0;border:none;animation:none}
+  /* Ẩn desktop header trong popup */
+  .phdr{display:flex;flex-direction:column;flex-shrink:0}
   .phdr-left,.phdr-center,.phdr-right{display:none}
+
   .sig-list{display:flex;flex-direction:column;gap:3px}
+  /* P1-2: heatmap header mobile */
   .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
-  .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none}
+  .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
-  .hmap-ts-wrap{white-space:normal;overflow:visible;text-overflow:unset;width:100%;word-break:break-word;line-height:1.5;margin-left:0;display:block}
-  .hmap-search-input{width:122px!important}
-  .hmap-search-input:focus{width:122px!important}
-  #hover-preview-btn,#hover-preview-panel{display:none!important}
+  /* P1-2: timestamp 1 hàng, không wrap */
+  .hmap-ts-wrap{
+    white-space:nowrap !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    width:100% !important;
+    margin-left:0 !important;
+    display:block !important;
+    font-size:10px !important;
+    line-height:1.4 !important;
+  }
+  /* P1-3: search nhỏ vừa đủ "Tìm mã" */
+  .hmap-search-input{width:70px !important}
+  .hmap-search-input:focus{width:70px !important}
+
+  #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
 }
 
-/* ── Mobile close float ── */
-#mob-close-float{display:none}
-@media screen and (max-width:768px) and (orientation:portrait){
-  #mob-close-float{display:flex;position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:10001;width:22px;height:80px;border-radius:8px 0 0 8px;background:rgba(17,24,39,.55);border:1px solid rgba(255,255,255,.15);border-right:none;color:rgba(255,255,255,.85);font-size:14px;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-  #mob-close-float:active{background:rgba(17,24,39,.85)}
+/* ═══════════════════════════════════════════
+   MOBILE POPUP HEADER — portrait
+   P1-3: tabs cuộn, search nhỏ, tên mã to
+═══════════════════════════════════════════ */
+/* Row trên: Tên mã + search */
+.mob-hdr-row1{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 10px 6px;
+  background:var(--surf2);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
 }
-@media screen and (max-width:768px) and (orientation:landscape){
-  #mob-close-float{display:flex!important;position:fixed!important;right:12px!important;top:8px!important;transform:none!important;width:40px!important;height:40px!important;border-radius:50%!important;background:rgba(17,24,39,.7)!important;border:1px solid rgba(255,255,255,.2)!important;color:#fff!important;font-size:18px!important;align-items:center!important;justify-content:center!important;z-index:10001!important;touch-action:manipulation!important}
+.mob-sym-title{
+  font-family:var(--font-ui);font-size:20px;font-weight:800;
+  color:var(--accent);letter-spacing:1px;flex-shrink:0;white-space:nowrap;
+}
+/* P1-3: search vừa đủ chứa "Tìm mã" ~ 72px */
+.mob-search-wrap{position:relative;flex-shrink:0}
+.mob-search-wrap .s-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none}
+.mob-search-input{
+  width:72px;padding:5px 6px 5px 24px;
+  border-radius:20px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  font-family:var(--font-mono);font-size:11px;outline:none;
 }
 
-/* ── Mobile tab row ── */
-#mob-tabrow{display:flex;flex-wrap:nowrap;align-items:center;overflow-x:scroll;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;padding:6px 8px;gap:5px;background:var(--surf2);border-bottom:1px solid var(--border);scrollbar-width:none;-ms-overflow-style:none}
-#mob-tabrow::-webkit-scrollbar{display:none}
-#mob-tabrow>button{flex-shrink:0;white-space:nowrap;padding:7px 14px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:var(--font-mono);font-weight:600;cursor:pointer;background:var(--bg);color:var(--muted);display:inline-flex;align-items:center;min-height:44px;touch-action:manipulation;transition:all .15s}
-#mob-tabrow>button.on{background:var(--surface);color:var(--accent);border-color:var(--accent);font-weight:700;box-shadow:0 2px 0 var(--accent)}
+/* Row dưới: tabs cuộn */
+/* P1-3: tabs cuộn ngang, bắt đầu từ Vietstock */
+.mob-tab-row{
+  display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;
+  overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;
+  padding:4px 8px;gap:4px;
+  background:var(--surf2);
+  border-bottom:1px solid var(--border);
+  scrollbar-width:none;-ms-overflow-style:none;
+  flex-shrink:0;
+}
+.mob-tab-row::-webkit-scrollbar{display:none}
+.mob-tab-btn{
+  flex-shrink:0;white-space:nowrap;
+  padding:6px 12px;border-radius:6px;
+  border:1px solid var(--border);
+  font-size:12px;font-family:var(--font-mono);font-weight:600;
+  cursor:pointer;background:var(--bg);color:var(--muted);
+  display:inline-flex;align-items:center;
+  min-height:36px;touch-action:manipulation;
+  transition:all .15s;
+}
+.mob-tab-btn.on{
+  background:var(--surface);color:var(--accent);
+  border-color:var(--accent);font-weight:700;
+  box-shadow:0 2px 0 var(--accent);
+}
+
+/* ═══════════════════════════════════════════
+   MOBILE POPUP HEADER — landscape
+   P2-1: tất cả 1 hàng, tabs cuộn, X cố định phải
+═══════════════════════════════════════════ */
+.mob-hdr-landscape{
+  display:none; /* ẩn trên portrait & desktop */
+  flex-direction:row;align-items:center;
+  padding:0 6px 0 8px;
+  background:var(--surf2);border-bottom:1px solid var(--border);
+  flex-shrink:0;height:40px;gap:4px;overflow:hidden;
+}
+.mob-land-sym{
+  font-family:var(--font-ui);font-size:15px;font-weight:800;
+  color:var(--accent);white-space:nowrap;flex-shrink:0;letter-spacing:.8px;
+}
+.mob-land-search-wrap{position:relative;flex-shrink:0}
+.mob-land-search-wrap .s-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}
+.mob-land-search{
+  width:68px;padding:4px 6px 4px 22px;
+  border-radius:16px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  font-family:var(--font-mono);font-size:10px;outline:none;
+}
+/* Tabs cuộn giữa */
+.mob-land-tabs{
+  display:flex;flex-direction:row;flex-wrap:nowrap;
+  overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;-ms-overflow-style:none;
+  gap:3px;flex:1;min-width:0;align-items:center;padding:2px 0;
+}
+.mob-land-tabs::-webkit-scrollbar{display:none}
+.mob-land-tab{
+  flex-shrink:0;white-space:nowrap;
+  padding:4px 10px;border-radius:4px;
+  border:1px solid var(--border);
+  font-size:11px;font-family:var(--font-mono);font-weight:600;
+  cursor:pointer;background:var(--bg);color:var(--muted);
+  display:inline-flex;align-items:center;height:30px;
+  touch-action:manipulation;transition:all .15s;
+}
+.mob-land-tab.on{
+  background:var(--surface);color:var(--accent);
+  border-color:var(--accent);font-weight:700;
+}
+/* Nút X dạng vuông cố định phải */
+.mob-land-close{
+  flex-shrink:0;width:30px;height:30px;
+  border-radius:4px;border:1px solid var(--border);
+  background:var(--bg);color:var(--muted);
+  font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;touch-action:manipulation;
+}
+.mob-land-close:hover,.mob-land-close:active{background:var(--red);color:#fff;border-color:var(--red)}
+
+/* ═══════════════════════════════════════════
+   P1-4: Nút X bên cạnh phải — portrait only
+═══════════════════════════════════════════ */
+#mob-close-float{display:none}
+
+@media screen and (max-width:768px) and (orientation:portrait){
+  /* Hiện mob-hdr-row1 + mob-tab-row */
+  .mob-hdr-row1{display:flex}
+  .mob-tab-row{display:flex}
+  .mob-hdr-landscape{display:none !important}
+
+  /* P1-4: nút X mỏng, cao, gần trong suốt */
+  #mob-close-float{
+    display:flex;
+    position:fixed;right:0;top:50%;transform:translateY(-50%);
+    z-index:10001;
+    width:11px;          /* 1/2 chiều rộng cũ (22px→11px) */
+    height:320px;        /* gấp 4 chiều cao cũ (80px→320px) */
+    border-radius:6px 0 0 6px;
+    background:rgba(17,24,39,.06);   /* gần như trong suốt */
+    border:1px solid rgba(17,24,39,.08);
+    border-right:none;
+    color:rgba(0,0,0,.12);
+    font-size:9px;
+    align-items:center;justify-content:center;
+    cursor:pointer;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+    writing-mode:vertical-rl;
+  }
+  #mob-close-float:active{
+    background:rgba(17,24,39,.25);
+    color:rgba(0,0,0,.5);
+  }
+
+  /* P1-5: Popout header portrait — to hơn */
+  /* (áp dụng cho hover preview header) */
+  .hv-header-row1{padding:6px 8px 6px 12px}
+  .hv-gtab{height:28px;font-size:11px;padding:0 12px}
+  .hv-sym-name{font-size:12px}
+  .hv-sym-pct{font-size:11px}
+  .hv-sym-price{font-size:11px}
+}
+
+@media screen and (max-width:768px) and (orientation:landscape){
+  /* Ẩn portrait rows */
+  .mob-hdr-row1{display:none !important}
+  .mob-tab-row{display:none !important}
+  /* Hiện landscape row */
+  .mob-hdr-landscape{display:flex !important}
+
+  /* P2-1: nút close float landscape = góc trên phải, vuông */
+  #mob-close-float{
+    display:none !important; /* landscape dùng mob-land-close thay thế */
+  }
+
+  /* Album img cao hơn khi landscape */
+  .album-slide img{max-height:calc(100dvh - 50px)}
+}
 
 /* ═══════════════════════════════════════════
    MOBILE LIGHTBOX
@@ -679,12 +810,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #mob-lightbox.on{display:block}
 #lb-viewport{position:absolute;inset:0;overflow:hidden}
 #lb-strip{display:flex;height:100%}
-/* will-change только когда анимируем */
 #lb-strip.dragging{will-change:transform}
 #lb-strip.snapping{transition:transform .32s cubic-bezier(.25,.46,.45,.94)}
 .lb-slide{flex-shrink:0;width:100vw;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .lb-slide img{max-width:100vw;max-height:100dvh;object-fit:contain;display:block;transform-origin:center;user-select:none;-webkit-user-drag:none;pointer-events:none}
-/* will-change только при zoom */
 .lb-slide img.zooming{will-change:transform;transition:none}
 #mob-lightbox-close{position:absolute;top:14px;right:14px;width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.07);border:1px solid rgba(0,0,0,.15);color:#333;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:10;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 #mob-lightbox-close:active{background:rgba(0,0,0,.2)}
@@ -697,7 +826,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #edge-swipe-zone{position:fixed;left:0;top:0;width:30px;height:100%;z-index:10000;display:none;touch-action:pan-y}
 #edge-swipe-zone.on{display:block}
 
-/* ── Scrollbar global ── */
+/* Scrollbar global */
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -743,6 +872,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
       </div>
+      <!-- P1-2: timestamp 1 hàng -->
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
@@ -780,8 +910,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 <!-- POPUP -->
 <div class="overlay" id="overlay">
+  <!-- P1-4: nút X dọc cạnh phải, gần trong suốt -->
   <button id="mob-close-float" aria-label="Đóng">✕</button>
+
   <div class="pbox" id="pbox">
+    <!-- Desktop header (ẩn trên mobile qua CSS) -->
     <div class="phdr" id="popup-phdr">
       <div class="phdr-left">
         <span class="ptitle" id="ptitle">Chart</span>
@@ -804,6 +937,45 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="closebtn" id="popup-close-btn">✕</button>
       </div>
     </div>
+
+    <!-- P1-3: Mobile portrait header — Row 1: tên + search -->
+    <div class="mob-hdr-row1" id="mob-hdr-row1" style="display:none">
+      <span class="mob-sym-title" id="mob-ptitle">Chart</span>
+      <div class="mob-search-wrap">
+        <span class="s-icon">🔍</span>
+        <input class="mob-search-input" id="mob-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <!-- P1-3: Mobile portrait header — Row 2: tabs cuộn -->
+    <div class="mob-tab-row" id="mob-tab-row" style="display:none">
+      <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
+      <button class="mob-tab-btn" data-tab="scanner">🖼 Scanner</button>
+      <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
+      <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
+      <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
+      <button class="mob-tab-btn" data-tab="24h">💬 24HMoney</button>
+    </div>
+
+    <!-- P2-1: Mobile landscape header — 1 hàng -->
+    <div class="mob-hdr-landscape" id="mob-hdr-landscape">
+      <span class="mob-land-sym" id="mob-land-sym">Chart</span>
+      <div class="mob-land-search-wrap">
+        <span class="s-icon">🔍</span>
+        <input class="mob-land-search" id="mob-land-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="mob-land-tabs" id="mob-land-tabs">
+        <button class="mob-land-tab on" data-tab="vs">📈 Vietstock</button>
+        <button class="mob-land-tab" data-tab="scanner">🖼 Scanner</button>
+        <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
+        <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
+        <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
+        <button class="mob-land-tab" data-tab="24h">💬 24HMoney</button>
+      </div>
+      <!-- X vuông cố định phải -->
+      <button class="mob-land-close" id="mob-land-close">✕</button>
+    </div>
+
     <div class="pbody">
       <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-scanner">
@@ -841,77 +1013,72 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
-// DOM CACHE — truy cập 1 lần, dùng lại nhiều lần
+// DOM CACHE
 // ═══════════════════════════════════════════════════════
-const $ = id => document.getElementById(id);
-const DOM = {
-  clock:       $('clock'),
-  sigMeta:     $('sig-meta'),
-  sigList:     $('sig-list'),
-  hmapTs:      $('hmap-ts'),
-  hmapGrid:    $('hmap-grid'),
-  hmapSearch:  $('hmap-search'),
-  pbarSig:     $('pbar-sig'),
-  pbarHmap:    $('pbar-hmap'),
-  overlay:     $('overlay'),
-  pbox:        $('pbox'),
-  ptitle:      $('ptitle'),
-  popupSearch: $('popup-search'),
-  popupCtabs:  $('popup-ctabs'),
-  ifVs:        $('iframe-vs'),
-  loading:     $('scanner-loading'),
-  albumOuter:  $('album-outer'),
-  albumSlides: $('album-slides'),
-  albumDots:   $('album-dots'),
-  btnPrev:     $('btn-prev'),
-  btnNext:     $('btn-next'),
-  btnRef:      $('btn-refresh'),
-  hpPanel:     $('hover-preview-panel'),
-  hpIframe:    $('hover-preview-iframe'),
-  hpGrouptabs: $('hv-grouptabs'),
-  hpSymlist:   $('hv-symlist'),
-  hpSortBtn:   $('hv-sort-btn'),
-  edgeZone:    $('edge-swipe-zone'),
-  mobClose:    $('mob-close-float'),
-  wrap:        $('main-wrap'),
-  footer:      $('footer-txt'),
-  // lightbox
-  lb:          $('mob-lightbox'),
-  lbStrip:     $('lb-strip'),
-  lbLabel:     $('mob-lightbox-label'),
-  lbCounter:   $('mob-lightbox-counter'),
-  lbZoomHint:  $('lb-zoom-hint'),
+const $=id=>document.getElementById(id);
+const DOM={
+  clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
+  hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
+  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
+  overlay:$('overlay'),pbox:$('pbox'),
+  // Desktop popup header
+  ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
+  // Mobile portrait rows
+  mobHdrRow1:$('mob-hdr-row1'),mobPtitle:$('mob-ptitle'),mobSearch:$('mob-search'),
+  mobTabRow:$('mob-tab-row'),
+  // Mobile landscape row
+  mobHdrLand:$('mob-hdr-landscape'),mobLandSym:$('mob-land-sym'),
+  mobLandSearch:$('mob-land-search'),mobLandTabs:$('mob-land-tabs'),
+  // iframes
+  ifVs:$('iframe-vs'),
+  // album
+  loading:$('scanner-loading'),albumOuter:$('album-outer'),
+  albumSlides:$('album-slides'),albumDots:$('album-dots'),
+  btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
+  // hover
+  hpPanel:$('hover-preview-panel'),hpIframe:$('hover-preview-iframe'),
+  hpGrouptabs:$('hv-grouptabs'),hpSymlist:$('hv-symlist'),hpSortBtn:$('hv-sort-btn'),
+  edgeZone:$('edge-swipe-zone'),mobClose:$('mob-close-float'),
+  wrap:$('main-wrap'),footer:$('footer-txt'),
+  lb:$('mob-lightbox'),lbStrip:$('lb-strip'),
+  lbLabel:$('mob-lightbox-label'),lbCounter:$('mob-lightbox-counter'),
+  lbZoomHint:$('lb-zoom-hint'),
 };
 
 // ═══════════════════════════════════════════════════════
-// CONFIG & CONSTANTS
+// HELPERS
 // ═══════════════════════════════════════════════════════
-const IS_MOBILE = () => window.innerWidth <= 768;
-const TABS_ALL  = ['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
-const IFRAME_LAZY = {
-  'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
-  'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':      s=>`https://24hmoney.vn/stock/${s}/news`,
+const IS_MOBILE=()=>window.innerWidth<=768;
+const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
+
+const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
+const IFRAME_LAZY={
+  'vnd-cs':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
+  'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
+  'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
+  '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
 };
-const BADGE_MAP = {
+const BADGE_MAP={
   'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
   'BOTTOMBREAKP':'b-BBREAKP','BOTTOMFISH':'b-BFISH','MA_CROSS':'b-MACROSS'
 };
+const MOB_TABS=[
+  ['vs','📈 Vietstock'],['scanner','🖼 Scanner'],['vnd-cs','⚖️ Cơ bản'],
+  ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 24HMoney'],
+];
 
-let SIG_TTL = 30, HMAP_TTL = 120;
-let _sym = '', _tab = 'vs';
-let _albumIdx = 0, _albumTotal = 0, _albumImages = [];
-let _hoverPreviewOn = false, _hoverPreviewCurrent = '';
-let _hvActiveGroup = -1, _hvSortAlpha = false;
-let _isPopoutMode = false, _popoutWin = null;
-let _iframeDelay = null, _keyThrottle = false;
-let _mobileHeaderBuilt = false;
+let SIG_TTL=30,HMAP_TTL=120;
+let _sym='',_tab='vs';
+let _albumIdx=0,_albumTotal=0,_albumImages=[];
+let _hoverPreviewOn=false,_hoverPreviewCurrent='';
+let _hvActiveGroup=-1,_hvSortAlpha=false;
+let _isPopoutMode=false,_popoutWin=null;
+let _iframeDelay=null,_keyThrottle=false;
 
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
 // ═══════════════════════════════════════════════════════
-const HMAP_COLS = [
+const HMAP_COLS=[
   {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
   {groups:[{name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},{name:"DAU KHI",syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]}]},
   {groups:[{name:"CHUNG KHOAN",syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},{name:"XAY DUNG",syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]}]},
@@ -920,200 +1087,145 @@ const HMAP_COLS = [
   {groups:[{name:"DIEN NUOC",syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},{name:"DET MAY",syms:["TCM","TNG","VGT","MSH"]},{name:"HANG KHONG",syms:["NCT","ACV","AST","HVN","SCS","VJC"]},{name:"BAO HIEM",syms:["BMI","MIG","BVH"]},{name:"MIA DUONG",syms:["LSS","SBT","QNS"]}]},
   {groups:[{name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]}]},
 ];
-const TS_POOL = ["AAA","ACB","AGG","ANV","BFC","BID","BMI","BSR","BVB","BVH","BWE","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE","DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS","GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK","HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG","LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE"];
+const TS_POOL=["AAA","ACB","AGG","ANV","BFC","BID","BMI","BSR","BVB","BVH","BWE","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE","DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS","GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK","HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG","LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE"];
 
 // ═══════════════════════════════════════════════════════
 // HEATMAP RENDER
 // ═══════════════════════════════════════════════════════
-function cellStyle(pct) {
+function cellStyle(pct){
   let r,g,b;
-  if      (pct>=6.5){r=250;g=170;b=225}
-  else if (pct>=4.0){r=160;g=220;b=170}
-  else if (pct>=2.0){r=195;g=235;b=200}
-  else if (pct>0)   {r=225;g=245;b=228}
-  else if (pct===0) {r=245;g=245;b=200}
-  else if (pct>=-2) {r=255;g=220;b=210}
-  else if (pct>=-4) {r=250;g=185;b=175}
-  else if (pct>=-6.5){r=240;g=150;b=145}
-  else              {r=175;g=250;b=255}
-  return {bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
+  if(pct>=6.5){r=250;g=170;b=225}else if(pct>=4){r=160;g=220;b=170}
+  else if(pct>=2){r=195;g=235;b=200}else if(pct>0){r=225;g=245;b=228}
+  else if(pct===0){r=245;g=245;b=200}else if(pct>=-2){r=255;g=220;b=210}
+  else if(pct>=-4){r=250;g=185;b=175}else if(pct>=-6.5){r=240;g=150;b=145}
+  else{r=175;g=250;b=255}
+  return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-function avgPct(syms, d) {
-  let sum=0, cnt=0;
-  for (const s of syms) if (d[s]) { sum+=d[s].pct||0; cnt++; }
-  return cnt ? sum/cnt : 0;
-}
-function sortByPct(syms, d) {
-  return [...syms].sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0));
-}
-function fmtP(p) { return(!p||p<=0)?'—':(p<100?p.toFixed(2):p.toFixed(1)); }
+function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
+function sortByPct(syms,d){return[...syms].sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0));}
+function fmtP(p){return(!p||p<=0)?'—':(p<100?p.toFixed(2):p.toFixed(1));}
 
-function mkCell(sym, d) {
-  const entry=d[sym]||{};
-  const pct=typeof entry.pct==='number'?entry.pct:0;
-  const price=typeof entry.price==='number'?entry.price:0;
-  const {bg,fg}=cellStyle(pct);
-  const sign=pct>=0?'+':'';
-  // data-sym cho event delegation
-  return `<div class="hmap-cell" data-sym="${sym}" style="background:${bg};color:${fg}" title="${sym} | ${fmtP(price)} | ${sign}${pct.toFixed(2)}%">
-    <span class="hc-sym">${sym}</span><span class="hc-price">${fmtP(price)}</span><span class="hc-pct">${sign}${pct.toFixed(1)}%</span>
-  </div>`;
+function mkCell(sym,d){
+  const e=d[sym]||{},pct=typeof e.pct==='number'?e.pct:0,price=typeof e.price==='number'?e.price:0;
+  const{bg,fg}=cellStyle(pct),sign=pct>=0?'+':'';
+  return `<div class="hmap-cell" data-sym="${sym}" style="background:${bg};color:${fg}" title="${sym}|${fmtP(price)}|${sign}${pct.toFixed(2)}%"><span class="hc-sym">${sym}</span><span class="hc-price">${fmtP(price)}</span><span class="hc-pct">${sign}${pct.toFixed(1)}%</span></div>`;
 }
-function mkGroup(name, syms, d) {
-  const avg=avgPct(syms,d), sign=avg>=0?'+':'';
-  const cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
-  // JS opt: array join
-  return `<div class="hmap-group">
-    <div class="hmap-ghdr"><span class="hmap-gname">${name}</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>
-    ${sortByPct(syms,d).map(s=>mkCell(s,d)).join('')}
-  </div>`;
+function mkGroup(name,syms,d){
+  const avg=avgPct(syms,d),sign=avg>=0?'+':'',cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
+  return `<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">${name}</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(syms,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
-function mkSectorCol(d) {
+function mkSectorCol(d){
   const groups=[];
-  HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30') groups.push({name:g.name,avg:avgPct(g.syms,d)})}));
+  HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')groups.push({name:g.name,avg:avgPct(g.syms,d)});}));
   groups.sort((a,b)=>b.avg-a.avg);
-  return `<div class="hmap-group hmap-sector-group">
-    <div class="hmap-ghdr"><span class="hmap-gname">NGANH NGHE</span></div>
-    ${groups.slice(0,10).map(g=>{
-      const {bg,fg}=cellStyle(g.avg), sign=g.avg>=0?'+':'';
-      return `<div class="hmap-sector-cell" style="background:${bg};color:${fg}" title="${g.name}: ${sign}${g.avg.toFixed(2)}%">
-        <span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span>
-      </div>`;
-    }).join('')}
-  </div>`;
+  return`<div class="hmap-group hmap-sector-group"><div class="hmap-ghdr"><span class="hmap-gname">NGANH NGHE</span></div>${groups.slice(0,10).map(g=>{const{bg,fg}=cellStyle(g.avg),sign=g.avg>=0?'+':'';return`<div class="hmap-sector-cell" style="background:${bg};color:${fg}"><span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span></div>`;}).join('')}</div>`;
 }
-
-function renderHeatmap(d) {
-  if (!d||!Object.keys(d).length) {
-    DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';
-    return;
-  }
+function renderHeatmap(d){
+  if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
   const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
   const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
-  // JS opt: parts array + join 1 lần
-  const parts = [`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
+  const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
   HMAP_COLS.forEach((cd,i)=>{
-    const extra = i===HMAP_COLS.length-1 ? mkSectorCol(d) : '';
+    const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
     parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${extra}</div>`);
   });
-  DOM.hmapGrid.innerHTML = parts.join('');
+  DOM.hmapGrid.innerHTML=parts.join('');
 }
 
-// ── Event delegation cho heatmap (thay ~200 onclick riêng) ──
-// FIX #3: Mobile single tap = openChart ngay (không delay)
-DOM.hmapGrid.addEventListener('click', e => {
-  const cell = e.target.closest('.hmap-cell');
-  if (!cell) return;
-  const sym = cell.dataset.sym;
-  if (IS_MOBILE()) { openChart(sym); return; }
-  // Desktop: single click = hover/popout
+// Event delegation heatmap — FIX: mobile single tap = openChart ngay
+DOM.hmapGrid.addEventListener('click',e=>{
+  const cell=e.target.closest('.hmap-cell');if(!cell)return;
+  const sym=cell.dataset.sym;
+  if(IS_MOBILE()){openChart(sym);return;}
   _hmapDesktopClick(sym);
 });
-DOM.hmapGrid.addEventListener('dblclick', e => {
-  const cell = e.target.closest('.hmap-cell');
-  if (!cell || IS_MOBILE()) return;
-  if (_hmapClickTimer) clearTimeout(_hmapClickTimer);
-  updatePopout(cell.dataset.sym);
-  openChart(cell.dataset.sym);
+DOM.hmapGrid.addEventListener('dblclick',e=>{
+  const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  updatePopout(cell.dataset.sym);openChart(cell.dataset.sym);
 });
-
-let _hmapClickTimer = null;
-function _hmapDesktopClick(sym) {
-  if (_hmapClickTimer) clearTimeout(_hmapClickTimer);
-  _hmapClickTimer = setTimeout(() => {
+let _hmapClickTimer=null;
+function _hmapDesktopClick(sym){
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  _hmapClickTimer=setTimeout(()=>{
     updatePopout(sym);
-    if (_isPopoutMode) return;
-    if (!_hoverPreviewOn) { openChart(sym); return; }
-    _hoverPreviewCurrent = sym;
-    DOM.hpIframe.src = 'https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+    if(_isPopoutMode)return;
+    if(!_hoverPreviewOn){openChart(sym);return;}
+    _hoverPreviewCurrent=sym;
+    DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
     DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
-  }, 220);
+  },220);
 }
 
-// ── Event delegation cho sig-list ──
-DOM.sigList.addEventListener('click', e => {
-  const row = e.target.closest('.sig-row');
-  if (row) { const s=row.dataset.sym; if(IS_MOBILE())openChart(s); else _hmapDesktopClick(s); }
+// Event delegation sig-list
+DOM.sigList.addEventListener('click',e=>{
+  const row=e.target.closest('.sig-row');if(!row)return;
+  const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
 });
-DOM.sigList.addEventListener('dblclick', e => {
-  const row = e.target.closest('.sig-row');
-  if (row && !IS_MOBILE()) { if(_hmapClickTimer)clearTimeout(_hmapClickTimer); openChart(row.dataset.sym); }
+DOM.sigList.addEventListener('dblclick',e=>{
+  const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);openChart(row.dataset.sym);
 });
 
 // ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
 // ═══════════════════════════════════════════════════════
-function tick() {
+function tick(){
   const n=new Date();
   DOM.clock.textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+'  '+n.toLocaleDateString('vi-VN');
 }
-setInterval(tick,1000); tick();
+setInterval(tick,1000);tick();
 
-async function loadConfig() {
-  try { const j=await fetch('/api/config').then(r=>r.json()); SIG_TTL=j.signal_ttl_sec||30; HMAP_TTL=j.heatmap_ttl_sec||120; } catch(e){}
+async function loadConfig(){
+  try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;}catch(e){}
   DOM.footer.textContent=`Scanner Bot Dashboard  •  Tín hiệu tự động làm mới sau ${SIG_TTL}s  •  Heatmap tự động làm mới sau ${HMAP_TTL}s`;
 }
 
 // ═══════════════════════════════════════════════════════
 // FETCH
 // ═══════════════════════════════════════════════════════
-async function fetchSigs() {
-  try {
+async function fetchSigs(){
+  try{
     const j=await fetch('/api/signals').then(r=>r.json());
-    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu  •  click để xem chart`;
-    if (!j.signals.length) {
-      DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';
-      return;
-    }
-    // JS opt: array join
-    DOM.sigList.innerHTML=j.signals.map(s=>`
-      <div class="sig-row" data-sym="${s.symbol}">
-        <span class="s-emoji">${s.emoji}</span>
-        <span class="s-sym">${s.symbol}</span>
-        <span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>
-        <span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}</span>
-      </div>`).join('');
-  } catch(e){ console.error('fetchSigs:',e); }
+    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at}  •  ${j.count} tín hiệu`;
+    if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
+    DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}</span></div>`).join('');
+  }catch(e){console.error('fetchSigs:',e);}
 }
 
-async function fetchHmap() {
-  try {
+async function fetchHmap(){
+  try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
     const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
-    DOM.hmapTs.textContent=IS_MOBILE()
-      ?`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`
-      :`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}  •  click để xem chart`;
+    // P1-2: luôn 1 hàng, dùng • thay xuống dòng
+    DOM.hmapTs.textContent=`Data: ${j.timestamp||'--'}  •  Cập nhật: ${now}`;
     window._lastHmapData=j.data||{};
     renderHeatmap(j.data||{});
-    if (_hoverPreviewOn) _hvPatchSymList(j.data||{});
-    if (_isPopoutMode && _popoutWin && !_popoutWin.closed)
+    if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
+    if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
       _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
-  } catch(e){ console.error('fetchHmap:',e); }
+  }catch(e){console.error('fetchHmap:',e);}
 }
 
-// ── Progress bar ──
-function startBar(id, sec) {
-  const el=DOM['pbar'+id[4].toUpperCase()+id.slice(5)]||document.getElementById(id);
-  if(!el) return;
-  el.style.transition='none'; el.style.width='0%';
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    el.style.transition=`width ${sec}s linear`; el.style.width='100%';
-  }));
+function startBar(elOrId,sec){
+  const el=typeof elOrId==='string'?$(elOrId):elOrId;if(!el)return;
+  el.style.transition='none';el.style.width='0%';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
 }
 
 // ═══════════════════════════════════════════════════════
-// SEARCH
+// SEARCH helper
 // ═══════════════════════════════════════════════════════
-function _bindSearch(el, onEnter) {
-  el.addEventListener('keydown', function(e){
+function _bindSearch(el,onEnter){
+  if(!el)return;
+  el.addEventListener('keydown',function(e){
     if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();onEnter(s);}}
     if(e.key==='Escape'){this.value='';this.blur();}
   });
   el.addEventListener('focus',function(){this.select();});
 }
-_bindSearch(DOM.hmapSearch, sym=>openChart(sym));
+_bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 
-// Heatmap header buttons
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-popout-btn').addEventListener('click',()=>quickPopout());
@@ -1122,112 +1234,105 @@ $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 // ═══════════════════════════════════════════════════════
 // ALBUM
 // ═══════════════════════════════════════════════════════
-function _showAlbum(images) {
-  _albumImages=images; _albumTotal=images.length; _albumIdx=0;
+function _showAlbum(images){
+  _albumImages=images;_albumTotal=images.length;_albumIdx=0;
   const mob=IS_MOBILE();
-  // JS opt: array join
-  DOM.albumSlides.innerHTML=images.map((img,i)=>
-    `<div class="album-slide${i===0?' on':''}" data-idx="${i}">
-      <img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}>
-    </div>`).join('');
-  DOM.albumDots.innerHTML=images.map((_,i)=>
-    `<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
+  DOM.albumSlides.innerHTML=images.map((img,i)=>`<div class="album-slide${i===0?' on':''}" data-idx="${i}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}></div>`).join('');
+  DOM.albumDots.innerHTML=images.map((_,i)=>`<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
   _updateAlbumNav();
-  DOM.albumOuter.style.display='flex';
-  DOM.loading.style.display='none';
+  DOM.albumOuter.style.display='flex';DOM.loading.style.display='none';
 }
-
-// Event delegation cho album-dots và album-slides (mobile lightbox)
-DOM.albumDots.addEventListener('click',e=>{
-  const d=e.target.closest('.album-dot'); if(d) albumGoto(+d.dataset.idx);
-});
+DOM.albumDots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
 DOM.albumSlides.addEventListener('click',e=>{
   const img=e.target.closest('img');
-  if(img && img.dataset.lb==='1') {
-    const slide=img.closest('.album-slide'); if(slide) lbOpen(_albumImages,+slide.dataset.idx);
-  }
+  if(img&&img.dataset.lb==='1'){const slide=img.closest('.album-slide');if(slide)lbOpen(_albumImages,+slide.dataset.idx);}
 });
-
 DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
 DOM.btnNext.addEventListener('click',()=>albumNav(1));
-
-function albumGoto(i) {
-  if(i<0||i>=_albumTotal) return;
+function albumGoto(i){
+  if(i<0||i>=_albumTotal)return;
   DOM.albumSlides.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
   DOM.albumDots.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i; _updateAlbumNav();
+  _albumIdx=i;_updateAlbumNav();
 }
 function albumNav(dir){albumGoto(_albumIdx+dir);}
 function _updateAlbumNav(){
   DOM.btnPrev.classList.toggle('disabled',_albumIdx===0);
   DOM.btnNext.classList.toggle('disabled',_albumIdx===_albumTotal-1);
 }
-
-// Touch swipe cho scanner panel (RAF throttle)
-let _scanTouchX=0, _scanRaf=null;
+let _scanTouchX=0,_scanRaf=null;
 $('panel-scanner').addEventListener('touchstart',e=>{_scanTouchX=e.touches[0].clientX;},{passive:true});
 $('panel-scanner').addEventListener('touchend',e=>{
-  if(_scanRaf) cancelAnimationFrame(_scanRaf);
-  _scanRaf=requestAnimationFrame(()=>{
-    const dx=e.changedTouches[0].clientX-_scanTouchX;
-    if(Math.abs(dx)>50) albumNav(dx<0?1:-1);
-  });
+  if(_scanRaf)cancelAnimationFrame(_scanRaf);
+  _scanRaf=requestAnimationFrame(()=>{const dx=e.changedTouches[0].clientX-_scanTouchX;if(Math.abs(dx)>50)albumNav(dx<0?1:-1);});
 },{passive:true});
 
 DOM.btnRef.addEventListener('click',async()=>{
-  if(!_sym) return;
-  DOM.btnRef.classList.add('spinning'); DOM.btnRef.disabled=true;
+  if(!_sym)return;
+  DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
   try{await fetch('/api/chart_cache_clear/'+_sym,{method:'DELETE'});}catch(e){}
-  DOM.btnRef.classList.remove('spinning'); DOM.btnRef.disabled=false;
+  DOM.btnRef.classList.remove('spinning');DOM.btnRef.disabled=false;
   await loadScannerChart(_sym);
 });
-
-async function loadScannerChart(sym) {
-  DOM.albumOuter.style.display='none';
-  DOM.loading.style.display='flex';
+async function loadScannerChart(sym){
+  DOM.albumOuter.style.display='none';DOM.loading.style.display='flex';
   DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
-  try {
+  try{
     const r=await fetch('/api/chart_images/'+sym);
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
     const j=await r.json();
-    if(!j.images?.length) throw new Error('no_images');
+    if(!j.images?.length)throw new Error('no_images');
     const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
     if(j.cached){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
-  } catch(e) {
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px">
-      <div style="font-size:24px;margin-bottom:10px">⚠️</div>
-      <div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div>
-      <div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div>
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button>
-        <a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a>
-      </div></div>`;
+  }catch(e){
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 
 // ═══════════════════════════════════════════════════════
-// POPUP
+// POPUP — tab activation (dùng chung cho cả 3 header)
 // ═══════════════════════════════════════════════════════
-function _activateTab(tab) {
+function _activateTab(tab){
   _tab=tab;
+  // Desktop tabs
   DOM.popupCtabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Mobile portrait tabs
+  DOM.mobTabRow.querySelectorAll('.mob-tab-btn').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Mobile landscape tabs
+  DOM.mobLandTabs.querySelectorAll('.mob-land-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  // Panels
   TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
-  if(IS_MOBILE()){
-    const row=$('mob-tabrow'), activeBtn=document.getElementById('ctab-'+tab);
-    if(row&&activeBtn){
-      row.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.id==='ctab-'+tab));
-      row.scrollTo({left:activeBtn.offsetLeft-row.offsetWidth/2+activeBtn.offsetWidth/2,behavior:'smooth'});
-    }
-  }
+  // Lazy iframes
   if(IFRAME_LAZY[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_LAZY[tab](_sym);}
-  if(tab==='scanner') loadScannerChart(_sym);
+  if(tab==='scanner')loadScannerChart(_sym);
+  // Scroll active tab into view (portrait)
+  if(IS_MOBILE()&&!IS_LANDSCAPE()){
+    const activeBtn=DOM.mobTabRow.querySelector('.mob-tab-btn.on');
+    if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  }
+  // Scroll active tab into view (landscape)
+  if(IS_MOBILE()&&IS_LANDSCAPE()){
+    const activeBtn=DOM.mobLandTabs.querySelector('.mob-land-tab.on');
+    if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  }
 }
 
-// Event delegation cho popup tabs
-DOM.popupCtabs.addEventListener('click',e=>{
-  const btn=e.target.closest('.ctab'); if(btn) _activateTab(btn.dataset.tab);
-});
+// Event delegation — desktop tabs
+DOM.popupCtabs.addEventListener('click',e=>{const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);});
+// Event delegation — mobile portrait tabs
+DOM.mobTabRow.addEventListener('click',e=>{const btn=e.target.closest('.mob-tab-btn');if(btn)_activateTab(btn.dataset.tab);});
+// Event delegation — mobile landscape tabs
+DOM.mobLandTabs.addEventListener('click',e=>{const btn=e.target.closest('.mob-land-tab');if(btn)_activateTab(btn.dataset.tab);});
+
+// ═══════════════════════════════════════════════════════
+// POPUP OPEN / CLOSE
+// ═══════════════════════════════════════════════════════
+function _updateSymDisplay(sym){
+  DOM.ptitle.textContent=sym;
+  DOM.mobPtitle.textContent=sym;
+  DOM.mobLandSym.textContent=sym;
+}
 
 function _resetScannerUI(){
   DOM.albumOuter.style.display='none';
@@ -1239,32 +1344,33 @@ function _openPopup(){
   DOM.overlay.classList.add('on');
   document.body.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
-  DOM.mobClose.style.display='';
+  // Portrait: show float close
+  if(IS_MOBILE()&&!IS_LANDSCAPE()) DOM.mobClose.style.display='flex';
+  else DOM.mobClose.style.display='none';
 }
 
 function openChart(sym){
-  _sym=sym.toUpperCase().trim(); _tab='vs';
-  DOM.ptitle.textContent=_sym;
+  _sym=sym.toUpperCase().trim();_tab='vs';
+  _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _resetScannerUI();
-  _buildMobileHeader();
   _activateTab('vs');
   _openPopup();
-  DOM.popupSearch.value='';
+  // Clear search inputs
+  DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 
 function openUrl(url,label){
   _sym=label||'WEB';
-  DOM.ptitle.textContent=label||'🌐';
+  _updateSymDisplay(label||'🌐');
   ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode=vnindex';
   $('iframe-url').src=url;
   _resetScannerUI();
-  _buildMobileHeader();
   TABS_ALL.forEach(t=>{
-    const ct=document.getElementById('ctab-'+t); if(ct) ct.classList.toggle('on',t==='url');
-    document.getElementById('panel-'+t).classList.toggle('on',t==='url');
+    const p=document.getElementById('panel-'+t);if(p)p.classList.toggle('on',t==='url');
+    DOM.popupCtabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab==='url'));
   });
   _openPopup();
 }
@@ -1282,297 +1388,173 @@ function closePopup(){
   requestAnimationFrame(()=>{pbox.style.visibility='';pbox.style.animation='';});
 }
 
-DOM.overlay.addEventListener('click',e=>{if(e.target===DOM.overlay)closePopup();});
+// Close buttons
 $('popup-close-btn').addEventListener('click',closePopup);
 DOM.mobClose.addEventListener('click',closePopup);
+$('mob-land-close').addEventListener('click',closePopup);
+DOM.overlay.addEventListener('click',e=>{if(e.target===DOM.overlay)closePopup();});
 
-// Mobile swipe-right from left edge to close
+// Search bindings — tất cả search inputs trong popup
+_bindSearch(DOM.popupSearch,sym=>openChart(sym));
+_bindSearch(DOM.mobSearch,sym=>openChart(sym));
+_bindSearch(DOM.mobLandSearch,sym=>openChart(sym));
+
+// Mobile swipe right to close
 if(IS_MOBILE()){
   let _swX=0,_swDir='',_swFired=false;
   DOM.pbox.addEventListener('touchstart',e=>{
-    if(!DOM.overlay.classList.contains('on')||lb.classList.contains('on')) return;
-    if(e.touches[0].clientX>40) return;
-    _swX=e.touches[0].clientX; _swDir=''; _swFired=false;
+    if(!DOM.overlay.classList.contains('on')||DOM.lb.classList.contains('on'))return;
+    if(e.touches[0].clientX>40)return;
+    _swX=e.touches[0].clientX;_swDir='';_swFired=false;
   },{passive:true});
   DOM.pbox.addEventListener('touchmove',e=>{
-    if(_swFired) return;
+    if(_swFired)return;
     const dx=e.touches[0].clientX-_swX;
-    if(!_swDir&&Math.abs(dx)>10) _swDir='h';
+    if(!_swDir&&Math.abs(dx)>10)_swDir='h';
     if(_swDir==='h'&&dx>50){_swFired=true;closePopup();}
   },{passive:true});
 }
 
+// Orientation change — update close float visibility
+window.addEventListener('orientationchange',()=>{
+  setTimeout(()=>{
+    if(DOM.overlay.classList.contains('on')){
+      if(IS_MOBILE()&&!IS_LANDSCAPE()) DOM.mobClose.style.display='flex';
+      else DOM.mobClose.style.display='none';
+    }
+  },300);
+});
+
 // Keyboard
 document.addEventListener('keydown',e=>{
-  if(lb.classList.contains('on')) return;
-  if(e.key==='Escape'){
-    if(DOM.overlay.classList.contains('on')){closePopup();return;}
-    return;
-  }
-  if(!DOM.overlay.classList.contains('on')) return;
-  if(document.activeElement===DOM.popupSearch) return;
-  if(_tab!=='scanner'||_albumTotal===0) return;
+  if(DOM.lb.classList.contains('on'))return;
+  if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
+  if(!DOM.overlay.classList.contains('on'))return;
+  const activeSearch=[DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch];
+  if(activeSearch.includes(document.activeElement))return;
+  if(_tab!=='scanner'||_albumTotal===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
 
 // ═══════════════════════════════════════════════════════
-// MOBILE HEADER (build once)
-// ═══════════════════════════════════════════════════════
-function _buildMobileHeader(){
-  DOM.ptitle.textContent=_sym;
-  if(!IS_MOBILE()||_mobileHeaderBuilt) return;
-  _mobileHeaderBuilt=true;
-  const phdr=$('popup-phdr');
-  phdr.innerHTML='';
-  phdr.style.cssText='display:flex;flex-direction:column;flex-shrink:0';
-
-  // Row 1
-  const r1=document.createElement('div');
-  r1.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surf2);border-bottom:1px solid var(--border)';
-  r1.innerHTML=`<span id="ptitle" style="font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1px;flex-shrink:0">${_sym}</span>
-    <div style="position:relative;flex:1"><span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none">🔍</span>
-    <input id="popup-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false"
-      style="width:100%;padding:6px 10px 6px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none"></div>`;
-  phdr.appendChild(r1);
-
-  // Row 2: tabs
-  const r2=document.createElement('div');
-  r2.id='mob-tabrow';
-  [['vs','📈 Vietstock'],['scanner','🖼 Scanner'],['vnd-cs','⚖️ Cơ bản'],
-   ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 24HMoney']].forEach(([id,label])=>{
-    const btn=document.createElement('button');
-    btn.id='ctab-'+id; btn.textContent=label;
-    if(id===_tab) btn.classList.add('on');
-    btn.addEventListener('click',()=>_activateTab(id));
-    r2.appendChild(btn);
-  });
-  phdr.appendChild(r2);
-
-  // Re-bind popup search (DOM replaced)
-  _bindSearch($('popup-search'),sym=>openChart(sym));
-  // Update reference
-  DOM.popupSearch=$('popup-search');
-  DOM.ptitle=$('ptitle');
-  DOM.popupCtabs=r2; // tabs now in mob-tabrow
-}
-
-// ═══════════════════════════════════════════════════════
 // LIGHTBOX
 // ═══════════════════════════════════════════════════════
-// Dùng DOM cache từ đầu
-const lb = DOM.lb;
-const lbState = {
-  idx:0, W:0, images:[],
-  dragging:false, dragDir:'', dragDx:0, dragDy:0, dragStartX:0, dragStartY:0, stripOffset:0,
-  scale:1, panX:0, panY:0,
-  isPinching:false, pinchStartDist:0, pinchStartScale:1, pinchStartPanX:0, pinchStartPanY:0,
-  isPanning:false, panStartX:0, panStartY:0, panStartPanX:0, panStartPanY:0,
-  lastTapTime:0, lastTapX:0, lastTapY:0, hintShown:false,
-  // RAF handles
-  _rafDrag:null, _rafPinch:null,
+const lb=DOM.lb;
+const lbS={
+  idx:0,W:0,images:[],
+  dragging:false,dragDir:'',dragDx:0,dragDy:0,dragStartX:0,dragStartY:0,stripOffset:0,
+  scale:1,panX:0,panY:0,
+  isPinching:false,pinchStartDist:0,pinchStartScale:1,pinchStartPanX:0,pinchStartPanY:0,
+  isPanning:false,panStartX:0,panStartY:0,panStartPanX:0,panStartPanY:0,
+  lastTapTime:0,lastTapX:0,lastTapY:0,hintShown:false,pending:false,
 };
-
-function _lbImg(){ return DOM.lbStrip.querySelectorAll('.lb-slide img')[lbState.idx]||null; }
-
-function _lbResetZoom(){
-  lbState.scale=1; lbState.panX=0; lbState.panY=0;
-  const img=_lbImg();
-  if(img){img.classList.remove('zooming');img.style.transform='';}
-}
-function _lbApplyZoom(){
-  const img=_lbImg(); if(!img) return;
-  // will-change только при zoom
-  img.classList.add('zooming');
-  img.style.transform=`translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.scale})`;
-}
-function _lbClampPan(){
-  if(lbState.scale<=1){lbState.panX=0;lbState.panY=0;return;}
-  const img=_lbImg(); if(!img) return;
+function _lbImg(){return DOM.lbStrip.querySelectorAll('.lb-slide img')[lbS.idx]||null;}
+function _lbResetZoom(){lbS.scale=1;lbS.panX=0;lbS.panY=0;const img=_lbImg();if(img){img.classList.remove('zooming');img.style.transform='';}}
+function _lbApplyZoom(){const img=_lbImg();if(!img)return;img.classList.add('zooming');img.style.transform=`translate(${lbS.panX}px,${lbS.panY}px) scale(${lbS.scale})`;}
+function _lbClamp(){
+  if(lbS.scale<=1){lbS.panX=0;lbS.panY=0;return;}
+  const img=_lbImg();if(!img)return;
   const r=img.getBoundingClientRect();
-  const mX=Math.max(0,(r.width-window.innerWidth)/2), mY=Math.max(0,(r.height-window.innerHeight)/2);
-  lbState.panX=Math.max(-mX,Math.min(mX,lbState.panX));
-  lbState.panY=Math.max(-mY,Math.min(mY,lbState.panY));
+  const mX=Math.max(0,(r.width-window.innerWidth)/2),mY=Math.max(0,(r.height-window.innerHeight)/2);
+  lbS.panX=Math.max(-mX,Math.min(mX,lbS.panX));lbS.panY=Math.max(-mY,Math.min(mY,lbS.panY));
 }
-
 function lbOpen(images,idx){
-  lbState.images=images; lbState.idx=idx; lbState.W=window.innerWidth;
-  DOM.lbStrip.innerHTML=images.map(img=>
-    `<div class="lb-slide"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async" draggable="false"></div>`
-  ).join('');
-  DOM.lbStrip.style.width=`${lbState.W*images.length}px`;
-  lbState.scale=1; lbState.panX=0; lbState.panY=0;
-  _lbSnap(idx,false); _lbMeta();
-  lb.classList.add('on');
-  document.body.style.overflow='hidden';
-  if(!lbState.hintShown){
-    lbState.hintShown=true;
-    setTimeout(()=>{DOM.lbZoomHint.classList.add('show');setTimeout(()=>DOM.lbZoomHint.classList.remove('show'),2200);},600);
-  }
+  lbS.images=images;lbS.idx=idx;lbS.W=window.innerWidth;
+  DOM.lbStrip.innerHTML=images.map(img=>`<div class="lb-slide"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async" draggable="false"></div>`).join('');
+  DOM.lbStrip.style.width=`${lbS.W*images.length}px`;
+  lbS.scale=1;lbS.panX=0;lbS.panY=0;
+  _lbSnap(idx,false);_lbMeta();
+  lb.classList.add('on');document.body.style.overflow='hidden';
+  if(!lbS.hintShown){lbS.hintShown=true;setTimeout(()=>{DOM.lbZoomHint.classList.add('show');setTimeout(()=>DOM.lbZoomHint.classList.remove('show'),2200);},600);}
 }
-function lbClose(){
-  _lbResetZoom();
-  lb.classList.remove('on');
-  document.body.style.overflow='';
-}
+function lbClose(){_lbResetZoom();lb.classList.remove('on');document.body.style.overflow='';}
 $('mob-lightbox-close').addEventListener('click',lbClose);
-
 function _lbSnap(idx,animate){
-  lbState.scale=1; lbState.panX=0; lbState.panY=0;
-  const prev=_lbImg();
-  if(prev){prev.classList.remove('zooming');prev.style.transform='';}
-  lbState.idx=Math.max(0,Math.min(idx,lbState.images.length-1));
-  const tx=-lbState.idx*lbState.W;
-  lbState.stripOffset=tx;
+  lbS.scale=1;lbS.panX=0;lbS.panY=0;
+  const prev=_lbImg();if(prev){prev.classList.remove('zooming');prev.style.transform='';}
+  lbS.idx=Math.max(0,Math.min(idx,lbS.images.length-1));
+  const tx=-lbS.idx*lbS.W;lbS.stripOffset=tx;
   DOM.lbStrip.classList.remove('snapping','dragging');
-  if(animate){
-    DOM.lbStrip.classList.add('snapping');
-    DOM.lbStrip.style.transform=`translateX(${tx}px)`;
-    setTimeout(()=>DOM.lbStrip.classList.remove('snapping'),350);
-  } else {
-    DOM.lbStrip.style.transform=`translateX(${tx}px)`;
-  }
+  if(animate){DOM.lbStrip.classList.add('snapping');DOM.lbStrip.style.transform=`translateX(${tx}px)`;setTimeout(()=>DOM.lbStrip.classList.remove('snapping'),350);}
+  else DOM.lbStrip.style.transform=`translateX(${tx}px)`;
   _lbMeta();
 }
 function _lbMeta(){
-  if(!lbState.images.length) return;
-  DOM.lbLabel.textContent=lbState.images[lbState.idx].label;
-  DOM.lbCounter.innerHTML=lbState.images.map((_,i)=>`<div class="mob-lb-dot${i===lbState.idx?' on':''}"></div>`).join('');
+  if(!lbS.images.length)return;
+  DOM.lbLabel.textContent=lbS.images[lbS.idx].label;
+  DOM.lbCounter.innerHTML=lbS.images.map((_,i)=>`<div class="mob-lb-dot${i===lbS.idx?' on':''}"></div>`).join('');
 }
-
-function _pDist(t){const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.sqrt(dx*dx+dy*dy);}
-function _pMid(t){return{x:(t[0].clientX+t[1].clientX)/2,y:(t[0].clientY+t[1].clientY)/2};}
-
-// ── Touch handlers với RAF throttle ──
-let _lbTouchPending=false;
+function _pd(t){const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.sqrt(dx*dx+dy*dy);}
 function _lbTS(e){
-  if(e.touches.length===2){
-    e.preventDefault();
-    lbState.isPinching=true; lbState.dragging=false;
-    lbState.pinchStartDist=_pDist(e.touches); lbState.pinchStartScale=lbState.scale;
-    lbState.pinchStartPanX=lbState.panX; lbState.pinchStartPanY=lbState.panY;
-    return;
-  }
-  if(e.touches.length!==1) return;
+  if(e.touches.length===2){e.preventDefault();lbS.isPinching=true;lbS.dragging=false;lbS.pinchStartDist=_pd(e.touches);lbS.pinchStartScale=lbS.scale;lbS.pinchStartPanX=lbS.panX;lbS.pinchStartPanY=lbS.panY;return;}
+  if(e.touches.length!==1)return;
   const now=Date.now(),tx=e.touches[0].clientX,ty=e.touches[0].clientY;
-  if(now-lbState.lastTapTime<300&&Math.hypot(tx-lbState.lastTapX,ty-lbState.lastTapY)<40){
-    e.preventDefault(); _lbDoubleTap(tx,ty); lbState.lastTapTime=0; return;
-  }
-  lbState.lastTapTime=now; lbState.lastTapX=tx; lbState.lastTapY=ty;
-  if(lbState.scale>1.05){
-    lbState.isPanning=true; lbState.panStartX=tx; lbState.panStartY=ty;
-    lbState.panStartPanX=lbState.panX; lbState.panStartPanY=lbState.panY; lbState.dragging=false;
-    return;
-  }
-  lbState.dragging=true; lbState.isPanning=false; lbState.dragDir=''; lbState.dragDx=0; lbState.dragDy=0;
-  lbState.dragStartX=tx; lbState.dragStartY=ty;
+  if(now-lbS.lastTapTime<300&&Math.hypot(tx-lbS.lastTapX,ty-lbS.lastTapY)<40){e.preventDefault();_lbDbl(tx,ty);lbS.lastTapTime=0;return;}
+  lbS.lastTapTime=now;lbS.lastTapX=tx;lbS.lastTapY=ty;
+  if(lbS.scale>1.05){lbS.isPanning=true;lbS.panStartX=tx;lbS.panStartY=ty;lbS.panStartPanX=lbS.panX;lbS.panStartPanY=lbS.panY;lbS.dragging=false;return;}
+  lbS.dragging=true;lbS.isPanning=false;lbS.dragDir='';lbS.dragDx=0;lbS.dragDy=0;lbS.dragStartX=tx;lbS.dragStartY=ty;
 }
-
-// RAF throttle cho touchmove
 function _lbTM(e){
-  if(lbState.isPinching&&e.touches.length===2){
-    e.preventDefault();
-    if(_lbTouchPending) return;
-    _lbTouchPending=true;
-    const ratio=_pDist(e.touches)/lbState.pinchStartDist;
-    const newScale=Math.min(4,Math.max(1,lbState.pinchStartScale*ratio));
-    requestAnimationFrame(()=>{
-      lbState.scale=newScale; lbState.panX=lbState.pinchStartPanX; lbState.panY=lbState.pinchStartPanY;
-      _lbClampPan(); _lbApplyZoom(); _lbTouchPending=false;
-    });
+  if(lbS.isPinching&&e.touches.length===2){
+    e.preventDefault();if(lbS.pending)return;lbS.pending=true;
+    const ratio=_pd(e.touches)/lbS.pinchStartDist;
+    const ns=Math.min(4,Math.max(1,lbS.pinchStartScale*ratio));
+    requestAnimationFrame(()=>{lbS.scale=ns;lbS.panX=lbS.pinchStartPanX;lbS.panY=lbS.pinchStartPanY;_lbClamp();_lbApplyZoom();lbS.pending=false;});
     return;
   }
-  if(e.touches.length!==1) return;
+  if(e.touches.length!==1)return;
   const tx=e.touches[0].clientX,ty=e.touches[0].clientY;
-  if(lbState.isPanning){
-    e.preventDefault();
-    if(_lbTouchPending) return;
-    _lbTouchPending=true;
-    const nx=lbState.panStartPanX+(tx-lbState.panStartX), ny=lbState.panStartPanY+(ty-lbState.panStartY);
-    requestAnimationFrame(()=>{
-      lbState.panX=nx; lbState.panY=ny; _lbClampPan(); _lbApplyZoom(); _lbTouchPending=false;
-    });
+  if(lbS.isPanning){
+    e.preventDefault();if(lbS.pending)return;lbS.pending=true;
+    const nx=lbS.panStartPanX+(tx-lbS.panStartX),ny=lbS.panStartPanY+(ty-lbS.panStartY);
+    requestAnimationFrame(()=>{lbS.panX=nx;lbS.panY=ny;_lbClamp();_lbApplyZoom();lbS.pending=false;});
     return;
   }
-  if(!lbState.dragging) return;
-  const dx=tx-lbState.dragStartX, dy=ty-lbState.dragStartY;
-  if(!lbState.dragDir&&(Math.abs(dx)>6||Math.abs(dy)>6))
-    lbState.dragDir=Math.abs(dy)>Math.abs(dx)?'v':'h';
-  if(!lbState.dragDir) return;
-  e.preventDefault();
-  if(_lbTouchPending) return;
-  _lbTouchPending=true;
-  if(lbState.dragDir==='v'){
-    const pull=Math.max(0,dy);
-    lbState.dragDy=dy;
-    requestAnimationFrame(()=>{
-      lb.style.opacity=Math.max(0,1-pull/280);
-      DOM.lbStrip.style.transform=`translateX(${lbState.stripOffset}px) translateY(${pull*.6}px) scale(${Math.max(.85,1-pull/900)})`;
-      DOM.lbStrip.classList.add('dragging');
-      _lbTouchPending=false;
-    });
+  if(!lbS.dragging)return;
+  const dx=tx-lbS.dragStartX,dy=ty-lbS.dragStartY;
+  if(!lbS.dragDir&&(Math.abs(dx)>6||Math.abs(dy)>6))lbS.dragDir=Math.abs(dy)>Math.abs(dx)?'v':'h';
+  if(!lbS.dragDir)return;
+  e.preventDefault();if(lbS.pending)return;lbS.pending=true;
+  if(lbS.dragDir==='v'){
+    const pull=Math.max(0,dy);lbS.dragDy=dy;
+    requestAnimationFrame(()=>{lb.style.opacity=Math.max(0,1-pull/280);DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px) translateY(${pull*.6}px) scale(${Math.max(.85,1-pull/900)})`;DOM.lbStrip.classList.add('dragging');lbS.pending=false;});
     return;
   }
-  lbState.dragDx=dx;
-  let offset=lbState.stripOffset+dx;
-  const maxOff=0,minOff=-(lbState.images.length-1)*lbState.W;
-  if(offset>maxOff) offset=dx*.3;
-  if(offset<minOff) offset=minOff+(offset-minOff)*.3;
-  requestAnimationFrame(()=>{
-    DOM.lbStrip.classList.add('dragging');
-    DOM.lbStrip.style.transform=`translateX(${offset}px)`;
-    _lbTouchPending=false;
-  });
+  lbS.dragDx=dx;
+  let offset=lbS.stripOffset+dx;
+  const maxO=0,minO=-(lbS.images.length-1)*lbS.W;
+  if(offset>maxO)offset=dx*.3;if(offset<minO)offset=minO+(offset-minO)*.3;
+  requestAnimationFrame(()=>{DOM.lbStrip.classList.add('dragging');DOM.lbStrip.style.transform=`translateX(${offset}px)`;lbS.pending=false;});
 }
-
 function _lbTE(e){
-  _lbTouchPending=false;
-  if(lbState.isPinching){
-    lbState.isPinching=false;
-    if(lbState.scale<1.1) _lbResetZoom();
-    else{const img=_lbImg();if(img)img.classList.remove('zooming');}
-    return;
+  lbS.pending=false;
+  if(lbS.isPinching){lbS.isPinching=false;if(lbS.scale<1.1)_lbResetZoom();else{const img=_lbImg();if(img)img.classList.remove('zooming');}return;}
+  if(lbS.isPanning){lbS.isPanning=false;return;}
+  if(!lbS.dragging)return;
+  lbS.dragging=false;DOM.lbStrip.classList.remove('dragging');
+  if(lbS.dragDir==='v'){
+    const pull=Math.max(0,lbS.dragDy);
+    if(pull>80){DOM.lbStrip.style.transition='transform .22s ease';lb.style.transition='opacity .22s ease';DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px) translateY(100vh) scale(.9)`;lb.style.opacity='0';setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';lb.style.opacity='';lbClose();},230);}
+    else{DOM.lbStrip.style.transition='transform .22s ease';lb.style.transition='opacity .15s ease';DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px)`;lb.style.opacity='1';setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';},230);}
+    lbS.dragDy=0;lbS.dragDir='';return;
   }
-  if(lbState.isPanning){lbState.isPanning=false;return;}
-  if(!lbState.dragging) return;
-  lbState.dragging=false; DOM.lbStrip.classList.remove('dragging');
-  if(lbState.dragDir==='v'){
-    const pull=Math.max(0,lbState.dragDy);
-    if(pull>80){
-      DOM.lbStrip.style.transition='transform .22s ease'; lb.style.transition='opacity .22s ease';
-      DOM.lbStrip.style.transform=`translateX(${lbState.stripOffset}px) translateY(100vh) scale(.9)`; lb.style.opacity='0';
-      setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';lb.style.opacity='';lbClose();},230);
-    } else {
-      DOM.lbStrip.style.transition='transform .22s ease'; lb.style.transition='opacity .15s ease';
-      DOM.lbStrip.style.transform=`translateX(${lbState.stripOffset}px)`; lb.style.opacity='1';
-      setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';},230);
-    }
-    lbState.dragDy=0; lbState.dragDir=''; return;
-  }
-  const dx=lbState.dragDx,absX=Math.abs(dx),THR=lbState.W*.25;
-  let next=lbState.idx;
-  if(absX>THR&&dx<0) next=lbState.idx+1;
-  else if(absX>THR&&dx>0) next=lbState.idx-1;
-  else if(absX>80&&dx<0&&lbState.idx<lbState.images.length-1) next=lbState.idx+1;
-  else if(absX>80&&dx>0&&lbState.idx>0) next=lbState.idx-1;
-  _lbSnap(next,true); lbState.dragDx=0; lbState.dragDir='';
+  const dx=lbS.dragDx,absX=Math.abs(dx),THR=lbS.W*.25;
+  let next=lbS.idx;
+  if(absX>THR&&dx<0)next=lbS.idx+1;else if(absX>THR&&dx>0)next=lbS.idx-1;
+  else if(absX>80&&dx<0&&lbS.idx<lbS.images.length-1)next=lbS.idx+1;
+  else if(absX>80&&dx>0&&lbS.idx>0)next=lbS.idx-1;
+  _lbSnap(next,true);lbS.dragDx=0;lbS.dragDir='';
 }
-function _lbDoubleTap(tapX,tapY){
-  if(lbState.scale>1.05){_lbResetZoom();}
-  else{
-    lbState.scale=2.5;
-    lbState.panX=(window.innerWidth/2-tapX)*(lbState.scale-1);
-    lbState.panY=(window.innerHeight/2-tapY)*(lbState.scale-1);
-    _lbClampPan(); _lbApplyZoom();
-  }
+function _lbDbl(tapX,tapY){
+  if(lbS.scale>1.05)_lbResetZoom();
+  else{lbS.scale=2.5;lbS.panX=(window.innerWidth/2-tapX)*(lbS.scale-1);lbS.panY=(window.innerHeight/2-tapY)*(lbS.scale-1);_lbClamp();_lbApplyZoom();}
 }
-
 const lbVP=$('lb-viewport');
 lbVP.addEventListener('touchstart',_lbTS,{passive:false});
 lbVP.addEventListener('touchmove',_lbTM,{passive:false});
 lbVP.addEventListener('touchend',_lbTE,{passive:false});
-lbVP.addEventListener('touchcancel',()=>{lbState.isPinching=false;lbState.isPanning=false;lbState.dragging=false;_lbTouchPending=false;},{passive:true});
-
+lbVP.addEventListener('touchcancel',()=>{lbS.isPinching=false;lbS.isPanning=false;lbS.dragging=false;lbS.pending=false;},{passive:true});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&lb.classList.contains('on'))lbClose();});
 
 // ═══════════════════════════════════════════════════════
@@ -1586,131 +1568,78 @@ const _hvGroups=[];
 })();
 
 function _hvBuildTabs(){
-  DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>
-    `<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`).join('');
+  DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`).join('');
 }
-// Event delegation cho group tabs
-DOM.hpGrouptabs.addEventListener('click',e=>{
-  const btn=e.target.closest('.hv-gtab'); if(btn) _hvSelectGroup(+btn.dataset.idx);
-});
-
+DOM.hpGrouptabs.addEventListener('click',e=>{const btn=e.target.closest('.hv-gtab');if(btn)_hvSelectGroup(+btn.dataset.idx);});
 function _hvSelectGroup(idx){
-  if(_hvActiveGroup===idx){
-    _hvActiveGroup=-1;
-    DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach(b=>b.classList.remove('on'));
-    DOM.hpSymlist.style.display='none'; DOM.hpSortBtn.style.display='none';
-    return;
-  }
+  if(_hvActiveGroup===idx){_hvActiveGroup=-1;DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach(b=>b.classList.remove('on'));DOM.hpSymlist.style.display='none';DOM.hpSortBtn.style.display='none';return;}
   _hvActiveGroup=idx;
   DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===idx));
-  DOM.hpSortBtn.style.display=''; DOM.hpSymlist.style.display='';
-  _hvRenderSymList();
+  DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
 }
-
 function _hvGetSorted(){
-  const g=_hvGroups[_hvActiveGroup]; if(!g) return [];
+  const g=_hvGroups[_hvActiveGroup];if(!g)return[];
   const d=window._lastHmapData||{};
-  if(_hvSortAlpha) return [...g.syms].sort((a,b)=>a.localeCompare(b));
-  return [...g.syms].sort((a,b)=>{
-    const pa=d[a]?d[a].pct||0:-999, pb=d[b]?d[b].pct||0:-999;
-    return pb-pa;
-  });
+  if(_hvSortAlpha)return[...g.syms].sort((a,b)=>a.localeCompare(b));
+  return[...g.syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
 }
-DOM.hpSortBtn.addEventListener('click',()=>{
-  _hvSortAlpha=!_hvSortAlpha;
-  DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';
-  _hvRenderSymList();
-});
-
+DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
 function _hvRenderSymList(){
-  if(_hvActiveGroup===-1) return;
+  if(_hvActiveGroup===-1)return;
   const d=window._lastHmapData||{};
-  // JS opt: array join
   DOM.hpSymlist.innerHTML=_hvGetSorted().map(sym=>{
-    const entry=d[sym];
-    const pct=entry&&typeof entry.pct==='number'?entry.pct:null;
+    const entry=d[sym],pct=entry&&typeof entry.pct==='number'?entry.pct:null;
     const price=entry&&typeof entry.price==='number'?fmtP(entry.price):'—';
     const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
     const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
-    return `<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}">
-      <span class="hv-sym-name">${sym}</span>
-      <span class="hv-sym-pct" style="color:${color}">${pctStr}</span>
-      <span class="hv-sym-price">${price}</span>
-    </div>`;
+    return`<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}"><span class="hv-sym-name">${sym}</span><span class="hv-sym-pct" style="color:${color}">${pctStr}</span><span class="hv-sym-price">${price}</span></div>`;
   }).join('');
 }
-
-// ── Patch symlist data (không rebuild DOM khi chỉ update số) ──
 function _hvPatchSymList(newData){
-  if(_hvActiveGroup===-1) return;
+  if(_hvActiveGroup===-1)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>{
-    const sym=el.dataset.sym, d=newData[sym]; if(!d) return;
+    const sym=el.dataset.sym,d=newData[sym];if(!d)return;
     const pct=typeof d.pct==='number'?d.pct:null;
-    const pEl=el.querySelector('.hv-sym-pct'), prEl=el.querySelector('.hv-sym-price');
-    if(pEl&&pct!==null){
-      pEl.textContent=(pct>=0?'+':'')+pct.toFixed(1)+'%';
-      pEl.style.color=pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
-    }
-    if(prEl&&typeof d.price==='number') prEl.textContent=fmtP(d.price);
+    const pEl=el.querySelector('.hv-sym-pct'),prEl=el.querySelector('.hv-sym-price');
+    if(pEl&&pct!==null){pEl.textContent=(pct>=0?'+':'')+pct.toFixed(1)+'%';pEl.style.color=pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';}
+    if(prEl&&typeof d.price==='number')prEl.textContent=fmtP(d.price);
   });
 }
-
-// Event delegation cho symlist
 DOM.hpSymlist.addEventListener('click',e=>{
-  const item=e.target.closest('.hv-sym-item'); if(!item) return;
-  const sym=item.dataset.sym;
-  if(sym===_hoverPreviewCurrent) return;
+  const item=e.target.closest('.hv-sym-item');if(!item)return;
+  const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.remove('on'));
-  item.classList.add('on');
-  _hoverPreviewCurrent=sym;
-  updatePopout(sym);
+  item.classList.add('on');_hoverPreviewCurrent=sym;updatePopout(sym);
   DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
 });
 
-// Arrow key navigation
 document.addEventListener('keydown',e=>{
-  if(!_hoverPreviewOn||_hvActiveGroup===-1) return;
-  if(DOM.overlay.classList.contains('on')) return;
-  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown') return;
+  if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
+  if(DOM.overlay.classList.contains('on'))return;
+  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
   e.preventDefault();
-  if(_keyThrottle) return;
-  _keyThrottle=true; setTimeout(()=>{_keyThrottle=false;},60);
-
-  const items=[...DOM.hpSymlist.children]; if(!items.length) return;
+  if(_keyThrottle)return;_keyThrottle=true;setTimeout(()=>{_keyThrottle=false;},60);
+  const items=[...DOM.hpSymlist.children];if(!items.length)return;
   let cur=items.findIndex(el=>el.classList.contains('on'));
   let next=cur===-1?0:(e.key==='ArrowDown'?cur+1:cur-1);
   next=Math.max(0,Math.min(next,items.length-1));
-  if(next===cur&&cur!==-1) return;
-
-  items.forEach(el=>el.classList.remove('on')); items[next].classList.add('on');
-  const sym=items[next].dataset.sym; _hoverPreviewCurrent=sym;
-
-  if(_iframeDelay) clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{
-    DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
-    updatePopout(sym);
-  },300);
-
-  const list=DOM.hpSymlist,el=items[next];
-  const relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
-  if(relTop-h<list.scrollTop) list.scrollTop=Math.max(0,relTop-h);
-  else if(relTop+h*2>list.scrollTop+list.clientHeight) list.scrollTop=relTop+h*2-list.clientHeight;
+  if(next===cur&&cur!==-1)return;
+  items.forEach(el=>el.classList.remove('on'));items[next].classList.add('on');
+  const sym=items[next].dataset.sym;_hoverPreviewCurrent=sym;
+  if(_iframeDelay)clearTimeout(_iframeDelay);
+  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();updatePopout(sym);},300);
+  const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
+  if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
+  else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
 });
 
-// ── FIX #1: _closeHoverPanel — đóng thật, không minimize ──
+// FIX: _closeHoverPanel đóng thật
 function _closeHoverPanel(){
   _hoverPreviewOn=false;
-  $('hover-preview-btn').classList.remove('on');
-  $('hover-preview-btn').textContent='Chart: OFF';
-  DOM.hpPanel.style.display='none';
-  DOM.wrap.style.paddingBottom='';
-  DOM.hpIframe.src='about:blank';
-  _hoverPreviewCurrent='';
-  if(_isPopoutMode){
-    _isPopoutMode=false;
-    if(_popoutWin&&!_popoutWin.closed) try{_popoutWin.close();}catch(e){}
-    _popoutWin=null;
-  }
+  $('hover-preview-btn').classList.remove('on');$('hover-preview-btn').textContent='Chart: OFF';
+  DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
+  DOM.hpIframe.src='about:blank';_hoverPreviewCurrent='';
+  if(_isPopoutMode){_isPopoutMode=false;if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}_popoutWin=null;}
 }
 $('hv-close-btn').addEventListener('click',_closeHoverPanel);
 $('hv-full-btn').addEventListener('click',()=>openChart(_hoverPreviewCurrent||'VNINDEX'));
@@ -1720,26 +1649,18 @@ function toggleHoverPreview(){
   if(_isPopoutMode){minimizePopout();return;}
   if(_hoverPreviewOn){_closeHoverPanel();return;}
   _hoverPreviewOn=true;
-  const btn=$('hover-preview-btn'); btn.classList.add('on'); btn.textContent='Chart: ON';
-  DOM.hpPanel.style.display='flex';
-  _hvBuildTabs();
+  const btn=$('hover-preview-btn');btn.classList.add('on');btn.textContent='Chart: ON';
+  DOM.hpPanel.style.display='flex';_hvBuildTabs();
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
   _hoverPreviewCurrent='VNINDEX';
   DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode=vnindex';
-  if(_hvActiveGroup===-1) _hvSelectGroup(0); else _hvRenderSymList();
+  if(_hvActiveGroup===-1)_hvSelectGroup(0);else _hvRenderSymList();
 }
 
-// Resizer
 (function(){
-  const resizer=$('hover-preview-resizer');
-  let drag=false,startY=0,startH=0;
+  const resizer=$('hover-preview-resizer');let drag=false,startY=0,startH=0;
   resizer.addEventListener('mousedown',e=>{drag=true;startY=e.clientY;startH=DOM.hpPanel.offsetHeight;document.body.style.userSelect='none';document.body.style.cursor='ns-resize';e.preventDefault();});
-  document.addEventListener('mousemove',e=>{
-    if(!drag) return;
-    const newH=Math.min(window.innerHeight*.9,Math.max(120,startH+(startY-e.clientY)));
-    DOM.hpPanel.style.height=newH+'px';
-    DOM.wrap.style.paddingBottom=newH+16+'px';
-  });
+  document.addEventListener('mousemove',e=>{if(!drag)return;const newH=Math.min(window.innerHeight*.9,Math.max(120,startH+(startY-e.clientY)));DOM.hpPanel.style.height=newH+'px';DOM.wrap.style.paddingBottom=newH+16+'px';});
   document.addEventListener('mouseup',()=>{if(!drag)return;drag=false;document.body.style.userSelect='';document.body.style.cursor='';});
 })();
 
@@ -1751,14 +1672,14 @@ function quickPopout(){
 
 // ═══════════════════════════════════════════════════════
 // POPOUT WINDOW
+// P2-2: Fix các nút trong popout không hoạt động
 // ═══════════════════════════════════════════════════════
 function popOutHover(){
   const sym=_hoverPreviewCurrent||'VNINDEX';
   if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
-  DOM.hpPanel.style.display='none';
-  DOM.wrap.style.paddingBottom='';
-  _isPopoutMode=true; _hoverPreviewOn=false;
-  const btn=$('hover-preview-btn'); btn.classList.add('on'); btn.textContent='Chart: POP';
+  DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
+  _isPopoutMode=true;_hoverPreviewOn=false;
+  const btn=$('hover-preview-btn');btn.classList.add('on');btn.textContent='Chart: POP';
   const w=Math.min(1400,window.screen.availWidth-80),h=Math.min(1000,window.screen.availHeight-60);
   _popoutWin=window.open('','ScannerPopout',`width=${w},height=${h},left=40,top=20,resizable=yes,scrollbars=no,menubar=no,toolbar=no`);
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
@@ -1771,169 +1692,210 @@ function _buildPopoutHTML(initSym){
   const gJ=JSON.stringify(_hvGroups.map(g=>({name:g.name,syms:g.syms})));
   const dJ=JSON.stringify(window._lastHmapData||{});
   const ig=_hvActiveGroup>=0?_hvActiveGroup:0;
-  return `<!DOCTYPE html><html><head>
-<meta charset="UTF-8"><title>Chart — ${initSym}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
-body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}
-#hdr{display:flex;align-items:center;padding:0 12px;background:var(--surf2);height:42px;gap:8px;border-bottom:1px solid var(--border);flex-shrink:0}
-#sym{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.5px;color:var(--accent);flex-shrink:0}
-#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none}
-#gtabs::-webkit-scrollbar{display:none}
-.gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}
-.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-.gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
-#ctrls{display:flex;gap:4px;align-items:center;flex-shrink:0}
-.ctrl{padding:4px 10px;height:28px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap;display:inline-flex;align-items:center}
-.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}
-#main{display:flex;height:calc(100% - 42px);overflow:hidden}
-#symlist{width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-#symlist::-webkit-scrollbar{width:3px}
-#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.si{display:grid;grid-template-columns:35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:2px}
-.si:hover,.si.on{background:#dce8ff}
-.si.on .sn{color:#0f3fb3;font-weight:800}
-.sn{font-size:11px;font-weight:700}
-.sp{font-size:10px;text-align:right;font-weight:700}
-.spr{font-size:10px;text-align:right;color:#334155;font-weight:600}
-.pos{color:var(--green)}.neg{color:var(--red)}.zer{color:#b45309}
-#cw{flex:1;overflow:hidden;position:relative;background:#fff}
-#cf{width:100%;height:100%;border:none;display:block}
-#ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);font-size:13px;z-index:2;transition:opacity .3s}
-#ld.hide{opacity:0;pointer-events:none}
-#sw{position:relative;flex-shrink:0}
-#si-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none}
-#si{width:90px;padding:4px 8px 4px 24px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}
-#si::placeholder{color:var(--muted)}
-#si:focus{width:140px;border-color:var(--accent)}
-</style></head><body>
-<div id="hdr">
-  <span id="sym">${initSym}</span>
-  <div id="sw"><span id="si-icon">🔍</span><input id="si" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false"></div>
-  <div id="gtabs"></div>
-  <div id="ctrls">
-    <button class="ctrl" id="sort-btn">A↕Z</button>
-    <button class="ctrl" id="full-btn"> ⛶ </button>
-    <button class="ctrl" id="min-btn" title="Thu nhỏ"> ❐ </button>
-    <button class="ctrl close" id="close-btn">✕</button>
-  </div>
-</div>
-<div id="main">
-  <div id="symlist"></div>
-  <div id="cw"><div id="ld">Đang tải...</div><iframe id="cf" src="about:blank"></iframe></div>
-</div>
-<script>
-'use strict';
-const $=id=>document.getElementById(id);
-let groups=${gJ}, hdata=${dJ}, ag=${ig}, sa=${_hvSortAlpha}, cur='${initSym}', full=false;
-
-function fp(v){return(!v||v<=0)?'—':(v<100?Number(v).toFixed(2):Number(v).toFixed(1));}
-
-// Build tabs with event delegation
-function buildTabs(){
-  $('gtabs').innerHTML=groups.map((g,i)=>\`<button class="gtab\${i===ag?' on':''}" data-idx="\${i}">\${g.name}</button>\`).join('');
-}
-$('gtabs').addEventListener('click',e=>{
-  const b=e.target.closest('.gtab');if(!b)return;
-  ag=+b.dataset.idx;
-  $('gtabs').querySelectorAll('.gtab').forEach((x,i)=>x.classList.toggle('on',i===ag));
-  render();
-});
-
-function getSorted(){
-  const g=groups[ag];if(!g)return[];
-  if(sa)return[...g.syms].sort((a,b)=>a.localeCompare(b));
-  return[...g.syms].sort((a,b)=>{
-    const pa=hdata[a]?hdata[a].pct||0:-999,pb=hdata[b]?hdata[b].pct||0:-999;
-    return pb-pa;
-  });
-}
-
-function render(){
-  $('symlist').innerHTML=getSorted().map(sym=>{
-    const d=hdata[sym],pct=d&&typeof d.pct==='number'?d.pct:null;
-    const pctStr=pct!==null?((pct>=0?'+':'')+pct.toFixed(1)+'%'):'—';
-    const cls=pct===null?'zer':pct>0?'pos':pct<0?'neg':'zer';
-    return \`<div class="si\${sym===cur?' on':''}" data-sym="\${sym}"><span class="sn">\${sym}</span><span class="sp \${cls}">\${pctStr}</span><span class="spr">\${fp(d&&d.price)}</span></div>\`;
-  }).join('');
-}
-
-// Patch instead of rebuild when only data changes
-function patch(nd){
-  hdata=nd;
-  $('symlist').querySelectorAll('.si').forEach(el=>{
-    const sym=el.dataset.sym,d=nd[sym];if(!d)return;
-    const pct=typeof d.pct==='number'?d.pct:null;
-    const sp=el.querySelector('.sp'),spr=el.querySelector('.spr');
-    if(sp&&pct!==null){sp.textContent=(pct>=0?'+':'')+pct.toFixed(1)+'%';sp.className='sp '+(pct>0?'pos':pct<0?'neg':'zer');}
-    if(spr&&typeof d.price==='number')spr.textContent=fp(d.price);
-  });
-}
-
-// Event delegation cho symlist
-$('symlist').addEventListener('click',e=>{
-  const item=e.target.closest('.si');if(!item)return;
-  const sym=item.dataset.sym;if(sym===cur)return;
-  cur=sym;
-  $('symlist').querySelectorAll('.si').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
-  setSym(sym);
-  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
-});
-
-function setSym(sym){$('sym').textContent=sym;document.title='Chart '+sym;loadChart(sym);}
-
-function loadChart(sym){
-  const cf=$('cf'),ld=$('ld');
-  const url=full?(window.location.origin+'/popout_full/'+sym):('https://ta.vietstock.vn/?stockcode='+sym.toLowerCase());
-  if(cf.src===url)return;
-  ld.classList.remove('hide');
-  cf.onload=()=>ld.classList.add('hide');
-  cf.src=url;
-}
-
-$('sort-btn').addEventListener('click',()=>{sa=!sa;$('sort-btn').textContent=sa?'%↕':'A↕Z';render();});
-$('full-btn').addEventListener('click',()=>{full=true;loadChart(cur);});
-$('min-btn').addEventListener('click',()=>{if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_MINIMIZE'},'*');window.close();});
-// FIX #1: close-btn gửi POPOUT_CLOSE — đóng thật
-$('close-btn').addEventListener('click',()=>{if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_CLOSE'},'*');window.close();});
-
-$('si').addEventListener('keydown',function(e){
-  if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();cur=s;setSym(s);render();if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:s},'*');}}
-  if(e.key==='Escape'){this.value='';this.blur();}
-});
-
-let _kt=false,_kd=null;
-document.addEventListener('keydown',e=>{
-  if(document.activeElement===$('si'))return;
-  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
-  e.preventDefault();
-  if(_kt)return;_kt=true;setTimeout(()=>{_kt=false;},60);
-  const items=[...$('symlist').children];if(!items.length)return;
-  let c=items.findIndex(el=>el.classList.contains('on'));
-  let n=c===-1?0:(e.key==='ArrowDown'?c+1:c-1);
-  n=Math.max(0,Math.min(n,items.length-1));
-  if(n===c&&c!==-1)return;
-  items.forEach(el=>el.classList.remove('on'));items[n].classList.add('on');
-  const sym=items[n].dataset.sym;cur=sym;$('sym').textContent=sym;document.title='Chart '+sym;
-  if(_kd)clearTimeout(_kd);
-  _kd=setTimeout(()=>{loadChart(sym);if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');},300);
-  const list=$('symlist'),el=items[n],rt=el.offsetTop-list.offsetTop,h=el.offsetHeight;
-  if(rt-h<list.scrollTop)list.scrollTop=Math.max(0,rt-h);
-  else if(rt+h*2>list.scrollTop+list.clientHeight)list.scrollTop=rt+h*2-list.clientHeight;
-});
-
-window.addEventListener('message',e=>{
-  if(e.data.type==='UPDATE_CHART'){cur=e.data.symbol;setSym(cur);render();}
-  if(e.data.type==='UPDATE_HEATMAP'){patch(e.data.data||{});}
-  if(e.data.type==='EMBEDDED_FULL_SYMBOL'){cur=(e.data.symbol||cur).toUpperCase();$('sym').textContent=cur;render();}
-  if(e.data.type==='EMBEDDED_FULL_CLOSE'){full=false;cur=(e.data.symbol||cur).toUpperCase();setSym(cur);render();}
-});
-
-buildTabs();render();setSym(cur);
-<\/script></body></html>`;
+  // P2-2: Toàn bộ JS trong popout được viết cẩn thận, không dùng template literal lồng nhau
+  // Dùng string concat để tránh xung đột escape
+  return '<!DOCTYPE html><html><head>'
+    +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
+    +'<title>Chart \u2014 '+initSym+'</title>'
+    +'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">'
+    +'<style>'
+    +'*{margin:0;padding:0;box-sizing:border-box}'
+    +':root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:\'IBM Plex Mono\',monospace;--font-ui:\'Barlow Condensed\',sans-serif}'
+    +'body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}'
+    +'#hdr{display:flex;align-items:center;padding:0 10px;background:var(--surf2);height:42px;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0}'
+    +'#sym{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.5px;color:var(--accent);flex-shrink:0;white-space:nowrap}'
+    +'#sw{position:relative;flex-shrink:0}'
+    +'#si-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}'
+    +'#si{width:85px;padding:4px 6px 4px 22px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}'
+    +'#si::placeholder{color:var(--muted)}'
+    +'#si:focus{width:130px;border-color:var(--accent)}'
+    +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
+    +'#gtabs::-webkit-scrollbar{display:none}'
+    +'.gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
+    +'.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}'
+    +'.gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}'
+    +'#ctrls{display:flex;gap:3px;align-items:center;flex-shrink:0}'
+    +'.ctrl{padding:0 10px;height:28px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}'
+    +'.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}'
+    +'.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}'
+    +'#main{display:flex;height:calc(100% - 42px);overflow:hidden}'
+    +'#symlist{width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
+    +'#symlist::-webkit-scrollbar{width:3px}'
+    +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
+    +'.si{display:grid;grid-template-columns:35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:2px}'
+    +'.si:hover,.si.on{background:#dce8ff}'
+    +'.si.on .sn{color:#0f3fb3;font-weight:800}'
+    +'.sn{font-size:11px;font-weight:700}'
+    +'.sp{font-size:10px;text-align:right;font-weight:700}'
+    +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600}'
+    +'.pos{color:var(--green)}.neg{color:var(--red)}.zer{color:#b45309}'
+    +'#cw{flex:1;overflow:hidden;position:relative;background:#fff}'
+    +'#cf{width:100%;height:100%;border:none;display:block}'
+    +'#ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);font-size:13px;z-index:2;transition:opacity .3s}'
+    +'#ld.hide{opacity:0;pointer-events:none}'
+    +'</style></head><body>'
+    +'<div id="hdr">'
+    +'<span id="sym">'+initSym+'</span>'
+    +'<div id="sw"><span id="si-icon">\uD83D\uDD0D</span>'
+    +'<input id="si" type="text" placeholder="T\xECm m\xE3" maxlength="10" autocomplete="off" spellcheck="false"></div>'
+    +'<div id="gtabs"></div>'
+    +'<div id="ctrls">'
+    +'<button class="ctrl" id="sort-btn">A\u21951Z</button>'
+    +'<button class="ctrl" id="full-btn"> \u29C6 </button>'
+    +'<button class="ctrl" id="min-btn" title="Thu nh\u1ECF"> \u2750 </button>'
+    +'<button class="ctrl close" id="close-btn">\u2715</button>'
+    +'</div></div>'
+    +'<div id="main">'
+    +'<div id="symlist"></div>'
+    +'<div id="cw"><div id="ld">Đang tải...</div><iframe id="cf" src="about:blank"></iframe></div>'
+    +'</div>'
+    +'<script>'
+    +'"use strict";'
+    +'var _$=function(id){return document.getElementById(id);};'
+    +'var groups='+gJ+';'
+    +'var hdata='+dJ+';'
+    +'var ag='+ig+';'
+    +'var sa='+(_hvSortAlpha?'true':'false')+';'
+    +'var cur="'+initSym+'";'
+    +'var full=false;'
+    // fmtP
+    +'function fp(v){return(!v||v<=0)?"--":(v<100?Number(v).toFixed(2):Number(v).toFixed(1));}'
+    // buildTabs
+    +'function buildTabs(){'
+    +'  var el=_$("gtabs");'
+    +'  var html=groups.map(function(g,i){'
+    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+g.name+"</button>";'
+    +'  }).join("");'
+    +'  el.innerHTML=html;'
+    +'}'
+    // selectGroup
+    +'function selGroup(idx){'
+    +'  ag=idx;'
+    +'  document.querySelectorAll(".gtab").forEach(function(b,i){b.classList.toggle("on",i===idx);});'
+    +'  render();'
+    +'}'
+    // getSorted
+    +'function getSorted(){'
+    +'  var g=groups[ag];if(!g)return [];'
+    +'  if(sa)return g.syms.slice().sort(function(a,b){return a.localeCompare(b);});'
+    +'  return g.syms.slice().sort(function(a,b){'
+    +'    var pa=hdata[a]?hdata[a].pct||0:-999;'
+    +'    var pb=hdata[b]?hdata[b].pct||0:-999;'
+    +'    return pb-pa;'
+    +'  });'
+    +'}'
+    // render symlist
+    +'function render(){'
+    +'  var syms=getSorted();'
+    +'  _$("symlist").innerHTML=syms.map(function(sym){'
+    +'    var d=hdata[sym];'
+    +'    var pct=d&&typeof d.pct==="number"?d.pct:null;'
+    +'    var pctStr=pct!==null?((pct>=0?"+":"")+pct.toFixed(1)+"%"):"--";'
+    +'    var cls=pct===null?"zer":pct>0?"pos":pct<0?"neg":"zer";'
+    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'"><span class="sn">\'+sym+"</span>"'
+    +'      +\'<span class="sp \'+cls+\'">\'+pctStr+"</span>"'
+    +'      +\'<span class="spr">\'+fp(d&&d.price)+"</span></div>";'
+    +'  }).join("");'
+    +'}'
+    // patch (for UPDATE_HEATMAP — no rebuild)
+    +'function patch(nd){'
+    +'  hdata=nd;'
+    +'  document.querySelectorAll(".si").forEach(function(el){'
+    +'    var sym=el.dataset.sym,d=nd[sym];if(!d)return;'
+    +'    var pct=typeof d.pct==="number"?d.pct:null;'
+    +'    var sp=el.querySelector(".sp"),spr=el.querySelector(".spr");'
+    +'    if(sp&&pct!==null){sp.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"%";sp.className="sp "+(pct>0?"pos":pct<0?"neg":"zer");}'
+    +'    if(spr&&typeof d.price==="number")spr.textContent=fp(d.price);'
+    +'  });'
+    +'}'
+    // clickSym (via delegation)
+    +'function clickSym(sym){'
+    +'  if(sym===cur)return;'
+    +'  cur=sym;'
+    +'  document.querySelectorAll(".si").forEach(function(e){e.classList.toggle("on",e.dataset.sym===sym);});'
+    +'  setSym(sym);'
+    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
+    +'}'
+    +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
+    +'function loadChart(sym){'
+    +'  var cf=_$("cf"),ld=_$("ld");'
+    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
+    +'  if(cf.src===url)return;'
+    +'  ld.classList.remove("hide");'
+    +'  cf.onload=function(){ld.classList.add("hide");};'
+    +'  cf.src=url;'
+    +'}'
+    // Event delegation - gtabs
+    +'_$("gtabs").addEventListener("click",function(e){'
+    +'  var b=e.target.closest(".gtab");if(!b)return;'
+    +'  selGroup(parseInt(b.dataset.idx));'
+    +'});'
+    // Event delegation - symlist
+    +'_$("symlist").addEventListener("click",function(e){'
+    +'  var item=e.target.closest(".si");if(!item)return;'
+    +'  clickSym(item.dataset.sym);'
+    +'});'
+    // sort btn
+    +'_$("sort-btn").addEventListener("click",function(){'
+    +'  sa=!sa;'
+    +'  this.textContent=sa?"%\u2195":"A\u21951Z";'
+    +'  render();'
+    +'});'
+    // full btn
+    +'_$("full-btn").addEventListener("click",function(){full=true;loadChart(cur);});'
+    // min btn
+    +'_$("min-btn").addEventListener("click",function(){'
+    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_MINIMIZE"},"*");'
+    +'  window.close();'
+    +'});'
+    // close btn — FIX: gửi POPOUT_CLOSE, không minimize
+    +'_$("close-btn").addEventListener("click",function(){'
+    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_CLOSE"},"*");'
+    +'  window.close();'
+    +'});'
+    // search
+    +'_$("si").addEventListener("keydown",function(e){'
+    +'  if(e.key==="Enter"){'
+    +'    var s=this.value.trim().toUpperCase();'
+    +'    if(s.length>=2){this.value="";this.blur();cur=s;setSym(s);render();'
+    +'      if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:s},"*");}'
+    +'  }'
+    +'  if(e.key==="Escape"){this.value="";this.blur();}'
+    +'});'
+    // arrow key nav
+    +'var _kt=false,_kd=null;'
+    +'document.addEventListener("keydown",function(e){'
+    +'  if(document.activeElement===_$("si"))return;'
+    +'  if(e.key!=="ArrowUp"&&e.key!=="ArrowDown")return;'
+    +'  e.preventDefault();'
+    +'  if(_kt)return;_kt=true;setTimeout(function(){_kt=false;},60);'
+    +'  var items=[].slice.call(_$("symlist").children);if(!items.length)return;'
+    +'  var c=items.findIndex(function(el){return el.classList.contains("on");});'
+    +'  var n=c===-1?0:(e.key==="ArrowDown"?c+1:c-1);'
+    +'  n=Math.max(0,Math.min(n,items.length-1));'
+    +'  if(n===c&&c!==-1)return;'
+    +'  items.forEach(function(el){el.classList.remove("on");});items[n].classList.add("on");'
+    +'  var sym=items[n].dataset.sym;cur=sym;_$("sym").textContent=sym;document.title="Chart "+sym;'
+    +'  if(_kd)clearTimeout(_kd);'
+    +'  _kd=setTimeout(function(){'
+    +'    loadChart(sym);'
+    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
+    +'  },300);'
+    +'  var list=_$("symlist"),el=items[n];'
+    +'  var rt=el.offsetTop-list.offsetTop,h=el.offsetHeight;'
+    +'  if(rt-h<list.scrollTop)list.scrollTop=Math.max(0,rt-h);'
+    +'  else if(rt+h*2>list.scrollTop+list.clientHeight)list.scrollTop=rt+h*2-list.clientHeight;'
+    +'});'
+    // message handler
+    +'window.addEventListener("message",function(e){'
+    +'  if(e.data.type==="UPDATE_CHART"){cur=e.data.symbol;setSym(cur);render();}'
+    +'  if(e.data.type==="UPDATE_HEATMAP"){patch(e.data.data||{});}'
+    +'  if(e.data.type==="EMBEDDED_FULL_SYMBOL"){cur=(e.data.symbol||cur).toUpperCase();_$("sym").textContent=cur;render();}'
+    +'  if(e.data.type==="EMBEDDED_FULL_CLOSE"){full=false;cur=(e.data.symbol||cur).toUpperCase();setSym(cur);render();}'
+    +'});'
+    // init
+    +'buildTabs();render();setSym(cur);'
+    +'<\/script></body></html>';
 }
 
 function minimizePopout(){
@@ -1941,23 +1903,18 @@ function minimizePopout(){
   if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
   _popoutWin=null;
   _hoverPreviewOn=true;
-  const btn=$('hover-preview-btn'); btn.classList.add('on'); btn.textContent='Chart: ON';
-  DOM.hpPanel.style.display='flex';
-  _hvBuildTabs();
+  const btn=$('hover-preview-btn');btn.classList.add('on');btn.textContent='Chart: ON';
+  DOM.hpPanel.style.display='flex';_hvBuildTabs();
   if(_hvActiveGroup>=0){
     DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===_hvActiveGroup));
-    DOM.hpSortBtn.style.display=''; DOM.hpSymlist.style.display='';
-    _hvRenderSymList();
-  } else { _hvSelectGroup(0); }
+    DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
+  }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
-  if(_hoverPreviewCurrent) DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
+  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
 }
+function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');}
 
-function updatePopout(sym){
-  if(_popoutWin&&!_popoutWin.closed) _popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');
-}
-
-// FIX #1: POPOUT_CLOSE = đóng thật, chỉ reset state
+// FIX: POPOUT_CLOSE = đóng thật, không mở lại hover
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _hoverPreviewCurrent=e.data.symbol;
@@ -1965,12 +1922,11 @@ window.addEventListener('message',e=>{
       DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===e.data.symbol));
       DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+e.data.symbol.toLowerCase();
     }
-  } else if(e.data.type==='POPOUT_MINIMIZE'){
+  }else if(e.data.type==='POPOUT_MINIMIZE'){
     minimizePopout();
-  } else if(e.data.type==='POPOUT_CLOSE'){
-    // Đóng thật — KHÔNG mở lại hover panel
-    _isPopoutMode=false; _popoutWin=null;
-    const btn=$('hover-preview-btn'); btn.classList.remove('on'); btn.textContent='Chart: OFF';
+  }else if(e.data.type==='POPOUT_CLOSE'){
+    _isPopoutMode=false;_popoutWin=null;
+    const btn=$('hover-preview-btn');btn.classList.remove('on');btn.textContent='Chart: OFF';
     DOM.wrap.style.paddingBottom='';
   }
 });
@@ -1980,10 +1936,10 @@ window.addEventListener('message',e=>{
 // ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
-  startBar('pbar-sig',SIG_TTL); startBar('pbar-hmap',HMAP_TTL);
+  startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
-  setInterval(async()=>{startBar('pbar-sig',SIG_TTL);await fetchSigs();},SIG_TTL*1000);
-  setInterval(async()=>{startBar('pbar-hmap',HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
+  setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
+  setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
 }
 init();
 </script>
