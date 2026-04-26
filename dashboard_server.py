@@ -696,6 +696,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   font-family:var(--font-mono);font-size:10px;outline:none;
   transition:border-color .15s; 
 }
+.mob-land-search:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(26,86,219,.12);
+  /* Tuyệt đối không khai báo width ở đây -> ô tìm kiếm sẽ đứng im, không bị giãn ra */
+}
 /* Tabs cuộn giữa */
 .mob-land-tabs{
   display:flex;flex-direction:row;flex-wrap:nowrap;
