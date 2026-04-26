@@ -684,16 +684,22 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   flex-shrink:0;height:40px;gap:4px;overflow:hidden;
 }
 .mob-land-sym{
-  font-family:var(--font-ui);font-size:15px;font-weight:800;
+  font-family:var(--font-ui);font-size:18px;font-weight:800;
   color:var(--accent);white-space:nowrap;flex-shrink:0;letter-spacing:.8px;
 }
 .mob-land-search-wrap{position:relative;flex-shrink:0}
 .mob-land-search-wrap .s-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}
 .mob-land-search{
-  width:68px;padding:4px 6px 4px 22px;
+  width:68px;height:30px;padding:4px 6px 4px 22px;
   border-radius:16px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:10px;outline:none;
+  transition:border-color .15s; 
+}
+.mob-land-search:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(26,86,219,.12);
+  /* Tuyệt đối không khai báo width ở đây -> ô tìm kiếm sẽ đứng im, không bị giãn ra */
 }
 /* Tabs cuộn giữa */
 .mob-land-tabs{
@@ -1658,6 +1664,10 @@ function _buildPopoutHTML(initSym){
     +'#si{width:85px;padding:4px 6px 4px 22px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}'
     +'#si::placeholder{color:var(--muted)}'
     +'#si:focus{width:130px;border-color:var(--accent)}'
+    +'@media(max-width:768px){'
+    +'  #si{width:68px !important; transition:border-color .15s !important}'
+    +'  #si:focus{width:68px !important; box-shadow:0 0 0 2px rgba(26,86,219,.12)}'
+    +'}'
     +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
     +'#gtabs::-webkit-scrollbar{display:none}'
     +'.gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
