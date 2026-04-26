@@ -690,15 +690,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .mob-land-search-wrap{position:relative;flex-shrink:0}
 .mob-land-search-wrap .s-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}
 .mob-land-search{
-  width:64px;padding:4px 6px 4px 22px;
+  width:68px;padding:4px 6px 4px 22px;
   border-radius:16px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:10px;outline:none;
   transition:border-color .15s; 
-}
-.mob-land-search:focus{
-  border-color:var(--accent); /* Đổi viền sang màu xanh */
-  box-shadow:0 0 0 2px rgba(26,86,219,.12); /* Tạo luồng sáng mờ bọc ngoài viền */
 }
 /* Tabs cuộn giữa */
 .mob-land-tabs{
