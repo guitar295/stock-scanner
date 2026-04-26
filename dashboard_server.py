@@ -684,13 +684,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   flex-shrink:0;height:40px;gap:4px;overflow:hidden;
 }
 .mob-land-sym{
-  font-family:var(--font-ui);font-size:15px;font-weight:800;
+  font-family:var(--font-ui);font-size:18px;font-weight:800;
   color:var(--accent);white-space:nowrap;flex-shrink:0;letter-spacing:.8px;
 }
 .mob-land-search-wrap{position:relative;flex-shrink:0}
 .mob-land-search-wrap .s-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}
 .mob-land-search{
-  width:68px;padding:4px 6px 4px 22px;
+  width:68px;height:30px;padding:4px 6px 4px 22px;
   border-radius:16px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:10px;outline:none;
