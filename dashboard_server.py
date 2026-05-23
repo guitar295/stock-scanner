@@ -342,7 +342,7 @@ function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
   DOM.ptitle.textContent=_sym;
   document.title=_sym+' • Full Chart';
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
+  DOM.ifVs.src='https://simplize.vn/chart?ticker='+_sym.toLowerCase();
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   DOM.outer.style.display='none';
   DOM.loading.style.display='flex';
@@ -392,7 +392,7 @@ async function loadScannerChart(sym){
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
     if(j.cached){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
   }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://simplize.vn/chart?ticker=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 DOM.search.addEventListener('keydown',function(e){
@@ -1177,7 +1177,7 @@ function _hmapDesktopClick(sym){
     if(_isPopoutMode)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
     _hoverPreviewCurrent=sym;
-    DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+    DOM.hpIframe.src='https://simplize.vn/chart?ticker='+sym.toLowerCase();
     DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
   },220);
 }
@@ -1300,7 +1300,7 @@ async function loadScannerChart(sym){
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
     if(j.cached){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
   }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://simplize.vn/chart?ticker=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 // ═══════════════════════════════════════════════════════
@@ -1362,7 +1362,7 @@ function _openPopup(){
 function openChart(sym){
   _sym=sym.toUpperCase().trim();_tab='vs';
   _updateSymDisplay(_sym);
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
+  DOM.ifVs.src='https://simplize.vn/chart?ticker='+_sym.toLowerCase();
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _resetScannerUI();
   _activateTab('vs');
@@ -1374,7 +1374,7 @@ function openUrl(url,label){
   _sym=label||'WEB';
   _updateSymDisplay(label||'🌐');
   ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode=vnindex';
+  DOM.ifVs.src='https://simplize.vn/chart?ticker=vnindex';
   $('iframe-url').src=url;
   _resetScannerUI();
   TABS_ALL.forEach(t=>{
@@ -1612,7 +1612,7 @@ DOM.hpSymlist.addEventListener('click',e=>{
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.remove('on'));
   item.classList.add('on');_hoverPreviewCurrent=sym;updatePopout(sym);
-  DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+  DOM.hpIframe.src='https://simplize.vn/chart?ticker='+sym.toLowerCase();
 });
 document.addEventListener('keydown',e=>{
   if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
@@ -1628,7 +1628,7 @@ document.addEventListener('keydown',e=>{
   items.forEach(el=>el.classList.remove('on'));items[next].classList.add('on');
   const sym=items[next].dataset.sym;_hoverPreviewCurrent=sym;
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();updatePopout(sym);},300);
+  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src='https://simplize.vn/chart?ticker='+sym.toLowerCase();updatePopout(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
@@ -1651,7 +1651,7 @@ function toggleHoverPreview(){
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
   _hoverPreviewCurrent='VNINDEX';
-  DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode=vnindex';
+  DOM.hpIframe.src='https://simplize.vn/chart?ticker=vnindex';
   if(_hvActiveGroup===-1)_hvSelectGroup(0);else _hvRenderSymList();
 }
 (function(){
@@ -1807,7 +1807,7 @@ function _buildPopoutHTML(initSym){
     +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
     +'function loadChart(sym){'
     +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
+    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://simplize.vn/chart?ticker="+sym.toLowerCase());'
     +'  if(cf.src===url)return;'
     +'  ld.classList.remove("hide");'
     +'  cf.onload=function(){ld.classList.add("hide");};'
@@ -1888,7 +1888,7 @@ function minimizePopout(){
     DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
   }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
-  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
+  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://simplize.vn/chart?ticker='+_hoverPreviewCurrent.toLowerCase();
 }
 function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');}
 
@@ -1897,7 +1897,7 @@ window.addEventListener('message',e=>{
     _hoverPreviewCurrent=e.data.symbol;
     if(_hoverPreviewOn){
       DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===e.data.symbol));
-      DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+e.data.symbol.toLowerCase();
+      DOM.hpIframe.src='https://simplize.vn/chart?ticker='+e.data.symbol.toLowerCase();
     }
   }else if(e.data.type==='POPOUT_MINIMIZE'){
     minimizePopout();
