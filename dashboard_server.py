@@ -1112,21 +1112,21 @@ function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURICom
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
   const top=Number.isFinite(window.screen.availTop)?window.screen.availTop:0;
-  const width=Math.max(960,window.screen.availWidth||window.innerWidth||1280);
   const height=Math.max(720,window.screen.availHeight||window.innerHeight||800);
+  const width=Math.max(960,window.screen.availWidth||window.innerWidth||1280);
   return{left,top,width,height};
 }
-function _openMaximizedWindow(url,name,extra=''){
+function _openMaximizedWindow(url,name,width,height,offsetLeft,offsetTop,extra=''){
   const box=_getPopupViewport();
   const features=[
-    `left=${box.left}`,`top=${box.top}`,`width=${box.width}`,`height=${box.height}`,
+    `left=${box.left+offsetLeft}`,`top=${box.top+offsetTop}`,`width=${width}`,`height=${height}`,
     'resizable=yes','scrollbars=yes','menubar=no','toolbar=no','location=no','status=no'
   ];
   if(extra)features.push(extra);
   const win=window.open(url,name,features.join(','));
   if(win){
-    try{win.moveTo(box.left,box.top);}catch(e){}
-    try{win.resizeTo(box.width,box.height);}catch(e){}
+    try{win.moveTo(box.left+offsetLeft,box.top+offsetTop);}catch(e){}
+    try{win.resizeTo(width,height);}catch(e){}
   }
   return win;
 }
@@ -1157,7 +1157,9 @@ function updateSimplize(sym){
 function quickSimplize(){
   const sym=_hoverPreviewCurrent||_sym||'VNINDEX';
   if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
-  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize');
+  const box=_getPopupViewport();
+  const w=Math.min(1600,box.width-40),top=30,h=Math.max(720,box.height-top);
+  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,60,top);
   if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
   _isSimplizeMode=true;
   _refreshChartModeUI();
@@ -1243,6 +1245,7 @@ function _hmapDesktopClick(sym){
     updatePopout(sym);
     updateSimplize(sym);
     if(_isPopoutMode)return;
+    if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
   },220);
 }
@@ -1747,7 +1750,9 @@ function popOutHover(){
   DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
   _isPopoutMode=true;_hoverPreviewOn=false;
   _refreshChartModeUI();
-  _popoutWin=_openMaximizedWindow('','ScannerPopout','scrollbars=no');
+  const box=_getPopupViewport();
+  const w=Math.min(1400,box.width-80),top=20,h=Math.max(720,box.height-top);
+  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,40,top,'scrollbars=no');
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
   _popoutWin.document.write(_buildPopoutHTML(sym));
   _popoutWin.document.close();
