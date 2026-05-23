@@ -198,6 +198,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
+.vs-crop{width:100%;height:100%;overflow:hidden;background:#fff}
+.vs-crop iframe{height:calc(100% + 56px);transform:translateY(-56px)}
 #panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
 #panel-scanner.on{display:flex}
 .scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
@@ -269,7 +271,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
     </div>
   </div>
   <div class="pbody">
-    <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
+    <div class="tpanel on" id="panel-vs"><div class="vs-crop"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div></div>
     <div class="tpanel" id="panel-scanner">
       <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
       <div class="album-outer" id="album-outer" style="display:none">
@@ -552,6 +554,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
+.vs-crop{width:100%;height:100%;overflow:hidden;background:#fff}
+.vs-crop iframe{height:calc(100% + 56px);transform:translateY(-56px)}
 
 /* ═══════════════════════════════════════════
    ALBUM — dùng chung
@@ -1009,7 +1013,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
 
     <div class="pbody">
-      <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
+      <div class="tpanel on" id="panel-vs"><div class="vs-crop"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div></div>
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
         <div class="album-outer" id="album-outer" style="display:none">
