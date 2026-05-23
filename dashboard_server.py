@@ -907,8 +907,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
         <button id="hover-preview-btn">Chart: OFF</button>
-        <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
+        <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -1158,8 +1158,8 @@ function quickSimplize(){
   const sym=_hoverPreviewCurrent||_sym||'VNINDEX';
   if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
   const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),top=30,h=Math.max(720,box.height-top);
-  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,60,top);
+  const w=Math.min(1600,box.width-40),h=box.height;
+  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,60,0);
   if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
   _isSimplizeMode=true;
   _refreshChartModeUI();
@@ -1751,8 +1751,8 @@ function popOutHover(){
   _isPopoutMode=true;_hoverPreviewOn=false;
   _refreshChartModeUI();
   const box=_getPopupViewport();
-  const w=Math.min(1400,box.width-80),top=20,h=Math.max(720,box.height-top);
-  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,40,top,'scrollbars=no');
+  const w=Math.min(1400,box.width-80),h=box.height;
+  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,40,0,'scrollbars=no');
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
   _popoutWin.document.write(_buildPopoutHTML(sym));
   _popoutWin.document.close();
