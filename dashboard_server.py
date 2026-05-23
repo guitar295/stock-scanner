@@ -906,7 +906,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
         <button id="hover-preview-btn">Chart: OFF</button>
-        <button class="hmap-link-btn" id="hmap-simplize-btn">Simplize</button>
+        <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
@@ -1135,11 +1135,6 @@ function updateSimplize(sym){
 function quickSimplize(){
   const sym=_hoverPreviewCurrent||_sym||'VNINDEX';
   if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
-  if(_isPopoutMode){
-    _isPopoutMode=false;
-    if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
-    _popoutWin=null;
-  }
   _hoverPreviewOn=false;
   DOM.hpPanel.style.display='none';
   DOM.wrap.style.paddingBottom='';
@@ -1218,7 +1213,10 @@ DOM.hmapGrid.addEventListener('click',e=>{
 DOM.hmapGrid.addEventListener('dblclick',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
-  updatePopout(cell.dataset.sym);openChart(cell.dataset.sym);
+  _hoverPreviewCurrent=cell.dataset.sym;
+  updatePopout(cell.dataset.sym);
+  updateSimplize(cell.dataset.sym);
+  openChart(cell.dataset.sym);
 });
 let _hmapClickTimer=null;
 function _hmapDesktopClick(sym){
@@ -1240,7 +1238,11 @@ DOM.sigList.addEventListener('click',e=>{
 });
 DOM.sigList.addEventListener('dblclick',e=>{
   const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
-  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);openChart(row.dataset.sym);
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  _hoverPreviewCurrent=row.dataset.sym;
+  updatePopout(row.dataset.sym);
+  updateSimplize(row.dataset.sym);
+  openChart(row.dataset.sym);
 });
 // ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
@@ -1716,7 +1718,6 @@ function toggleHoverPreview(){
   document.addEventListener('mouseup',()=>{if(!drag)return;drag=false;document.body.style.userSelect='';document.body.style.cursor='';});
 })();
 function quickPopout(){
-  if(_isSimplizeMode)closeSimplizeWindow();
   if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
   if(!_hoverPreviewOn){_hoverPreviewOn=true;_hvActiveGroup=0;}
   popOutHover();
@@ -1726,7 +1727,6 @@ function quickPopout(){
 // ═══════════════════════════════════════════════════════
 function popOutHover(){
   const sym=_hoverPreviewCurrent||'VNINDEX';
-  if(_isSimplizeMode)closeSimplizeWindow();
   if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
   DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
   _isPopoutMode=true;_hoverPreviewOn=false;
@@ -1736,7 +1736,7 @@ function popOutHover(){
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
   _popoutWin.document.write(_buildPopoutHTML(sym));
   _popoutWin.document.close();
-  const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)minimizePopout();}},1000);
+  const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)closePopoutWindow();}},1000);
 }
 function _buildPopoutHTML(initSym){
   const gJ=JSON.stringify(_hvGroups.map(g=>({name:g.name,syms:g.syms})));
@@ -1947,6 +1947,12 @@ function minimizePopout(){
   if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
   _refreshChartModeUI();
 }
+function closePopoutWindow(){
+  _isPopoutMode=false;
+  if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
+  _popoutWin=null;
+  _refreshChartModeUI();
+}
 function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');}
 
 window.addEventListener('message',e=>{
@@ -1959,9 +1965,7 @@ window.addEventListener('message',e=>{
   }else if(e.data.type==='POPOUT_MINIMIZE'){
     minimizePopout();
   }else if(e.data.type==='POPOUT_CLOSE'){
-    _isPopoutMode=false;_popoutWin=null;
-    DOM.wrap.style.paddingBottom='';
-    _refreshChartModeUI();
+    closePopoutWindow();
   }
 });
 
