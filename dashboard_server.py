@@ -342,7 +342,7 @@ function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
   DOM.ptitle.textContent=_sym;
   document.title=_sym+' • Full Chart';
-  DOM.ifVs.src=(window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1')
+  DOM.ifVs.src=((()=>{const h=(window.location.hostname||'').toLowerCase();return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'||h.endsWith('.localhost');})())
     ? 'https://ta.vietstock.vn/?stockcode='+_sym.toUpperCase()
     : 'https://simplize.vn/chart?ticker='+_sym.toLowerCase();
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -394,7 +394,7 @@ async function loadScannerChart(sym){
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
     if(j.cached){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
   }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="${(window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1') ? 'https://ta.vietstock.vn/?stockcode='+sym.toUpperCase() : 'https://simplize.vn/chart?ticker='+sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="${((()=>{const h=(window.location.hostname||'').toLowerCase();return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'||h.endsWith('.localhost');})()) ? 'https://ta.vietstock.vn/?stockcode='+sym.toUpperCase() : 'https://simplize.vn/chart?ticker='+sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 DOM.search.addEventListener('keydown',function(e){
@@ -1084,7 +1084,10 @@ const DOM={
 // ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-const IS_LOCAL_CHART_HOST=()=>['localhost','127.0.0.1'].includes(window.location.hostname);
+const IS_LOCAL_CHART_HOST=()=>{
+  const h=(window.location.hostname||'').toLowerCase();
+  return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'||h.endsWith('.localhost');
+};
 const getChartUrl=sym=>(IS_LOCAL_CHART_HOST()
   ? 'https://ta.vietstock.vn/?stockcode='+(sym||'').toUpperCase()
   : 'https://simplize.vn/chart?ticker='+(sym||'').toLowerCase());
@@ -1109,6 +1112,7 @@ let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
+let _simplizeWin=null;
 let _iframeDelay=null,_keyThrottle=false;
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
@@ -1174,13 +1178,13 @@ DOM.hmapGrid.addEventListener('click',e=>{
 DOM.hmapGrid.addEventListener('dblclick',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
-  updatePopout(cell.dataset.sym);openChart(cell.dataset.sym);
+  updateExternalChartWindows(cell.dataset.sym);openChart(cell.dataset.sym);
 });
 let _hmapClickTimer=null;
 function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _hmapClickTimer=setTimeout(()=>{
-    updatePopout(sym);
+    updateExternalChartWindows(sym);
     if(_isPopoutMode)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
     _hoverPreviewCurrent=sym;
@@ -1622,7 +1626,7 @@ DOM.hpSymlist.addEventListener('click',e=>{
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.remove('on'));
-  item.classList.add('on');_hoverPreviewCurrent=sym;updatePopout(sym);
+  item.classList.add('on');_hoverPreviewCurrent=sym;updateExternalChartWindows(sym);
   DOM.hpIframe.src=getChartUrl(sym);
 });
 document.addEventListener('keydown',e=>{
@@ -1639,7 +1643,7 @@ document.addEventListener('keydown',e=>{
   items.forEach(el=>el.classList.remove('on'));items[next].classList.add('on');
   const sym=items[next].dataset.sym;_hoverPreviewCurrent=sym;
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src=getChartUrl(sym);updatePopout(sym);},300);
+  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src=getChartUrl(sym);updateExternalChartWindows(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
@@ -1676,11 +1680,32 @@ function quickPopout(){
   if(!_hoverPreviewOn){_hoverPreviewOn=true;_hvActiveGroup=0;}
   popOutHover();
 }
+function _setPopupWindowUrl(win,url){
+  if(!win||win.closed)return false;
+  try{
+    if(win.location.href!==url)win.location.replace(url);
+    return true;
+  }catch(e){
+    try{win.location=url;return true;}catch(_e){return false;}
+  }
+}
 function openSimplizeWindow(sym){
   const target=(sym||'VNINDEX').toUpperCase();
   const w=Math.min(1400,window.screen.availWidth-80),h=Math.min(1000,window.screen.availHeight-60);
-  const win=window.open('https://simplize.vn/chart?ticker='+target.toLowerCase(),'SimplizeLogin',`width=${w},height=${h},left=60,top=30,resizable=yes,scrollbars=yes,menubar=no,toolbar=no`);
-  if(win)win.focus();else alert('Trình duyệt chặn popup!');
+  const url='https://simplize.vn/chart?ticker='+target.toLowerCase();
+  if(!_simplizeWin||_simplizeWin.closed)
+    _simplizeWin=window.open(url,'SimplizeLogin',`width=${w},height=${h},left=60,top=30,resizable=yes,scrollbars=yes,menubar=no,toolbar=no`);
+  else
+    _setPopupWindowUrl(_simplizeWin,url);
+  if(_simplizeWin)_simplizeWin.focus();else alert('Trình duyệt chặn popup!');
+}
+function updateSimplizeWindow(sym){
+  if(!_simplizeWin||_simplizeWin.closed)return;
+  _setPopupWindowUrl(_simplizeWin,'https://simplize.vn/chart?ticker='+(sym||'VNINDEX').toLowerCase());
+}
+function updateExternalChartWindows(sym){
+  updatePopout(sym);
+  updateSimplizeWindow(sym);
 }
 // ═══════════════════════════════════════════════════════
 // POPOUT WINDOW
@@ -1824,7 +1849,9 @@ function _buildPopoutHTML(initSym){
     +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
     +'function loadChart(sym){'
     +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+sym):(window.location.hostname==="localhost"||window.location.hostname==="127.0.0.1"?"https://ta.vietstock.vn/?stockcode="+sym.toUpperCase():"https://simplize.vn/chart?ticker="+sym.toLowerCase());'
+    +'  var h=(window.location.hostname||"").toLowerCase();'
+    +'  var isLocal=h==="localhost"||h==="127.0.0.1"||h==="[::1]"||h==="::1"||/\\.localhost$/.test(h);'
+    +'  var url=full?(window.location.origin+"/popout_full/"+sym):(isLocal?"https://ta.vietstock.vn/?stockcode="+sym.toUpperCase():"https://simplize.vn/chart?ticker="+sym.toLowerCase());'
     +'  if(cf.src===url)return;'
     +'  ld.classList.remove("hide");'
     +'  cf.onload=function(){ld.classList.add("hide");};'
