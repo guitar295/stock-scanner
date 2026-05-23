@@ -479,6 +479,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--accent);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
 .hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hmap-link-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#hmap-simplize-btn{color:var(--muted)}
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
@@ -1110,8 +1111,8 @@ const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 function _refreshChartModeUI(){
   const chartBtn=$('hover-preview-btn');
-  chartBtn.classList.toggle('on',_hoverPreviewOn||_isPopoutMode||_isSimplizeMode);
-  chartBtn.textContent=_isPopoutMode?'Chart: POP':_isSimplizeMode?'Chart: SZ':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
+  chartBtn.classList.toggle('on',_hoverPreviewOn||_isPopoutMode);
+  chartBtn.textContent=_isPopoutMode?'Chart: POP':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
   $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
   $('hmap-simplize-btn').classList.toggle('on',_isSimplizeMode);
 }
@@ -1135,10 +1136,6 @@ function updateSimplize(sym){
 function quickSimplize(){
   const sym=_hoverPreviewCurrent||_sym||'VNINDEX';
   if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
-  _hoverPreviewOn=false;
-  DOM.hpPanel.style.display='none';
-  DOM.wrap.style.paddingBottom='';
-  DOM.hpIframe.src='about:blank';
   const w=Math.min(1600,window.screen.availWidth-40),h=Math.min(1000,window.screen.availHeight-60);
   _simplizeWin=window.open(simplizeUrl(sym),'ScannerSimplize',`width=${w},height=${h},left=60,top=30,resizable=yes,scrollbars=yes,menubar=no,toolbar=no`);
   if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
@@ -1225,7 +1222,7 @@ function _hmapDesktopClick(sym){
     _hoverPreviewCurrent=sym;
     updatePopout(sym);
     updateSimplize(sym);
-    if(_isPopoutMode||_isSimplizeMode)return;
+    if(_isPopoutMode)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
     DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
     DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
@@ -1666,7 +1663,7 @@ DOM.hpSymlist.addEventListener('click',e=>{
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.remove('on'));
-  item.classList.add('on');_hoverPreviewCurrent=sym;updatePopout(sym);
+  item.classList.add('on');_hoverPreviewCurrent=sym;updatePopout(sym);updateSimplize(sym);
   DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
 });
 document.addEventListener('keydown',e=>{
@@ -1683,7 +1680,7 @@ document.addEventListener('keydown',e=>{
   items.forEach(el=>el.classList.remove('on'));items[next].classList.add('on');
   const sym=items[next].dataset.sym;_hoverPreviewCurrent=sym;
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();updatePopout(sym);},300);
+  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();updatePopout(sym);updateSimplize(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
@@ -1693,7 +1690,6 @@ function _closeHoverPanel(){
   DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
   DOM.hpIframe.src='about:blank';_hoverPreviewCurrent='';
   if(_isPopoutMode){_isPopoutMode=false;if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}_popoutWin=null;}
-  if(_isSimplizeMode)closeSimplizeWindow();
   _refreshChartModeUI();
 }
 $('hv-close-btn').addEventListener('click',_closeHoverPanel);
@@ -1701,7 +1697,6 @@ $('hv-full-btn').addEventListener('click',()=>openChart(_hoverPreviewCurrent||'V
 $('hv-pop-btn').addEventListener('click',()=>popOutHover());
 function toggleHoverPreview(){
   if(_isPopoutMode){minimizePopout();return;}
-  if(_isSimplizeMode){closeSimplizeWindow();return;}
   if(_hoverPreviewOn){_closeHoverPanel();return;}
   _hoverPreviewOn=true;
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
@@ -1958,6 +1953,7 @@ function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMess
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _hoverPreviewCurrent=e.data.symbol;
+    updateSimplize(e.data.symbol);
     if(_hoverPreviewOn){
       DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===e.data.symbol));
       DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+e.data.symbol.toLowerCase();
