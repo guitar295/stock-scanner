@@ -1751,7 +1751,7 @@ function popOutHover(){
   _isPopoutMode=true;_hoverPreviewOn=false;
   _refreshChartModeUI();
   const box=_getPopupViewport();
-  const w=Math.min(1400,box.width-80),h=box.height;
+  const w=Math.min(1600,box.width-40),h=box.height;
   _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,40,0,'scrollbars=no');
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
   _popoutWin.document.write(_buildPopoutHTML(sym));
