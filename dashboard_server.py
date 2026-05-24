@@ -177,12 +177,6 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Full Chart — __SYMBOL__</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<script>
-try{
-  if(window.self!==window.top || new URLSearchParams(window.location.search).get('embedded')==='1')
-    document.documentElement.classList.add('embedded-popout');
-}catch(e){}
-</script>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -190,7 +184,6 @@ html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
 .page{height:100vh;display:flex;flex-direction:column}
 .phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
-html.embedded-popout .phdr{display:none !important}
 .phdr-left{display:flex;align-items:center;gap:8px}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
 .phdr-right{display:flex;align-items:center;justify-content:flex-end}
@@ -233,14 +226,17 @@ html.embedded-popout .phdr{display:none !important}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 @media (min-width: 769px) {
-    body.embedded-popout-desktop .phdr{display:none !important}
+    body.embedded-popout-desktop .phdr-left {
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
   }
 @media(max-width:980px){
   .phdr{grid-template-columns:1fr;gap:8px}
   .phdr-left,.phdr-center,.phdr-right{justify-content:center}
 }
 @media(max-width:768px){
-  body.embedded-popout-mobile-full .phdr{display:none !important}
+  body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:4px !important}
   body.embedded-popout-mobile-full .phdr-left{display:none !important}
   body.embedded-popout-mobile-full .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
   body.embedded-popout-mobile-full .phdr-right{display:flex !important;flex-shrink:0}
@@ -314,19 +310,16 @@ const IFRAME_MAP={
   '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
 };
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
-let _sym='__SYMBOL__';
-let _tab='vs';
+let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
-  const isEmbedded = (window.self !== window.top) || new URLSearchParams(window.location.search).get('embedded')==='1';
+  const isEmbedded = (window.self !== window.top);
   const isMobile = (window.innerWidth <= 768);
-  document.documentElement.classList.toggle('embedded-popout', isEmbedded);
   document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
   document.body.classList.toggle('embedded-popout-desktop', isEmbedded && !isMobile);
 }
 window.addEventListener('resize', _applyEmbeddedMode);
 window.addEventListener('orientationchange', _applyEmbeddedMode);
-_applyEmbeddedMode();
 function notifyHost(sym){
   try{
     if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
@@ -406,12 +399,12 @@ async function loadScannerChart(sym){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-$('close-btn').addEventListener('click',handleClose);
 DOM.search.addEventListener('keydown',function(e){
   if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();setSymbol(s);}}
   if(e.key==='Escape'){this.value='';this.blur();}
 });
 DOM.search.addEventListener('focus',function(){this.select();});
+$('close-btn').addEventListener('click',handleClose);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){window.close();return;}
   if(document.activeElement===DOM.search||_tab!=='scanner'||_albumTotal===0)return;
@@ -1123,9 +1116,8 @@ let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
 let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
-let _sankeyWin=null,_sankeyWatch=null;
-let _iframeDelay=null,_keyThrottle=false;
 let _popupChromeMode='default';
+let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 function sankeyUrl(){return `${window.location.origin}/sankey`;}
@@ -1172,9 +1164,6 @@ function _setPopupChromeMode(mode='default'){
 function _stopSimplizeWatch(){
   if(_simplizeWatch){clearInterval(_simplizeWatch);_simplizeWatch=null;}
 }
-function _stopSankeyWatch(){
-  if(_sankeyWatch){clearInterval(_sankeyWatch);_sankeyWatch=null;}
-}
 function closeSimplizeWindow(){
   _isSimplizeMode=false;
   _stopSimplizeWatch();
@@ -1182,7 +1171,6 @@ function closeSimplizeWindow(){
   _simplizeWin=null;
   _refreshChartModeUI();
 }
-function quickSankey(){openUrl(sankeyUrl(),'SK');}
 function updateSimplize(sym){
   if(!_simplizeWin||_simplizeWin.closed){
     if(_isSimplizeMode)closeSimplizeWindow();
@@ -1204,6 +1192,7 @@ function quickSimplize(){
     if(_simplizeWin&&_simplizeWin.closed)closeSimplizeWindow();
   },1000);
 }
+function quickSankey(){openUrl(sankeyUrl(),'SK');}
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
 // ═══════════════════════════════════════════════════════
@@ -1924,7 +1913,7 @@ function _buildPopoutHTML(initSym){
     +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
     +'function loadChart(sym){'
     +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+sym+"?embedded=1"):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
+    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
     +'  if(cf.src===url)return;'
     +'  ld.classList.remove("hide");'
     +'  cf.onload=function(){ld.classList.add("hide");};'
@@ -2305,3 +2294,4 @@ $('svg').addEventListener('click',e=>{
 </body>
 </html>
 """
+
