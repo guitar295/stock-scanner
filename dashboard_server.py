@@ -1160,7 +1160,7 @@ function quickSimplize(){
   if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
   const box=_getPopupViewport();
   const w=Math.min(1600,box.width-40),h=box.height;
-  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,60,0);
+  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,0,0);
   if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
   _isSimplizeMode=true;
   _refreshChartModeUI();
@@ -1753,7 +1753,7 @@ function popOutHover(){
   _refreshChartModeUI();
   const box=_getPopupViewport();
   const w=Math.min(1600,box.width-40),h=box.height;
-  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,40,0,'scrollbars=no');
+  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,0,0,'scrollbars=no');
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
   _popoutWin.document.write(_buildPopoutHTML(sym));
   _popoutWin.document.close();
