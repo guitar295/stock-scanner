@@ -134,6 +134,10 @@ def popout_full(symbol):
     return Response(POPOUT_FULL_HTML.replace("__SYMBOL__", symbol.upper().strip()),
                     mimetype="text/html")
 
+@app.route("/sankey")
+def sankey_view():
+    return Response(SANKEY_HTML, mimetype="text/html")
+
 @app.route("/")
 def index():
     return Response(DASHBOARD_HTML, mimetype="text/html")
@@ -909,6 +913,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
         <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
+        <button class="hmap-link-btn" id="hmap-sankey-btn">SK</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -1106,9 +1111,11 @@ let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
 let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
+let _sankeyWin=null,_sankeyWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
+function sankeyUrl(){return `${window.location.origin}/sankey`;}
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
   const top=Number.isFinite(window.screen.availTop)?window.screen.availTop:0;
@@ -1141,12 +1148,29 @@ function _refreshChartModeUI(){
 function _stopSimplizeWatch(){
   if(_simplizeWatch){clearInterval(_simplizeWatch);_simplizeWatch=null;}
 }
+function _stopSankeyWatch(){
+  if(_sankeyWatch){clearInterval(_sankeyWatch);_sankeyWatch=null;}
+}
 function closeSimplizeWindow(){
   _isSimplizeMode=false;
   _stopSimplizeWatch();
   if(_simplizeWin&&!_simplizeWin.closed)try{_simplizeWin.close();}catch(e){}
   _simplizeWin=null;
   _refreshChartModeUI();
+}
+function quickSankey(){
+  if(_sankeyWin&&!_sankeyWin.closed){_sankeyWin.focus();return;}
+  const box=_getPopupViewport();
+  const w=Math.min(1600,box.width-40),h=box.height;
+  _sankeyWin=_openMaximizedWindow(sankeyUrl(),'ScannerSankey',w,h,0,0);
+  if(!_sankeyWin){alert('Trình duyệt chặn popup!');return;}
+  _stopSankeyWatch();
+  _sankeyWatch=setInterval(()=>{
+    if(_sankeyWin&&_sankeyWin.closed){
+      _stopSankeyWatch();
+      _sankeyWin=null;
+    }
+  },1000);
 }
 function updateSimplize(sym){
   if(!_simplizeWin||_simplizeWin.closed){
@@ -1318,6 +1342,7 @@ _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
+$('hmap-sankey-btn').addEventListener('click',function(){ quickSankey(); this.blur(); });
 $('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 // ═══════════════════════════════════════════════════════
@@ -1999,6 +2024,233 @@ async function init(){
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
 }
 init();
+</script>
+</body>
+</html>
+"""
+
+SANKEY_HTML = r"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Sankey Heatmap</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--text:#111827;--muted:#6b7280;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
+.page{height:100vh;display:flex;flex-direction:column}
+.hdr{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surf2);border-bottom:1px solid var(--border)}
+.title{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.4px;color:var(--accent);white-space:nowrap}
+.meta{margin-left:auto;font-size:10px;color:var(--muted);white-space:nowrap}
+.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.main{flex:1;min-height:0;display:flex;flex-direction:column}
+.legend{display:flex;gap:14px;align-items:center;padding:6px 14px;background:var(--surface);border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);flex-wrap:wrap}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+#wrap{flex:1;min-height:0;padding:10px 12px}
+#svg{width:100%;height:100%;display:block;background:linear-gradient(180deg,#fcfdff 0%,#f6f8fd 100%);border:1px solid var(--border);border-radius:8px}
+.empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+@media(max-width:900px){
+  .hdr{flex-wrap:wrap}
+  .meta{margin-left:0;width:100%}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hdr">
+    <span class="title">SK • Sankey Heatmap</span>
+    <button class="btn" id="btn-refresh">Làm mới</button>
+    <button class="btn" id="btn-close">Đóng</button>
+    <span class="meta" id="meta">Đang tải...</span>
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:#0e9f6e"></span> Tăng</span>
+    <span><span class="dot" style="background:#e02424"></span> Giảm</span>
+    <span><span class="dot" style="background:#d4a017"></span> Tham chiếu</span>
+    <span>Trọng số: `value` → `money` → `turnover` → `volume×price` → `|pct|+1`</span>
+  </div>
+  <div class="main">
+    <div id="wrap"><svg id="svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+  </div>
+</div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const HMAP_COLS=[
+  {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
+  {groups:[{name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},{name:"DAU KHI",syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]}]},
+  {groups:[{name:"CHUNG KHOAN",syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},{name:"XAY DUNG",syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]}]},
+  {groups:[{name:"BAT DONG SAN",syms:["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},{name:"PHAN BON",syms:["BFC","DCM","DPM"]},{name:"THEP",syms:["HPG","HSG","NKG"]}]},
+  {groups:[{name:"BAN LE",syms:["MSN","FPT","FRT","MWG","PNJ","DGW"]},{name:"THUY SAN",syms:["ANV","FMC","CMX","VHC","IDI"]},{name:"CANG BIEN",syms:["HAH","GMD","SGP","VSC"]},{name:"CAO SU",syms:["GVR","DPR","DRI","PHR","DRC"]},{name:"NHUA",syms:["AAA","BMP","NTP"]}]},
+  {groups:[{name:"DIEN NUOC",syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},{name:"DET MAY",syms:["TCM","TNG","VGT","MSH"]},{name:"HANG KHONG",syms:["NCT","ACV","AST","HVN","SCS","VJC"]},{name:"BAO HIEM",syms:["BMI","MIG","BVH"]},{name:"MIA DUONG",syms:["LSS","SBT","QNS"]}]},
+  {groups:[{name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]}]},
+];
+const SECTOR_ORDER=[];
+HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=="VN30")SECTOR_ORDER.push(g);}));
+const SVG_NS='http://www.w3.org/2000/svg';
+const COLORS=['#ec8784','#a378e0','#da9672','#d5cc71','#72dacd','#a1e078','#7882e0','#e0b478','#78e0b4','#e078c8','#96c8fa','#b5d67a'];
+let _ttlMs=120000;
+let _timer=null;
+
+function fmtNum(v){
+  if(!Number.isFinite(v)||v<=0)return '--';
+  if(v>=1e12)return (v/1e12).toFixed(2)+'T';
+  if(v>=1e9)return (v/1e9).toFixed(1)+'B';
+  if(v>=1e6)return (v/1e6).toFixed(1)+'M';
+  return v.toFixed(0);
+}
+function fmtPct(v){
+  if(!Number.isFinite(v))return '--';
+  return (v>=0?'+':'')+v.toFixed(2)+'%';
+}
+function badgeColor(pct){
+  if(pct>0)return {fill:'#0e9f6e',text:'#fff'};
+  if(pct<0)return {fill:'#e02424',text:'#fff'};
+  return {fill:'#d4a017',text:'#fff'};
+}
+function resolveWeight(entry){
+  if(!entry||typeof entry!=='object')return 0;
+  const direct=['value','money','turnover','matched_value','traded_value'];
+  for(const key of direct){
+    const n=Number(entry[key]);
+    if(Number.isFinite(n)&&n>0)return n;
+  }
+  const vol=Number(entry.volume??entry.vol??entry.matched_volume);
+  const price=Number(entry.price??entry.close);
+  if(Number.isFinite(vol)&&vol>0&&Number.isFinite(price)&&price>0)return vol*price;
+  const pct=Math.abs(Number(entry.pct));
+  if(Number.isFinite(pct))return pct+1;
+  return 0;
+}
+function ribbonPath(x1,y1t,y1b,x2,y2t,y2b){
+  const c1=x1+(x2-x1)*0.45;
+  const c2=x1+(x2-x1)*0.55;
+  return `M ${x1} ${y1t} C ${c1} ${y1t}, ${c2} ${y2t}, ${x2} ${y2t} L ${x2} ${y2b} C ${c2} ${y2b}, ${c1} ${y1b}, ${x1} ${y1b} Z`;
+}
+function makeEl(tag,attrs={},text=''){
+  const el=document.createElementNS(SVG_NS,tag);
+  Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));
+  if(text)el.textContent=text;
+  return el;
+}
+function buildDataset(data){
+  const sectors=SECTOR_ORDER.map((g,idx)=>{
+    const stocks=g.syms.map(sym=>{
+      const entry=data[sym];
+      return {sym,entry,pct:Number(entry?.pct),price:Number(entry?.price),weight:resolveWeight(entry)};
+    }).filter(x=>x.entry&&x.weight>0).sort((a,b)=>b.weight-a.weight);
+    const weight=stocks.reduce((sum,s)=>sum+s.weight,0);
+    return {name:g.name,stocks,weight,color:COLORS[idx%COLORS.length]};
+  }).filter(s=>s.weight>0).sort((a,b)=>b.weight-a.weight);
+  sectors.forEach((sec,idx)=>{
+    sec.limit = idx<=1?10:idx<=4?6:idx<=7?4:idx<=11?2:1;
+    sec.visibleStocks = sec.stocks.slice(0,sec.limit);
+    sec.visibleWeight = sec.visibleStocks.reduce((sum,s)=>sum+s.weight,0);
+  });
+  return sectors.filter(sec=>sec.visibleWeight>0);
+}
+function render(data,ts){
+  const svg=$('svg');
+  svg.innerHTML='';
+  const sectors=buildDataset(data);
+  if(!sectors.length){
+    const fo=document.createElementNS(SVG_NS,'foreignObject');
+    fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1600'); fo.setAttribute('height','900');
+    const div=document.createElement('div');
+    div.className='empty';
+    div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
+    fo.appendChild(div);
+    svg.appendChild(fo);
+    $('meta').textContent='Không có dữ liệu';
+    return;
+  }
+  const total=sectors.reduce((sum,s)=>sum+s.visibleWeight,0);
+  const chart={w:1600,h:900,left:90,top:86,right:1510,bottom:840,marketX:84,sectorX:470,stockX:1180,marketW:8,barW:12};
+  const drawH=chart.bottom-chart.top;
+  const gapSector=6;
+  const marketH=drawH*0.56;
+  const marketY=chart.top+(drawH-marketH)/2;
+  const title=makeEl('text',{x:24,y:40,fill:'#111827','font-family':'Barlow Condensed, sans-serif','font-size':'28','font-weight':'800','letter-spacing':'1.5px'},'DONG TIEN THEO NGANH');
+  svg.appendChild(title);
+  const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#353b48'});
+  svg.appendChild(marketRect);
+  svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
+  svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2+16,'text-anchor':'end',fill:'#9ca3af','font-family':'IBM Plex Mono, monospace','font-size':'11'},fmtNum(total)));
+  let ySector=chart.top;
+  let yMarket=marketY;
+  const stockLayouts=[];
+  sectors.forEach(sec=>{
+    sec.h = (sec.visibleWeight/total)*(drawH-gapSector*(sectors.length-1));
+    sec.y = ySector;
+    sec.marketH = marketH*(sec.visibleWeight/total);
+    sec.marketY = yMarket;
+    ySector += sec.h + gapSector;
+    yMarket += sec.marketH;
+    let yStock=sec.y;
+    sec.visibleStocks.forEach(stock=>{
+      stock.h=Math.max(8,sec.h*(stock.weight/sec.visibleWeight));
+      stock.y=yStock;
+      yStock+=stock.h;
+      stockLayouts.push({sec,stock});
+    });
+  });
+  sectors.forEach(sec=>{
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.22',stroke:'none'}));
+  });
+  stockLayouts.forEach(({sec,stock})=>{
+    const h2=Math.max(10,stock.h*1.12);
+    const y2=stock.y+(stock.h-h2)/2;
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,stock.y,stock.y+stock.h,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.24',stroke:'none'}));
+    svg.appendChild(makeEl('rect',{x:chart.stockX,y:y2,width:chart.barW,height:h2,rx:2,fill:sec.color}));
+    if(h2>12){
+      const b=badgeColor(stock.pct);
+      const badgeX=chart.stockX+chart.barW+8;
+      const badgeY=y2+h2/2-10;
+      const badgeW=164;
+      svg.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
+      const label=`${stock.sym} (${fmtNum(stock.weight)}, ${fmtPct(stock.pct)})`;
+      svg.appendChild(makeEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':'11','font-weight':'600'},label));
+    }
+  });
+  sectors.forEach(sec=>{
+    svg.appendChild(makeEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
+    if(sec.h>16){
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#111827','font-family':'IBM Plex Mono, monospace','font-size':'12','font-weight':'700'},sec.name));
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.visibleWeight)));
+    }
+  });
+  $('meta').textContent=`Data: ${ts||'--'} • Cập nhật: ${new Date().toLocaleTimeString('vi-VN',{hour12:false})} • Nhóm: ${sectors.length}`;
+}
+async function fetchConfig(){
+  try{
+    const cfg=await fetch('/api/config').then(r=>r.json());
+    _ttlMs=(Number(cfg.heatmap_ttl_sec)||120)*1000;
+  }catch(e){}
+}
+async function fetchAndRender(){
+  $('meta').textContent='Đang tải dữ liệu...';
+  try{
+    const j=await fetch('/api/heatmap').then(r=>r.json());
+    render(j.data||{},j.timestamp||'');
+  }catch(e){
+    $('meta').textContent=`Lỗi tải dữ liệu: ${e.message}`;
+  }
+}
+function startAuto(){
+  if(_timer)clearInterval(_timer);
+  _timer=setInterval(fetchAndRender,_ttlMs);
+}
+$('btn-refresh').addEventListener('click',fetchAndRender);
+$('btn-close').addEventListener('click',()=>window.close());
+(async function init(){
+  await fetchConfig();
+  await fetchAndRender();
+  startAuto();
+})();
 </script>
 </body>
 </html>
