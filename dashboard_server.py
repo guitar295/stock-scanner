@@ -179,7 +179,7 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <script>
 try{
-  if(window.self!==window.top || new URLSearchParams(window.location.search).get('embedded')==='1')
+  if(new URLSearchParams(window.location.search).get('embedded')==='1')
     document.documentElement.classList.add('embedded-popout');
 }catch(e){}
 </script>
@@ -317,7 +317,7 @@ const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
-  const isEmbedded = (window.self !== window.top) || new URLSearchParams(window.location.search).get('embedded')==='1';
+  const isEmbedded = new URLSearchParams(window.location.search).get('embedded')==='1';
   const isMobile = (window.innerWidth <= 768);
   document.documentElement.classList.toggle('embedded-popout', isEmbedded);
   document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
@@ -1825,6 +1825,9 @@ function _buildPopoutHTML(initSym){
     +'.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}'
     +'.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}'
     +'#main{display:flex;height:calc(100% - 42px);overflow:hidden}'
+    +'body.full-mode #hdr{display:none}'
+    +'body.full-mode #main{height:100%}'
+    +'body.full-mode #symlist{display:none}'
     +'#symlist{width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
     +'#symlist::-webkit-scrollbar{width:3px}'
     +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
@@ -1918,7 +1921,8 @@ function _buildPopoutHTML(initSym){
     +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
     +'function loadChart(sym){'
     +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+sym+"?embedded=1"):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
+    +'  document.body.classList.toggle("full-mode",full);'
+    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
     +'  if(cf.src===url)return;'
     +'  ld.classList.remove("hide");'
     +'  cf.onload=function(){ld.classList.add("hide");};'
