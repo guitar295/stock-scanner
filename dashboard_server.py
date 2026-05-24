@@ -225,15 +225,26 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-body.embedded-popout .phdr{display:none !important}
-body.embedded-popout .pbody{height:100vh}
+@media (min-width: 769px) {
+    body.embedded-popout-desktop .phdr-left {
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+  }
 @media(max-width:980px){
   .phdr{grid-template-columns:1fr;gap:8px}
   .phdr-left,.phdr-center,.phdr-right{justify-content:center}
 }
 @media(max-width:768px){
-  body.embedded-popout-mobile-full .phdr{display:none !important}
-  body.embedded-popout-mobile-full .pbody{height:100vh}
+  body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:4px !important}
+  body.embedded-popout-mobile-full .phdr-left{display:none !important}
+  body.embedded-popout-mobile-full .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
+  body.embedded-popout-mobile-full .phdr-right{display:flex !important;flex-shrink:0}
+  body.embedded-popout-mobile-full .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none}
+  body.embedded-popout-mobile-full .ctabs::-webkit-scrollbar{display:none}
+  body.embedded-popout-mobile-full .ctab{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
+  body.embedded-popout-mobile-full .ctab.on{border-color:var(--accent);box-shadow:0 2px 0 var(--accent)}
+  body.embedded-popout-mobile-full .closebtn{width:30px;height:30px;border-radius:4px}
 }
 </style>
 </head>
@@ -298,13 +309,13 @@ const IFRAME_MAP={
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
   '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
 };
+const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__';
 let _tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
   const isEmbedded = (window.self !== window.top);
   const isMobile = (window.innerWidth <= 768);
-  document.body.classList.toggle('embedded-popout', isEmbedded);
   document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
   document.body.classList.toggle('embedded-popout-desktop', isEmbedded && !isMobile);
 }
@@ -327,7 +338,7 @@ DOM.ctabs.addEventListener('click',e=>{
 function _activateTab(tab){
   _tab=tab;
   DOM.ctabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  ['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
+  TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
   if(IFRAME_MAP[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_MAP[tab](_sym);}
   if(tab==='scanner')loadScannerChart(_sym);
 }
