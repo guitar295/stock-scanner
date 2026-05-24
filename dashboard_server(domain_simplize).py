@@ -201,10 +201,11 @@ html.embedded-popout .phdr{display:none !important}
 .search-input{width:108px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .search-input:focus{width:180px;border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 .ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center}
-.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
-.ctab.on{background:var(--surface);color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
-.closebtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.phdr-right{margin-left:2px}
+.closebtn{width:30px;height:30px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .pbody{flex:1;overflow:hidden;position:relative;background:#fff}
 .tpanel{position:absolute;inset:0;display:none}
@@ -247,7 +248,7 @@ html.embedded-popout .phdr{display:none !important}
   .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch}
   .ctabs::-webkit-scrollbar{display:none}
   .ctab{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
-  .ctab.on{border-color:var(--accent);box-shadow:0 2px 0 var(--accent)}
+  .ctab.on{border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent)}
   .closebtn{width:30px;height:30px;border-radius:4px;flex-shrink:0}
 }
 </style>
@@ -525,6 +526,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
+.sankey-frame{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -543,8 +545,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .popup-search-input{width:100px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
 .ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
-.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
-.ctab.on{background:var(--surface);color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 .closebtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
@@ -552,11 +554,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
-.pbox.pbox-sankey #popup-phdr,
-.pbox.pbox-sankey #mob-hdr-row1,
-.pbox.pbox-sankey #mob-tab-row,
-.pbox.pbox-sankey #mob-hdr-landscape{display:none !important}
-.pbox.pbox-sankey .pbody{height:100%}
 
 /* ═══════════════════════════════════════════
    ALBUM — dùng chung
@@ -659,6 +656,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     background: var(--surf2) !important;
     color: var(--text) !important;
     border-color: var(--border) !important;
+  }
+  .sankey-frame{
+    width:100% !important;
+    margin-left:0 !important;
+    aspect-ratio:16/9;
+    height:auto;
   }
 }
 
@@ -912,7 +915,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
         <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
-        <button class="hmap-link-btn" id="hmap-sankey-btn" style="color:var(--muted)">SK</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -924,6 +926,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- SANKEY -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-title">Sankey</span>
+    </div>
+    <iframe class="sankey-frame" id="sankey-frame" src="/sankey?embedded=1"></iframe>
   </div>
 </div>
 
@@ -1110,11 +1120,9 @@ let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
 let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
-let _popupChromeMode='default';
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
-function sankeyUrl(){return `${window.location.origin}/sankey`;}
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
   const top=Number.isFinite(window.screen.availTop)?window.screen.availTop:0;
@@ -1144,14 +1152,11 @@ function _refreshChartModeUI(){
   $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
   $('hmap-simplize-btn').classList.toggle('on',_isSimplizeMode);
 }
-function _setPopupChromeMode(mode='default'){
-  _popupChromeMode=mode;
-  const hide=mode==='sankey';
-  DOM.pbox.classList.toggle('pbox-sankey',hide);
-  $('popup-phdr').style.display=hide?'none':'';
+function _resetPopupChrome(){
+  $('popup-phdr').style.display='';
   DOM.mobHdrRow1.style.display='none';
   DOM.mobTabRow.style.display='none';
-  DOM.mobHdrLand.style.display=hide?'none':'';
+  DOM.mobHdrLand.style.display='';
   DOM.mobClose.style.display='none';
 }
 function _stopSimplizeWatch(){
@@ -1185,7 +1190,6 @@ function quickSimplize(){
     if(_simplizeWin&&_simplizeWin.closed)closeSimplizeWindow();
   },1000);
 }
-function quickSankey(){openUrl(sankeyUrl(),'SK');}
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
 // ═══════════════════════════════════════════════════════
@@ -1335,7 +1339,6 @@ _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
-$('hmap-sankey-btn').addEventListener('click',function(){ quickSankey(); this.blur(); });
 $('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 // ═══════════════════════════════════════════════════════
@@ -1446,13 +1449,13 @@ function _openPopup(){
   document.body.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
   // Portrait: show float close
-  if(_popupChromeMode!=='sankey'&&IS_MOBILE()&&!IS_LANDSCAPE())
+  if(IS_MOBILE()&&!IS_LANDSCAPE())
     DOM.mobClose.style.display='flex';
   else
     DOM.mobClose.style.display='none';
 }
 function openChart(sym){
-  _setPopupChromeMode('default');
+  _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab='vs';
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
@@ -1464,7 +1467,7 @@ function openChart(sym){
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 function openUrl(url,label){
-  _setPopupChromeMode(label==='SK'?'sankey':'default');
+  _resetPopupChrome();
   _sym=label||'WEB';
   _updateSymDisplay(label||'🌐');
   ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1479,7 +1482,7 @@ function openUrl(url,label){
 }
 function closePopup(){
   const pbox=DOM.pbox;
-  _setPopupChromeMode('default');
+  _resetPopupChrome();
   pbox.style.visibility='hidden';
   DOM.ifVs.src='about:blank';
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1518,7 +1521,7 @@ if(IS_MOBILE()){
 window.addEventListener('orientationchange',()=>{
   setTimeout(()=>{
     if(DOM.overlay.classList.contains('on')){
-      if(_popupChromeMode!=='sankey'&&IS_MOBILE()&&!IS_LANDSCAPE())
+      if(IS_MOBILE()&&!IS_LANDSCAPE())
         DOM.mobClose.style.display='flex';
       else
         DOM.mobClose.style.display='none';
@@ -2002,7 +2005,8 @@ window.addEventListener('message',e=>{
     _syncHoverPreview(e.data.symbol);
     updateSimplize(e.data.symbol);
   }else if(e.data.type==='SANKEY_SYM_SELECT'&&e.data.symbol){
-    _syncHoverPreview(e.data.symbol,false);
+    if(_hoverPreviewOn)_syncHoverPreview(e.data.symbol);
+    else _syncHoverPreview(e.data.symbol,false);
     updatePopout(e.data.symbol);
     updateSimplize(e.data.symbol);
   }else if(e.data.type==='SANKEY_CLOSE'){
@@ -2038,13 +2042,20 @@ SANKEY_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Sankey Heatmap</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<script>
+try{
+  if(new URLSearchParams(window.location.search).get('embedded')==='1')
+    document.documentElement.classList.add('embedded-sankey');
+}catch(e){}
+</script>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--text:#111827;--muted:#6b7280;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
-body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
+body{background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
 .page{height:100vh;display:flex;flex-direction:column}
 .hdr{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surf2);border-bottom:1px solid var(--border)}
+html.embedded-sankey .hdr{display:none}
 .title{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.4px;color:var(--accent);white-space:nowrap}
 .hdr-spacer{flex:1}
 .btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:600;cursor:pointer}
@@ -2053,7 +2064,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .main{flex:1;min-height:0;display:flex;flex-direction:column}
 #wrap{flex:1;min-height:0;padding:0}
-#svg{width:100%;height:100%;display:block;background:linear-gradient(180deg,#fcfdff 0%,#f6f8fd 100%);border:none;border-radius:8px}
+#svg{width:100%;height:100%;display:block;background:var(--surface);border:none;border-radius:0}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 @media(max-width:900px){
   .hdr{flex-wrap:nowrap}
@@ -2195,7 +2206,7 @@ function render(data,ts){
     return;
   }
   const total=dataset.total;
-  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:70,sectorX:555,stockX:1285,marketW:6,barW:10};
+  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
   const gapSector=5;
   const marketH=chart.drawH*0.5;
   const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
