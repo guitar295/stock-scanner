@@ -2071,7 +2071,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
     <span><span class="dot" style="background:#0e9f6e"></span> Tăng</span>
     <span><span class="dot" style="background:#e02424"></span> Giảm</span>
     <span><span class="dot" style="background:#d4a017"></span> Tham chiếu</span>
-    <span>Trọng số: `value` → `money` → `turnover` → `volume×price` → `|pct|+1`</span>
+    <span>Trọng số Sankey: `total_value` từ `price_board()`</span>
   </div>
   <div class="main">
     <div id="wrap"><svg id="svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
@@ -2114,17 +2114,8 @@ function badgeColor(pct){
 }
 function resolveWeight(entry){
   if(!entry||typeof entry!=='object')return 0;
-  const direct=['value','money','turnover','matched_value','traded_value'];
-  for(const key of direct){
-    const n=Number(entry[key]);
-    if(Number.isFinite(n)&&n>0)return n;
-  }
-  const vol=Number(entry.volume??entry.vol??entry.matched_volume);
-  const price=Number(entry.price??entry.close);
-  if(Number.isFinite(vol)&&vol>0&&Number.isFinite(price)&&price>0)return vol*price;
-  const pct=Math.abs(Number(entry.pct));
-  if(Number.isFinite(pct))return pct+1;
-  return 0;
+  const totalValue=Number(entry.total_value);
+  return Number.isFinite(totalValue)&&totalValue>0 ? totalValue : 0;
 }
 function ribbonPath(x1,y1t,y1b,x2,y2t,y2b){
   const c1=x1+(x2-x1)*0.45;
