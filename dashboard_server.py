@@ -179,7 +179,8 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <script>
 try{
-  if(new URLSearchParams(window.location.search).get('embedded')==='1')
+  const qs=new URLSearchParams(window.location.search);
+  if(qs.get('embedded')==='1')
     document.documentElement.classList.add('embedded-popout');
 }catch(e){}
 </script>
@@ -189,7 +190,7 @@ try{
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
 .page{height:100vh;display:flex;flex-direction:column}
-.phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
+.phdr{display:flex;align-items:center;justify-content:center;padding:7px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 html.embedded-popout .phdr{display:none !important}
 .phdr-left{display:flex;align-items:center;gap:8px}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
@@ -255,13 +256,6 @@ html.embedded-popout .phdr{display:none !important}
 <body>
 <div class="page">
   <div class="phdr">
-    <div class="phdr-left">
-      <span class="ptitle" id="ptitle">📈 __SYMBOL__</span>
-      <div class="search-wrap">
-        <span class="s-icon">🔍</span>
-        <input class="search-input" id="search-input" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
-      </div>
-    </div>
     <div class="phdr-center">
       <div class="ctabs" id="ctabs">
         <button class="ctab on" data-tab="vs">📈 Vietstock</button>
@@ -301,11 +295,11 @@ html.embedded-popout .phdr{display:none !important}
 'use strict';
 const $=id=>document.getElementById(id);
 const DOM={
-  ptitle:$('ptitle'),ifVs:$('iframe-vs'),
+  ifVs:$('iframe-vs'),
   loading:$('scanner-loading'),outer:$('album-outer'),
   slides:$('album-slides'),dots:$('album-dots'),
   btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
-  ctabs:$('ctabs'),search:$('search-input'),
+  ctabs:$('ctabs'),
 };
 const IFRAME_MAP={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
@@ -317,7 +311,8 @@ const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
-  const isEmbedded = new URLSearchParams(window.location.search).get('embedded')==='1';
+  const qs=new URLSearchParams(window.location.search);
+  const isEmbedded = qs.get('embedded')==='1';
   const isMobile = (window.innerWidth <= 768);
   document.documentElement.classList.toggle('embedded-popout', isEmbedded);
   document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
@@ -350,7 +345,6 @@ function _activateTab(tab){
 
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
-  DOM.ptitle.textContent=_sym;
   document.title=_sym+' • Full Chart';
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -405,18 +399,13 @@ async function loadScannerChart(sym){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-DOM.search.addEventListener('keydown',function(e){
-  if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();setSymbol(s);}}
-  if(e.key==='Escape'){this.value='';this.blur();}
-});
-DOM.search.addEventListener('focus',function(){this.select();});
-$('close-btn').addEventListener('click',handleClose);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){window.close();return;}
-  if(document.activeElement===DOM.search||_tab!=='scanner'||_albumTotal===0)return;
+  if(_tab!=='scanner'||_albumTotal===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
+$('close-btn').addEventListener('click',handleClose);
 window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
 _applyEmbeddedMode();
 setSymbol(_sym);
