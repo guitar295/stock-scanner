@@ -558,6 +558,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
+.pbox.pbox-sankey #popup-phdr,
+.pbox.pbox-sankey #mob-hdr-row1,
+.pbox.pbox-sankey #mob-tab-row,
+.pbox.pbox-sankey #mob-hdr-landscape{display:none !important}
+.pbox.pbox-sankey .pbody{height:100%}
 
 /* ═══════════════════════════════════════════
    ALBUM — dùng chung
@@ -1150,6 +1155,7 @@ function _setPopupChromeMode(mode='default'){
   _popupChromeMode=mode;
   const hide=mode==='sankey';
   const display=hide?'none':'';
+  DOM.pbox.classList.toggle('pbox-sankey',hide);
   $('popup-phdr').style.display=display;
   DOM.mobHdrRow1.style.display=display;
   DOM.mobTabRow.style.display=display;
