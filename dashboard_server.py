@@ -1153,12 +1153,11 @@ function _refreshChartModeUI(){
 function _setPopupChromeMode(mode='default'){
   _popupChromeMode=mode;
   const hide=mode==='sankey';
-  const display=hide?'none':'';
   DOM.pbox.classList.toggle('pbox-sankey',hide);
-  $('popup-phdr').style.display=display;
-  DOM.mobHdrRow1.style.display=display;
-  DOM.mobTabRow.style.display=display;
-  DOM.mobHdrLand.style.display=display;
+  $('popup-phdr').style.display=hide?'none':'';
+  DOM.mobHdrRow1.style.display='none';
+  DOM.mobTabRow.style.display='none';
+  DOM.mobHdrLand.style.display=hide?'none':'';
   DOM.mobClose.style.display='none';
 }
 function _stopSimplizeWatch(){
@@ -2294,4 +2293,3 @@ $('svg').addEventListener('click',e=>{
 </body>
 </html>
 """
-
