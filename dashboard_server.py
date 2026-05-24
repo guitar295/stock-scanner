@@ -913,7 +913,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
         <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
-        <button class="hmap-link-btn" id="hmap-sankey-btn">SK</button>
+        <button class="hmap-link-btn" id="hmap-sankey-btn" style="color:var(--muted)">SK</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -1158,20 +1158,7 @@ function closeSimplizeWindow(){
   _simplizeWin=null;
   _refreshChartModeUI();
 }
-function quickSankey(){
-  if(_sankeyWin&&!_sankeyWin.closed){_sankeyWin.focus();return;}
-  const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),h=box.height;
-  _sankeyWin=_openMaximizedWindow(sankeyUrl(),'ScannerSankey',w,h,0,0);
-  if(!_sankeyWin){alert('Trình duyệt chặn popup!');return;}
-  _stopSankeyWatch();
-  _sankeyWatch=setInterval(()=>{
-    if(_sankeyWin&&_sankeyWin.closed){
-      _stopSankeyWatch();
-      _sankeyWin=null;
-    }
-  },1000);
-}
+function quickSankey(){openUrl(sankeyUrl(),'SK');}
 function updateSimplize(sym){
   if(!_simplizeWin||_simplizeWin.closed){
     if(_isSimplizeMode)closeSimplizeWindow();
@@ -2005,6 +1992,10 @@ window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _syncHoverPreview(e.data.symbol);
     updateSimplize(e.data.symbol);
+  }else if(e.data.type==='SANKEY_SYM_SELECT'&&e.data.symbol){
+    _syncHoverPreview(e.data.symbol,false);
+    updatePopout(e.data.symbol);
+    updateSimplize(e.data.symbol);
   }else if(e.data.type==='POPOUT_MINIMIZE'){
     minimizePopout();
   }else if(e.data.type==='POPOUT_CLOSE'){
@@ -2093,6 +2084,7 @@ const SECTOR_ORDER=[];
 HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=="VN30")SECTOR_ORDER.push(g);}));
 const SVG_NS='http://www.w3.org/2000/svg';
 const COLORS=['#ec8784','#a378e0','#da9672','#d5cc71','#72dacd','#a1e078','#7882e0','#e0b478','#78e0b4','#e078c8','#96c8fa','#b5d67a'];
+const MIN_WEIGHT=10000000;
 let _ttlMs=120000;
 let _timer=null;
 
@@ -2128,27 +2120,65 @@ function makeEl(tag,attrs={},text=''){
   if(text)el.textContent=text;
   return el;
 }
+function sectorLimit(rank){
+  if(rank<=1)return 10;
+  if(rank<=4)return 6;
+  if(rank<=7)return 4;
+  if(rank<=11)return 2;
+  return 1;
+}
+function notifyHost(sym){
+  const payload={type:'SANKEY_SYM_SELECT',symbol:sym};
+  try{
+    if(window.self!==window.top)window.parent.postMessage(payload,'*');
+    if(window.opener&&!window.opener.closed)window.opener.postMessage(payload,'*');
+  }catch(e){}
+}
 function buildDataset(data){
-  const sectors=SECTOR_ORDER.map((g,idx)=>{
+  const sectors=SECTOR_ORDER.map(g=>{
     const stocks=g.syms.map(sym=>{
       const entry=data[sym];
-      return {sym,entry,pct:Number(entry?.pct),price:Number(entry?.price),weight:resolveWeight(entry)};
-    }).filter(x=>x.entry&&x.weight>0).sort((a,b)=>b.weight-a.weight);
-    const weight=stocks.reduce((sum,s)=>sum+s.weight,0);
-    return {name:g.name,stocks,weight,color:COLORS[idx%COLORS.length]};
-  }).filter(s=>s.weight>0).sort((a,b)=>b.weight-a.weight);
+      const weight=resolveWeight(entry);
+      return {
+        id:`${g.name}::${sym}`,
+        sym,entry,
+        pct:Number(entry?.pct),
+        price:Number(entry?.price),
+        weight,
+        sector:g.name,
+      };
+    }).filter(x=>x.entry&&x.weight>MIN_WEIGHT);
+    return {name:g.name,stocks,weight:stocks.reduce((sum,s)=>sum+s.weight,0)};
+  }).filter(sec=>sec.weight>0);
+  sectors.sort((a,b)=>b.weight-a.weight);
   sectors.forEach((sec,idx)=>{
-    sec.limit = idx<=1?10:idx<=4?6:idx<=7?4:idx<=11?2:1;
-    sec.visibleStocks = sec.stocks.slice(0,sec.limit);
-    sec.visibleWeight = sec.visibleStocks.reduce((sum,s)=>sum+s.weight,0);
+    sec.rank=idx;
+    sec.limit=sectorLimit(idx);
+    sec.color=COLORS[idx%COLORS.length];
   });
-  return sectors.filter(sec=>sec.visibleWeight>0);
+  const globalStocks=sectors.flatMap(sec=>sec.stocks).sort((a,b)=>b.weight-a.weight);
+  sectors.forEach(sec=>{
+    let drawn=0;
+    sec.visibleStocks=[];
+    for(const stock of globalStocks){
+      if(stock.sector!==sec.name)continue;
+      sec.visibleStocks.push(stock);
+      drawn+=1;
+      if(drawn>=sec.limit)break;
+    }
+  });
+  return {
+    sectors,
+    globalStocks,
+    total:sectors.reduce((sum,sec)=>sum+sec.weight,0),
+  };
 }
 function render(data,ts){
   const svg=$('svg');
   svg.innerHTML='';
-  const sectors=buildDataset(data);
-  if(!sectors.length){
+  const dataset=buildDataset(data);
+  const sectors=dataset.sectors;
+  if(!sectors.length||dataset.total<=0){
     const fo=document.createElementNS(SVG_NS,'foreignObject');
     fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1600'); fo.setAttribute('height','900');
     const div=document.createElement('div');
@@ -2159,59 +2189,68 @@ function render(data,ts){
     $('meta').textContent='Không có dữ liệu';
     return;
   }
-  const total=sectors.reduce((sum,s)=>sum+s.visibleWeight,0);
-  const chart={w:1600,h:900,left:90,top:86,right:1510,bottom:840,marketX:84,sectorX:470,stockX:1180,marketW:8,barW:12};
-  const drawH=chart.bottom-chart.top;
-  const gapSector=6;
-  const marketH=drawH*0.56;
-  const marketY=chart.top+(drawH-marketH)/2;
+  const total=dataset.total;
+  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:70,sectorX:555,stockX:1285,marketW:6,barW:10};
+  const gapSector=5;
+  const marketH=chart.drawH*0.5;
+  const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
   const title=makeEl('text',{x:24,y:40,fill:'#111827','font-family':'Barlow Condensed, sans-serif','font-size':'28','font-weight':'800','letter-spacing':'1.5px'},'DONG TIEN THEO NGANH');
   svg.appendChild(title);
   const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#353b48'});
   svg.appendChild(marketRect);
   svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
   svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2+16,'text-anchor':'end',fill:'#9ca3af','font-family':'IBM Plex Mono, monospace','font-size':'11'},fmtNum(total)));
-  let ySector=chart.top;
+  let ySector=chart.yStart;
   let yMarket=marketY;
+  let stockY=chart.yStart-60;
+  dataset.globalStocks.forEach(stock=>{
+    stock.baseH=chart.drawH*(stock.weight/total)*1.5;
+    stock.destY=stockY;
+    stockY+=stock.baseH;
+  });
+  const stockDest=new Map(dataset.globalStocks.map(stock=>[stock.id,stock]));
   const stockLayouts=[];
   sectors.forEach(sec=>{
-    sec.h = (sec.visibleWeight/total)*(drawH-gapSector*(sectors.length-1));
+    sec.h = chart.drawH*(sec.weight/total);
     sec.y = ySector;
-    sec.marketH = marketH*(sec.visibleWeight/total);
+    sec.marketH = marketH*(sec.weight/total);
     sec.marketY = yMarket;
     ySector += sec.h + gapSector;
     yMarket += sec.marketH;
-    let yStock=sec.y;
     sec.visibleStocks.forEach(stock=>{
-      stock.h=Math.max(8,sec.h*(stock.weight/sec.visibleWeight));
-      stock.y=yStock;
-      yStock+=stock.h;
-      stockLayouts.push({sec,stock});
+      const dest=stockDest.get(stock.id);
+      if(dest)stockLayouts.push({sec,stock:dest});
     });
   });
   sectors.forEach(sec=>{
     svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.22',stroke:'none'}));
   });
+  const sectorSourceY=new Map(sectors.map(sec=>[sec.name,sec.y]));
   stockLayouts.forEach(({sec,stock})=>{
-    const h2=Math.max(10,stock.h*1.12);
-    const y2=stock.y+(stock.h-h2)/2;
-    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,stock.y,stock.y+stock.h,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.24',stroke:'none'}));
+    const flowH=chart.drawH*(stock.weight/total);
+    const sourceY=sectorSourceY.get(sec.name)||sec.y;
+    sectorSourceY.set(sec.name,sourceY+flowH);
+    const y2=stock.destY;
+    const h2=Math.max(6,flowH*1.6-6);
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.24',stroke:'none'}));
     svg.appendChild(makeEl('rect',{x:chart.stockX,y:y2,width:chart.barW,height:h2,rx:2,fill:sec.color}));
-    if(h2>12){
+    if(flowH>6){
       const b=badgeColor(stock.pct);
       const badgeX=chart.stockX+chart.barW+8;
       const badgeY=y2+h2/2-10;
       const badgeW=164;
-      svg.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
+      const grp=makeEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
+      grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
       const label=`${stock.sym} (${fmtNum(stock.weight)}, ${fmtPct(stock.pct)})`;
-      svg.appendChild(makeEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':'11','font-weight':'600'},label));
+      grp.appendChild(makeEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':'11','font-weight':'600'},label));
+      svg.appendChild(grp);
     }
   });
   sectors.forEach(sec=>{
     svg.appendChild(makeEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
     if(sec.h>16){
       svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#111827','font-family':'IBM Plex Mono, monospace','font-size':'12','font-weight':'700'},sec.name));
-      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.visibleWeight)));
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.weight)));
     }
   });
   $('meta').textContent=`Data: ${ts||'--'} • Cập nhật: ${new Date().toLocaleTimeString('vi-VN',{hour12:false})} • Nhóm: ${sectors.length}`;
@@ -2237,6 +2276,11 @@ function startAuto(){
 }
 $('btn-refresh').addEventListener('click',fetchAndRender);
 $('btn-close').addEventListener('click',()=>window.close());
+$('svg').addEventListener('click',e=>{
+  const target=e.target.closest('[data-sym]');
+  if(!target)return;
+  notifyHost(target.dataset.sym);
+});
 (async function init(){
   await fetchConfig();
   await fetchAndRender();
