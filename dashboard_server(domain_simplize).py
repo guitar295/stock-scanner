@@ -1118,14 +1118,15 @@ function _getPopupViewport(){
 }
 function _openMaximizedWindow(url,name,width,height,offsetLeft,offsetTop,extra=''){
   const box=_getPopupViewport();
+  const popupLeft=box.left+Math.max(0,box.width-width-offsetLeft);
   const features=[
-    `left=${box.left+offsetLeft}`,`top=${box.top+offsetTop}`,`width=${width}`,`height=${height}`,
+    `left=${popupLeft}`,`top=${box.top+offsetTop}`,`width=${width}`,`height=${height}`,
     'resizable=yes','scrollbars=yes','menubar=no','toolbar=no','location=no','status=no'
   ];
   if(extra)features.push(extra);
   const win=window.open(url,name,features.join(','));
   if(win){
-    try{win.moveTo(box.left+offsetLeft,box.top+offsetTop);}catch(e){}
+    try{win.moveTo(popupLeft,box.top+offsetTop);}catch(e){}
     try{win.resizeTo(width,height);}catch(e){}
   }
   return win;
@@ -1159,7 +1160,7 @@ function quickSimplize(){
   if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
   const box=_getPopupViewport();
   const w=Math.min(1600,box.width-40),h=box.height;
-  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,60,0);
+  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,0,0);
   if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
   _isSimplizeMode=true;
   _refreshChartModeUI();
@@ -1752,7 +1753,7 @@ function popOutHover(){
   _refreshChartModeUI();
   const box=_getPopupViewport();
   const w=Math.min(1600,box.width-40),h=box.height;
-  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,40,0,'scrollbars=no');
+  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,0,0,'scrollbars=no');
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
   _popoutWin.document.write(_buildPopoutHTML(sym));
   _popoutWin.document.close();
