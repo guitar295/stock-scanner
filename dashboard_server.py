@@ -2055,6 +2055,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:600;cursor:pointer}
 .btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn-close{width:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .main{flex:1;min-height:0;display:flex;flex-direction:column}
 #wrap{flex:1;min-height:0;padding:10px 12px}
 #svg{width:100%;height:100%;display:block;background:linear-gradient(180deg,#fcfdff 0%,#f6f8fd 100%);border:1px solid var(--border);border-radius:8px}
@@ -2069,7 +2070,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
   <div class="hdr">
     <span class="title">Sankey Diagram</span>
     <span class="hdr-spacer"></span>
-    <button class="btn" id="btn-refresh">Làm mới</button>
     <button class="btn btn-close" id="btn-close">✕</button>
   </div>
   <div class="main">
@@ -2207,7 +2207,6 @@ function render(data,ts){
   const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'});
   svg.appendChild(marketRect);
   svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
-  svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2+16,'text-anchor':'end',fill:'#9ca3af','font-family':'IBM Plex Mono, monospace','font-size':'11'},fmtNum(total)));
   let ySector=chart.yStart;
   let yMarket=marketY;
   let stockY=chart.yStart-60;
@@ -2246,7 +2245,7 @@ function render(data,ts){
       const b=badgeColor(stock.pct);
       const badgeX=chart.stockX+chart.barW+8;
       const badgeY=y2+h2/2-10;
-      const badgeW=164;
+      const badgeW=152;
       const grp=makeEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
       grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
       const label=`${stock.sym} (${fmtNum(stock.weight)}, ${fmtPct(stock.pct)})`;
@@ -2257,7 +2256,7 @@ function render(data,ts){
   sectors.forEach(sec=>{
     svg.appendChild(makeEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
     if(sec.h>16){
-      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#111827','font-family':'IBM Plex Mono, monospace','font-size':'12','font-weight':'700'},sec.name));
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'12','font-weight':'700'},sec.name));
       svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.weight)));
     }
   });
@@ -2278,7 +2277,6 @@ function startAuto(){
   if(_timer)clearInterval(_timer);
   _timer=setInterval(fetchAndRender,_ttlMs);
 }
-$('btn-refresh').addEventListener('click',fetchAndRender);
 $('btn-close').addEventListener('click',notifyClose);
 $('svg').addEventListener('click',e=>{
   const target=e.target.closest('[data-sym]');
