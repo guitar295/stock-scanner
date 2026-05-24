@@ -2046,7 +2046,7 @@ try{
 :root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--text:#111827;--muted:#6b7280;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
-body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
+body{background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
 .page{height:100vh;display:flex;flex-direction:column}
 .hdr{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surf2);border-bottom:1px solid var(--border)}
 html.embedded-sankey .hdr{display:none}
@@ -2058,7 +2058,7 @@ html.embedded-sankey .hdr{display:none}
 .btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .main{flex:1;min-height:0;display:flex;flex-direction:column}
 #wrap{flex:1;min-height:0;padding:0}
-#svg{width:100%;height:100%;display:block;background:linear-gradient(180deg,#fcfdff 0%,#f6f8fd 100%);border:none;border-radius:8px}
+#svg{width:100%;height:100%;display:block;background:var(--surface);border:none;border-radius:0}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 @media(max-width:900px){
   .hdr{flex-wrap:nowrap}
@@ -2200,7 +2200,7 @@ function render(data,ts){
     return;
   }
   const total=dataset.total;
-  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:70,sectorX:555,stockX:1285,marketW:6,barW:10};
+  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
   const gapSector=5;
   const marketH=chart.drawH*0.5;
   const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
