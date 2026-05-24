@@ -183,15 +183,9 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
 .page{height:100vh;display:flex;flex-direction:column}
-.phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
-.phdr-left{display:flex;align-items:center;gap:8px}
-.phdr-center{display:flex;align-items:flex-end;justify-content:center}
+.phdr{display:grid;grid-template-columns:1fr auto;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
+.phdr-center{display:flex;align-items:flex-end;justify-content:flex-start}
 .phdr-right{display:flex;align-items:center;justify-content:flex-end}
-.ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.4px;white-space:nowrap}
-.search-wrap{position:relative;display:flex;align-items:center}
-.s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
-.search-input{width:108px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
-.search-input:focus{width:180px;border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 .ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap;justify-content:center}
 .ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .ctab.on{background:var(--surface);color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
@@ -225,19 +219,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-@media (min-width: 769px) {
-    body.embedded-popout-desktop .phdr-left {
-        visibility: hidden !important;
-        pointer-events: none !important;
-    }
-  }
 @media(max-width:980px){
   .phdr{grid-template-columns:1fr;gap:8px}
-  .phdr-left,.phdr-center,.phdr-right{justify-content:center}
+  .phdr-center,.phdr-right{justify-content:center}
 }
 @media(max-width:768px){
   body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:4px !important}
-  body.embedded-popout-mobile-full .phdr-left{display:none !important}
   body.embedded-popout-mobile-full .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
   body.embedded-popout-mobile-full .phdr-right{display:flex !important;flex-shrink:0}
   body.embedded-popout-mobile-full .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none}
@@ -251,13 +238,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 <body>
 <div class="page">
   <div class="phdr">
-    <div class="phdr-left">
-      <span class="ptitle" id="ptitle">📈 __SYMBOL__</span>
-      <div class="search-wrap">
-        <span class="s-icon">🔍</span>
-        <input class="search-input" id="search-input" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
-      </div>
-    </div>
     <div class="phdr-center">
       <div class="ctabs" id="ctabs">
         <button class="ctab on" data-tab="vs">📈 Vietstock</button>
@@ -297,11 +277,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 'use strict';
 const $=id=>document.getElementById(id);
 const DOM={
-  ptitle:$('ptitle'),ifVs:$('iframe-vs'),
+  ifVs:$('iframe-vs'),
   loading:$('scanner-loading'),outer:$('album-outer'),
   slides:$('album-slides'),dots:$('album-dots'),
   btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
-  ctabs:$('ctabs'),search:$('search-input'),
+  ctabs:$('ctabs'),
 };
 const IFRAME_MAP={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
@@ -344,7 +324,6 @@ function _activateTab(tab){
 
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
-  DOM.ptitle.textContent=_sym;
   document.title=_sym+' • Full Chart';
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -399,15 +378,10 @@ async function loadScannerChart(sym){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-DOM.search.addEventListener('keydown',function(e){
-  if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();setSymbol(s);}}
-  if(e.key==='Escape'){this.value='';this.blur();}
-});
-DOM.search.addEventListener('focus',function(){this.select();});
 $('close-btn').addEventListener('click',handleClose);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){window.close();return;}
-  if(document.activeElement===DOM.search||_tab!=='scanner'||_albumTotal===0)return;
+  if(_tab!=='scanner'||_albumTotal===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
