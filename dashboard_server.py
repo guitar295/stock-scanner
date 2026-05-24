@@ -2057,7 +2057,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .btn-close{width:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:15px}
 .btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .main{flex:1;min-height:0;display:flex;flex-direction:column}
-#wrap{flex:1;min-height:0;padding:10px 12px}
+#wrap{flex:1;min-height:0;padding:0}
 #svg{width:100%;height:100%;display:block;background:linear-gradient(180deg,#fcfdff 0%,#f6f8fd 100%);border:none;border-radius:8px}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 @media(max-width:900px){
