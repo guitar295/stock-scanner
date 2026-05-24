@@ -182,17 +182,8 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
-.page{height:100vh;display:flex;flex-direction:column}
-.phdr{display:grid;grid-template-columns:1fr auto;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
-.phdr-center{display:flex;align-items:flex-end;justify-content:flex-start}
-.phdr-right{display:flex;align-items:center;justify-content:flex-end}
-.ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap;justify-content:center}
-.ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
-.ctab.on{background:var(--surface);color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
-.ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
-.closebtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
-.closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
-.pbody{flex:1;overflow:hidden;position:relative;background:#fff}
+.page{height:100vh}
+.pbody{height:100vh;overflow:hidden;position:relative;background:#fff}
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
@@ -219,39 +210,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-@media(max-width:980px){
-  .phdr{grid-template-columns:1fr;gap:8px}
-  .phdr-center,.phdr-right{justify-content:center}
-}
-@media(max-width:768px){
-  body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:4px !important}
-  body.embedded-popout-mobile-full .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
-  body.embedded-popout-mobile-full .phdr-right{display:flex !important;flex-shrink:0}
-  body.embedded-popout-mobile-full .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none}
-  body.embedded-popout-mobile-full .ctabs::-webkit-scrollbar{display:none}
-  body.embedded-popout-mobile-full .ctab{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
-  body.embedded-popout-mobile-full .ctab.on{border-color:var(--accent);box-shadow:0 2px 0 var(--accent)}
-  body.embedded-popout-mobile-full .closebtn{width:30px;height:30px;border-radius:4px}
-}
 </style>
 </head>
 <body>
 <div class="page">
-  <div class="phdr">
-    <div class="phdr-center">
-      <div class="ctabs" id="ctabs">
-        <button class="ctab on" data-tab="vs">📈 Vietstock</button>
-        <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
-        <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-        <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
-        <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="ctab" data-tab="24h">💬 24HMoney</button>
-      </div>
-    </div>
-    <div class="phdr-right">
-      <button class="closebtn" id="close-btn">✕</button>
-    </div>
-  </div>
   <div class="pbody">
     <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
     <div class="tpanel" id="panel-scanner">
@@ -281,7 +243,6 @@ const DOM={
   loading:$('scanner-loading'),outer:$('album-outer'),
   slides:$('album-slides'),dots:$('album-dots'),
   btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
-  ctabs:$('ctabs'),
 };
 const IFRAME_MAP={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
@@ -289,8 +250,7 @@ const IFRAME_MAP={
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
   '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
 };
-const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
-let _sym='__SYMBOL__',_tab='vs';
+let _sym='__SYMBOL__';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
   const isEmbedded = (window.self !== window.top);
@@ -306,21 +266,6 @@ function notifyHost(sym){
     if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
   }catch(e){}
 }
-function handleClose(){
-  try{if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_CLOSE',symbol:_sym},'*');}catch(e){}
-  window.close();
-}
-
-DOM.ctabs.addEventListener('click',e=>{
-  const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);
-});
-function _activateTab(tab){
-  _tab=tab;
-  DOM.ctabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
-  if(IFRAME_MAP[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_MAP[tab](_sym);}
-  if(tab==='scanner')loadScannerChart(_sym);
-}
 
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
@@ -330,7 +275,6 @@ function setSymbol(sym){
   DOM.outer.style.display='none';
   DOM.loading.style.display='flex';
   DOM.loading.innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-  _activateTab('vs');
   try{history.replaceState(null,'','/popout_full/'+_sym);}catch(e){}
   notifyHost(_sym);
 }
@@ -378,10 +322,9 @@ async function loadScannerChart(sym){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-$('close-btn').addEventListener('click',handleClose);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){window.close();return;}
-  if(_tab!=='scanner'||_albumTotal===0)return;
+  if(_albumTotal===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
