@@ -313,10 +313,11 @@ def fetch_heatmap_data() -> tuple:
                 if not sym: continue
                 close = float(row.get("close_price", 0) or 0) / 1000
                 ref_p = float(row.get("reference_price", 0) or 0) / 1000
+                total_value = float(row.get("total_value", 0) or 0)
                 if close <= 0 and ref_p > 0:
                     close = ref_p
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-                result[sym] = {"price": close, "pct": pct}
+                result[sym] = {"price": close, "pct": pct, "total_value": total_value}
 
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
