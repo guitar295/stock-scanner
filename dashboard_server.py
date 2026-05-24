@@ -526,7 +526,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
-.sankey-frame{width:100%;height:1000px;border:none;display:block;background:#fff}
+.sankey-frame{width:calc(100% - 24px);height:1000px;margin-left:24px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -554,11 +554,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
-.pbox.pbox-sankey #popup-phdr,
-.pbox.pbox-sankey #mob-hdr-row1,
-.pbox.pbox-sankey #mob-tab-row,
-.pbox.pbox-sankey #mob-hdr-landscape{display:none !important}
-.pbox.pbox-sankey .pbody{height:100%}
 
 /* ═══════════════════════════════════════════
    ALBUM — dùng chung
@@ -932,7 +927,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="panel-hdr">
       <span class="panel-title">Sankey</span>
     </div>
-    <div class="pbar-wrap"><div class="pbar-fill"></div></div>
     <iframe class="sankey-frame" id="sankey-frame" src="/sankey?embedded=1"></iframe>
   </div>
 </div>
@@ -1120,11 +1114,9 @@ let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
 let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
-let _popupChromeMode='default';
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
-function sankeyUrl(){return `${window.location.origin}/sankey`;}
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
   const top=Number.isFinite(window.screen.availTop)?window.screen.availTop:0;
@@ -1154,14 +1146,11 @@ function _refreshChartModeUI(){
   $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
   $('hmap-simplize-btn').classList.toggle('on',_isSimplizeMode);
 }
-function _setPopupChromeMode(mode='default'){
-  _popupChromeMode=mode;
-  const hide=mode==='sankey';
-  DOM.pbox.classList.toggle('pbox-sankey',hide);
-  $('popup-phdr').style.display=hide?'none':'';
+function _resetPopupChrome(){
+  $('popup-phdr').style.display='';
   DOM.mobHdrRow1.style.display='none';
   DOM.mobTabRow.style.display='none';
-  DOM.mobHdrLand.style.display=hide?'none':'';
+  DOM.mobHdrLand.style.display='';
   DOM.mobClose.style.display='none';
 }
 function _stopSimplizeWatch(){
@@ -1195,7 +1184,6 @@ function quickSimplize(){
     if(_simplizeWin&&_simplizeWin.closed)closeSimplizeWindow();
   },1000);
 }
-function quickSankey(){openUrl(sankeyUrl(),'SK');}
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
 // ═══════════════════════════════════════════════════════
@@ -1455,13 +1443,13 @@ function _openPopup(){
   document.body.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
   // Portrait: show float close
-  if(_popupChromeMode!=='sankey'&&IS_MOBILE()&&!IS_LANDSCAPE())
+  if(IS_MOBILE()&&!IS_LANDSCAPE())
     DOM.mobClose.style.display='flex';
   else
     DOM.mobClose.style.display='none';
 }
 function openChart(sym){
-  _setPopupChromeMode('default');
+  _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab='vs';
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
@@ -1473,7 +1461,7 @@ function openChart(sym){
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 function openUrl(url,label){
-  _setPopupChromeMode(label==='SK'?'sankey':'default');
+  _resetPopupChrome();
   _sym=label||'WEB';
   _updateSymDisplay(label||'🌐');
   ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1488,7 +1476,7 @@ function openUrl(url,label){
 }
 function closePopup(){
   const pbox=DOM.pbox;
-  _setPopupChromeMode('default');
+  _resetPopupChrome();
   pbox.style.visibility='hidden';
   DOM.ifVs.src='about:blank';
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1527,7 +1515,7 @@ if(IS_MOBILE()){
 window.addEventListener('orientationchange',()=>{
   setTimeout(()=>{
     if(DOM.overlay.classList.contains('on')){
-      if(_popupChromeMode!=='sankey'&&IS_MOBILE()&&!IS_LANDSCAPE())
+      if(IS_MOBILE()&&!IS_LANDSCAPE())
         DOM.mobClose.style.display='flex';
       else
         DOM.mobClose.style.display='none';
