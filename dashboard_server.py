@@ -526,7 +526,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
-.sankey-frame{width:calc(100% - 24px);height:1000px;margin-left:24px;border:none;display:block;background:#fff}
+.sankey-frame{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -656,6 +656,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     background: var(--surf2) !important;
     color: var(--text) !important;
     border-color: var(--border) !important;
+  }
+  .sankey-frame{
+    width:100% !important;
+    margin-left:0 !important;
+    aspect-ratio:16/9;
+    height:auto;
   }
 }
 
