@@ -526,7 +526,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
-.sankey-frame{width:100%;height:430px;border:none;display:block;background:#fff}
+.sankey-frame{width:100%;height:620px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -931,7 +931,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <div class="panel">
     <div class="panel-hdr">
       <span class="panel-title">Sankey</span>
-      <span class="panel-meta">Cùng dữ liệu Heatmap</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill"></div></div>
     <iframe class="sankey-frame" id="sankey-frame" src="/sankey?embedded=1"></iframe>
