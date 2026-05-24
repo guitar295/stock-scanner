@@ -526,7 +526,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
-.sankey-frame{width:100%;height:760px;border:none;display:block;background:#fff}
+.sankey-frame{width:100%;height:1000px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -2085,7 +2085,7 @@ html.embedded-sankey .hdr{display:none}
     <button class="btn btn-close" id="btn-close">✕</button>
   </div>
   <div class="main">
-    <div id="wrap"><svg id="svg" viewBox="0 0 1280 740" preserveAspectRatio="xMidYMid meet"></svg></div>
+    <div id="wrap"><svg id="svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 </div>
 <script>
@@ -2203,7 +2203,7 @@ function render(data,ts){
   const sectors=dataset.sectors;
   if(!sectors.length||dataset.total<=0){
     const fo=document.createElementNS(SVG_NS,'foreignObject');
-    fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1280'); fo.setAttribute('height','740');
+    fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1600'); fo.setAttribute('height','900');
     const div=document.createElement('div');
     div.className='empty';
     div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
@@ -2212,18 +2212,18 @@ function render(data,ts){
     return;
   }
   const total=dataset.total;
-  const chart={w:1280,h:740,yStart:95,drawH:460,marketX:78,sectorX:460,stockX:955,marketW:7,barW:12};
+  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:70,sectorX:555,stockX:1285,marketW:6,barW:10};
   const gapSector=5;
   const marketH=chart.drawH*0.5;
   const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
   const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'});
   svg.appendChild(marketRect);
-  svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'16','font-weight':'700'},'MARKET'));
+  svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
   let ySector=chart.yStart;
   let yMarket=marketY;
   let stockY=chart.yStart-60;
   dataset.globalStocks.forEach(stock=>{
-    stock.baseH=chart.drawH*(stock.weight/total)*1.45;
+    stock.baseH=chart.drawH*(stock.weight/total)*1.5;
     stock.destY=stockY;
     stockY+=stock.baseH;
   });
@@ -2253,23 +2253,23 @@ function render(data,ts){
     const h2=Math.max(6,flowH*1.6-6);
     svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
     svg.appendChild(makeEl('rect',{x:chart.stockX,y:y2,width:chart.barW,height:h2,rx:2,fill:sec.color}));
-    if(flowH>5){
+    if(flowH>6){
       const b=badgeColor(stock.pct);
       const badgeX=chart.stockX+chart.barW+8;
-      const badgeY=y2+h2/2-12;
-      const badgeW=175;
+      const badgeY=y2+h2/2-10;
+      const badgeW=152;
       const grp=makeEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
-      grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:24,rx:6,fill:b.fill}));
+      grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
       const label=`${stock.sym} (${fmtNum(stock.weight)}, ${fmtPct(stock.pct)})`;
-      grp.appendChild(makeEl('text',{x:badgeX+8,y:badgeY+17,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':'13','font-weight':'700'},label));
+      grp.appendChild(makeEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':'11','font-weight':'600'},label));
       svg.appendChild(grp);
     }
   });
   sectors.forEach(sec=>{
     svg.appendChild(makeEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
     if(sec.h>16){
-      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+10,y:sec.y+sec.h/2-4,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},sec.name));
-      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+10,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'12'},fmtNum(sec.weight)));
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'12','font-weight':'700'},sec.name));
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.weight)));
     }
   });
 }
