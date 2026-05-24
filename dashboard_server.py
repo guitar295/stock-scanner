@@ -526,7 +526,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
-.sankey-frame{width:100%;height:620px;border:none;display:block;background:#fff}
+.sankey-frame{width:100%;height:1000px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
