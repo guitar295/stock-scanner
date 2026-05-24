@@ -2085,7 +2085,7 @@ html.embedded-sankey .hdr{display:none}
     <button class="btn btn-close" id="btn-close">✕</button>
   </div>
   <div class="main">
-    <div id="wrap"><svg id="svg" viewBox="0 0 1200 720" preserveAspectRatio="xMidYMid meet"></svg></div>
+    <div id="wrap"><svg id="svg" viewBox="0 0 1280 740" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 </div>
 <script>
@@ -2203,7 +2203,7 @@ function render(data,ts){
   const sectors=dataset.sectors;
   if(!sectors.length||dataset.total<=0){
     const fo=document.createElementNS(SVG_NS,'foreignObject');
-    fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1200'); fo.setAttribute('height','720');
+    fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1280'); fo.setAttribute('height','740');
     const div=document.createElement('div');
     div.className='empty';
     div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
@@ -2212,7 +2212,7 @@ function render(data,ts){
     return;
   }
   const total=dataset.total;
-  const chart={w:1200,h:720,yStart:90,drawH:460,marketX:50,sectorX:410,stockX:900,marketW:7,barW:12};
+  const chart={w:1280,h:740,yStart:95,drawH:460,marketX:78,sectorX:460,stockX:955,marketW:7,barW:12};
   const gapSector=5;
   const marketH=chart.drawH*0.5;
   const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
@@ -2257,7 +2257,7 @@ function render(data,ts){
       const b=badgeColor(stock.pct);
       const badgeX=chart.stockX+chart.barW+8;
       const badgeY=y2+h2/2-12;
-      const badgeW=178;
+      const badgeW=175;
       const grp=makeEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
       grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:24,rx:6,fill:b.fill}));
       const label=`${stock.sym} (${fmtNum(stock.weight)}, ${fmtPct(stock.pct)})`;
