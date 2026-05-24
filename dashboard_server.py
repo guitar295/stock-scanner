@@ -1113,6 +1113,7 @@ let _isPopoutMode=false,_popoutWin=null;
 let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _sankeyWin=null,_sankeyWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
+let _popupChromeMode='default';
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 function sankeyUrl(){return `${window.location.origin}/sankey`;}
@@ -1144,6 +1145,16 @@ function _refreshChartModeUI(){
   chartBtn.textContent=_isPopoutMode?'Chart: POP':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
   $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
   $('hmap-simplize-btn').classList.toggle('on',_isSimplizeMode);
+}
+function _setPopupChromeMode(mode='default'){
+  _popupChromeMode=mode;
+  const hide=mode==='sankey';
+  const display=hide?'none':'';
+  $('popup-phdr').style.display=display;
+  DOM.mobHdrRow1.style.display=display;
+  DOM.mobTabRow.style.display=display;
+  DOM.mobHdrLand.style.display=display;
+  DOM.mobClose.style.display='none';
 }
 function _stopSimplizeWatch(){
   if(_simplizeWatch){clearInterval(_simplizeWatch);_simplizeWatch=null;}
@@ -1440,12 +1451,13 @@ function _openPopup(){
   document.body.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
   // Portrait: show float close
-  if(IS_MOBILE()&&!IS_LANDSCAPE())
+  if(_popupChromeMode!=='sankey'&&IS_MOBILE()&&!IS_LANDSCAPE())
     DOM.mobClose.style.display='flex';
   else
     DOM.mobClose.style.display='none';
 }
 function openChart(sym){
+  _setPopupChromeMode('default');
   _sym=sym.toUpperCase().trim();_tab='vs';
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
@@ -1457,6 +1469,7 @@ function openChart(sym){
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 function openUrl(url,label){
+  _setPopupChromeMode(label==='SK'?'sankey':'default');
   _sym=label||'WEB';
   _updateSymDisplay(label||'🌐');
   ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1471,6 +1484,7 @@ function openUrl(url,label){
 }
 function closePopup(){
   const pbox=DOM.pbox;
+  _setPopupChromeMode('default');
   pbox.style.visibility='hidden';
   DOM.ifVs.src='about:blank';
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1509,7 +1523,7 @@ if(IS_MOBILE()){
 window.addEventListener('orientationchange',()=>{
   setTimeout(()=>{
     if(DOM.overlay.classList.contains('on')){
-      if(IS_MOBILE()&&!IS_LANDSCAPE())
+      if(_popupChromeMode!=='sankey'&&IS_MOBILE()&&!IS_LANDSCAPE())
         DOM.mobClose.style.display='flex';
       else
         DOM.mobClose.style.display='none';
@@ -1996,6 +2010,8 @@ window.addEventListener('message',e=>{
     _syncHoverPreview(e.data.symbol,false);
     updatePopout(e.data.symbol);
     updateSimplize(e.data.symbol);
+  }else if(e.data.type==='SANKEY_CLOSE'){
+    closePopup();
   }else if(e.data.type==='POPOUT_MINIMIZE'){
     minimizePopout();
   }else if(e.data.type==='POPOUT_CLOSE'){
@@ -2033,36 +2049,28 @@ SANKEY_HTML = r"""<!DOCTYPE html>
 html,body{height:100%}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
 .page{height:100vh;display:flex;flex-direction:column}
-.hdr{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surf2);border-bottom:1px solid var(--border)}
+.hdr{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .title{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.4px;color:var(--accent);white-space:nowrap}
-.meta{margin-left:auto;font-size:10px;color:var(--muted);white-space:nowrap}
+.hdr-spacer{flex:1}
 .btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:600;cursor:pointer}
 .btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-close{width:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:15px}
 .main{flex:1;min-height:0;display:flex;flex-direction:column}
-.legend{display:flex;gap:14px;align-items:center;padding:6px 14px;background:var(--surface);border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);flex-wrap:wrap}
-.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
 #wrap{flex:1;min-height:0;padding:10px 12px}
 #svg{width:100%;height:100%;display:block;background:linear-gradient(180deg,#fcfdff 0%,#f6f8fd 100%);border:1px solid var(--border);border-radius:8px}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 @media(max-width:900px){
-  .hdr{flex-wrap:wrap}
-  .meta{margin-left:0;width:100%}
+  .hdr{flex-wrap:nowrap}
 }
 </style>
 </head>
 <body>
 <div class="page">
   <div class="hdr">
-    <span class="title">SK • Sankey Heatmap</span>
+    <span class="title">Sankey Diagram</span>
+    <span class="hdr-spacer"></span>
     <button class="btn" id="btn-refresh">Làm mới</button>
-    <button class="btn" id="btn-close">Đóng</button>
-    <span class="meta" id="meta">Đang tải...</span>
-  </div>
-  <div class="legend">
-    <span><span class="dot" style="background:#0e9f6e"></span> Tăng</span>
-    <span><span class="dot" style="background:#e02424"></span> Giảm</span>
-    <span><span class="dot" style="background:#d4a017"></span> Tham chiếu</span>
-    <span>Trọng số Sankey: `total_value` từ `price_board()`</span>
+    <button class="btn btn-close" id="btn-close">✕</button>
   </div>
   <div class="main">
     <div id="wrap"><svg id="svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
@@ -2090,10 +2098,7 @@ let _timer=null;
 
 function fmtNum(v){
   if(!Number.isFinite(v)||v<=0)return '--';
-  if(v>=1e12)return (v/1e12).toFixed(2)+'T';
-  if(v>=1e9)return (v/1e9).toFixed(1)+'B';
-  if(v>=1e6)return (v/1e6).toFixed(1)+'M';
-  return v.toFixed(0);
+  return (v/1e9).toFixed(1)+'B';
 }
 function fmtPct(v){
   if(!Number.isFinite(v))return '--';
@@ -2132,6 +2137,12 @@ function notifyHost(sym){
   try{
     if(window.self!==window.top)window.parent.postMessage(payload,'*');
     if(window.opener&&!window.opener.closed)window.opener.postMessage(payload,'*');
+  }catch(e){}
+}
+function notifyClose(){
+  try{
+    if(window.self!==window.top)window.parent.postMessage({type:'SANKEY_CLOSE'},'*');
+    else window.close();
   }catch(e){}
 }
 function buildDataset(data){
@@ -2186,7 +2197,6 @@ function render(data,ts){
     div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
     fo.appendChild(div);
     svg.appendChild(fo);
-    $('meta').textContent='Không có dữ liệu';
     return;
   }
   const total=dataset.total;
@@ -2194,9 +2204,7 @@ function render(data,ts){
   const gapSector=5;
   const marketH=chart.drawH*0.5;
   const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
-  const title=makeEl('text',{x:24,y:40,fill:'#111827','font-family':'Barlow Condensed, sans-serif','font-size':'28','font-weight':'800','letter-spacing':'1.5px'},'DONG TIEN THEO NGANH');
-  svg.appendChild(title);
-  const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#353b48'});
+  const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'});
   svg.appendChild(marketRect);
   svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
   svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2+16,'text-anchor':'end',fill:'#9ca3af','font-family':'IBM Plex Mono, monospace','font-size':'11'},fmtNum(total)));
@@ -2223,7 +2231,7 @@ function render(data,ts){
     });
   });
   sectors.forEach(sec=>{
-    svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.22',stroke:'none'}));
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'}));
   });
   const sectorSourceY=new Map(sectors.map(sec=>[sec.name,sec.y]));
   stockLayouts.forEach(({sec,stock})=>{
@@ -2232,7 +2240,7 @@ function render(data,ts){
     sectorSourceY.set(sec.name,sourceY+flowH);
     const y2=stock.destY;
     const h2=Math.max(6,flowH*1.6-6);
-    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.24',stroke:'none'}));
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
     svg.appendChild(makeEl('rect',{x:chart.stockX,y:y2,width:chart.barW,height:h2,rx:2,fill:sec.color}));
     if(flowH>6){
       const b=badgeColor(stock.pct);
@@ -2253,7 +2261,6 @@ function render(data,ts){
       svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.weight)));
     }
   });
-  $('meta').textContent=`Data: ${ts||'--'} • Cập nhật: ${new Date().toLocaleTimeString('vi-VN',{hour12:false})} • Nhóm: ${sectors.length}`;
 }
 async function fetchConfig(){
   try{
@@ -2262,20 +2269,17 @@ async function fetchConfig(){
   }catch(e){}
 }
 async function fetchAndRender(){
-  $('meta').textContent='Đang tải dữ liệu...';
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
     render(j.data||{},j.timestamp||'');
-  }catch(e){
-    $('meta').textContent=`Lỗi tải dữ liệu: ${e.message}`;
-  }
+  }catch(e){}
 }
 function startAuto(){
   if(_timer)clearInterval(_timer);
   _timer=setInterval(fetchAndRender,_ttlMs);
 }
 $('btn-refresh').addEventListener('click',fetchAndRender);
-$('btn-close').addEventListener('click',()=>window.close());
+$('btn-close').addEventListener('click',notifyClose);
 $('svg').addEventListener('click',e=>{
   const target=e.target.closest('[data-sym]');
   if(!target)return;
