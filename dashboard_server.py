@@ -226,17 +226,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 @media (min-width: 769px) {
-    body.embedded-popout-desktop .phdr-left {
-        visibility: hidden !important;
-        pointer-events: none !important;
-    }
+    body.embedded-popout-desktop .phdr{display:none !important}
   }
 @media(max-width:980px){
   .phdr{grid-template-columns:1fr;gap:8px}
   .phdr-left,.phdr-center,.phdr-right{justify-content:center}
 }
 @media(max-width:768px){
-  body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:4px !important}
+  body.embedded-popout-mobile-full .phdr{display:none !important}
   body.embedded-popout-mobile-full .phdr-left{display:none !important}
   body.embedded-popout-mobile-full .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
   body.embedded-popout-mobile-full .phdr-right{display:flex !important;flex-shrink:0}
@@ -321,6 +318,7 @@ function _applyEmbeddedMode(){
 }
 window.addEventListener('resize', _applyEmbeddedMode);
 window.addEventListener('orientationchange', _applyEmbeddedMode);
+_applyEmbeddedMode();
 function notifyHost(sym){
   try{
     if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
