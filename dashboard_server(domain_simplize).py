@@ -527,6 +527,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
 .sankey-frame{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;border:none;display:block;background:#fff}
+.market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -663,6 +664,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     aspect-ratio:16/9;
     height:auto;
   }
+  .market-frame{height:70vh}
 }
 
 /* ═══════════════════════════════════════════
@@ -934,6 +936,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="panel-title">Sankey</span>
     </div>
     <iframe class="sankey-frame" id="sankey-frame" src="/sankey?embedded=1"></iframe>
+  </div>
+
+  <!-- MARKET -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-title">MARKET</span>
+    </div>
+    <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
   </div>
 </div>
 
