@@ -2246,11 +2246,12 @@ function render(data,ts){
     }
   });
   let stockY=chart.yStart-60;
+  const stockGap=3;
   const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
   stockNodes.forEach(stock=>{
-    stock.baseH=chart.drawH*(stock.destWeight/total)*1.5;
+    stock.nodeH=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
     stock.destY=stockY;
-    stockY+=stock.baseH;
+    stockY+=stock.nodeH+stockGap;
   });
   sectors.forEach(sec=>{
     svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'}));
@@ -2262,12 +2263,12 @@ function render(data,ts){
     const flowH=chart.drawH*(stock.weight/total);
     const sourceY=sectorSourceY.get(sec.name)||sec.y;
     sectorSourceY.set(sec.name,sourceY+flowH);
-    const h2=Math.max(6,chart.drawH*(dest.destWeight/total)*1.6-6);
+    const h2=dest.nodeH;
     const y2=dest.destY;
     svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
   });
   stockNodes.forEach(stock=>{
-    const h2=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
+    const h2=stock.nodeH;
     svg.appendChild(makeEl('rect',{x:chart.stockX,y:stock.destY,width:chart.barW,height:h2,rx:2,fill:'#94a3b8','fill-opacity':'0.8'}));
     if(h2>6){
       const b=badgeColor(stock.pct);
