@@ -2215,13 +2215,6 @@ function render(data,ts){
   svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
   let ySector=chart.yStart;
   let yMarket=marketY;
-  let stockY=chart.yStart-60;
-  dataset.globalStocks.forEach(stock=>{
-    stock.baseH=chart.drawH*(stock.weight/total)*1.5;
-    stock.destY=stockY;
-    stockY+=stock.baseH;
-  });
-  const stockDest=new Map(dataset.globalStocks.map(stock=>[stock.id,stock]));
   const stockLayouts=[];
   sectors.forEach(sec=>{
     sec.h = chart.drawH*(sec.weight/total);
@@ -2231,26 +2224,55 @@ function render(data,ts){
     ySector += sec.h + gapSector;
     yMarket += sec.marketH;
     sec.visibleStocks.forEach(stock=>{
-      const dest=stockDest.get(stock.id);
-      if(dest)stockLayouts.push({sec,stock:dest});
+      stockLayouts.push({sec,stock});
     });
+  });
+  const stockDest=new Map();
+  stockLayouts.forEach(({stock})=>{
+    let dest=stockDest.get(stock.sym);
+    if(!dest){
+      dest={...stock,flows:[],flowWeight:0,destWeight:stock.weight};
+      stockDest.set(stock.sym,dest);
+    }
+    dest.flows.push(stock);
+    dest.flowWeight+=stock.weight;
+    if(stock.weight>dest.weight){
+      Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
+    }
+  });
+  let stockY=chart.yStart-60, stockGap=3;
+  const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
+  stockNodes.forEach(stock=>{
+    stock.nodeH=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
+    stock.destY=stockY;
+    stockY+=stock.nodeH+stockGap;
   });
   sectors.forEach(sec=>{
     svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'}));
   });
   const sectorSourceY=new Map(sectors.map(sec=>[sec.name,sec.y]));
   stockLayouts.forEach(({sec,stock})=>{
+    const dest=stockDest.get(stock.sym);
+    if(!dest)return;
     const flowH=chart.drawH*(stock.weight/total);
     const sourceY=sectorSourceY.get(sec.name)||sec.y;
     sectorSourceY.set(sec.name,sourceY+flowH);
-    const y2=stock.destY;
-    const h2=Math.max(6,flowH*1.6-6);
-    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
-    svg.appendChild(makeEl('rect',{x:chart.stockX,y:y2,width:chart.barW,height:h2,rx:2,fill:sec.color}));
-    if(flowH>6){
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,dest.destY,dest.destY+dest.nodeH),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
+  });
+  stockNodes.forEach(stock=>{
+    const h2=stock.nodeH, flows=stock.flows.length?stock.flows:[stock];
+    let segY=stock.destY;
+    flows.forEach((flow,idx)=>{
+      const sec=sectors.find(s=>s.name===flow.sector);
+      const remaining=stock.destY+h2-segY;
+      const segH=idx===flows.length-1 ? remaining : Math.max(1,h2*(flow.weight/stock.flowWeight));
+      svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
+      segY+=segH;
+    });
+    if(h2>6){
       const b=badgeColor(stock.pct);
       const badgeX=chart.stockX+chart.barW+8;
-      const badgeY=y2+h2/2-10;
+      const badgeY=stock.destY+h2/2-10;
       const badgeW=152;
       const grp=makeEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
       grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
