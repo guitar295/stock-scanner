@@ -263,7 +263,7 @@ html.embedded-popout .phdr{display:none !important}
         <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
         <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="ctab" data-tab="24h">💬 24HMoney</button>
+        <button class="ctab" data-tab="24h">💬 Fireant</button>
       </div>
     </div>
     <div class="phdr-right">
@@ -305,7 +305,7 @@ const IFRAME_MAP={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
   'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
+  '24h':     s=>`https://fireant.vn/charts/content/symbols/${s}`,
 };
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
@@ -989,7 +989,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
           <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
           <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
-          <button class="ctab" data-tab="24h">💬 24HMoney</button>
+          <button class="ctab" data-tab="24h">💬 Fireant</button>
         </div>
       </div>
       <div class="phdr-right">
@@ -1013,7 +1013,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
       <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
       <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
-      <button class="mob-tab-btn" data-tab="24h">💬 24HMoney</button>
+      <button class="mob-tab-btn" data-tab="24h">💬 Fireant</button>
     </div>
 
     <!-- Mobile landscape header — 1 hàng -->
@@ -1029,7 +1029,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="mob-land-tab" data-tab="24h">💬 24HMoney</button>
+        <button class="mob-land-tab" data-tab="24h">💬 Fireant</button>
       </div>
       <!-- X vuông cố định phải -->
       <button class="mob-land-close" id="mob-land-close">✕</button>
@@ -1113,7 +1113,7 @@ const IFRAME_LAZY={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
   'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
+  '24h':     s=>`https://fireant.vn/charts/content/symbols/${s}`,
 };
 const BADGE_MAP={
   'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
@@ -1121,7 +1121,7 @@ const BADGE_MAP={
 };
 const MOB_TABS=[
   ['vs','📈 Vietstock'],['scanner','🖼 Scanner'],['vnd-cs','⚖️ Cơ bản'],
-  ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 24HMoney'],
+  ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 Fireant'],
 ];
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
