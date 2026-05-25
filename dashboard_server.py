@@ -2237,16 +2237,10 @@ function render(data,ts){
     dest.flows.push(stock);
     dest.flowWeight+=stock.weight;
     if(stock.weight>dest.weight){
-      dest.entry=stock.entry;
-      dest.pct=stock.pct;
-      dest.price=stock.price;
-      dest.weight=stock.weight;
-      dest.destWeight=stock.weight;
-      dest.sector=stock.sector;
+      Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
     }
   });
-  let stockY=chart.yStart-60;
-  const stockGap=3;
+  let stockY=chart.yStart-60, stockGap=3;
   const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
   stockNodes.forEach(stock=>{
     stock.nodeH=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
@@ -2263,13 +2257,18 @@ function render(data,ts){
     const flowH=chart.drawH*(stock.weight/total);
     const sourceY=sectorSourceY.get(sec.name)||sec.y;
     sectorSourceY.set(sec.name,sourceY+flowH);
-    const h2=dest.nodeH;
-    const y2=dest.destY;
-    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,y2,y2+h2),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,dest.destY,dest.destY+dest.nodeH),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
   });
   stockNodes.forEach(stock=>{
-    const h2=stock.nodeH;
-    svg.appendChild(makeEl('rect',{x:chart.stockX,y:stock.destY,width:chart.barW,height:h2,rx:2,fill:'#94a3b8','fill-opacity':'0.8'}));
+    const h2=stock.nodeH, flows=stock.flows.length?stock.flows:[stock];
+    let segY=stock.destY;
+    flows.forEach((flow,idx)=>{
+      const sec=sectors.find(s=>s.name===flow.sector);
+      const remaining=stock.destY+h2-segY;
+      const segH=idx===flows.length-1 ? remaining : Math.max(1,h2*(flow.weight/stock.flowWeight));
+      svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
+      segY+=segH;
+    });
     if(h2>6){
       const b=badgeColor(stock.pct);
       const badgeX=chart.stockX+chart.barW+8;
