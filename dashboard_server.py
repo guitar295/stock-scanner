@@ -59,11 +59,18 @@ def _init_journal_storage():
                 price TEXT,
                 title TEXT,
                 notes TEXT,
-                status TEXT DEFAULT 'watching',
+                stoploss TEXT,
+                target TEXT,
+                status TEXT DEFAULT 'check',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(journal_entries)").fetchall()}
+        if "stoploss" not in cols:
+            conn.execute("ALTER TABLE journal_entries ADD COLUMN stoploss TEXT")
+        if "target" not in cols:
+            conn.execute("ALTER TABLE journal_entries ADD COLUMN target TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS journal_images (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,9 +105,11 @@ def _entry_to_dict(row, images):
         "buy_date": row["buy_date"] or "",
         "signal": row["signal"] or "",
         "price": row["price"] or "",
+        "stoploss": row["stoploss"] or "",
+        "target": row["target"] or "",
         "title": row["title"] or "",
         "notes": row["notes"] or "",
-        "status": row["status"] or "watching",
+        "status": row["status"] or "check",
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "images": images,
@@ -304,16 +313,18 @@ def api_journal_create():
     with _journal_lock, _journal_conn() as conn:
         cur = conn.execute("""
             INSERT INTO journal_entries
-                (symbol, buy_date, signal, price, title, notes, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (symbol, buy_date, signal, price, stoploss, target, title, notes, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             symbol,
             _safe_text(data.get("buy_date"), 20),
             _safe_text(data.get("signal"), 120),
             _safe_text(data.get("price"), 40),
+            _safe_text(data.get("stoploss"), 40),
+            _safe_text(data.get("target"), 40),
             _safe_text(data.get("title"), 240),
             _safe_text(data.get("notes"), 5000),
-            _safe_text(data.get("status"), 40) or "watching",
+            _safe_text(data.get("status"), 40) or "check",
             now,
             now,
         ))
@@ -331,16 +342,18 @@ def api_journal_update(entry_id):
     with _journal_lock, _journal_conn() as conn:
         cur = conn.execute("""
             UPDATE journal_entries
-            SET symbol=?, buy_date=?, signal=?, price=?, title=?, notes=?, status=?, updated_at=?
+            SET symbol=?, buy_date=?, signal=?, price=?, stoploss=?, target=?, title=?, notes=?, status=?, updated_at=?
             WHERE id=?
         """, (
             symbol,
             _safe_text(data.get("buy_date"), 20),
             _safe_text(data.get("signal"), 120),
             _safe_text(data.get("price"), 40),
+            _safe_text(data.get("stoploss"), 40),
+            _safe_text(data.get("target"), 40),
             _safe_text(data.get("title"), 240),
             _safe_text(data.get("notes"), 5000),
-            _safe_text(data.get("status"), 40) or "watching",
+            _safe_text(data.get("status"), 40) or "check",
             _now_vn_iso(),
             entry_id,
         ))
@@ -700,7 +713,7 @@ JOURNAL_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Nhật ký mua</title>
+<title>Nhật ký</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
@@ -715,12 +728,14 @@ button:hover,.btn:hover{background:#eef3ff;color:var(--accent);border-color:var(
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
 button.green{background:var(--green);color:#fff;border-color:var(--green)}
-main{padding:14px;display:grid;grid-template-columns:330px 1fr;gap:14px}
+main{padding:14px;display:flex;flex-direction:column;gap:12px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)}
 .panel-h{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--surf2);border-bottom:1px solid var(--border)}
+.panel-h-main{display:flex;align-items:center;gap:10px;min-width:0}
 .panel-title{font-family:var(--font-ui);font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:1.6px;color:var(--accent)}
 .panel-b{padding:12px}
-.filters{display:flex;gap:7px;margin-bottom:10px}
+.filters{display:flex;gap:7px;align-items:center}
+.filters input{width:130px}.filters select{width:130px}
 input,textarea,select{width:100%;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none}
 input,select{height:32px;padding:0 9px}
 textarea{min-height:96px;padding:8px 9px;resize:vertical}
@@ -730,15 +745,16 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .field.full{grid-column:1/-1}
 .field label{display:block;margin-bottom:4px;font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.7px}
 .form-actions{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}
-.locked{padding:18px;color:var(--muted);font-size:12px;text-align:center;border:1px dashed var(--border);border-radius:6px}
-.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.edit-panel{display:none}
+.edit-panel.on{display:block}
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
 .card{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .card-h{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;background:#fbfcff;border-bottom:1px solid var(--border)}
 .sym{font-family:var(--font-ui);font-size:21px;font-weight:800;color:var(--accent);letter-spacing:1px}
 .ch-meta{font-size:10px;color:var(--muted);line-height:1.45}
 .status{margin-left:auto;font-size:10px;font-weight:800;border-radius:999px;padding:3px 8px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
 .status.bought{color:#0e7b54;background:#dcfce7;border-color:#86efac}
-.status.watching{color:#9a5b00;background:#fef3c7;border-color:#fcd34d}
+.status.check,.status.watching{color:#9a5b00;background:#fef3c7;border-color:#fcd34d}
 .status.closed{color:#6b7280;background:#f1f5f9;border-color:#cbd5e1}
 .card-b{padding:10px 11px;display:flex;flex-direction:column;gap:8px}
 .title{font-weight:800;font-size:13px}
@@ -759,12 +775,19 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 #viewer.on{display:flex}
 #viewer img{max-width:96vw;max-height:92vh;object-fit:contain;background:#fff;border-radius:4px}
 #viewer button{position:absolute;top:14px;right:14px;border-radius:50%;width:36px;height:36px;padding:0;background:#fff;color:#111}
-@media(max-width:840px){main{grid-template-columns:1fr}.form{grid-template-columns:1fr}.meta{display:none}.list{grid-template-columns:1fr}}
+.login-modal{display:none;position:fixed;inset:0;z-index:120;background:rgba(17,24,39,.55);align-items:center;justify-content:center;padding:16px}
+.login-modal.on{display:flex}
+.login-box{width:min(360px,94vw);background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.2);overflow:hidden}
+.login-h{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surf2);border-bottom:1px solid var(--border)}
+.pass-wrap{position:relative}
+.pass-wrap input{padding-right:42px}
+.eye-btn{position:absolute;right:4px;top:4px;width:28px;height:24px;padding:0;border:none;background:transparent;color:var(--muted)}
+@media(max-width:840px){.form{grid-template-columns:1fr}.meta{display:none}.list{grid-template-columns:1fr}.panel-h{align-items:flex-start;gap:8px}.panel-h-main{flex-direction:column;align-items:flex-start}.filters{width:100%;overflow-x:auto}.filters input,.filters select{width:120px;flex-shrink:0}}
 </style>
 </head>
 <body>
 <header>
-  <h1>★ Nhật ký mua</h1>
+  <h1>★ Nhật ký</h1>
   <span class="meta" id="mode-meta">View mode</span>
   <div class="spacer"></div>
   <button id="btn-new" class="primary" style="display:none">+ Thêm</button>
@@ -772,26 +795,18 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
   <button id="btn-logout" class="danger" style="display:none">Logout</button>
 </header>
 <main id="app">
-  <section class="panel">
-    <div class="panel-h"><span class="panel-title">Bộ lọc</span></div>
+  <section class="panel edit-panel" id="entry-panel">
+    <div class="panel-h"><span class="panel-title">Chi tiết</span></div>
     <div class="panel-b">
-      <div class="filters">
-        <input id="f-symbol" placeholder="Mã CK" maxlength="12" autocomplete="off">
-        <select id="f-status">
-          <option value="">Tất cả</option>
-          <option value="watching">Theo dõi</option>
-          <option value="bought">Đã mua</option>
-          <option value="closed">Đã đóng</option>
-        </select>
-      </div>
-      <div id="locked-box" class="locked">Người xem chỉ đọc được nhật ký. Bấm Edit và nhập mật khẩu để thêm, sửa, xóa hoặc upload ảnh.</div>
       <form id="entry-form" class="form">
         <input type="hidden" id="entry-id">
         <div class="field"><label>Mã</label><input id="symbol" maxlength="20" required></div>
         <div class="field"><label>Ngày mua</label><input id="buy-date" type="date"></div>
         <div class="field"><label>Tín hiệu</label><input id="signal" maxlength="120"></div>
         <div class="field"><label>Giá</label><input id="price" maxlength="40"></div>
-        <div class="field"><label>Trạng thái</label><select id="status"><option value="watching">Theo dõi</option><option value="bought">Đã mua</option><option value="closed">Đã đóng</option></select></div>
+        <div class="field"><label>Stoploss</label><input id="stoploss" maxlength="40"></div>
+        <div class="field"><label>Target</label><input id="target" maxlength="40"></div>
+        <div class="field"><label>Trạng thái</label><select id="status"><option value="check">Check</option><option value="watching">Theo dõi</option><option value="bought">Đã mua</option><option value="closed">Đã đóng</option></select></div>
         <div class="field"><label>Tiêu đề</label><input id="title" maxlength="240"></div>
         <div class="field full"><label>Ghi chú</label><textarea id="notes"></textarea></div>
         <div class="field full"><label>Ảnh điểm mua</label><input id="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></div>
@@ -800,30 +815,54 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
     </div>
   </section>
   <section class="panel">
-    <div class="panel-h"><span class="panel-title">Danh sách</span><span class="meta" id="count-meta">0 mục</span></div>
+    <div class="panel-h">
+      <div class="panel-h-main">
+        <span class="panel-title">Danh sách</span>
+        <div class="filters">
+          <input id="f-symbol" placeholder="Mã CK" maxlength="12" autocomplete="off">
+          <select id="f-status">
+            <option value="">Tất cả</option>
+            <option value="check">Check</option>
+            <option value="watching">Theo dõi</option>
+            <option value="bought">Đã mua</option>
+            <option value="closed">Đã đóng</option>
+          </select>
+        </div>
+      </div>
+      <span class="meta" id="count-meta">0 mục</span>
+    </div>
     <div class="panel-b"><div class="list" id="list"></div></div>
   </section>
 </main>
 <div id="viewer"><button id="viewer-close">✕</button><img id="viewer-img" alt=""></div>
+<div class="login-modal" id="login-modal">
+  <form class="login-box" id="login-form">
+    <div class="login-h"><span class="panel-title">Edit mode</span><button type="button" id="login-close">✕</button></div>
+    <div class="panel-b">
+      <div class="field full"><label>Mật khẩu</label><div class="pass-wrap"><input id="login-password" type="password" autocomplete="current-password"><button type="button" class="eye-btn" id="toggle-pass">👁</button></div></div>
+      <div class="form-actions" style="margin-top:10px"><button type="button" id="login-cancel">Hủy</button><button class="primary" type="submit">Đăng nhập</button></div>
+    </div>
+  </form>
+</div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
 const S={admin:false,entries:[]};
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function api(url,opt){const r=await fetch(url,opt);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
-function payload(){return{symbol:$('symbol').value.trim().toUpperCase(),buy_date:$('buy-date').value,signal:$('signal').value.trim(),price:$('price').value.trim(),title:$('title').value.trim(),notes:$('notes').value.trim(),status:$('status').value};}
-function setAdmin(on){S.admin=!!on;document.body.classList.toggle('admin',S.admin);$('mode-meta').textContent=S.admin?'Edit mode':'View mode';$('btn-login').style.display=S.admin?'none':'';$('btn-logout').style.display=S.admin?'':'none';$('btn-new').style.display=S.admin?'':'none';$('locked-box').style.display=S.admin?'none':'';if(!S.admin)hideForm();}
-function showForm(entry){if(!S.admin)return;const e=entry||{};$('entry-id').value=e.id||'';$('symbol').value=e.symbol||'';$('buy-date').value=e.buy_date||'';$('signal').value=e.signal||'';$('price').value=e.price||'';$('title').value=e.title||'';$('notes').value=e.notes||'';$('status').value=e.status||'watching';$('images').value='';$('entry-form').classList.add('on');$('symbol').focus();}
-function hideForm(){$('entry-form').classList.remove('on');$('entry-form').reset();$('entry-id').value='';}
+function payload(){return{symbol:$('symbol').value.trim().toUpperCase(),buy_date:$('buy-date').value,signal:$('signal').value.trim(),price:$('price').value.trim(),stoploss:$('stoploss').value.trim(),target:$('target').value.trim(),title:$('title').value.trim(),notes:$('notes').value.trim(),status:$('status').value};}
+function setAdmin(on){S.admin=!!on;document.body.classList.toggle('admin',S.admin);$('mode-meta').textContent=S.admin?'Edit mode':'View mode';$('btn-login').style.display=S.admin?'none':'';$('btn-logout').style.display=S.admin?'':'none';$('btn-new').style.display=S.admin?'':'none';if(!S.admin)hideForm();}
+function showForm(entry){if(!S.admin)return;const e=entry||{};$('entry-id').value=e.id||'';$('symbol').value=e.symbol||'';$('buy-date').value=e.buy_date||'';$('signal').value=e.signal||'';$('price').value=e.price||'';$('stoploss').value=e.stoploss||'';$('target').value=e.target||'';$('title').value=e.title||'';$('notes').value=e.notes||'';$('status').value=e.status||'check';$('images').value='';$('entry-panel').classList.add('on');$('entry-form').classList.add('on');$('symbol').focus();}
+function hideForm(){$('entry-form').classList.remove('on');$('entry-panel').classList.remove('on');$('entry-form').reset();$('entry-id').value='';}
 async function loadMe(){try{const j=await api('/api/journal/me');setAdmin(j.admin);}catch(e){setAdmin(false);}}
 async function loadEntries(){const qs=new URLSearchParams();if($('f-symbol').value.trim())qs.set('symbol',$('f-symbol').value.trim().toUpperCase());if($('f-status').value)qs.set('status',$('f-status').value);const j=await api('/api/journal/entries?'+qs.toString());S.entries=j.entries||[];$('count-meta').textContent=(j.count||0)+' mục';render();}
-function statusLabel(s){return s==='bought'?'Đã mua':s==='closed'?'Đã đóng':'Theo dõi';}
-function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div class="empty">Chưa có nhật ký mua nào</div>';return;}box.innerHTML=S.entries.map(e=>`
+function statusLabel(s){return s==='check'?'Check':s==='bought'?'Đã mua':s==='closed'?'Đã đóng':'Theo dõi';}
+function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div class="empty">Chưa có nhật ký nào</div>';return;}box.innerHTML=S.entries.map(e=>`
   <article class="card" data-id="${e.id}">
-    <div class="card-h"><div><div class="sym">${esc(e.symbol)}</div><div class="ch-meta">${esc(e.buy_date||e.created_at)}<br>${esc(e.updated_at)}</div></div><span class="status ${esc(e.status)}">${statusLabel(e.status)}</span></div>
+    <div class="card-h"><div><div class="sym">${esc(e.symbol)}</div><div class="ch-meta">${esc(e.buy_date||'')}</div></div><span class="status ${esc(e.status)}">${statusLabel(e.status)}</span></div>
     <div class="card-b">
       ${e.title?`<div class="title">${esc(e.title)}</div>`:''}
-      <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}</div>
+      <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}${e.stoploss?`<span class="tag">SL: ${esc(e.stoploss)}</span>`:''}${e.target?`<span class="tag">Target: ${esc(e.target)}</span>`:''}</div>
       ${e.notes?`<div class="notes">${esc(e.notes)}</div>`:''}
       ${e.images&&e.images.length?`<div class="imgs">${e.images.map(img=>`<div class="img-wrap"><img src="${img.url}" alt="${esc(img.original_name)}" data-full="${img.url}"><button class="img-del" data-img="${img.id}">✕</button></div>`).join('')}</div>`:''}
       <input class="upload-inline" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple data-upload="${e.id}">
@@ -831,7 +870,14 @@ function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div 
     <div class="card-actions"><button data-edit="${e.id}">Sửa</button><button class="danger" data-del="${e.id}">Xóa</button></div>
   </article>`).join('');}
 async function uploadImages(entryId,files){if(!files||!files.length)return;const fd=new FormData();[...files].forEach(f=>fd.append('images',f));await api('/api/journal/entries/'+entryId+'/images',{method:'POST',body:fd});}
-$('btn-login').addEventListener('click',async()=>{const password=prompt('Nhập mật khẩu edit mode');if(!password)return;try{await api('/api/journal/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});setAdmin(true);await loadEntries();}catch(e){alert('Không đăng nhập được: '+e.message);}});
+function openLogin(){$('login-password').value='';$('login-password').type='password';$('login-modal').classList.add('on');setTimeout(()=>$('login-password').focus(),50);}
+function closeLogin(){$('login-modal').classList.remove('on');$('login-password').value='';}
+$('btn-login').addEventListener('click',openLogin);
+$('login-close').addEventListener('click',closeLogin);
+$('login-cancel').addEventListener('click',closeLogin);
+$('toggle-pass').addEventListener('click',()=>{$('login-password').type=$('login-password').type==='password'?'text':'password';});
+$('login-modal').addEventListener('click',e=>{if(e.target.id==='login-modal')closeLogin();});
+$('login-form').addEventListener('submit',async e=>{e.preventDefault();const password=$('login-password').value;if(!password)return;try{await api('/api/journal/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});closeLogin();setAdmin(true);await loadEntries();}catch(err){alert('Không đăng nhập được: '+err.message);}});
 $('btn-logout').addEventListener('click',async()=>{try{await api('/api/journal/logout',{method:'POST'});}catch(e){}setAdmin(false);});
 $('btn-new').addEventListener('click',()=>showForm());
 $('btn-cancel').addEventListener('click',hideForm);
@@ -1398,7 +1444,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <div class="journal-overlay" id="journal-overlay">
   <div class="journal-box">
     <div class="journal-hdr">
-      <span class="journal-title">★ Nhật ký mua</span>
+      <span class="journal-title">★ Nhật ký</span>
       <button class="journal-close" id="journal-close-btn">✕</button>
     </div>
     <iframe class="journal-frame" id="journal-frame" src="about:blank"></iframe>
