@@ -746,7 +746,7 @@ header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px
 h1{font-family:var(--font-ui);font-size:18px;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);white-space:nowrap}
 .spacer{flex:1}
 .meta{font-size:10px;color:var(--muted);white-space:nowrap}
-button,.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+button,.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 button:hover,.btn:hover{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
@@ -862,7 +862,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
         <div class="field full"><label>Ghi chú</label><textarea id="notes"></textarea></div>
         <div class="uploaded-list" id="uploaded-list"></div>
         <div class="field full"><label>Ảnh điểm mua</label><input id="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></div>
-        <div class="form-actions"><button type="button" id="btn-cancel">Hủy</button><button class="green" type="submit">Lưu</button></div>
+        <div class="form-actions"><button type="button" id="btn-cancel">✕</button><button class="green" type="submit">✓</button></div>
       </form>
     </div>
   </section>
