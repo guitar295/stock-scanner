@@ -2862,6 +2862,7 @@ function render(data,ts){
     }
     dest.flows.push(stock);
     dest.flowWeight = Math.max(dest.flowWeight || 0,stock.weight);
+    
     if(stock.weight>dest.weight){
       Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
     }
@@ -2891,7 +2892,7 @@ function render(data,ts){
     flows.forEach((flow,idx)=>{
       const sec=sectors.find(s=>s.name===flow.sector);
       const remaining=stock.destY+h2-segY;
-      const segH=idx===flows.length-1 ? remaining : Math.max(1,h2*(flow.weight/stock.flowWeight));
+      const segH=idx===flows.length-1 ? remaining : Math.max(1,h2*(flow.weight/flows.reduce((s,f)=>s+f.weight,0)));
       svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
       segY+=segH;
     });
