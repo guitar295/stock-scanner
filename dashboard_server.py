@@ -981,7 +981,7 @@ $('viewer').addEventListener('click',e=>{if(e.target.id==='viewer'||e.target.id=
 $('viewer-prev').addEventListener('click',e=>{e.stopPropagation();viewerNav(-1);});
 $('viewer-next').addEventListener('click',e=>{e.stopPropagation();viewerNav(1);});
 document.addEventListener('keydown',e=>{if(!$('viewer').classList.contains('on'))return;if(e.key==='Escape')closeViewer();else if(e.key==='ArrowLeft')viewerNav(-1);else if(e.key==='ArrowRight')viewerNav(1);});
-(async function init(){if(prompt('Password?')!=='12'){document.body.innerHTML='';return;}await loadMe();await Promise.all([loadEntries(),loadWarning()]);})();
+(async function init(){if(prompt('Password?')!=='12'){alert('Sai mật khẩu');return;}await loadMe();await Promise.all([loadEntries(),loadWarning()]);})();
 </script>
 </body>
 </html>
