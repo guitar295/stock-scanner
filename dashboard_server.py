@@ -796,7 +796,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .imgs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
 .img-wrap{position:relative;border:1px solid var(--border);border-radius:5px;overflow:hidden;background:#f8fafc;aspect-ratio:4/3}
 .img-wrap img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
-.img-del{position:absolute;top:4px;right:4px;width:24px;height:24px;padding:0;border:none;border-radius:50%;background:transparent;color:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);transition:all .15s ease}
+.img-del{position:absolute;top:4px;right:4px;width:24px;height:24px;padding:0;border:none;border-radius:50%;background:transparent;color:rgba(255,255,255,.75);display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);transition:all .15s ease}
 .img-del:hover{background:rgba(224,36,36,.95);color:#fff}
 .admin .img-del{display:flex}
 .card-actions{display:none;gap:7px;justify-content:flex-end;border-top:1px solid var(--border);padding:9px 11px;background:#fbfcff}
