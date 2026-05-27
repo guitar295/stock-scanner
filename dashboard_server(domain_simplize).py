@@ -980,7 +980,7 @@ $('f-status').addEventListener('change',loadEntries);
 $('viewer').addEventListener('click',e=>{if(e.target.id==='viewer'||e.target.id==='viewer-close')closeViewer();});
 $('viewer-prev').addEventListener('click',e=>{e.stopPropagation();viewerNav(-1);});
 $('viewer-next').addEventListener('click',e=>{e.stopPropagation();viewerNav(1);});
-document.addEventListener('keydown',e=>{if(!$('viewer').classList.contains('on'))return;if(e.key==='Escape')closeViewer();else if(e.key==='ArrowLeft')viewerNav(-1);else if(e.key==='ArrowRight')viewerNav(1);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('viewer').classList.contains('on'))return closeViewer();if($('login-modal').classList.contains('on'))return closeLogin();document.activeElement?.blur();return window.parent?.postMessage({type:'JOURNAL_CLOSE'},'*');}if(!$('viewer').classList.contains('on'))return;if(e.key==='ArrowLeft')viewerNav(-1);else if(e.key==='ArrowRight')viewerNav(1);});
 (async function init(){await loadMe();await Promise.all([loadEntries(),loadWarning()]);})();
 </script>
 </body>
@@ -1245,6 +1245,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     height:auto;
   }
   .market-frame{height:70vh}
+  #market-panel{display:none !important;}
 }
 
 /* ═══════════════════════════════════════════
@@ -1522,7 +1523,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   </div>
 
   <!-- MARKET -->
-  <div class="panel">
+  <div class="panel" id="market-panel">
     <div class="panel-hdr">
       <span class="panel-title">MARKET</span>
     </div>
@@ -1562,7 +1563,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <!-- POPUP -->
 <div class="overlay" id="overlay">
   <button id="mob-close-float" aria-label="Đóng">✕</button>
-  <div class="pbox" id="pbox">
+  <div class="pbox" id="pbox" tabindex="-1">
     <!-- Desktop header (ẩn trên mobile qua CSS) -->
     <div class="phdr" id="popup-phdr">
       <div class="phdr-left">
@@ -2074,6 +2075,7 @@ function openChart(sym){
   _resetScannerUI();
   _activateTab('vs');
   _openPopup();
+  setTimeout(()=>DOM.pbox.focus(),0);
   // Clear search inputs
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
@@ -2142,8 +2144,8 @@ window.addEventListener('orientationchange',()=>{
 // Keyboard
 document.addEventListener('keydown',e=>{
   if(DOM.lb.classList.contains('on'))return;
-  if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){closeJournal();return;}
   if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
+  if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){closeJournal();return;}
   if(!DOM.overlay.classList.contains('on'))return;
   const activeSearch=[DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch];
   if(activeSearch.includes(document.activeElement))return;
@@ -2933,9 +2935,33 @@ function startAuto(){
 }
 $('btn-close').addEventListener('click',notifyClose);
 $('svg').addEventListener('click',e=>{
-  const target=e.target.closest('[data-sym]');
-  if(!target)return;
-  notifyHost(target.dataset.sym);
+  const t=e.target.closest('[data-sym]');
+  if(!t)return;
+  if(window.innerWidth<=768) return;
+  try{
+    const sym=t.dataset.sym;
+    notifyHost(sym);
+    window.parent.focus();
+    parent._hmapDesktopClick(sym);
+  }catch(err){
+    console.error(err);
+  }
+});
+$('svg').addEventListener('dblclick',e=>{
+  const t=e.target.closest('[data-sym]');
+  if(!t)return;
+  if(window.innerWidth<=768) return;
+  try{
+    const sym=t.dataset.sym;
+    notifyHost(sym);
+    window.parent.focus();
+    parent._syncHoverPreview(sym);
+    parent.updatePopout(sym);
+    parent.updateSimplize(sym);
+    parent.openChart(sym);
+  }catch(err){
+    console.error(err);
+  }
 });
 (async function init(){
   await fetchConfig();
