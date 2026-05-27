@@ -134,6 +134,10 @@ def popout_full(symbol):
     return Response(POPOUT_FULL_HTML.replace("__SYMBOL__", symbol.upper().strip()),
                     mimetype="text/html")
 
+@app.route("/sankey")
+def sankey_view():
+    return Response(SANKEY_HTML, mimetype="text/html")
+
 @app.route("/")
 def index():
     return Response(DASHBOARD_HTML, mimetype="text/html")
@@ -173,13 +177,21 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Full Chart — __SYMBOL__</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<script>
+try{
+  const qs=new URLSearchParams(window.location.search);
+  if(qs.get('embedded')==='1')
+    document.documentElement.classList.add('embedded-popout');
+}catch(e){}
+</script>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
 .page{height:100vh;display:flex;flex-direction:column}
-.phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
+.phdr{display:flex;align-items:center;justify-content:center;padding:7px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
+html.embedded-popout .phdr{display:none !important}
 .phdr-left{display:flex;align-items:center;gap:8px}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
 .phdr-right{display:flex;align-items:center;justify-content:flex-end}
@@ -188,11 +200,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
 .search-input{width:108px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .search-input:focus{width:180px;border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
-.ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap;justify-content:center}
-.ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
-.ctab.on{background:var(--surface);color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+.ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center}
+.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
-.closebtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.phdr-right{margin-left:2px}
+.closebtn{width:30px;height:30px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .pbody{flex:1;overflow:hidden;position:relative;background:#fff}
 .tpanel{position:absolute;inset:0;display:none}
@@ -222,38 +235,27 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 @media (min-width: 769px) {
-    body.embedded-popout-desktop .phdr-left {
-        visibility: hidden !important;
-        pointer-events: none !important;
-    }
+    body.embedded-popout-desktop .phdr{display:none !important}
   }
 @media(max-width:980px){
   .phdr{grid-template-columns:1fr;gap:8px}
   .phdr-left,.phdr-center,.phdr-right{justify-content:center}
 }
 @media(max-width:768px){
-  body.embedded-popout-mobile-full .phdr{display:flex !important;align-items:center !important;padding:4px 6px !important;gap:4px !important}
-  body.embedded-popout-mobile-full .phdr-left{display:none !important}
-  body.embedded-popout-mobile-full .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
-  body.embedded-popout-mobile-full .phdr-right{display:flex !important;flex-shrink:0}
-  body.embedded-popout-mobile-full .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none}
-  body.embedded-popout-mobile-full .ctabs::-webkit-scrollbar{display:none}
-  body.embedded-popout-mobile-full .ctab{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
-  body.embedded-popout-mobile-full .ctab.on{border-color:var(--accent);box-shadow:0 2px 0 var(--accent)}
-  body.embedded-popout-mobile-full .closebtn{width:30px;height:30px;border-radius:4px}
+  .phdr{display:flex !important;align-items:center !important;justify-content:flex-start !important;padding:4px 6px !important;gap:4px !important}
+  .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
+  .phdr-right{display:flex !important;flex-shrink:0}
+  .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch}
+  .ctabs::-webkit-scrollbar{display:none}
+  .ctab{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
+  .ctab.on{border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent)}
+  .closebtn{width:30px;height:30px;border-radius:4px;flex-shrink:0}
 }
 </style>
 </head>
 <body>
 <div class="page">
   <div class="phdr">
-    <div class="phdr-left">
-      <span class="ptitle" id="ptitle">📈 __SYMBOL__</span>
-      <div class="search-wrap">
-        <span class="s-icon">🔍</span>
-        <input class="search-input" id="search-input" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
-      </div>
-    </div>
     <div class="phdr-center">
       <div class="ctabs" id="ctabs">
         <button class="ctab on" data-tab="vs">📈 Vietstock</button>
@@ -261,7 +263,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
         <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
         <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="ctab" data-tab="24h">💬 24HMoney</button>
+        <button class="ctab" data-tab="24h">💬 Fireant</button>
       </div>
     </div>
     <div class="phdr-right">
@@ -293,29 +295,32 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 'use strict';
 const $=id=>document.getElementById(id);
 const DOM={
-  ptitle:$('ptitle'),ifVs:$('iframe-vs'),
+  ifVs:$('iframe-vs'),
   loading:$('scanner-loading'),outer:$('album-outer'),
   slides:$('album-slides'),dots:$('album-dots'),
   btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
-  ctabs:$('ctabs'),search:$('search-input'),
+  ctabs:$('ctabs'),
 };
 const IFRAME_MAP={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
   'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
+  '24h':     s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
 const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
-  const isEmbedded = (window.self !== window.top);
+  const qs=new URLSearchParams(window.location.search);
+  const isEmbedded = qs.get('embedded')==='1';
   const isMobile = (window.innerWidth <= 768);
+  document.documentElement.classList.toggle('embedded-popout', isEmbedded);
   document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
   document.body.classList.toggle('embedded-popout-desktop', isEmbedded && !isMobile);
 }
 window.addEventListener('resize', _applyEmbeddedMode);
 window.addEventListener('orientationchange', _applyEmbeddedMode);
+_applyEmbeddedMode();
 function notifyHost(sym){
   try{
     if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
@@ -340,7 +345,6 @@ function _activateTab(tab){
 
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
-  DOM.ptitle.textContent=_sym;
   document.title=_sym+' • Full Chart';
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -395,18 +399,13 @@ async function loadScannerChart(sym){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
-DOM.search.addEventListener('keydown',function(e){
-  if(e.key==='Enter'){const s=this.value.trim().toUpperCase();if(s.length>=2){this.value='';this.blur();setSymbol(s);}}
-  if(e.key==='Escape'){this.value='';this.blur();}
-});
-DOM.search.addEventListener('focus',function(){this.select();});
-$('close-btn').addEventListener('click',handleClose);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){window.close();return;}
-  if(document.activeElement===DOM.search||_tab!=='scanner'||_albumTotal===0)return;
+  if(_tab!=='scanner'||_albumTotal===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
   if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
+$('close-btn').addEventListener('click',handleClose);
 window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
 _applyEmbeddedMode();
 setSymbol(_sym);
@@ -478,6 +477,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-ts-wrap{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted)}
 .hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--accent);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
 .hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.hmap-link-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#hmap-simplize-btn{color:var(--muted)}
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
@@ -525,6 +526,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
+.sankey-frame{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;border:none;display:block;background:#fff}
+.market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -542,9 +545,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .popup-search-wrap .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
 .popup-search-input{width:100px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
-.ctabs{display:flex;gap:2px;align-items:flex-end;flex-wrap:wrap}
-.ctab{font-size:11px;font-family:var(--font-mono);font-weight:600;padding:5px 11px;border-radius:5px 5px 0 0;border:1px solid var(--border);border-bottom:2px solid transparent;background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
-.ctab.on{background:var(--surface);color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+.ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
+.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
 .closebtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
@@ -655,6 +658,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     color: var(--text) !important;
     border-color: var(--border) !important;
   }
+  .sankey-frame{
+    width:100% !important;
+    margin-left:0 !important;
+    aspect-ratio:16/9;
+    height:auto;
+  }
+  .market-frame{height:70vh}
 }
 
 /* ═══════════════════════════════════════════
@@ -906,6 +916,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
+        <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
     </div>
@@ -917,6 +928,22 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- SANKEY -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-title">Sankey</span>
+    </div>
+    <iframe class="sankey-frame" id="sankey-frame" src="/sankey?embedded=1"></iframe>
+  </div>
+
+  <!-- MARKET -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-title">MARKET</span>
+    </div>
+    <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
   </div>
 </div>
 
@@ -962,7 +989,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
           <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
           <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
-          <button class="ctab" data-tab="24h">💬 24HMoney</button>
+          <button class="ctab" data-tab="24h">💬 Fireant</button>
         </div>
       </div>
       <div class="phdr-right">
@@ -986,7 +1013,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
       <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
       <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
-      <button class="mob-tab-btn" data-tab="24h">💬 24HMoney</button>
+      <button class="mob-tab-btn" data-tab="24h">💬 Fireant</button>
     </div>
 
     <!-- Mobile landscape header — 1 hàng -->
@@ -1002,7 +1029,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="mob-land-tab" data-tab="24h">💬 24HMoney</button>
+        <button class="mob-land-tab" data-tab="24h">💬 Fireant</button>
       </div>
       <!-- X vuông cố định phải -->
       <button class="mob-land-close" id="mob-land-close">✕</button>
@@ -1086,7 +1113,7 @@ const IFRAME_LAZY={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
   'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
   'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://24hmoney.vn/stock/${s}/news`,
+  '24h':     s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
 const BADGE_MAP={
   'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
@@ -1094,7 +1121,7 @@ const BADGE_MAP={
 };
 const MOB_TABS=[
   ['vs','📈 Vietstock'],['scanner','🖼 Scanner'],['vnd-cs','⚖️ Cơ bản'],
-  ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 24HMoney'],
+  ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 Fireant'],
 ];
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
@@ -1102,7 +1129,77 @@ let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
+let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
+const SIMPLIZE_ORIGIN='https://simplize.vn';
+function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
+function _getPopupViewport(){
+  const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
+  const top=Number.isFinite(window.screen.availTop)?window.screen.availTop:0;
+  const height=Math.max(720,window.screen.availHeight||window.innerHeight||800);
+  const width=Math.max(960,window.screen.availWidth||window.innerWidth||1280);
+  return{left,top,width,height};
+}
+function _openMaximizedWindow(url,name,width,height,offsetLeft,offsetTop,extra=''){
+  const box=_getPopupViewport();
+  const popupLeft=box.left+Math.max(0,box.width-width-offsetLeft);
+  const features=[
+    `left=${popupLeft}`,`top=${box.top+offsetTop}`,`width=${width}`,`height=${height}`,
+    'resizable=yes','scrollbars=yes','menubar=no','toolbar=no','location=no','status=no'
+  ];
+  if(extra)features.push(extra);
+  const win=window.open(url,name,features.join(','));
+  if(win){
+    try{win.moveTo(popupLeft,box.top+offsetTop);}catch(e){}
+    try{win.resizeTo(width,height);}catch(e){}
+  }
+  return win;
+}
+function _refreshChartModeUI(){
+  const chartBtn=$('hover-preview-btn');
+  chartBtn.classList.toggle('on',_hoverPreviewOn||_isPopoutMode);
+  chartBtn.textContent=_isPopoutMode?'Chart: POP':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
+  $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
+  $('hmap-simplize-btn').classList.toggle('on',_isSimplizeMode);
+}
+function _resetPopupChrome(){
+  $('popup-phdr').style.display='';
+  DOM.mobHdrRow1.style.display='none';
+  DOM.mobTabRow.style.display='none';
+  DOM.mobHdrLand.style.display='';
+  DOM.mobClose.style.display='none';
+}
+function _stopSimplizeWatch(){
+  if(_simplizeWatch){clearInterval(_simplizeWatch);_simplizeWatch=null;}
+}
+function closeSimplizeWindow(){
+  _isSimplizeMode=false;
+  _stopSimplizeWatch();
+  if(_simplizeWin&&!_simplizeWin.closed)try{_simplizeWin.close();}catch(e){}
+  _simplizeWin=null;
+  _refreshChartModeUI();
+}
+function updateSimplize(sym){
+  if(!_simplizeWin||_simplizeWin.closed){
+    if(_isSimplizeMode)closeSimplizeWindow();
+    return;
+  }
+  try{_simplizeWin.location.href=simplizeUrl(sym);}catch(e){}
+}
+function quickSimplize(){
+  const sym=_hoverPreviewCurrent||_sym||'VNINDEX';
+  if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
+  const box=_getPopupViewport();
+  const w=Math.min(1600,box.width-40),h=box.height;
+  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,0,0);
+  if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
+  _isSimplizeMode=true;
+  _refreshChartModeUI();
+  _stopSimplizeWatch();
+  _simplizeWatch=setInterval(()=>{
+    if(_simplizeWin&&_simplizeWin.closed)closeSimplizeWindow();
+  },1000);
+}
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
 // ═══════════════════════════════════════════════════════
@@ -1167,18 +1264,21 @@ DOM.hmapGrid.addEventListener('click',e=>{
 DOM.hmapGrid.addEventListener('dblclick',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
-  updatePopout(cell.dataset.sym);openChart(cell.dataset.sym);
+  _syncHoverPreview(cell.dataset.sym);
+  updatePopout(cell.dataset.sym);
+  updateSimplize(cell.dataset.sym);
+  openChart(cell.dataset.sym);
 });
 let _hmapClickTimer=null;
 function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _hmapClickTimer=setTimeout(()=>{
+    _syncHoverPreview(sym);
     updatePopout(sym);
+    updateSimplize(sym);
     if(_isPopoutMode)return;
+    if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
-    _hoverPreviewCurrent=sym;
-    DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
-    DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
   },220);
 }
 // Event delegation sig-list
@@ -1188,7 +1288,11 @@ DOM.sigList.addEventListener('click',e=>{
 });
 DOM.sigList.addEventListener('dblclick',e=>{
   const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
-  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);openChart(row.dataset.sym);
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  _syncHoverPreview(row.dataset.sym);
+  updatePopout(row.dataset.sym);
+  updateSimplize(row.dataset.sym);
+  openChart(row.dataset.sym);
 });
 // ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
@@ -1244,6 +1348,7 @@ function _bindSearch(el,onEnter){
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
+$('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
 $('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 // ═══════════════════════════════════════════════════════
@@ -1360,6 +1465,7 @@ function _openPopup(){
     DOM.mobClose.style.display='none';
 }
 function openChart(sym){
+  _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab='vs';
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
@@ -1371,6 +1477,7 @@ function openChart(sym){
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 function openUrl(url,label){
+  _resetPopupChrome();
   _sym=label||'WEB';
   _updateSymDisplay(label||'🌐');
   ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1385,6 +1492,7 @@ function openUrl(url,label){
 }
 function closePopup(){
   const pbox=DOM.pbox;
+  _resetPopupChrome();
   pbox.style.visibility='hidden';
   DOM.ifVs.src='about:blank';
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
@@ -1607,12 +1715,16 @@ function _hvPatchSymList(newData){
     if(prEl&&typeof d.price==='number')prEl.textContent=fmtP(d.price);
   });
 }
+function _syncHoverPreview(sym,updateFrame=true){
+  _hoverPreviewCurrent=sym;
+  if(!_hoverPreviewOn)return;
+  DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
+  if(updateFrame)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+}
 DOM.hpSymlist.addEventListener('click',e=>{
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
-  DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.remove('on'));
-  item.classList.add('on');_hoverPreviewCurrent=sym;updatePopout(sym);
-  DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+  _syncHoverPreview(sym);updatePopout(sym);updateSimplize(sym);
 });
 document.addEventListener('keydown',e=>{
   if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
@@ -1625,20 +1737,19 @@ document.addEventListener('keydown',e=>{
   let next=cur===-1?0:(e.key==='ArrowDown'?cur+1:cur-1);
   next=Math.max(0,Math.min(next,items.length-1));
   if(next===cur&&cur!==-1)return;
-  items.forEach(el=>el.classList.remove('on'));items[next].classList.add('on');
-  const sym=items[next].dataset.sym;_hoverPreviewCurrent=sym;
+  const sym=items[next].dataset.sym;_syncHoverPreview(sym,false);
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();updatePopout(sym);},300);
+  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);updatePopout(sym);updateSimplize(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
 });
 function _closeHoverPanel(){
   _hoverPreviewOn=false;
-  $('hover-preview-btn').classList.remove('on');$('hover-preview-btn').textContent='Chart: OFF';
   DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
   DOM.hpIframe.src='about:blank';_hoverPreviewCurrent='';
   if(_isPopoutMode){_isPopoutMode=false;if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}_popoutWin=null;}
+  _refreshChartModeUI();
 }
 $('hv-close-btn').addEventListener('click',_closeHoverPanel);
 $('hv-full-btn').addEventListener('click',()=>openChart(_hoverPreviewCurrent||'VNINDEX'));
@@ -1647,12 +1758,12 @@ function toggleHoverPreview(){
   if(_isPopoutMode){minimizePopout();return;}
   if(_hoverPreviewOn){_closeHoverPanel();return;}
   _hoverPreviewOn=true;
-  const btn=$('hover-preview-btn');btn.classList.add('on');btn.textContent='Chart: ON';
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
   _hoverPreviewCurrent='VNINDEX';
   DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode=vnindex';
   if(_hvActiveGroup===-1)_hvSelectGroup(0);else _hvRenderSymList();
+  _refreshChartModeUI();
 }
 (function(){
   const resizer=$('hover-preview-resizer');let drag=false,startY=0,startH=0;
@@ -1673,13 +1784,14 @@ function popOutHover(){
   if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
   DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
   _isPopoutMode=true;_hoverPreviewOn=false;
-  const btn=$('hover-preview-btn');btn.classList.add('on');btn.textContent='Chart: POP';
-  const w=Math.min(1400,window.screen.availWidth-80),h=Math.min(1000,window.screen.availHeight-60);
-  _popoutWin=window.open('','ScannerPopout',`width=${w},height=${h},left=40,top=20,resizable=yes,scrollbars=no,menubar=no,toolbar=no`);
+  _refreshChartModeUI();
+  const box=_getPopupViewport();
+  const w=Math.min(1600,box.width-40),h=box.height;
+  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,0,0,'scrollbars=no');
   if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
   _popoutWin.document.write(_buildPopoutHTML(sym));
   _popoutWin.document.close();
-  const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)minimizePopout();}},1000);
+  const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)closePopoutWindow();}},1000);
 }
 function _buildPopoutHTML(initSym){
   const gJ=JSON.stringify(_hvGroups.map(g=>({name:g.name,syms:g.syms})));
@@ -1706,7 +1818,7 @@ function _buildPopoutHTML(initSym){
     +'}'
     +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
     +'#gtabs::-webkit-scrollbar{display:none}'
-    +'.gtab{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
+    +'.gtab{height:28px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
     +'.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}'
     +'.gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}'
     +'#ctrls{display:flex;gap:3px;align-items:center;flex-shrink:0}'
@@ -1881,7 +1993,6 @@ function minimizePopout(){
   if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
   _popoutWin=null;
   _hoverPreviewOn=true;
-  const btn=$('hover-preview-btn');btn.classList.add('on');btn.textContent='Chart: ON';
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
   if(_hvActiveGroup>=0){
     DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===_hvActiveGroup));
@@ -1889,22 +2000,31 @@ function minimizePopout(){
   }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
   if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
+  _refreshChartModeUI();
+}
+function closePopoutWindow(){
+  _isPopoutMode=false;
+  if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
+  _popoutWin=null;
+  _refreshChartModeUI();
 }
 function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');}
 
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
-    _hoverPreviewCurrent=e.data.symbol;
-    if(_hoverPreviewOn){
-      DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===e.data.symbol));
-      DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+e.data.symbol.toLowerCase();
-    }
+    _syncHoverPreview(e.data.symbol);
+    updateSimplize(e.data.symbol);
+  }else if(e.data.type==='SANKEY_SYM_SELECT'&&e.data.symbol){
+    if(_hoverPreviewOn)_syncHoverPreview(e.data.symbol);
+    else _syncHoverPreview(e.data.symbol,false);
+    updatePopout(e.data.symbol);
+    updateSimplize(e.data.symbol);
+  }else if(e.data.type==='SANKEY_CLOSE'){
+    closePopup();
   }else if(e.data.type==='POPOUT_MINIMIZE'){
     minimizePopout();
   }else if(e.data.type==='POPOUT_CLOSE'){
-    _isPopoutMode=false;_popoutWin=null;
-    const btn=$('hover-preview-btn');btn.classList.remove('on');btn.textContent='Chart: OFF';
-    DOM.wrap.style.paddingBottom='';
+    closePopoutWindow();
   }
 });
 
@@ -1913,12 +2033,299 @@ window.addEventListener('message',e=>{
 // ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
+  _refreshChartModeUI();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
 }
 init();
+</script>
+</body>
+</html>
+"""
+
+SANKEY_HTML = r"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Sankey Heatmap</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<script>
+try{
+  if(new URLSearchParams(window.location.search).get('embedded')==='1')
+    document.documentElement.classList.add('embedded-sankey');
+}catch(e){}
+</script>
+<style>
+:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--text:#111827;--muted:#6b7280;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
+.page{height:100vh;display:flex;flex-direction:column}
+.hdr{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surf2);border-bottom:1px solid var(--border)}
+html.embedded-sankey .hdr{display:none}
+.title{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.4px;color:var(--accent);white-space:nowrap}
+.hdr-spacer{flex:1}
+.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-close{width:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
+.main{flex:1;min-height:0;display:flex;flex-direction:column}
+#wrap{flex:1;min-height:0;padding:0}
+#svg{width:100%;height:100%;display:block;background:var(--surface);border:none;border-radius:0}
+.empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+@media(max-width:900px){
+  .hdr{flex-wrap:nowrap}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hdr">
+    <span class="title">Sankey Diagram</span>
+    <span class="hdr-spacer"></span>
+    <button class="btn btn-close" id="btn-close">✕</button>
+  </div>
+  <div class="main">
+    <div id="wrap"><svg id="svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+  </div>
+</div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const HMAP_COLS=[
+  {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
+  {groups:[{name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},{name:"DAU KHI",syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]}]},
+  {groups:[{name:"CHUNG KHOAN",syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},{name:"XAY DUNG",syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]}]},
+  {groups:[{name:"BAT DONG SAN",syms:["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},{name:"PHAN BON",syms:["BFC","DCM","DPM"]},{name:"THEP",syms:["HPG","HSG","NKG"]}]},
+  {groups:[{name:"BAN LE",syms:["MSN","FPT","FRT","MWG","PNJ","DGW"]},{name:"THUY SAN",syms:["ANV","FMC","CMX","VHC","IDI"]},{name:"CANG BIEN",syms:["HAH","GMD","SGP","VSC"]},{name:"CAO SU",syms:["GVR","DPR","DRI","PHR","DRC"]},{name:"NHUA",syms:["AAA","BMP","NTP"]}]},
+  {groups:[{name:"DIEN NUOC",syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},{name:"DET MAY",syms:["TCM","TNG","VGT","MSH"]},{name:"HANG KHONG",syms:["NCT","ACV","AST","HVN","SCS","VJC"]},{name:"BAO HIEM",syms:["BMI","MIG","BVH"]},{name:"MIA DUONG",syms:["LSS","SBT","QNS"]}]},
+  {groups:[{name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]}]},
+];
+const SECTOR_ORDER=[];
+HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=="VN30")SECTOR_ORDER.push(g);}));
+const SVG_NS='http://www.w3.org/2000/svg';
+const COLORS=['#ec8784','#a378e0','#da9672','#d5cc71','#72dacd','#a1e078','#7882e0','#e0b478','#78e0b4','#e078c8','#96c8fa','#b5d67a'];
+const MIN_WEIGHT=10000000;
+let _ttlMs=120000;
+let _timer=null;
+
+function fmtNum(v){
+  if(!Number.isFinite(v)||v<=0)return '--';
+  return (v/1e9).toFixed(1)+'B';
+}
+function fmtPct(v){
+  if(!Number.isFinite(v))return '--';
+  return (v>=0?'+':'')+v.toFixed(2)+'%';
+}
+function badgeColor(pct){
+  if(pct>0)return {fill:'#0e9f6e',text:'#fff'};
+  if(pct<0)return {fill:'#e02424',text:'#fff'};
+  return {fill:'#d4a017',text:'#fff'};
+}
+function resolveWeight(entry){
+  if(!entry||typeof entry!=='object')return 0;
+  const totalValue=Number(entry.total_value);
+  return Number.isFinite(totalValue)&&totalValue>0 ? totalValue : 0;
+}
+function ribbonPath(x1,y1t,y1b,x2,y2t,y2b){
+  const c1=x1+(x2-x1)*0.45;
+  const c2=x1+(x2-x1)*0.55;
+  return `M ${x1} ${y1t} C ${c1} ${y1t}, ${c2} ${y2t}, ${x2} ${y2t} L ${x2} ${y2b} C ${c2} ${y2b}, ${c1} ${y1b}, ${x1} ${y1b} Z`;
+}
+function makeEl(tag,attrs={},text=''){
+  const el=document.createElementNS(SVG_NS,tag);
+  Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));
+  if(text)el.textContent=text;
+  return el;
+}
+function sectorLimit(rank){
+  if(rank<=1)return 10;
+  if(rank<=4)return 6;
+  if(rank<=7)return 4;
+  if(rank<=11)return 2;
+  return 1;
+}
+function notifyHost(sym){
+  const payload={type:'SANKEY_SYM_SELECT',symbol:sym};
+  try{
+    if(window.self!==window.top)window.parent.postMessage(payload,'*');
+    if(window.opener&&!window.opener.closed)window.opener.postMessage(payload,'*');
+  }catch(e){}
+}
+function notifyClose(){
+  try{
+    if(window.self!==window.top)window.parent.postMessage({type:'SANKEY_CLOSE'},'*');
+    else window.close();
+  }catch(e){}
+}
+function buildDataset(data){
+  const sectors=SECTOR_ORDER.map(g=>{
+    const stocks=g.syms.map(sym=>{
+      const entry=data[sym];
+      const weight=resolveWeight(entry);
+      return {
+        id:`${g.name}::${sym}`,
+        sym,entry,
+        pct:Number(entry?.pct),
+        price:Number(entry?.price),
+        weight,
+        sector:g.name,
+      };
+    }).filter(x=>x.entry&&x.weight>MIN_WEIGHT);
+    return {name:g.name,stocks,weight:stocks.reduce((sum,s)=>sum+s.weight,0)};
+  }).filter(sec=>sec.weight>0);
+  sectors.sort((a,b)=>b.weight-a.weight);
+  sectors.forEach((sec,idx)=>{
+    sec.rank=idx;
+    sec.limit=sectorLimit(idx);
+    sec.color=COLORS[idx%COLORS.length];
+  });
+  const globalStocks=sectors.flatMap(sec=>sec.stocks).sort((a,b)=>b.weight-a.weight);
+  sectors.forEach(sec=>{
+    let drawn=0;
+    sec.visibleStocks=[];
+    for(const stock of globalStocks){
+      if(stock.sector!==sec.name)continue;
+      sec.visibleStocks.push(stock);
+      drawn+=1;
+      if(drawn>=sec.limit)break;
+    }
+  });
+  return {
+    sectors,
+    globalStocks,
+    total:sectors.reduce((sum,sec)=>sum+sec.weight,0),
+  };
+}
+function render(data,ts){
+  const svg=$('svg');
+  svg.innerHTML='';
+  const dataset=buildDataset(data);
+  const sectors=dataset.sectors;
+  if(!sectors.length||dataset.total<=0){
+    const fo=document.createElementNS(SVG_NS,'foreignObject');
+    fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1600'); fo.setAttribute('height','900');
+    const div=document.createElement('div');
+    div.className='empty';
+    div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
+    fo.appendChild(div);
+    svg.appendChild(fo);
+    return;
+  }
+  const total=dataset.total;
+  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
+  const gapSector=5;
+  const marketH=chart.drawH*0.5;
+  const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
+  const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'});
+  svg.appendChild(marketRect);
+  svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
+  let ySector=chart.yStart;
+  let yMarket=marketY;
+  const stockLayouts=[];
+  sectors.forEach(sec=>{
+    sec.h = chart.drawH*(sec.weight/total);
+    sec.y = ySector;
+    sec.marketH = marketH*(sec.weight/total);
+    sec.marketY = yMarket;
+    ySector += sec.h + gapSector;
+    yMarket += sec.marketH;
+    sec.visibleStocks.forEach(stock=>{
+      stockLayouts.push({sec,stock});
+    });
+  });
+  const stockDest=new Map();
+  stockLayouts.forEach(({stock})=>{
+    let dest=stockDest.get(stock.sym);
+    if(!dest){
+      dest={...stock,flows:[],flowWeight:0,destWeight:stock.weight};
+      stockDest.set(stock.sym,dest);
+    }
+    dest.flows.push(stock);
+    dest.flowWeight+=stock.weight;
+    if(stock.weight>dest.weight){
+      Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
+    }
+  });
+  let stockY=chart.yStart-60, stockGap=3;
+  const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
+  stockNodes.forEach(stock=>{
+    stock.nodeH=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
+    stock.destY=stockY;
+    stockY+=stock.nodeH+stockGap;
+  });
+  sectors.forEach(sec=>{
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'}));
+  });
+  const sectorSourceY=new Map(sectors.map(sec=>[sec.name,sec.y]));
+  stockLayouts.forEach(({sec,stock})=>{
+    const dest=stockDest.get(stock.sym);
+    if(!dest)return;
+    const flowH=chart.drawH*(stock.weight/total);
+    const sourceY=sectorSourceY.get(sec.name)||sec.y;
+    sectorSourceY.set(sec.name,sourceY+flowH);
+    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,dest.destY,dest.destY+dest.nodeH),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
+  });
+  stockNodes.forEach(stock=>{
+    const h2=stock.nodeH, flows=stock.flows.length?stock.flows:[stock];
+    let segY=stock.destY;
+    flows.forEach((flow,idx)=>{
+      const sec=sectors.find(s=>s.name===flow.sector);
+      const remaining=stock.destY+h2-segY;
+      const segH=idx===flows.length-1 ? remaining : Math.max(1,h2*(flow.weight/stock.flowWeight));
+      svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
+      segY+=segH;
+    });
+    if(h2>6){
+      const b=badgeColor(stock.pct);
+      const badgeX=chart.stockX+chart.barW+8;
+      const badgeY=stock.destY+h2/2-10;
+      const badgeW=152;
+      const grp=makeEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
+      grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
+      const label=`${stock.sym} (${fmtNum(stock.weight)}, ${fmtPct(stock.pct)})`;
+      grp.appendChild(makeEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':'11','font-weight':'600'},label));
+      svg.appendChild(grp);
+    }
+  });
+  sectors.forEach(sec=>{
+    svg.appendChild(makeEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
+    if(sec.h>16){
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'12','font-weight':'700'},sec.name));
+      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.weight)));
+    }
+  });
+}
+async function fetchConfig(){
+  try{
+    const cfg=await fetch('/api/config').then(r=>r.json());
+    _ttlMs=(Number(cfg.heatmap_ttl_sec)||120)*1000;
+  }catch(e){}
+}
+async function fetchAndRender(){
+  try{
+    const j=await fetch('/api/heatmap').then(r=>r.json());
+    render(j.data||{},j.timestamp||'');
+  }catch(e){}
+}
+function startAuto(){
+  if(_timer)clearInterval(_timer);
+  _timer=setInterval(fetchAndRender,_ttlMs);
+}
+$('btn-close').addEventListener('click',notifyClose);
+$('svg').addEventListener('click',e=>{
+  const target=e.target.closest('[data-sym]');
+  if(!target)return;
+  notifyHost(target.dataset.sym);
+});
+(async function init(){
+  await fetchConfig();
+  await fetchAndRender();
+  startAuto();
+})();
 </script>
 </body>
 </html>
