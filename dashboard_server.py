@@ -750,7 +750,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
 .card{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .card-h{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;background:#fbfcff;border-bottom:1px solid var(--border)}
-.sym{font-family:var(--font-ui);font-size:21px;font-weight:800;color:var(--accent);letter-spacing:1px}
+.sym{font-family:var(--font-ui);font-size:21px;font-weight:800;color:var(--accent);letter-spacing:1px;cursor:pointer}
+.sym:hover{text-decoration:underline}
 .ch-meta{font-size:10px;color:var(--muted);line-height:1.45}
 .status{margin-left:auto;font-size:10px;font-weight:800;border-radius:999px;padding:3px 8px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
 .status.bought{color:#0e7b54;background:#dcfce7;border-color:#86efac}
@@ -859,7 +860,7 @@ async function loadEntries(){const qs=new URLSearchParams();if($('f-symbol').val
 function statusLabel(s){return s==='check'?'Check':s==='bought'?'Đã mua':s==='closed'?'Đã đóng':'Theo dõi';}
 function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div class="empty">Chưa có nhật ký nào</div>';return;}box.innerHTML=S.entries.map(e=>`
   <article class="card" data-id="${e.id}">
-    <div class="card-h"><div><div class="sym">${esc(e.symbol)}</div><div class="ch-meta">${esc(e.buy_date||'')}</div></div><span class="status ${esc(e.status)}">${statusLabel(e.status)}</span></div>
+    <div class="card-h"><div><div class="sym" data-journal-sym="${esc(e.symbol)}" title="Nhảy chart">${esc(e.symbol)}</div><div class="ch-meta">${esc(e.buy_date||'')}</div></div><span class="status ${esc(e.status)}">${statusLabel(e.status)}</span></div>
     <div class="card-b">
       ${e.title?`<div class="title">${esc(e.title)}</div>`:''}
       <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}${e.stoploss?`<span class="tag">SL: ${esc(e.stoploss)}</span>`:''}${e.target?`<span class="tag">TG: ${esc(e.target)}</span>`:''}</div>
@@ -882,7 +883,7 @@ $('btn-logout').addEventListener('click',async()=>{try{await api('/api/journal/l
 $('btn-new').addEventListener('click',()=>showForm());
 $('btn-cancel').addEventListener('click',hideForm);
 $('entry-form').addEventListener('submit',async e=>{e.preventDefault();try{const id=$('entry-id').value;const body=JSON.stringify(payload());let entryId=id;if(id)await api('/api/journal/entries/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body});else{const j=await api('/api/journal/entries',{method:'POST',headers:{'Content-Type':'application/json'},body});entryId=j.id;}await uploadImages(entryId,$('images').files);hideForm();await loadEntries();}catch(err){alert('Không lưu được: '+err.message);}});
-$('list').addEventListener('click',async e=>{const img=e.target.closest('img[data-full]');if(img){$('viewer-img').src=img.dataset.full;$('viewer').classList.add('on');return;}const edit=e.target.closest('[data-edit]');if(edit){const found=S.entries.find(x=>String(x.id)===String(edit.dataset.edit));if(found)showForm(found);return;}const del=e.target.closest('[data-del]');if(del&&confirm('Xóa nhật ký này?')){try{await api('/api/journal/entries/'+del.dataset.del,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa được: '+err.message);}return;}const imgDel=e.target.closest('[data-img]');if(imgDel&&confirm('Xóa ảnh này?')){try{await api('/api/journal/images/'+imgDel.dataset.img,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa ảnh được: '+err.message);}}});
+$('list').addEventListener('click',async e=>{const symBtn=e.target.closest('[data-journal-sym]');if(symBtn){const sym=symBtn.dataset.journalSym;if(window.parent)window.parent.postMessage({type:'JOURNAL_SYM_SELECT',symbol:sym},'*');return;}const img=e.target.closest('img[data-full]');if(img){$('viewer-img').src=img.dataset.full;$('viewer').classList.add('on');return;}const edit=e.target.closest('[data-edit]');if(edit){const found=S.entries.find(x=>String(x.id)===String(edit.dataset.edit));if(found)showForm(found);return;}const del=e.target.closest('[data-del]');if(del&&confirm('Xóa nhật ký này?')){try{await api('/api/journal/entries/'+del.dataset.del,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa được: '+err.message);}return;}const imgDel=e.target.closest('[data-img]');if(imgDel&&confirm('Xóa ảnh này?')){try{await api('/api/journal/images/'+imgDel.dataset.img,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa ảnh được: '+err.message);}}});
 $('list').addEventListener('change',async e=>{const up=e.target.closest('[data-upload]');if(!up||!S.admin)return;try{await uploadImages(up.dataset.upload,up.files);up.value='';await loadEntries();}catch(err){alert('Không upload được: '+err.message);}});
 $('f-symbol').addEventListener('input',()=>{clearTimeout(window._flt);window._flt=setTimeout(loadEntries,250);});
 $('f-status').addEventListener('change',loadEntries);
@@ -2536,6 +2537,13 @@ window.addEventListener('message',e=>{
     else _syncHoverPreview(e.data.symbol,false);
     updatePopout(e.data.symbol);
     updateSimplize(e.data.symbol);
+  }else if(e.data.type==='JOURNAL_SYM_SELECT'&&e.data.symbol){
+    const sym=String(e.data.symbol).toUpperCase().trim();
+    if(!sym)return;
+    if(_hoverPreviewOn)_syncHoverPreview(sym);
+    else _syncHoverPreview(sym,false);
+    updatePopout(sym);
+    updateSimplize(sym);
   }else if(e.data.type==='SANKEY_CLOSE'){
     closePopup();
   }else if(e.data.type==='POPOUT_MINIMIZE'){
