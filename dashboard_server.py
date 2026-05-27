@@ -2143,9 +2143,9 @@ window.addEventListener('orientationchange',()=>{
 });
 // Keyboard
 document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){if(DOM.overlay.classList.contains('on')){closePopup();return;}closeJournal();return;}
   if(DOM.lb.classList.contains('on'))return;
-  if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
-  if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){closeJournal();return;}
+  if(e.key==='Escape'&&DOM.overlay.classList.contains('on')){closePopup();return;}
   if(!DOM.overlay.classList.contains('on'))return;
   const activeSearch=[DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch];
   if(activeSearch.includes(document.activeElement))return;
