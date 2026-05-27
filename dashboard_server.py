@@ -2933,9 +2933,37 @@ function startAuto(){
 }
 $('btn-close').addEventListener('click',notifyClose);
 $('svg').addEventListener('click',e=>{
-  const target=e.target.closest('[data-sym]');
-  if(!target)return;
-  notifyHost(target.dataset.sym);
+  const t=e.target.closest('[data-sym]');
+  if(!t)return;
+
+  const sym=t.dataset.sym;
+
+  notifyHost(sym);
+
+  try{
+    if(IS_MOBILE()) parent.openChart(sym);
+    else parent._hmapDesktopClick(sym);
+  }catch(err){
+    console.error(err);
+  }
+});
+
+$('svg').addEventListener('dblclick',e=>{
+  const t=e.target.closest('[data-sym]');
+  if(!t)return;
+
+  const sym=t.dataset.sym;
+
+  notifyHost(sym);
+
+  try{
+    parent._syncHoverPreview(sym);
+    parent.updatePopout(sym);
+    parent.updateSimplize(sym);
+    parent.openChart(sym);
+  }catch(err){
+    console.error(err);
+  }
 });
 (async function init(){
   await fetchConfig();
