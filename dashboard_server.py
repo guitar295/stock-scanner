@@ -6,6 +6,7 @@ from flask import Flask, jsonify, Response, request, session, send_from_director
 from functools import wraps
 from pathlib import Path
 import hmac
+import json
 import os
 import sqlite3
 import threading
@@ -305,8 +306,12 @@ def api_journal_entries():
 @app.route("/api/journal/warning")
 def api_journal_warning():
     _init_journal_storage()
-    text = JOURNAL_WARNING_PATH.read_text(encoding="utf-8") if JOURNAL_WARNING_PATH.exists() else ""
-    return jsonify({"text": text, "admin": _is_admin()})
+    raw = JOURNAL_WARNING_PATH.read_text(encoding="utf-8") if JOURNAL_WARNING_PATH.exists() else ""
+    try:
+        data = json.loads(raw) if raw.strip().startswith("{") else {"text": raw, "tone": "red"}
+    except Exception:
+        data = {"text": raw, "tone": "red"}
+    return jsonify({"text": data.get("text", ""), "tone": data.get("tone", "red"), "admin": _is_admin()})
 
 @app.route("/api/journal/warning", methods=["PUT"])
 @require_journal_admin
@@ -314,7 +319,10 @@ def api_journal_warning_update():
     _init_journal_storage()
     data = request.get_json(silent=True) or {}
     text = _safe_text(data.get("text"), 5000)
-    JOURNAL_WARNING_PATH.write_text(text, encoding="utf-8")
+    tone = _safe_text(data.get("tone"), 20) or "red"
+    if tone not in ("green", "red"):
+        tone = "red"
+    JOURNAL_WARNING_PATH.write_text(json.dumps({"text": text, "tone": tone}, ensure_ascii=False), encoding="utf-8")
     return jsonify({"ok": True})
 
 @app.route("/api/journal/entries", methods=["POST"])
@@ -796,6 +804,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .uploaded-name{font-size:11px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .warning-panel{display:none;border-color:#fcd34d;background:#fffbeb}
 .warning-panel.on{display:block}
+.warning-panel.green{border-color:#86efac;background:#ecfdf5}
+.warning-panel.red{border-color:#fecaca;background:#fff1f2}
 .warning-text{font-size:12px;line-height:1.55;white-space:pre-wrap;color:#374151}
 .warning-edit{display:none;gap:8px}
 .warning-edit.on{display:grid}
@@ -853,6 +863,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
     <div class="panel-b">
       <div class="warning-text" id="warning-text"></div>
       <form class="warning-edit" id="warning-form">
+        <select id="warning-tone"><option value="green">Xu hướng mạnh</option><option value="red">Xu hướng yếu</option></select>
         <textarea id="warning-input" placeholder="Nhập cảnh báo thị trường..."></textarea>
         <div class="form-actions"><button class="green" type="submit">Lưu cảnh báo</button></div>
       </form>
@@ -891,7 +902,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const S={admin:false,entries:[],editingId:null,viewerImages:[],viewerIdx:0,symTimer:null,warning:''};
+const S={admin:false,entries:[],editingId:null,viewerImages:[],viewerIdx:0,symTimer:null,warning:'',warningTone:'red'};
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function api(url,opt){const r=await fetch(url,opt);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
 function payload(){return{symbol:$('symbol').value.trim().toUpperCase(),buy_date:$('buy-date').value,signal:$('signal').value.trim(),price:$('price').value.trim(),stoploss:$('stoploss').value.trim(),target:$('target').value.trim(),title:$('title').value.trim(),notes:$('notes').value.trim(),status:$('status').value};}
@@ -901,8 +912,8 @@ function showForm(entry){if(!S.admin)return;const e=entry||{};S.editingId=e.id||
 function hideForm(){S.editingId=null;$('entry-form').classList.remove('on');$('entry-panel').classList.remove('on');$('uploaded-list').classList.remove('on');$('uploaded-list').innerHTML='';$('entry-form').reset();$('entry-id').value='';render();}
 async function loadMe(){try{const j=await api('/api/journal/me');setAdmin(j.admin);}catch(e){setAdmin(false);}}
 async function loadEntries(){const qs=new URLSearchParams();if($('f-symbol').value.trim())qs.set('symbol',$('f-symbol').value.trim().toUpperCase());if($('f-status').value)qs.set('status',$('f-status').value);const j=await api('/api/journal/entries?'+qs.toString());S.entries=j.entries||[];$('count-meta').textContent=(j.count||0)+' mục';render();}
-async function loadWarning(){try{const j=await api('/api/journal/warning');S.warning=j.text||'';renderWarning();}catch(e){}}
-function renderWarning(){const has=S.warning.trim().length>0;$('warning-panel').classList.toggle('on',S.admin||has);$('warning-text').style.display=has?'':'none';$('warning-text').textContent=S.warning;$('warning-input').value=S.warning;$('warning-form').classList.toggle('on',S.admin);}
+async function loadWarning(){try{const j=await api('/api/journal/warning');S.warning=j.text||'';S.warningTone=j.tone||'red';renderWarning();}catch(e){}}
+function renderWarning(){const has=S.warning.trim().length>0;const p=$('warning-panel');p.classList.toggle('on',S.admin||has);p.classList.toggle('green',S.warningTone==='green');p.classList.toggle('red',S.warningTone!=='green');$('warning-text').style.display=has?'':'none';$('warning-text').textContent=S.warning;$('warning-input').value=S.warning;$('warning-tone').value=S.warningTone;$('warning-form').classList.toggle('on',S.admin);}
 function statusLabel(s){return s==='check'?'Check':s==='bought'?'Đã mua':s==='closed'?'Đã đóng':'Theo dõi';}
 function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div class="empty">Chưa có nhật ký nào</div>';return;}box.innerHTML=S.entries.map(e=>`
   <article class="card${String(S.editingId||'')===String(e.id)?' editing':''}" data-id="${e.id}">
@@ -936,7 +947,7 @@ $('btn-logout').addEventListener('click',async()=>{try{await api('/api/journal/l
 $('btn-new').addEventListener('click',()=>showForm());
 $('btn-cancel').addEventListener('click',hideForm);
 $('entry-form').addEventListener('submit',async e=>{e.preventDefault();try{const id=$('entry-id').value;const body=JSON.stringify(payload());let entryId=id;if(id)await api('/api/journal/entries/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body});else{const j=await api('/api/journal/entries',{method:'POST',headers:{'Content-Type':'application/json'},body});entryId=j.id;}await uploadImages(entryId,$('images').files);hideForm();await loadEntries();}catch(err){alert('Không lưu được: '+err.message);}});
-$('warning-form').addEventListener('submit',async e=>{e.preventDefault();try{S.warning=$('warning-input').value.trim();await api('/api/journal/warning',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:S.warning})});renderWarning();}catch(err){alert('Không lưu được cảnh báo: '+err.message);}});
+$('warning-form').addEventListener('submit',async e=>{e.preventDefault();try{S.warning=$('warning-input').value.trim();S.warningTone=$('warning-tone').value;await api('/api/journal/warning',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:S.warning,tone:S.warningTone})});renderWarning();}catch(err){alert('Không lưu được cảnh báo: '+err.message);}});
 $('uploaded-list').addEventListener('click',async e=>{const del=e.target.closest('[data-form-img-del]');if(!del)return;if(confirm('Xóa ảnh này?')){try{await deleteJournalImage(del.dataset.formImgDel);}catch(err){alert('Không xóa ảnh được: '+err.message);}}});
 $('list').addEventListener('click',async e=>{const imgDel=e.target.closest('[data-img]');if(imgDel){if(confirm('Xóa ảnh này?')){try{await deleteJournalImage(imgDel.dataset.img);}catch(err){alert('Không xóa ảnh được: '+err.message);}}return;}const symBtn=e.target.closest('[data-journal-sym]');if(symBtn){const sym=symBtn.dataset.journalSym;if(S.symTimer)clearTimeout(S.symTimer);S.symTimer=setTimeout(()=>postSym(sym,'JOURNAL_SYM_CLICK'),220);return;}const img=e.target.closest('img[data-entry]');if(img){openViewer(img.dataset.entry,Number(img.dataset.imgIdx)||0);return;}const edit=e.target.closest('[data-edit]');if(edit){const found=S.entries.find(x=>String(x.id)===String(edit.dataset.edit));if(found)showForm(found);return;}const del=e.target.closest('[data-del]');if(del&&confirm('Xóa nhật ký này?')){try{await api('/api/journal/entries/'+del.dataset.del,{method:'DELETE'});if(String(S.editingId||'')===String(del.dataset.del))hideForm();await loadEntries();}catch(err){alert('Không xóa được: '+err.message);}}});
 $('list').addEventListener('dblclick',e=>{const symBtn=e.target.closest('[data-journal-sym]');if(!symBtn)return;if(S.symTimer)clearTimeout(S.symTimer);postSym(symBtn.dataset.journalSym,'JOURNAL_SYM_DBLCLICK');});
