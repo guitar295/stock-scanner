@@ -2861,13 +2861,12 @@ function render(data,ts){
       stockDest.set(stock.sym,dest);
     }
     dest.flows.push(stock);
-    dest.flowWeight+=stock.weight;
     if(stock.weight>dest.weight){
       Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
     }
   });
   let stockY=chart.yStart-60, stockGap=3;
-  const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
+  const stockNodes=[...stockDest.values()].sort((a,b)=>b.destWeight-a.destWeight);
   stockNodes.forEach(stock=>{
     stock.nodeH=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
     stock.destY=stockY;
