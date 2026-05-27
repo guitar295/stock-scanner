@@ -2893,7 +2893,7 @@ function render(data,ts){
       const sec=sectors.find(s=>s.name===flow.sector);
       const remaining=stock.destY+h2-segY;
       const segH=idx===flows.length-1 ? remaining : Math.max(1,h2*(flow.weight/flows.reduce((s,f)=>s+f.weight,0)));
-      svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
+      svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:(idx===0||idx===flows.length-1)?2:0,fill:sec?sec.color:'#94a3b8'}));
       segY+=segH;
     });
     if(h2>6){
