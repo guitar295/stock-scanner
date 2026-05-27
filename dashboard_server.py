@@ -1563,7 +1563,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <!-- POPUP -->
 <div class="overlay" id="overlay">
   <button id="mob-close-float" aria-label="Đóng">✕</button>
-  <div class="pbox" id="pbox">
+  <div class="pbox" id="pbox" tabindex="-1">
     <!-- Desktop header (ẩn trên mobile qua CSS) -->
     <div class="phdr" id="popup-phdr">
       <div class="phdr-left">
@@ -2075,6 +2075,7 @@ function openChart(sym){
   _resetScannerUI();
   _activateTab('vs');
   _openPopup();
+  setTimeout(()=>DOM.pbox.focus(),0);
   // Clear search inputs
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
