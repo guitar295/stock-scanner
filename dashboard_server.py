@@ -753,8 +753,10 @@ button.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
 button.green{background:var(--surface);color:var(--muted);border-color:var(--border);}
 button.green:hover{background:#eef3ff;color:var(--accent);border-color:var(--accent);}
 #btn-cancel:hover{background:var(--red);color:#fff;border-color:var(--red);}
-.header-close{width:30px;height:30px;border-radius:50%;padding:0;font-size:15px}
-main{padding:14px;display:flex;flex-direction:column;gap:12px}
+#warning-clear:hover{background:var(--red);color:#fff;border-color:var(--red);}
+.header-close{width:30px;height:30px;border-radius:5px;padding:0;font-size:15px;transition:all .15s;}
+.header-close:hover{background:var(--red); color:#fff; border-color:var(--red);}
+ main{padding:14px;display:flex;flex-direction:column;gap:12px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)}
 .panel-h{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .panel-h-main{display:flex;align-items:center;gap:10px;min-width:0}
@@ -793,7 +795,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .imgs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
 .img-wrap{position:relative;border:1px solid var(--border);border-radius:5px;overflow:hidden;background:#f8fafc;aspect-ratio:4/3}
 .img-wrap img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
-.img-del{position:absolute;top:4px;right:4px;width:24px;height:24px;padding:0;border-radius:50%;background:rgba(224,36,36,.9);border:none;color:#fff;display:none}
+.img-del{position:absolute;top:4px;right:4px;width:24px;height:24px;padding:0;border-radius:50%;background:rgba(107,114,128,.92);border:none;color:#fff;display:none;transition:all .15s}
+.img-del:hover{background:rgba(224,36,36,.95)}
 .admin .img-del{display:flex}
 .card-actions{display:none;gap:7px;justify-content:flex-end;border-top:1px solid var(--border);padding:9px 11px;background:#fbfcff}
 .admin .card-actions{display:flex}
@@ -842,7 +845,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
   <h1>★ Nhật ký</h1>
   <span class="meta" id="mode-meta">View mode</span>
   <div class="spacer"></div>
-  <button id="btn-new" class="primary" style="display:none">+</button>
+  <button id="btn-new" style="display:none">+</button>
   <button id="btn-login">✎</button>
   <button id="btn-logout" class="danger" style="display:none">Logout</button>
   <button id="journal-close-inline" class="header-close">✕</button>
