@@ -748,6 +748,7 @@ h1{font-family:var(--font-ui);font-size:18px;letter-spacing:1.8px;text-transform
 .meta{font-size:10px;color:var(--muted);white-space:nowrap}
 button,.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 button:hover,.btn:hover{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
+#login-cancel:hover,#login-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
 button.green{background:var(--surface);color:var(--muted);border-color:var(--border);}
