@@ -2936,8 +2936,8 @@ $('btn-close').addEventListener('click',notifyClose);
 $('svg').addEventListener('click',e=>{
   const t=e.target.closest('[data-sym]');
   if(!t)return;
+  if(window.innerWidth<=768) return;
   try{
-    if(parent.IS_MOBILE && parent.IS_MOBILE()) return;
     const sym=t.dataset.sym;
     notifyHost(sym);
     parent._hmapDesktopClick(sym);
@@ -2948,8 +2948,8 @@ $('svg').addEventListener('click',e=>{
 $('svg').addEventListener('dblclick',e=>{
   const t=e.target.closest('[data-sym]');
   if(!t)return;
+  if(window.innerWidth<=768) return;
   try{
-    if(parent.IS_MOBILE && parent.IS_MOBILE()) return;
     const sym=t.dataset.sym;
     notifyHost(sym);
     parent._syncHoverPreview(sym);
