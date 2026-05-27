@@ -1245,6 +1245,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     height:auto;
   }
   .market-frame{height:70vh}
+  #market-panel{display:none !important;}
 }
 
 /* ═══════════════════════════════════════════
@@ -1522,7 +1523,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   </div>
 
   <!-- MARKET -->
-  <div class="panel">
+  <div class="panel" id="market-panel">
     <div class="panel-hdr">
       <span class="panel-title">MARKET</span>
     </div>
