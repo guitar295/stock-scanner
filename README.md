@@ -141,7 +141,14 @@ bash
 ```
 mkdir -p ~/scanner
 cd ~/scanner
+
+mkdir -p ~/scanner/data/trade-journal/uploads
+mkdir -p ~/scanner/data/trade-journal/backups
+chmod -R 750 ~/scanner/data
+
 ```
+
+
 ## 2.3 — Tải 3 file từ GitHub về VPS
 
 Thay TEN_BAN bằng username GitHub của bạn:
@@ -286,7 +293,7 @@ echo "✅ Cập nhật hoàn tất!" && \
 docker logs --tail 20 scanner
 
 ```
-Chạy với tên miền, không expose cổng 8888
+Chạy với tên miền:
 ```
 cd ~/scanner && \
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
@@ -296,6 +303,27 @@ docker stop scanner 2>/dev/null || true && \
 docker rm scanner 2>/dev/null || true && \
 docker build --no-cache -t stock-scanner . && \
 docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env --network web_default -p 8888:8888 stock-scanner && \
+echo "✅ Cập nhật hoàn tất!" && \
+docker logs --tail 20 scanner
+```
+
+Chạy với tên miền + nhật ký:
+```
+cd ~/scanner && \
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py && \
+sync && sleep 2 && \
+docker stop scanner 2>/dev/null || true && \
+docker rm scanner 2>/dev/null || true && \
+docker build --no-cache -t stock-scanner . && \
+docker run -d \
+  --name scanner \
+  --restart unless-stopped \
+  --env-file ~/scanner/.env \
+  --network web_default \
+  -p 8888:8888 \
+  -v ~/scanner/data/trade-journal:/data/trade-journal \
+  stock-scanner && \
 echo "✅ Cập nhật hoàn tất!" && \
 docker logs --tail 20 scanner
 ```
