@@ -749,6 +749,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .edit-panel.on{display:block}
 .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
 .card{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.card.editing{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.18),0 6px 18px rgba(26,86,219,.12)}
+.card.editing .card-h{background:#eef3ff}
 .card-h{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;background:#fbfcff;border-bottom:1px solid var(--border)}
 .sym{font-family:var(--font-ui);font-size:21px;font-weight:800;color:var(--accent);letter-spacing:1px;cursor:pointer}
 .sym:hover{text-decoration:underline}
@@ -771,11 +773,19 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .admin .card-actions{display:flex}
 .upload-inline{display:none;margin-top:4px}
 .admin .upload-inline{display:block}
+.uploaded-list{display:none;grid-column:1/-1;border:1px solid var(--border);border-radius:6px;background:#fbfcff;padding:8px;gap:6px}
+.uploaded-list.on{display:grid}
+.uploaded-row{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:8px;padding:5px;border:1px solid #e5eaf2;border-radius:5px;background:#fff}
+.uploaded-row img{width:42px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border)}
+.uploaded-name{font-size:11px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .empty{padding:40px 20px;text-align:center;color:var(--muted)}
 #viewer{display:none;position:fixed;inset:0;z-index:100;background:rgba(17,24,39,.82);align-items:center;justify-content:center;padding:18px}
 #viewer.on{display:flex}
 #viewer img{max-width:96vw;max-height:92vh;object-fit:contain;background:#fff;border-radius:4px}
 #viewer button{position:absolute;top:14px;right:14px;border-radius:50%;width:36px;height:36px;padding:0;background:#fff;color:#111}
+#viewer .viewer-nav{top:50%;transform:translateY(-50%);width:42px;height:42px;font-size:20px;background:rgba(255,255,255,.92)}
+#viewer-prev{left:16px;right:auto}
+#viewer-next{right:16px}
 .login-modal{display:none;position:fixed;inset:0;z-index:120;background:rgba(17,24,39,.55);align-items:center;justify-content:center;padding:16px}
 .login-modal.on{display:flex}
 .login-box{width:min(360px,94vw);background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.2);overflow:hidden}
@@ -810,6 +820,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
         <div class="field"><label>Trạng thái</label><select id="status"><option value="check">Check</option><option value="watching">Theo dõi</option><option value="bought">Đã mua</option><option value="closed">Đã đóng</option></select></div>
         <div class="field"><label>Tiêu đề</label><input id="title" maxlength="240"></div>
         <div class="field full"><label>Ghi chú</label><textarea id="notes"></textarea></div>
+        <div class="uploaded-list" id="uploaded-list"></div>
         <div class="field full"><label>Ảnh điểm mua</label><input id="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></div>
         <div class="form-actions"><button type="button" id="btn-cancel">Hủy</button><button class="green" type="submit">Lưu</button></div>
       </form>
@@ -835,7 +846,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
     <div class="panel-b"><div class="list" id="list"></div></div>
   </section>
 </main>
-<div id="viewer"><button id="viewer-close">✕</button><img id="viewer-img" alt=""></div>
+<div id="viewer"><button id="viewer-close">✕</button><button class="viewer-nav" id="viewer-prev">&lt;</button><img id="viewer-img" alt=""><button class="viewer-nav" id="viewer-next">&gt;</button></div>
 <div class="login-modal" id="login-modal">
   <form class="login-box" id="login-form">
     <div class="login-h"><span class="panel-title">Edit mode</span><button type="button" id="login-close">✕</button></div>
@@ -848,29 +859,36 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const S={admin:false,entries:[]};
+const S={admin:false,entries:[],editingId:null,viewerImages:[],viewerIdx:0,symTimer:null};
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function api(url,opt){const r=await fetch(url,opt);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
 function payload(){return{symbol:$('symbol').value.trim().toUpperCase(),buy_date:$('buy-date').value,signal:$('signal').value.trim(),price:$('price').value.trim(),stoploss:$('stoploss').value.trim(),target:$('target').value.trim(),title:$('title').value.trim(),notes:$('notes').value.trim(),status:$('status').value};}
 function setAdmin(on){S.admin=!!on;document.body.classList.toggle('admin',S.admin);$('mode-meta').textContent=S.admin?'Edit mode':'View mode';$('btn-login').style.display=S.admin?'none':'';$('btn-logout').style.display=S.admin?'':'none';$('btn-new').style.display=S.admin?'':'none';if(!S.admin)hideForm();}
-function showForm(entry){if(!S.admin)return;const e=entry||{};$('entry-id').value=e.id||'';$('symbol').value=e.symbol||'';$('buy-date').value=e.buy_date||'';$('signal').value=e.signal||'';$('price').value=e.price||'';$('stoploss').value=e.stoploss||'';$('target').value=e.target||'';$('title').value=e.title||'';$('notes').value=e.notes||'';$('status').value=e.status||'check';$('images').value='';$('entry-panel').classList.add('on');$('entry-form').classList.add('on');$('symbol').focus();}
-function hideForm(){$('entry-form').classList.remove('on');$('entry-panel').classList.remove('on');$('entry-form').reset();$('entry-id').value='';}
+function renderUploaded(entry){const box=$('uploaded-list');const imgs=(entry&&entry.images)||[];if(!imgs.length){box.classList.remove('on');box.innerHTML='';return;}box.classList.add('on');box.innerHTML=imgs.map(img=>`<div class="uploaded-row"><img src="${img.url}" alt=""><span class="uploaded-name">${esc(img.original_name||img.filename||img.url)}</span><button type="button" class="danger" data-form-img-del="${img.id}">Xóa</button></div>`).join('');}
+function showForm(entry){if(!S.admin)return;const e=entry||{};S.editingId=e.id||null;$('entry-id').value=e.id||'';$('symbol').value=e.symbol||'';$('buy-date').value=e.buy_date||'';$('signal').value=e.signal||'';$('price').value=e.price||'';$('stoploss').value=e.stoploss||'';$('target').value=e.target||'';$('title').value=e.title||'';$('notes').value=e.notes||'';$('status').value=e.status||'check';$('images').value='';renderUploaded(e);$('entry-panel').classList.add('on');$('entry-form').classList.add('on');render();$('symbol').focus();}
+function hideForm(){S.editingId=null;$('entry-form').classList.remove('on');$('entry-panel').classList.remove('on');$('uploaded-list').classList.remove('on');$('uploaded-list').innerHTML='';$('entry-form').reset();$('entry-id').value='';render();}
 async function loadMe(){try{const j=await api('/api/journal/me');setAdmin(j.admin);}catch(e){setAdmin(false);}}
 async function loadEntries(){const qs=new URLSearchParams();if($('f-symbol').value.trim())qs.set('symbol',$('f-symbol').value.trim().toUpperCase());if($('f-status').value)qs.set('status',$('f-status').value);const j=await api('/api/journal/entries?'+qs.toString());S.entries=j.entries||[];$('count-meta').textContent=(j.count||0)+' mục';render();}
 function statusLabel(s){return s==='check'?'Check':s==='bought'?'Đã mua':s==='closed'?'Đã đóng':'Theo dõi';}
 function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div class="empty">Chưa có nhật ký nào</div>';return;}box.innerHTML=S.entries.map(e=>`
-  <article class="card" data-id="${e.id}">
+  <article class="card${String(S.editingId||'')===String(e.id)?' editing':''}" data-id="${e.id}">
     <div class="card-h"><div><div class="sym" data-journal-sym="${esc(e.symbol)}" title="Nhảy chart">${esc(e.symbol)}</div><div class="ch-meta">${esc(e.buy_date||'')}</div></div><span class="status ${esc(e.status)}">${statusLabel(e.status)}</span></div>
     <div class="card-b">
       ${e.title?`<div class="title">${esc(e.title)}</div>`:''}
-      <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}${e.stoploss?`<span class="tag">SL: ${esc(e.stoploss)}</span>`:''}${e.target?`<span class="tag">TG: ${esc(e.target)}</span>`:''}</div>
+      <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}${e.stoploss?`<span class="tag">SL: ${esc(e.stoploss)}</span>`:''}${e.target?`<span class="tag">Target: ${esc(e.target)}</span>`:''}</div>
       ${e.notes?`<div class="notes">${esc(e.notes)}</div>`:''}
-      ${e.images&&e.images.length?`<div class="imgs">${e.images.map(img=>`<div class="img-wrap"><img src="${img.url}" alt="${esc(img.original_name)}" data-full="${img.url}"><button class="img-del" data-img="${img.id}">✕</button></div>`).join('')}</div>`:''}
+      ${e.images&&e.images.length?`<div class="imgs">${e.images.map((img,i)=>`<div class="img-wrap"><img src="${img.url}" alt="${esc(img.original_name)}" data-entry="${e.id}" data-img-idx="${i}"><button class="img-del" data-img="${img.id}">✕</button></div>`).join('')}</div>`:''}
       <input class="upload-inline" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple data-upload="${e.id}">
     </div>
     <div class="card-actions"><button data-edit="${e.id}">Sửa</button><button class="danger" data-del="${e.id}">Xóa</button></div>
   </article>`).join('');}
 async function uploadImages(entryId,files){if(!files||!files.length)return;const fd=new FormData();[...files].forEach(f=>fd.append('images',f));await api('/api/journal/entries/'+entryId+'/images',{method:'POST',body:fd});}
+function postSym(sym,type){if(window.parent)window.parent.postMessage({type:type,symbol:sym},'*');}
+function openViewer(entryId,idx){const entry=S.entries.find(x=>String(x.id)===String(entryId));const imgs=(entry&&entry.images)||[];if(!imgs.length)return;S.viewerImages=imgs;S.viewerIdx=Math.max(0,Math.min(idx,imgs.length-1));viewerShow();$('viewer').classList.add('on');}
+function viewerShow(){if(!S.viewerImages.length)return;$('viewer-img').src=S.viewerImages[S.viewerIdx].url;$('viewer-prev').style.display=S.viewerImages.length>1?'':'none';$('viewer-next').style.display=S.viewerImages.length>1?'':'none';}
+function viewerNav(dir){if(!S.viewerImages.length)return;S.viewerIdx=(S.viewerIdx+dir+S.viewerImages.length)%S.viewerImages.length;viewerShow();}
+function closeViewer(){$('viewer').classList.remove('on');S.viewerImages=[];S.viewerIdx=0;}
+async function deleteJournalImage(imageId){await api('/api/journal/images/'+imageId,{method:'DELETE'});const keepId=S.editingId;await loadEntries();if(keepId){const fresh=S.entries.find(x=>String(x.id)===String(keepId));if(fresh)showForm(fresh);}}
 function openLogin(){$('login-password').value='';$('login-password').type='password';$('login-modal').classList.add('on');setTimeout(()=>$('login-password').focus(),50);}
 function closeLogin(){$('login-modal').classList.remove('on');$('login-password').value='';}
 $('btn-login').addEventListener('click',openLogin);
@@ -883,11 +901,16 @@ $('btn-logout').addEventListener('click',async()=>{try{await api('/api/journal/l
 $('btn-new').addEventListener('click',()=>showForm());
 $('btn-cancel').addEventListener('click',hideForm);
 $('entry-form').addEventListener('submit',async e=>{e.preventDefault();try{const id=$('entry-id').value;const body=JSON.stringify(payload());let entryId=id;if(id)await api('/api/journal/entries/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body});else{const j=await api('/api/journal/entries',{method:'POST',headers:{'Content-Type':'application/json'},body});entryId=j.id;}await uploadImages(entryId,$('images').files);hideForm();await loadEntries();}catch(err){alert('Không lưu được: '+err.message);}});
-$('list').addEventListener('click',async e=>{const symBtn=e.target.closest('[data-journal-sym]');if(symBtn){const sym=symBtn.dataset.journalSym;if(window.parent)window.parent.postMessage({type:'JOURNAL_SYM_SELECT',symbol:sym},'*');return;}const img=e.target.closest('img[data-full]');if(img){$('viewer-img').src=img.dataset.full;$('viewer').classList.add('on');return;}const edit=e.target.closest('[data-edit]');if(edit){const found=S.entries.find(x=>String(x.id)===String(edit.dataset.edit));if(found)showForm(found);return;}const del=e.target.closest('[data-del]');if(del&&confirm('Xóa nhật ký này?')){try{await api('/api/journal/entries/'+del.dataset.del,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa được: '+err.message);}return;}const imgDel=e.target.closest('[data-img]');if(imgDel&&confirm('Xóa ảnh này?')){try{await api('/api/journal/images/'+imgDel.dataset.img,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa ảnh được: '+err.message);}}});
+$('uploaded-list').addEventListener('click',async e=>{const del=e.target.closest('[data-form-img-del]');if(!del)return;if(confirm('Xóa ảnh này?')){try{await deleteJournalImage(del.dataset.formImgDel);}catch(err){alert('Không xóa ảnh được: '+err.message);}}});
+$('list').addEventListener('click',async e=>{const imgDel=e.target.closest('[data-img]');if(imgDel){if(confirm('Xóa ảnh này?')){try{await deleteJournalImage(imgDel.dataset.img);}catch(err){alert('Không xóa ảnh được: '+err.message);}}return;}const symBtn=e.target.closest('[data-journal-sym]');if(symBtn){const sym=symBtn.dataset.journalSym;if(S.symTimer)clearTimeout(S.symTimer);S.symTimer=setTimeout(()=>postSym(sym,'JOURNAL_SYM_CLICK'),220);return;}const img=e.target.closest('img[data-entry]');if(img){openViewer(img.dataset.entry,Number(img.dataset.imgIdx)||0);return;}const edit=e.target.closest('[data-edit]');if(edit){const found=S.entries.find(x=>String(x.id)===String(edit.dataset.edit));if(found)showForm(found);return;}const del=e.target.closest('[data-del]');if(del&&confirm('Xóa nhật ký này?')){try{await api('/api/journal/entries/'+del.dataset.del,{method:'DELETE'});if(String(S.editingId||'')===String(del.dataset.del))hideForm();await loadEntries();}catch(err){alert('Không xóa được: '+err.message);}}});
+$('list').addEventListener('dblclick',e=>{const symBtn=e.target.closest('[data-journal-sym]');if(!symBtn)return;if(S.symTimer)clearTimeout(S.symTimer);postSym(symBtn.dataset.journalSym,'JOURNAL_SYM_DBLCLICK');});
 $('list').addEventListener('change',async e=>{const up=e.target.closest('[data-upload]');if(!up||!S.admin)return;try{await uploadImages(up.dataset.upload,up.files);up.value='';await loadEntries();}catch(err){alert('Không upload được: '+err.message);}});
 $('f-symbol').addEventListener('input',()=>{clearTimeout(window._flt);window._flt=setTimeout(loadEntries,250);});
 $('f-status').addEventListener('change',loadEntries);
-$('viewer').addEventListener('click',e=>{if(e.target.id==='viewer'||e.target.id==='viewer-close')$('viewer').classList.remove('on');});
+$('viewer').addEventListener('click',e=>{if(e.target.id==='viewer'||e.target.id==='viewer-close')closeViewer();});
+$('viewer-prev').addEventListener('click',e=>{e.stopPropagation();viewerNav(-1);});
+$('viewer-next').addEventListener('click',e=>{e.stopPropagation();viewerNav(1);});
+document.addEventListener('keydown',e=>{if(!$('viewer').classList.contains('on'))return;if(e.key==='Escape')closeViewer();else if(e.key==='ArrowLeft')viewerNav(-1);else if(e.key==='ArrowRight')viewerNav(1);});
 (async function init(){await loadMe();await loadEntries();})();
 </script>
 </body>
@@ -2537,13 +2560,23 @@ window.addEventListener('message',e=>{
     else _syncHoverPreview(e.data.symbol,false);
     updatePopout(e.data.symbol);
     updateSimplize(e.data.symbol);
-  }else if(e.data.type==='JOURNAL_SYM_SELECT'&&e.data.symbol){
+  }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
+    const sym=String(e.data.symbol).toUpperCase().trim();
+    if(!sym)return;
+    _syncHoverPreview(sym);
+    updatePopout(sym);
+    updateSimplize(sym);
+    if(_isPopoutMode)return;
+    if(_isSimplizeMode&&!_hoverPreviewOn)return;
+    if(!_hoverPreviewOn)openChart(sym);
+  }else if(e.data.type==='JOURNAL_SYM_DBLCLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
     if(_hoverPreviewOn)_syncHoverPreview(sym);
     else _syncHoverPreview(sym,false);
     updatePopout(sym);
     updateSimplize(sym);
+    openChart(sym);
   }else if(e.data.type==='SANKEY_CLOSE'){
     closePopup();
   }else if(e.data.type==='POPOUT_MINIMIZE'){
