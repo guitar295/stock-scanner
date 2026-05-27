@@ -810,7 +810,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .warning-text{font-size:12px;line-height:1.55;white-space:pre-wrap;color:#374151}
 .warning-edit{display:none;gap:8px}
 .warning-edit.on{display:grid}
-.tone-dots{display:flex;gap:8px;align-items:center;margin-right:auto}
+.tone-dots{display:flex;gap:8px;align-items:center}
 .tone-dot{width:18px;height:18px;border-radius:50%;border:2px solid rgba(17,24,39,.18);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .tone-dot input{display:none}
 .tone-dot.normal{background:#fcd34d}
