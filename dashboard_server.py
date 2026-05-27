@@ -862,7 +862,7 @@ function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div 
     <div class="card-h"><div><div class="sym">${esc(e.symbol)}</div><div class="ch-meta">${esc(e.buy_date||'')}</div></div><span class="status ${esc(e.status)}">${statusLabel(e.status)}</span></div>
     <div class="card-b">
       ${e.title?`<div class="title">${esc(e.title)}</div>`:''}
-      <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}${e.stoploss?`<span class="tag">SL: ${esc(e.stoploss)}</span>`:''}${e.target?`<span class="tag">Target: ${esc(e.target)}</span>`:''}</div>
+      <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}${e.stoploss?`<span class="tag">SL: ${esc(e.stoploss)}</span>`:''}${e.target?`<span class="tag">TG: ${esc(e.target)}</span>`:''}</div>
       ${e.notes?`<div class="notes">${esc(e.notes)}</div>`:''}
       ${e.images&&e.images.length?`<div class="imgs">${e.images.map(img=>`<div class="img-wrap"><img src="${img.url}" alt="${esc(img.original_name)}" data-full="${img.url}"><button class="img-del" data-img="${img.id}">✕</button></div>`).join('')}</div>`:''}
       <input class="upload-inline" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple data-upload="${e.id}">
