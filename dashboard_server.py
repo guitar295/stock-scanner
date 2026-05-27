@@ -878,7 +878,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
             <label class="tone-dot green"><input type="radio" name="warning-tone" value="green"></label>
             <label class="tone-dot red"><input type="radio" name="warning-tone" value="red"></label>
           </div>
-          <button class="green" type="submit">Lưu</button>
+          <button class="green" type="submit">✓</button>
         </div>
       </form>
     </div>
