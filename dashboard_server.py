@@ -750,7 +750,9 @@ button,.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--
 button:hover,.btn:hover{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
-button.green{background:var(--green);color:#fff;border-color:var(--green)}
+button.green{background:var(--surface);color:var(--muted);border-color:var(--border);}
+button.green:hover{background:#eef3ff;color:var(--accent);border-color:var(--accent);}
+#btn-cancel:hover{background:var(--red);color:#fff;border-color:var(--red);}
 .header-close{width:30px;height:30px;border-radius:50%;padding:0;font-size:15px}
 main{padding:14px;display:flex;flex-direction:column;gap:12px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)}
