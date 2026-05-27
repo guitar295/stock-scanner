@@ -39,6 +39,7 @@ CHART_TTL_SEC = 0
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
+JOURNAL_WARNING_PATH = JOURNAL_DATA_DIR / "market_warning.txt"
 JOURNAL_ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
 _journal_lock = threading.Lock()
 
@@ -114,7 +115,6 @@ def _entry_to_dict(row, images):
         "updated_at": row["updated_at"],
         "images": images,
     }
-
 
 def _is_admin():
     return bool(session.get("journal_admin"))
@@ -301,6 +301,21 @@ def api_journal_entries():
                 })
         entries = [_entry_to_dict(row, image_map.get(row["id"], [])) for row in rows]
     return jsonify({"entries": entries, "count": len(entries), "admin": _is_admin()})
+
+@app.route("/api/journal/warning")
+def api_journal_warning():
+    _init_journal_storage()
+    text = JOURNAL_WARNING_PATH.read_text(encoding="utf-8") if JOURNAL_WARNING_PATH.exists() else ""
+    return jsonify({"text": text, "admin": _is_admin()})
+
+@app.route("/api/journal/warning", methods=["PUT"])
+@require_journal_admin
+def api_journal_warning_update():
+    _init_journal_storage()
+    data = request.get_json(silent=True) or {}
+    text = _safe_text(data.get("text"), 5000)
+    JOURNAL_WARNING_PATH.write_text(text, encoding="utf-8")
+    return jsonify({"ok": True})
 
 @app.route("/api/journal/entries", methods=["POST"])
 @require_journal_admin
@@ -728,6 +743,7 @@ button:hover,.btn:hover{background:#eef3ff;color:var(--accent);border-color:var(
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
 button.green{background:var(--green);color:#fff;border-color:var(--green)}
+.header-close{width:30px;height:30px;border-radius:50%;padding:0;font-size:15px}
 main{padding:14px;display:flex;flex-direction:column;gap:12px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)}
 .panel-h{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--surf2);border-bottom:1px solid var(--border)}
@@ -778,6 +794,11 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 .uploaded-row{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:8px;padding:5px;border:1px solid #e5eaf2;border-radius:5px;background:#fff}
 .uploaded-row img{width:42px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border)}
 .uploaded-name{font-size:11px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.warning-panel{display:none;border-color:#fcd34d;background:#fffbeb}
+.warning-panel.on{display:block}
+.warning-text{font-size:12px;line-height:1.55;white-space:pre-wrap;color:#374151}
+.warning-edit{display:none;gap:8px}
+.warning-edit.on{display:grid}
 .empty{padding:40px 20px;text-align:center;color:var(--muted)}
 #viewer{display:none;position:fixed;inset:0;z-index:100;background:rgba(17,24,39,.82);align-items:center;justify-content:center;padding:18px}
 #viewer.on{display:flex}
@@ -804,6 +825,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
   <button id="btn-new" class="primary" style="display:none">+ Thêm</button>
   <button id="btn-login">Edit</button>
   <button id="btn-logout" class="danger" style="display:none">Logout</button>
+  <button id="journal-close-inline" class="header-close">✕</button>
 </header>
 <main id="app">
   <section class="panel edit-panel" id="entry-panel">
@@ -823,6 +845,16 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
         <div class="uploaded-list" id="uploaded-list"></div>
         <div class="field full"><label>Ảnh điểm mua</label><input id="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></div>
         <div class="form-actions"><button type="button" id="btn-cancel">Hủy</button><button class="green" type="submit">Lưu</button></div>
+      </form>
+    </div>
+  </section>
+  <section class="panel warning-panel" id="warning-panel">
+    <div class="panel-h"><span class="panel-title">Cảnh báo thị trường</span></div>
+    <div class="panel-b">
+      <div class="warning-text" id="warning-text"></div>
+      <form class="warning-edit" id="warning-form">
+        <textarea id="warning-input" placeholder="Nhập cảnh báo thị trường..."></textarea>
+        <div class="form-actions"><button class="green" type="submit">Lưu cảnh báo</button></div>
       </form>
     </div>
   </section>
@@ -859,16 +891,18 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const S={admin:false,entries:[],editingId:null,viewerImages:[],viewerIdx:0,symTimer:null};
+const S={admin:false,entries:[],editingId:null,viewerImages:[],viewerIdx:0,symTimer:null,warning:''};
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function api(url,opt){const r=await fetch(url,opt);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
 function payload(){return{symbol:$('symbol').value.trim().toUpperCase(),buy_date:$('buy-date').value,signal:$('signal').value.trim(),price:$('price').value.trim(),stoploss:$('stoploss').value.trim(),target:$('target').value.trim(),title:$('title').value.trim(),notes:$('notes').value.trim(),status:$('status').value};}
-function setAdmin(on){S.admin=!!on;document.body.classList.toggle('admin',S.admin);$('mode-meta').textContent=S.admin?'Edit mode':'View mode';$('btn-login').style.display=S.admin?'none':'';$('btn-logout').style.display=S.admin?'':'none';$('btn-new').style.display=S.admin?'':'none';if(!S.admin)hideForm();}
+function setAdmin(on){S.admin=!!on;document.body.classList.toggle('admin',S.admin);$('mode-meta').textContent=S.admin?'Edit mode':'View mode';$('btn-login').style.display=S.admin?'none':'';$('btn-logout').style.display=S.admin?'':'none';$('btn-new').style.display=S.admin?'':'none';renderWarning();if(!S.admin)hideForm();}
 function renderUploaded(entry){const box=$('uploaded-list');const imgs=(entry&&entry.images)||[];if(!imgs.length){box.classList.remove('on');box.innerHTML='';return;}box.classList.add('on');box.innerHTML=imgs.map(img=>`<div class="uploaded-row"><img src="${img.url}" alt=""><span class="uploaded-name">${esc(img.original_name||img.filename||img.url)}</span><button type="button" class="danger" data-form-img-del="${img.id}">Xóa</button></div>`).join('');}
 function showForm(entry){if(!S.admin)return;const e=entry||{};S.editingId=e.id||null;$('entry-id').value=e.id||'';$('symbol').value=e.symbol||'';$('buy-date').value=e.buy_date||'';$('signal').value=e.signal||'';$('price').value=e.price||'';$('stoploss').value=e.stoploss||'';$('target').value=e.target||'';$('title').value=e.title||'';$('notes').value=e.notes||'';$('status').value=e.status||'check';$('images').value='';renderUploaded(e);$('entry-panel').classList.add('on');$('entry-form').classList.add('on');render();$('symbol').focus();}
 function hideForm(){S.editingId=null;$('entry-form').classList.remove('on');$('entry-panel').classList.remove('on');$('uploaded-list').classList.remove('on');$('uploaded-list').innerHTML='';$('entry-form').reset();$('entry-id').value='';render();}
 async function loadMe(){try{const j=await api('/api/journal/me');setAdmin(j.admin);}catch(e){setAdmin(false);}}
 async function loadEntries(){const qs=new URLSearchParams();if($('f-symbol').value.trim())qs.set('symbol',$('f-symbol').value.trim().toUpperCase());if($('f-status').value)qs.set('status',$('f-status').value);const j=await api('/api/journal/entries?'+qs.toString());S.entries=j.entries||[];$('count-meta').textContent=(j.count||0)+' mục';render();}
+async function loadWarning(){try{const j=await api('/api/journal/warning');S.warning=j.text||'';renderWarning();}catch(e){}}
+function renderWarning(){const has=S.warning.trim().length>0;$('warning-panel').classList.toggle('on',S.admin||has);$('warning-text').style.display=has?'':'none';$('warning-text').textContent=S.warning;$('warning-input').value=S.warning;$('warning-form').classList.toggle('on',S.admin);}
 function statusLabel(s){return s==='check'?'Check':s==='bought'?'Đã mua':s==='closed'?'Đã đóng':'Theo dõi';}
 function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div class="empty">Chưa có nhật ký nào</div>';return;}box.innerHTML=S.entries.map(e=>`
   <article class="card${String(S.editingId||'')===String(e.id)?' editing':''}" data-id="${e.id}">
@@ -897,10 +931,12 @@ $('login-cancel').addEventListener('click',closeLogin);
 $('toggle-pass').addEventListener('click',()=>{$('login-password').type=$('login-password').type==='password'?'text':'password';});
 $('login-modal').addEventListener('click',e=>{if(e.target.id==='login-modal')closeLogin();});
 $('login-form').addEventListener('submit',async e=>{e.preventDefault();const password=$('login-password').value;if(!password)return;try{await api('/api/journal/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});closeLogin();setAdmin(true);await loadEntries();}catch(err){alert('Không đăng nhập được: '+err.message);}});
+$('journal-close-inline').addEventListener('click',()=>{if(window.parent)window.parent.postMessage({type:'JOURNAL_CLOSE'},'*');});
 $('btn-logout').addEventListener('click',async()=>{try{await api('/api/journal/logout',{method:'POST'});}catch(e){}setAdmin(false);});
 $('btn-new').addEventListener('click',()=>showForm());
 $('btn-cancel').addEventListener('click',hideForm);
 $('entry-form').addEventListener('submit',async e=>{e.preventDefault();try{const id=$('entry-id').value;const body=JSON.stringify(payload());let entryId=id;if(id)await api('/api/journal/entries/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body});else{const j=await api('/api/journal/entries',{method:'POST',headers:{'Content-Type':'application/json'},body});entryId=j.id;}await uploadImages(entryId,$('images').files);hideForm();await loadEntries();}catch(err){alert('Không lưu được: '+err.message);}});
+$('warning-form').addEventListener('submit',async e=>{e.preventDefault();try{S.warning=$('warning-input').value.trim();await api('/api/journal/warning',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:S.warning})});renderWarning();}catch(err){alert('Không lưu được cảnh báo: '+err.message);}});
 $('uploaded-list').addEventListener('click',async e=>{const del=e.target.closest('[data-form-img-del]');if(!del)return;if(confirm('Xóa ảnh này?')){try{await deleteJournalImage(del.dataset.formImgDel);}catch(err){alert('Không xóa ảnh được: '+err.message);}}});
 $('list').addEventListener('click',async e=>{const imgDel=e.target.closest('[data-img]');if(imgDel){if(confirm('Xóa ảnh này?')){try{await deleteJournalImage(imgDel.dataset.img);}catch(err){alert('Không xóa ảnh được: '+err.message);}}return;}const symBtn=e.target.closest('[data-journal-sym]');if(symBtn){const sym=symBtn.dataset.journalSym;if(S.symTimer)clearTimeout(S.symTimer);S.symTimer=setTimeout(()=>postSym(sym,'JOURNAL_SYM_CLICK'),220);return;}const img=e.target.closest('img[data-entry]');if(img){openViewer(img.dataset.entry,Number(img.dataset.imgIdx)||0);return;}const edit=e.target.closest('[data-edit]');if(edit){const found=S.entries.find(x=>String(x.id)===String(edit.dataset.edit));if(found)showForm(found);return;}const del=e.target.closest('[data-del]');if(del&&confirm('Xóa nhật ký này?')){try{await api('/api/journal/entries/'+del.dataset.del,{method:'DELETE'});if(String(S.editingId||'')===String(del.dataset.del))hideForm();await loadEntries();}catch(err){alert('Không xóa được: '+err.message);}}});
 $('list').addEventListener('dblclick',e=>{const symBtn=e.target.closest('[data-journal-sym]');if(!symBtn)return;if(S.symTimer)clearTimeout(S.symTimer);postSym(symBtn.dataset.journalSym,'JOURNAL_SYM_DBLCLICK');});
@@ -911,7 +947,7 @@ $('viewer').addEventListener('click',e=>{if(e.target.id==='viewer'||e.target.id=
 $('viewer-prev').addEventListener('click',e=>{e.stopPropagation();viewerNav(-1);});
 $('viewer-next').addEventListener('click',e=>{e.stopPropagation();viewerNav(1);});
 document.addEventListener('keydown',e=>{if(!$('viewer').classList.contains('on'))return;if(e.key==='Escape')closeViewer();else if(e.key==='ArrowLeft')viewerNav(-1);else if(e.key==='ArrowRight')viewerNav(1);});
-(async function init(){await loadMe();await loadEntries();})();
+(async function init(){await loadMe();await Promise.all([loadEntries(),loadWarning()]);})();
 </script>
 </body>
 </html>
@@ -973,10 +1009,6 @@ header h1{
 .journal-overlay{display:none;position:fixed;inset:0;z-index:9998;background:rgba(17,24,39,.52);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:18px}
 .journal-overlay.on{display:flex}
 .journal-box{width:min(1500px,98vw);height:92vh;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.18);display:flex;flex-direction:column;overflow:hidden}
-.journal-hdr{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
-.journal-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent)}
-.journal-close{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.journal-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .journal-frame{width:100%;height:100%;border:none;display:block;flex:1}
 .pbar-wrap{height:2px;overflow:hidden}
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:.5}
@@ -1467,10 +1499,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <!-- TRADE JOURNAL -->
 <div class="journal-overlay" id="journal-overlay">
   <div class="journal-box">
-    <div class="journal-hdr">
-      <span class="journal-title">★ Nhật ký</span>
-      <button class="journal-close" id="journal-close-btn">✕</button>
-    </div>
     <iframe class="journal-frame" id="journal-frame" src="about:blank"></iframe>
   </div>
 </div>
@@ -1889,7 +1917,6 @@ function closeJournal(){
   DOM.journalOverlay.classList.remove('on');
   if(!DOM.overlay.classList.contains('on')&&!DOM.lb.classList.contains('on'))document.body.style.overflow='';
 }
-$('journal-close-btn').addEventListener('click',closeJournal);
 DOM.journalOverlay.addEventListener('click',e=>{if(e.target===DOM.journalOverlay)closeJournal();});
 // ═══════════════════════════════════════════════════════
 // ALBUM
@@ -2572,6 +2599,8 @@ window.addEventListener('message',e=>{
     updatePopout(sym);
     updateSimplize(sym);
     openChart(sym);
+  }else if(e.data.type==='JOURNAL_CLOSE'){
+    closeJournal();
   }else if(e.data.type==='SANKEY_CLOSE'){
     closePopup();
   }else if(e.data.type==='POPOUT_MINIMIZE'){
