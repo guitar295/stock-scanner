@@ -864,7 +864,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 
         <div class="field full"><label>Ghi chú</label><textarea id="notes"></textarea></div>
         <div class="uploaded-list" id="uploaded-list"></div>
         <div class="field full"><label>Ảnh điểm mua</label><input id="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></div>
-        <div class="form-actions"><button type="button" id="btn-cancel">✕</button><button class="green" type="submit">✓</button></div>
+        <div class="form-actions"><button class="green" type="submit">✓</button><button type="button" id="btn-cancel">✕</button></div>
       </form>
     </div>
   </section>
