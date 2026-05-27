@@ -2941,8 +2941,7 @@ $('svg').addEventListener('click',e=>{
   notifyHost(sym);
 
   try{
-    if(IS_MOBILE()) parent.openChart(sym);
-    else parent._hmapDesktopClick(sym);
+    parent._hmapDesktopClick(sym);
   }catch(err){
     console.error(err);
   }
