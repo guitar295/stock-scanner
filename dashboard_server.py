@@ -980,7 +980,7 @@ $('f-status').addEventListener('change',loadEntries);
 $('viewer').addEventListener('click',e=>{if(e.target.id==='viewer'||e.target.id==='viewer-close')closeViewer();});
 $('viewer-prev').addEventListener('click',e=>{e.stopPropagation();viewerNav(-1);});
 $('viewer-next').addEventListener('click',e=>{e.stopPropagation();viewerNav(1);});
-document.addEventListener('keydown',e=>{if(!$('viewer').classList.contains('on'))return;if(e.key==='Escape')closeViewer();else if(e.key==='ArrowLeft')viewerNav(-1);else if(e.key==='ArrowRight')viewerNav(1);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('viewer').classList.contains('on'))return closeViewer();if($('login-modal').classList.contains('on'))return closeLogin();document.activeElement?.blur();return window.parent?.postMessage({type:'JOURNAL_CLOSE'},'*');}if(!$('viewer').classList.contains('on'))return;if(e.key==='ArrowLeft')viewerNav(-1);else if(e.key==='ArrowRight')viewerNav(1);});
 (async function init(){await loadMe();await Promise.all([loadEntries(),loadWarning()]);})();
 </script>
 </body>
