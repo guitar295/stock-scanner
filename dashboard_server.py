@@ -2563,12 +2563,7 @@ window.addEventListener('message',e=>{
   }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
-    _syncHoverPreview(sym);
-    updatePopout(sym);
-    updateSimplize(sym);
-    if(_isPopoutMode)return;
-    if(_isSimplizeMode&&!_hoverPreviewOn)return;
-    if(!_hoverPreviewOn)openChart(sym);
+    _hmapDesktopClick(sym);
   }else if(e.data.type==='JOURNAL_SYM_DBLCLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
