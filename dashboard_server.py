@@ -2,14 +2,22 @@
 DASHBOARD SERVER
 """
 
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, request, session, send_from_directory
+from functools import wraps
+from pathlib import Path
+import hmac
+import os
+import sqlite3
 import threading
 import time
 from datetime import datetime
+from uuid import uuid4
 import pytz
 
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 app = Flask(__name__)
+app.secret_key = os.environ.get("DASHBOARD_SECRET_KEY", "change-this-dashboard-secret-key")
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 _get_alerted_today = None
 _get_history_cache = None
@@ -27,6 +35,96 @@ SIGNAL_TTL_SEC = 10
 _chart_cache: dict = {}
 _chart_lock = threading.Lock()
 CHART_TTL_SEC = 0
+
+JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
+JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
+JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
+JOURNAL_ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
+_journal_lock = threading.Lock()
+
+
+def _now_vn_iso():
+    return datetime.now(TZ_VN).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _init_journal_storage():
+    JOURNAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(JOURNAL_DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS journal_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                buy_date TEXT,
+                signal TEXT,
+                price TEXT,
+                title TEXT,
+                notes TEXT,
+                status TEXT DEFAULT 'watching',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS journal_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                original_name TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(entry_id) REFERENCES journal_entries(id) ON DELETE CASCADE
+            )
+        """)
+        conn.commit()
+
+
+def _journal_conn():
+    _init_journal_storage()
+    conn = sqlite3.connect(JOURNAL_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def _safe_text(value, max_len=2000):
+    if value is None:
+        return ""
+    return str(value).strip()[:max_len]
+
+
+def _entry_to_dict(row, images):
+    return {
+        "id": row["id"],
+        "symbol": row["symbol"],
+        "buy_date": row["buy_date"] or "",
+        "signal": row["signal"] or "",
+        "price": row["price"] or "",
+        "title": row["title"] or "",
+        "notes": row["notes"] or "",
+        "status": row["status"] or "watching",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "images": images,
+    }
+
+
+def _is_admin():
+    return bool(session.get("journal_admin"))
+
+
+def require_journal_admin(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not _is_admin():
+            return jsonify({"error": "unauthorized"}), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def _uploaded_ext(filename):
+    name = filename or ""
+    if "." not in name:
+        return ""
+    return name.rsplit(".", 1)[1].lower()
 
 # =============================================================================
 # API
@@ -128,6 +226,186 @@ def api_chart_cache_clear(symbol):
 def api_config():
     return jsonify({"signal_ttl_sec": SIGNAL_TTL_SEC,
                     "heatmap_ttl_sec": HEATMAP_TTL_SEC})
+
+@app.route("/journal")
+def journal_view():
+    return Response(JOURNAL_HTML, mimetype="text/html")
+
+@app.route("/journal/uploads/<path:filename>")
+def journal_upload(filename):
+    _init_journal_storage()
+    return send_from_directory(JOURNAL_UPLOAD_DIR, filename)
+
+@app.route("/api/journal/me")
+def api_journal_me():
+    return jsonify({"admin": _is_admin()})
+
+@app.route("/api/journal/login", methods=["POST"])
+def api_journal_login():
+    admin_password = os.environ.get("DASHBOARD_ADMIN_PASSWORD", "")
+    if not admin_password:
+        return jsonify({"error": "admin_password_not_configured"}), 503
+    data = request.get_json(silent=True) or {}
+    password = str(data.get("password", ""))
+    if not hmac.compare_digest(password, admin_password):
+        return jsonify({"error": "invalid_password"}), 401
+    session["journal_admin"] = True
+    return jsonify({"admin": True})
+
+@app.route("/api/journal/logout", methods=["POST"])
+def api_journal_logout():
+    session.pop("journal_admin", None)
+    return jsonify({"admin": False})
+
+@app.route("/api/journal/entries")
+def api_journal_entries():
+    symbol = request.args.get("symbol", "").upper().strip()
+    status = request.args.get("status", "").strip()
+    with _journal_lock, _journal_conn() as conn:
+        where, params = [], []
+        if symbol:
+            where.append("symbol LIKE ?")
+            params.append(f"%{symbol}%")
+        if status:
+            where.append("status=?")
+            params.append(status)
+        sql = "SELECT * FROM journal_entries"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY COALESCE(buy_date, created_at) DESC, id DESC"
+        rows = conn.execute(sql, params).fetchall()
+        ids = [row["id"] for row in rows]
+        image_map = {entry_id: [] for entry_id in ids}
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            img_rows = conn.execute(
+                f"SELECT * FROM journal_images WHERE entry_id IN ({marks}) ORDER BY id",
+                ids,
+            ).fetchall()
+            for img in img_rows:
+                image_map.setdefault(img["entry_id"], []).append({
+                    "id": img["id"],
+                    "url": f"/journal/uploads/{img['filename']}",
+                    "filename": img["filename"],
+                    "original_name": img["original_name"] or "",
+                    "created_at": img["created_at"],
+                })
+        entries = [_entry_to_dict(row, image_map.get(row["id"], [])) for row in rows]
+    return jsonify({"entries": entries, "count": len(entries), "admin": _is_admin()})
+
+@app.route("/api/journal/entries", methods=["POST"])
+@require_journal_admin
+def api_journal_create():
+    data = request.get_json(silent=True) or {}
+    symbol = _safe_text(data.get("symbol"), 20).upper()
+    if not symbol:
+        return jsonify({"error": "symbol_required"}), 400
+    now = _now_vn_iso()
+    with _journal_lock, _journal_conn() as conn:
+        cur = conn.execute("""
+            INSERT INTO journal_entries
+                (symbol, buy_date, signal, price, title, notes, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            symbol,
+            _safe_text(data.get("buy_date"), 20),
+            _safe_text(data.get("signal"), 120),
+            _safe_text(data.get("price"), 40),
+            _safe_text(data.get("title"), 240),
+            _safe_text(data.get("notes"), 5000),
+            _safe_text(data.get("status"), 40) or "watching",
+            now,
+            now,
+        ))
+        conn.commit()
+        entry_id = cur.lastrowid
+    return jsonify({"id": entry_id, "ok": True})
+
+@app.route("/api/journal/entries/<int:entry_id>", methods=["PUT"])
+@require_journal_admin
+def api_journal_update(entry_id):
+    data = request.get_json(silent=True) or {}
+    symbol = _safe_text(data.get("symbol"), 20).upper()
+    if not symbol:
+        return jsonify({"error": "symbol_required"}), 400
+    with _journal_lock, _journal_conn() as conn:
+        cur = conn.execute("""
+            UPDATE journal_entries
+            SET symbol=?, buy_date=?, signal=?, price=?, title=?, notes=?, status=?, updated_at=?
+            WHERE id=?
+        """, (
+            symbol,
+            _safe_text(data.get("buy_date"), 20),
+            _safe_text(data.get("signal"), 120),
+            _safe_text(data.get("price"), 40),
+            _safe_text(data.get("title"), 240),
+            _safe_text(data.get("notes"), 5000),
+            _safe_text(data.get("status"), 40) or "watching",
+            _now_vn_iso(),
+            entry_id,
+        ))
+        conn.commit()
+    if cur.rowcount == 0:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"ok": True})
+
+@app.route("/api/journal/entries/<int:entry_id>", methods=["DELETE"])
+@require_journal_admin
+def api_journal_delete(entry_id):
+    with _journal_lock, _journal_conn() as conn:
+        imgs = conn.execute("SELECT filename FROM journal_images WHERE entry_id=?", (entry_id,)).fetchall()
+        cur = conn.execute("DELETE FROM journal_entries WHERE id=?", (entry_id,))
+        conn.commit()
+    if cur.rowcount == 0:
+        return jsonify({"error": "not_found"}), 404
+    for img in imgs:
+        try:
+            (JOURNAL_UPLOAD_DIR / img["filename"]).unlink(missing_ok=True)
+        except Exception:
+            pass
+    return jsonify({"ok": True})
+
+@app.route("/api/journal/entries/<int:entry_id>/images", methods=["POST"])
+@require_journal_admin
+def api_journal_upload_image(entry_id):
+    files = request.files.getlist("images")
+    if not files:
+        return jsonify({"error": "images_required"}), 400
+    saved = []
+    now = _now_vn_iso()
+    with _journal_lock, _journal_conn() as conn:
+        entry = conn.execute("SELECT id FROM journal_entries WHERE id=?", (entry_id,)).fetchone()
+        if not entry:
+            return jsonify({"error": "not_found"}), 404
+        for file in files:
+            ext = _uploaded_ext(file.filename)
+            if ext not in JOURNAL_ALLOWED_EXT:
+                return jsonify({"error": f"unsupported_file_type:{ext or 'none'}"}), 400
+            filename = f"{datetime.now(TZ_VN).strftime('%Y%m%d')}_{uuid4().hex}.{ext}"
+            file.save(JOURNAL_UPLOAD_DIR / filename)
+            cur = conn.execute("""
+                INSERT INTO journal_images (entry_id, filename, original_name, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (entry_id, filename, _safe_text(file.filename, 240), now))
+            saved.append({"id": cur.lastrowid, "url": f"/journal/uploads/{filename}", "filename": filename})
+        conn.execute("UPDATE journal_entries SET updated_at=? WHERE id=?", (now, entry_id))
+        conn.commit()
+    return jsonify({"ok": True, "images": saved})
+
+@app.route("/api/journal/images/<int:image_id>", methods=["DELETE"])
+@require_journal_admin
+def api_journal_delete_image(image_id):
+    with _journal_lock, _journal_conn() as conn:
+        img = conn.execute("SELECT filename FROM journal_images WHERE id=?", (image_id,)).fetchone()
+        if not img:
+            return jsonify({"error": "not_found"}), 404
+        conn.execute("DELETE FROM journal_images WHERE id=?", (image_id,))
+        conn.commit()
+    try:
+        (JOURNAL_UPLOAD_DIR / img["filename"]).unlink(missing_ok=True)
+    except Exception:
+        pass
+    return jsonify({"ok": True})
 
 @app.route("/popout_full/<symbol>")
 def popout_full(symbol):
@@ -415,6 +693,161 @@ setSymbol(_sym);
 """
 
 # =============================================================================
+# TRADE JOURNAL HTML
+# =============================================================================
+JOURNAL_HTML = r"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Nhật ký mua</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:0 1px 5px rgba(0,0,0,.06)}
+h1{font-family:var(--font-ui);font-size:18px;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);white-space:nowrap}
+.spacer{flex:1}
+.meta{font-size:10px;color:var(--muted);white-space:nowrap}
+button,.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+button:hover,.btn:hover{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
+button.green{background:var(--green);color:#fff;border-color:var(--green)}
+main{padding:14px;display:grid;grid-template-columns:330px 1fr;gap:14px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.panel-h{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--surf2);border-bottom:1px solid var(--border)}
+.panel-title{font-family:var(--font-ui);font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:1.6px;color:var(--accent)}
+.panel-b{padding:12px}
+.filters{display:flex;gap:7px;margin-bottom:10px}
+input,textarea,select{width:100%;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none}
+input,select{height:32px;padding:0 9px}
+textarea{min-height:96px;padding:8px 9px;resize:vertical}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
+.form{display:none;grid-template-columns:1fr 1fr;gap:9px}
+.form.on{display:grid}
+.field.full{grid-column:1/-1}
+.field label{display:block;margin-bottom:4px;font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.7px}
+.form-actions{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}
+.locked{padding:18px;color:var(--muted);font-size:12px;text-align:center;border:1px dashed var(--border);border-radius:6px}
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.card{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.card-h{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;background:#fbfcff;border-bottom:1px solid var(--border)}
+.sym{font-family:var(--font-ui);font-size:21px;font-weight:800;color:var(--accent);letter-spacing:1px}
+.ch-meta{font-size:10px;color:var(--muted);line-height:1.45}
+.status{margin-left:auto;font-size:10px;font-weight:800;border-radius:999px;padding:3px 8px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.status.bought{color:#0e7b54;background:#dcfce7;border-color:#86efac}
+.status.watching{color:#9a5b00;background:#fef3c7;border-color:#fcd34d}
+.status.closed{color:#6b7280;background:#f1f5f9;border-color:#cbd5e1}
+.card-b{padding:10px 11px;display:flex;flex-direction:column;gap:8px}
+.title{font-weight:800;font-size:13px}
+.notes{font-size:12px;line-height:1.5;white-space:pre-wrap;color:#374151}
+.kv{display:flex;flex-wrap:wrap;gap:5px}
+.tag{font-size:10px;padding:3px 7px;border-radius:4px;background:#f1f5f9;border:1px solid #dbe2ec;color:#475569;font-weight:700}
+.imgs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.img-wrap{position:relative;border:1px solid var(--border);border-radius:5px;overflow:hidden;background:#f8fafc;aspect-ratio:4/3}
+.img-wrap img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
+.img-del{position:absolute;top:4px;right:4px;width:24px;height:24px;padding:0;border-radius:50%;background:rgba(224,36,36,.9);border:none;color:#fff;display:none}
+.admin .img-del{display:flex}
+.card-actions{display:none;gap:7px;justify-content:flex-end;border-top:1px solid var(--border);padding:9px 11px;background:#fbfcff}
+.admin .card-actions{display:flex}
+.upload-inline{display:none;margin-top:4px}
+.admin .upload-inline{display:block}
+.empty{padding:40px 20px;text-align:center;color:var(--muted)}
+#viewer{display:none;position:fixed;inset:0;z-index:100;background:rgba(17,24,39,.82);align-items:center;justify-content:center;padding:18px}
+#viewer.on{display:flex}
+#viewer img{max-width:96vw;max-height:92vh;object-fit:contain;background:#fff;border-radius:4px}
+#viewer button{position:absolute;top:14px;right:14px;border-radius:50%;width:36px;height:36px;padding:0;background:#fff;color:#111}
+@media(max-width:840px){main{grid-template-columns:1fr}.form{grid-template-columns:1fr}.meta{display:none}.list{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>★ Nhật ký mua</h1>
+  <span class="meta" id="mode-meta">View mode</span>
+  <div class="spacer"></div>
+  <button id="btn-new" class="primary" style="display:none">+ Thêm</button>
+  <button id="btn-login">Edit</button>
+  <button id="btn-logout" class="danger" style="display:none">Logout</button>
+</header>
+<main id="app">
+  <section class="panel">
+    <div class="panel-h"><span class="panel-title">Bộ lọc</span></div>
+    <div class="panel-b">
+      <div class="filters">
+        <input id="f-symbol" placeholder="Mã CK" maxlength="12" autocomplete="off">
+        <select id="f-status">
+          <option value="">Tất cả</option>
+          <option value="watching">Theo dõi</option>
+          <option value="bought">Đã mua</option>
+          <option value="closed">Đã đóng</option>
+        </select>
+      </div>
+      <div id="locked-box" class="locked">Người xem chỉ đọc được nhật ký. Bấm Edit và nhập mật khẩu để thêm, sửa, xóa hoặc upload ảnh.</div>
+      <form id="entry-form" class="form">
+        <input type="hidden" id="entry-id">
+        <div class="field"><label>Mã</label><input id="symbol" maxlength="20" required></div>
+        <div class="field"><label>Ngày mua</label><input id="buy-date" type="date"></div>
+        <div class="field"><label>Tín hiệu</label><input id="signal" maxlength="120"></div>
+        <div class="field"><label>Giá</label><input id="price" maxlength="40"></div>
+        <div class="field"><label>Trạng thái</label><select id="status"><option value="watching">Theo dõi</option><option value="bought">Đã mua</option><option value="closed">Đã đóng</option></select></div>
+        <div class="field"><label>Tiêu đề</label><input id="title" maxlength="240"></div>
+        <div class="field full"><label>Ghi chú</label><textarea id="notes"></textarea></div>
+        <div class="field full"><label>Ảnh điểm mua</label><input id="images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></div>
+        <div class="form-actions"><button type="button" id="btn-cancel">Hủy</button><button class="green" type="submit">Lưu</button></div>
+      </form>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-h"><span class="panel-title">Danh sách</span><span class="meta" id="count-meta">0 mục</span></div>
+    <div class="panel-b"><div class="list" id="list"></div></div>
+  </section>
+</main>
+<div id="viewer"><button id="viewer-close">✕</button><img id="viewer-img" alt=""></div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const S={admin:false,entries:[]};
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function api(url,opt){const r=await fetch(url,opt);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
+function payload(){return{symbol:$('symbol').value.trim().toUpperCase(),buy_date:$('buy-date').value,signal:$('signal').value.trim(),price:$('price').value.trim(),title:$('title').value.trim(),notes:$('notes').value.trim(),status:$('status').value};}
+function setAdmin(on){S.admin=!!on;document.body.classList.toggle('admin',S.admin);$('mode-meta').textContent=S.admin?'Edit mode':'View mode';$('btn-login').style.display=S.admin?'none':'';$('btn-logout').style.display=S.admin?'':'none';$('btn-new').style.display=S.admin?'':'none';$('locked-box').style.display=S.admin?'none':'';if(!S.admin)hideForm();}
+function showForm(entry){if(!S.admin)return;const e=entry||{};$('entry-id').value=e.id||'';$('symbol').value=e.symbol||'';$('buy-date').value=e.buy_date||'';$('signal').value=e.signal||'';$('price').value=e.price||'';$('title').value=e.title||'';$('notes').value=e.notes||'';$('status').value=e.status||'watching';$('images').value='';$('entry-form').classList.add('on');$('symbol').focus();}
+function hideForm(){$('entry-form').classList.remove('on');$('entry-form').reset();$('entry-id').value='';}
+async function loadMe(){try{const j=await api('/api/journal/me');setAdmin(j.admin);}catch(e){setAdmin(false);}}
+async function loadEntries(){const qs=new URLSearchParams();if($('f-symbol').value.trim())qs.set('symbol',$('f-symbol').value.trim().toUpperCase());if($('f-status').value)qs.set('status',$('f-status').value);const j=await api('/api/journal/entries?'+qs.toString());S.entries=j.entries||[];$('count-meta').textContent=(j.count||0)+' mục';render();}
+function statusLabel(s){return s==='bought'?'Đã mua':s==='closed'?'Đã đóng':'Theo dõi';}
+function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div class="empty">Chưa có nhật ký mua nào</div>';return;}box.innerHTML=S.entries.map(e=>`
+  <article class="card" data-id="${e.id}">
+    <div class="card-h"><div><div class="sym">${esc(e.symbol)}</div><div class="ch-meta">${esc(e.buy_date||e.created_at)}<br>${esc(e.updated_at)}</div></div><span class="status ${esc(e.status)}">${statusLabel(e.status)}</span></div>
+    <div class="card-b">
+      ${e.title?`<div class="title">${esc(e.title)}</div>`:''}
+      <div class="kv">${e.signal?`<span class="tag">${esc(e.signal)}</span>`:''}${e.price?`<span class="tag">Giá: ${esc(e.price)}</span>`:''}</div>
+      ${e.notes?`<div class="notes">${esc(e.notes)}</div>`:''}
+      ${e.images&&e.images.length?`<div class="imgs">${e.images.map(img=>`<div class="img-wrap"><img src="${img.url}" alt="${esc(img.original_name)}" data-full="${img.url}"><button class="img-del" data-img="${img.id}">✕</button></div>`).join('')}</div>`:''}
+      <input class="upload-inline" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple data-upload="${e.id}">
+    </div>
+    <div class="card-actions"><button data-edit="${e.id}">Sửa</button><button class="danger" data-del="${e.id}">Xóa</button></div>
+  </article>`).join('');}
+async function uploadImages(entryId,files){if(!files||!files.length)return;const fd=new FormData();[...files].forEach(f=>fd.append('images',f));await api('/api/journal/entries/'+entryId+'/images',{method:'POST',body:fd});}
+$('btn-login').addEventListener('click',async()=>{const password=prompt('Nhập mật khẩu edit mode');if(!password)return;try{await api('/api/journal/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});setAdmin(true);await loadEntries();}catch(e){alert('Không đăng nhập được: '+e.message);}});
+$('btn-logout').addEventListener('click',async()=>{try{await api('/api/journal/logout',{method:'POST'});}catch(e){}setAdmin(false);});
+$('btn-new').addEventListener('click',()=>showForm());
+$('btn-cancel').addEventListener('click',hideForm);
+$('entry-form').addEventListener('submit',async e=>{e.preventDefault();try{const id=$('entry-id').value;const body=JSON.stringify(payload());let entryId=id;if(id)await api('/api/journal/entries/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body});else{const j=await api('/api/journal/entries',{method:'POST',headers:{'Content-Type':'application/json'},body});entryId=j.id;}await uploadImages(entryId,$('images').files);hideForm();await loadEntries();}catch(err){alert('Không lưu được: '+err.message);}});
+$('list').addEventListener('click',async e=>{const img=e.target.closest('img[data-full]');if(img){$('viewer-img').src=img.dataset.full;$('viewer').classList.add('on');return;}const edit=e.target.closest('[data-edit]');if(edit){const found=S.entries.find(x=>String(x.id)===String(edit.dataset.edit));if(found)showForm(found);return;}const del=e.target.closest('[data-del]');if(del&&confirm('Xóa nhật ký này?')){try{await api('/api/journal/entries/'+del.dataset.del,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa được: '+err.message);}return;}const imgDel=e.target.closest('[data-img]');if(imgDel&&confirm('Xóa ảnh này?')){try{await api('/api/journal/images/'+imgDel.dataset.img,{method:'DELETE'});await loadEntries();}catch(err){alert('Không xóa ảnh được: '+err.message);}}});
+$('list').addEventListener('change',async e=>{const up=e.target.closest('[data-upload]');if(!up||!S.admin)return;try{await uploadImages(up.dataset.upload,up.files);up.value='';await loadEntries();}catch(err){alert('Không upload được: '+err.message);}});
+$('f-symbol').addEventListener('input',()=>{clearTimeout(window._flt);window._flt=setTimeout(loadEntries,250);});
+$('f-status').addEventListener('change',loadEntries);
+$('viewer').addEventListener('click',e=>{if(e.target.id==='viewer'||e.target.id==='viewer-close')$('viewer').classList.remove('on');});
+(async function init(){await loadMe();await loadEntries();})();
+</script>
+</body>
+</html>
+"""
+
+# =============================================================================
 # DASHBOARD HTML
 # =============================================================================
 DASHBOARD_HTML = r"""<!DOCTYPE html>
@@ -462,8 +895,19 @@ header h1{
 .wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
 .panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
+.panel-hdr-left{display:flex;align-items:center;gap:8px}
 .panel-title{font-family:var(--font-ui);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}
 .panel-meta{font-size:10px;color:var(--muted)}
+.journal-star-btn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:#b45309;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.journal-star-btn:hover{background:#fef3c7;border-color:#f59e0b;color:#92400e;box-shadow:0 2px 8px rgba(180,83,9,.16)}
+.journal-overlay{display:none;position:fixed;inset:0;z-index:9998;background:rgba(17,24,39,.52);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:18px}
+.journal-overlay.on{display:flex}
+.journal-box{width:min(1500px,98vw);height:92vh;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.18);display:flex;flex-direction:column;overflow:hidden}
+.journal-hdr{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
+.journal-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent)}
+.journal-close{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.journal-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
+.journal-frame{width:100%;height:100%;border:none;display:block;flex:1}
 .pbar-wrap{height:2px;overflow:hidden}
 .pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:.5}
 .panel-body{padding:12px 14px}
@@ -892,7 +1336,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   <!-- SIGNALS -->
   <div class="panel">
     <div class="panel-hdr">
-      <span class="panel-title">Tín hiệu hôm nay</span>
+      <div class="panel-hdr-left">
+        <span class="panel-title">Tín hiệu hôm nay</span>
+        <button class="journal-star-btn" id="journal-open-btn" title="Mở nhật ký mua">★</button>
+      </div>
       <span class="panel-meta" id="sig-meta">Đang tải...</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-sig"></div></div>
@@ -944,6 +1391,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="panel-title">MARKET</span>
     </div>
     <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
+  </div>
+</div>
+
+<!-- TRADE JOURNAL -->
+<div class="journal-overlay" id="journal-overlay">
+  <div class="journal-box">
+    <div class="journal-hdr">
+      <span class="journal-title">★ Nhật ký mua</span>
+      <button class="journal-close" id="journal-close-btn">✕</button>
+    </div>
+    <iframe class="journal-frame" id="journal-frame" src="about:blank"></iframe>
   </div>
 </div>
 
@@ -1079,6 +1537,7 @@ const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
+  journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   // Desktop popup header
   ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
@@ -1351,6 +1810,17 @@ $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indic
 $('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
 $('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
+$('journal-open-btn').addEventListener('click',()=>{
+  if(DOM.journalFrame.src==='about:blank')DOM.journalFrame.src='/journal';
+  DOM.journalOverlay.classList.add('on');
+  document.body.style.overflow='hidden';
+});
+function closeJournal(){
+  DOM.journalOverlay.classList.remove('on');
+  if(!DOM.overlay.classList.contains('on')&&!DOM.lb.classList.contains('on'))document.body.style.overflow='';
+}
+$('journal-close-btn').addEventListener('click',closeJournal);
+DOM.journalOverlay.addEventListener('click',e=>{if(e.target===DOM.journalOverlay)closeJournal();});
 // ═══════════════════════════════════════════════════════
 // ALBUM
 // ═══════════════════════════════════════════════════════
@@ -1541,6 +2011,7 @@ window.addEventListener('orientationchange',()=>{
 // Keyboard
 document.addEventListener('keydown',e=>{
   if(DOM.lb.classList.contains('on'))return;
+  if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){closeJournal();return;}
   if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
   if(!DOM.overlay.classList.contains('on'))return;
   const activeSearch=[DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch];
