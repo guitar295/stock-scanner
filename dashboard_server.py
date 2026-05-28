@@ -2692,7 +2692,6 @@ html.embedded-sankey .hdr{display:none}
 .btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .main{flex:1;min-height:0;display:flex;flex-direction:column}
 #wrap{flex:1;min-height:0;padding:0;overflow:auto;}
-#svg{width:100%;height:100%;display:block;background:var(--surface);border:none;border-radius:0
 #svg{width:100%;height:auto;min-height:100%;display:block;background:var(--surface);border:none;border-radius:0;}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 @media(max-width:900px){
