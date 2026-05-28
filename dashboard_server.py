@@ -2871,7 +2871,7 @@ function render(data,ts){
   let stockY=chart.yStart-60, stockGap=3;
   const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
   stockNodes.forEach(stock=>{
-    stock.nodeH=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
+    stock.nodeH=Math.max(2,chart.drawH*(stock.destWeight/total)*1.6-6);
     stock.destY=stockY;
     stockY+=stock.nodeH+stockGap;
   });
