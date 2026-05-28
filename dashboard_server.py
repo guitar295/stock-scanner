@@ -2692,7 +2692,7 @@ html.embedded-sankey .hdr{display:none}
 .btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .main{flex:1;min-height:0;display:flex;flex-direction:column}
 #wrap{flex:1;min-height:0;padding:0;overflow:auto;}
-#svg{width:100%;height:auto;min-height:100%;display:block;background:var(--surface);border:none;border-radius:0;}
+#svg{width:100%;height:100%;display:block;background:var(--surface);border:none;border-radius:0}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 @media(max-width:900px){
   .hdr{flex-wrap:nowrap}
@@ -2834,7 +2834,7 @@ function render(data,ts){
     return;
   }
   const total=dataset.total;
-  const chart={w:1600,h:dynamicHeight,yStart:120,drawH:dynamicHeight-260,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
+  const chart={w:1600,h:dynamicHeight,yStart:120,drawH:dynamicHeight-260,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};svg.setAttribute('viewBox',`0 0 ${chart.w} ${chart.h}`);svg.setAttribute('preserveAspectRatio','xMidYMin meet');const wrap=$('wrap');if(wrap){wrap.style.overflowY='auto';wrap.style.height='100%';}svg.style.minHeight=chart.h+'px';
   svg.setAttribute('viewBox',`0 0 ${chart.w} ${chart.h}`);
   svg.style.height = chart.h + 'px';
   const gapSector=5;
@@ -2872,7 +2872,7 @@ function render(data,ts){
   });
   let stockY=chart.yStart-60, stockGap=3;
   const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
-  const dynamicHeight = Math.max(900,stockNodes.length * 26 + 220);
+  const dynamicHeight = Math.max(900,stockNodes.length*32+260);
   const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
   stockNodes.forEach(stock=>{
     stock.nodeH=Math.max(6,chart.drawH*(stock.destWeight/total)*1.6-6);
