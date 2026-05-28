@@ -2834,7 +2834,7 @@ function render(data,ts){
     return;
   }
   const total=dataset.total;
-  const chart={w:1600,h:dynamicHeight,yStart:120,drawH:dynamicHeight-260,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10
+  const chart={w:1600,h:dynamicHeight,yStart:120,drawH:dynamicHeight-260,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
   svg.setAttribute('viewBox',`0 0 ${chart.w} ${chart.h}`);
   svg.style.height = chart.h + 'px';
   const gapSector=5;
