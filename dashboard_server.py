@@ -2871,11 +2871,9 @@ function render(data,ts){
   let stockY=chart.yStart-60, stockGap=3;
   const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
   stockNodes.forEach(stock=>{
-    const rawRatio = stock.destWeight / total;
-    const visualScale = Math.pow(rawRatio, 0.82);
-    stock.nodeH = Math.max(1.2,chart.drawH*visualScale*1.15);
-    stock.destY = stockY;
-    stockY += stock.nodeH + stockGap;
+    stock.nodeH=Math.max(1,chart.drawH*(stock.destWeight/total)*1.6-6);
+    stock.destY=stockY;
+    stockY+=stock.nodeH+stockGap;
   });
   sectors.forEach(sec=>{
     svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'}));
@@ -2899,7 +2897,7 @@ function render(data,ts){
       svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
       segY+=segH;
     });
-    if(h2>2){
+    if(h2>6){
       const b=badgeColor(stock.pct);
       const badgeX=chart.stockX+chart.barW+8;
       const badgeY=stock.destY+h2/2-10;
