@@ -1539,7 +1539,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="panel-title">Sankey</span>
       <span class="sankey-toggle">▶</span>
     </div>
-    <div class="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+    <div class="sankey-wrap" id="sankey-wrap" hidden><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 
   <!-- MARKET -->
@@ -1689,7 +1689,7 @@ const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
-  sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),
+  sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   sankeySvg:$('sankey-svg'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
@@ -2039,7 +2039,10 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   updateSimplize(sym);
   openChart(sym);
 });
-DOM.sankeyToggle.addEventListener('click',()=>DOM.sankeyPanel.classList.toggle('collapsed'));
+DOM.sankeyToggle.addEventListener('click',()=>{
+  const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
+  DOM.sankeyWrap.hidden=collapsed;
+});
 // ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
 // ═══════════════════════════════════════════════════════
