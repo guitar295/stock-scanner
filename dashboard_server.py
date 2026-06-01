@@ -1812,74 +1812,41 @@ const TS_POOL=__TS_POOL_CONFIG__;
 // ═══════════════════════════════════════════════════════
 // HEATMAP RENDER
 // ═══════════════════════════════════════════════════════
-const HMAP_COLOR_BASE={
-  ceil:[250,170,225],
-  pos:[105,230,115],
-  zero:[245,245,200],
-  neg:[255,92,92],
-  floor:[175,250,255],
-};
-function _hmapMix(base,intensity){
-  const t=Math.max(0,Math.min(1,intensity));
-  return base.map(v=>Math.round(255+(v-255)*t));
-}
-function _hmapRankScale(values,abs=false){
-  const nums=values.map(v=>abs?Math.abs(v):v).filter(v=>Number.isFinite(v));
-  nums.sort((a,b)=>a-b);
-  if(!nums.length)return()=>0.45;
-  if(nums.length===1)return()=>0.78;
-  return value=>{
-    const x=abs?Math.abs(value):value;
-    let idx=0;
-    while(idx<nums.length-1&&nums[idx]<x)idx++;
-    return idx/(nums.length-1);
-  };
-}
-function buildHeatmapColorScale(d){
-  const vals=Object.values(d||{}).map(e=>typeof e?.pct==='number'?e.pct:null).filter(v=>v!==null);
-  return {
-    pos:_hmapRankScale(vals.filter(v=>v>0&&v<6.5)),
-    neg:_hmapRankScale(vals.filter(v=>v<0&&v>-6.5),true),
-    ceil:_hmapRankScale(vals.filter(v=>v>=6.5)),
-    floor:_hmapRankScale(vals.filter(v=>v<=-6.5),true),
-  };
-}
-function cellStyle(pct,scale){
+function cellStyle(pct){
   let r,g,b;
-  if(pct>=6.5){[r,g,b]=_hmapMix(HMAP_COLOR_BASE.ceil,0.72+(scale?.ceil(pct)||0)*0.28)}
-  else if(pct>0){[r,g,b]=_hmapMix(HMAP_COLOR_BASE.pos,0.22+(scale?.pos(pct)||0)*0.78)}
-  else if(pct===0){[r,g,b]=HMAP_COLOR_BASE.zero}
-  else if(pct<=-6.5){[r,g,b]=_hmapMix(HMAP_COLOR_BASE.floor,0.72+(scale?.floor(pct)||0)*0.28)}
-  else{[r,g,b]=_hmapMix(HMAP_COLOR_BASE.neg,0.22+(scale?.neg(pct)||0)*0.78)}
+  if(pct>=6.5){r=250;g=170;b=225}else if(pct>=4){r=160;g=220;b=170}
+  else if(pct>=2){r=195;g=235;b=200}else if(pct>0){r=225;g=245;b=228}
+  else if(pct===0){r=245;g=245;b=200}else if(pct>=-2){r=255;g=220;b=210}
+  else if(pct>=-4){r=250;g=185;b=175}else if(pct>=-6.5){r=240;g=150;b=145}
+  else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
 function sortByPct(syms,d){return[...syms].sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0));}
 function fmtP(p){return(!p||p<=0)?'—':(p<100?p.toFixed(2):p.toFixed(1));}
-function mkCell(sym,d,scale){
+function mkCell(sym,d){
   const e=d[sym]||{},pct=typeof e.pct==='number'?e.pct:0,price=typeof e.price==='number'?e.price:0;
-  const{bg,fg}=cellStyle(pct,scale),sign=pct>=0?'+':'';
+  const{bg,fg}=cellStyle(pct),sign=pct>=0?'+':'';
   return `<div class="hmap-cell" data-sym="${sym}" style="background:${bg};color:${fg}" title="${sym}|${fmtP(price)}|${sign}${pct.toFixed(2)}%"><span class="hc-sym">${sym}</span><span class="hc-price">${fmtP(price)}</span><span class="hc-pct">${sign}${pct.toFixed(1)}%</span></div>`;
 }
-function mkGroup(name,syms,d,scale){
+function mkGroup(name,syms,d){
   const avg=avgPct(syms,d),sign=avg>=0?'+':'',cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
-  return `<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">${name}</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(syms,d).map(s=>mkCell(s,d,scale)).join('')}</div>`;
+  return `<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">${name}</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(syms,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
-function mkSectorCol(d,scale){
+function mkSectorCol(d){
   const groups=[];
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')groups.push({name:g.name,avg:avgPct(g.syms,d)});}));
   groups.sort((a,b)=>b.avg-a.avg);
-  return`<div class="hmap-group hmap-sector-group"><div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>${groups.slice(0,10).map(g=>{const{bg,fg}=cellStyle(g.avg,scale),sign=g.avg>=0?'+':'';return`<div class="hmap-sector-cell" style="background:${bg};color:${fg}"><span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span></div>`;}).join('')}</div>`;
+  return`<div class="hmap-group hmap-sector-group"><div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>${groups.slice(0,10).map(g=>{const{bg,fg}=cellStyle(g.avg),sign=g.avg>=0?'+':'';return`<div class="hmap-sector-cell" style="background:${bg};color:${fg}"><span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span></div>`;}).join('')}</div>`;
 }
 function renderHeatmap(d){
   if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
-  const colorScale=buildHeatmapColorScale(d);
   const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
   const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
-  const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d,colorScale)}</div>`];
+  const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
   HMAP_COLS.forEach((cd,i)=>{
-    const extra=i===HMAP_COLS.length-1?mkSectorCol(d,colorScale):'';
-    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d,colorScale)).join('')}${extra}</div>`);
+    const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
+    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${extra}</div>`);
   });
   DOM.hmapGrid.innerHTML=parts.join('');
 }
