@@ -1815,8 +1815,8 @@ const TS_POOL=__TS_POOL_CONFIG__;
 function cellStyle(pct){
   let r,g,b;
   if(pct>=6.5){r=250;g=170;b=225}else if(pct>=4){r=160;g=220;b=170}
-  else if(pct>=2){r=195;g=235;b=200}else if(pct>0){r=225;g=245;b=228}
-  else if(pct===0){r=245;g=245;b=200}else if(pct>=-2){r=255;g=220;b=210}
+  else if(pct>=2){r=195;g=235;b=200}else if(pct>=0.1){r=225;g=245;b=228}
+  else if(pct>-0.1){r=245;g=245;b=200}else if(pct>=-2){r=255;g=220;b=210}
   else if(pct>=-4){r=250;g=185;b=175}else if(pct>=-6.5){r=240;g=150;b=145}
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
