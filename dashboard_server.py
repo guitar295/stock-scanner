@@ -44,6 +44,18 @@ JOURNAL_WARNING_PATH = JOURNAL_DATA_DIR / "market_warning.txt"
 JOURNAL_ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
 _journal_lock = threading.Lock()
 
+HMAP_COLS_CONFIG = [
+    {"groups": [{"name": "VN30", "syms": ["FPT", "GAS", "NVL", "VNM", "VCB", "PLX", "TCB", "MWG", "STB", "HPG", "PNJ", "BID", "CTG", "HDB", "VJC", "VPB", "KDH", "MBB", "VHM", "POW", "VRE", "MSN", "SSI", "ACB", "BVH", "GVR", "TPB"]}]},
+    {"groups": [{"name": "NGÂN HÀNG", "syms": ["VCB", "BID", "CTG", "MBB", "ACB", "TCB", "TPB", "HDB", "SHB", "STB", "VIB", "VPB", "MSB", "ABB", "BVB", "LPB"]}, {"name": "DẦU KHÍ", "syms": ["GAS", "PVD", "PVS", "BSR", "OIL", "PVB", "PVC", "PLX", "PET", "PVT"]}]},
+    {"groups": [{"name": "CHỨNG KHOÁN", "syms": ["SSI", "VND", "CTS", "FTS", "HCM", "MBS", "DSE", "BSI", "SHS", "VCI", "VCK", "ORS"]}, {"name": "XÂY DỰNG", "syms": ["C47", "C32", "L14", "CII", "CTD", "CTI", "FCN", "HBC", "HUT", "LCG", "PC1", "DPG", "PHC", "VCG"]}]},
+    {"groups": [{"name": "BẤT ĐỘNG SẢN", "syms": ["VHM", "AGG", "IJC", "LDG", "CEO", "D2D", "DIG", "DXG", "HDC", "HDG", "KDH", "NLG", "NTL", "NVL", "PDR", "SCR", "TIG", "KBC", "SZC"]}, {"name": "PHÂN BÓN", "syms": ["BFC", "DCM", "DPM"]}, {"name": "THÉP", "syms": ["HPG", "HSG", "NKG"]}]},
+    {"groups": [{"name": "BÁN LẺ", "syms": ["MSN", "FPT", "FRT", "MWG", "PNJ", "DGW"]}, {"name": "THỦY SẢN", "syms": ["ANV", "FMC", "CMX", "VHC", "IDI"]}, {"name": "CẢNG BIỂN", "syms": ["HAH", "GMD", "SGP", "VSC"]}, {"name": "CAO SU", "syms": ["GVR", "DPR", "DRI", "PHR", "DRC"]}, {"name": "NHỰA", "syms": ["AAA", "BMP", "NTP"]}]},
+    {"groups": [{"name": "ĐIỆN NƯỚC", "syms": ["NT2", "PC1", "GEG", "GEX", "POW", "TDM", "BWE"]}, {"name": "DỆT MAY", "syms": ["TCM", "TNG", "VGT", "MSH"]}, {"name": "HÀNG KHÔNG", "syms": ["NCT", "ACV", "AST", "HVN", "SCS", "VJC"]}, {"name": "BẢO HIỂM", "syms": ["BMI", "MIG", "BVH"]}, {"name": "MÍA ĐƯỜNG", "syms": ["LSS", "SBT", "QNS"]}]},
+    {"groups": [{"name": "ĐẦU TƯ CÔNG", "syms": ["FCN", "HHV", "LCG", "VCG", "C4G", "CTD", "HBC", "HSG", "NKG", "HPG", "KSB", "PLC"]}]},
+]
+
+TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BFC", "BID", "BMI", "BSR", "BVB", "BVH", "BWE", "CII", "CKG", "CRE", "CTD", "CTG", "CTI", "CTR", "CTS", "D2D", "DBC", "DCM", "DSE", "DGW", "DIG", "DPG", "DPM", "DRC", "DRH", "DXG", "FCN", "FMC", "FPT", "FRT", "FTS", "GAS", "GEG", "GEX", "GMD", "GVR", "HAG", "HAX", "HBC", "HCM", "HDB", "HDC", "VCK", "HDG", "HNG", "HPG", "HSG", "HTN", "HVN", "IDC", "IJC", "KBC", "KDH", "KSB", "LCG", "LDG", "LPB", "LTG", "MBB", "MBS", "MSB", "MSN", "MWG", "NKG", "NLG", "NTL", "NVL", "PC1", "PDR", "PET", "PHR", "PLC", "PLX", "PNJ", "POW", "PTB", "PVD", "PVS", "PVT", "QNS", "REE", "SBT", "SCR", "SHB", "SHS", "SSI", "STB", "SZC", "TCB", "TDM", "TIG", "TNG", "TPB", "TV2", "VCB", "VCI", "VCS", "VGT", "VHC", "VHM", "VIB", "VIC", "VJC", "VNM", "VPB", "VRE"]
+
 
 def _now_vn_iso():
     return datetime.now(TZ_VN).strftime("%Y-%m-%d %H:%M:%S")
@@ -448,13 +460,14 @@ def popout_full(symbol):
     return Response(POPOUT_FULL_HTML.replace("__SYMBOL__", symbol.upper().strip()),
                     mimetype="text/html")
 
-@app.route("/sankey")
-def sankey_view():
-    return Response(SANKEY_HTML, mimetype="text/html")
-
 @app.route("/")
 def index():
-    return Response(DASHBOARD_HTML, mimetype="text/html")
+    html = (
+        DASHBOARD_HTML
+        .replace("__HMAP_COLS_CONFIG__", json.dumps(HMAP_COLS_CONFIG, ensure_ascii=False))
+        .replace("__TS_POOL_CONFIG__", json.dumps(TS_POOL_CONFIG, ensure_ascii=False))
+    )
+    return Response(html, mimetype="text/html")
 
 # =============================================================================
 # START
@@ -1106,7 +1119,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
-.sankey-frame{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;border:none;display:block;background:#fff}
+.sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
+.sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
+.sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
@@ -1238,7 +1253,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     color: var(--text) !important;
     border-color: var(--border) !important;
   }
-  .sankey-frame{
+  .sankey-wrap{
     width:100% !important;
     margin-left:0 !important;
     aspect-ratio:16/9;
@@ -1519,7 +1534,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="panel-hdr">
       <span class="panel-title">Sankey</span>
     </div>
-    <iframe class="sankey-frame" id="sankey-frame" src="/sankey?embedded=1"></iframe>
+    <div class="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 
   <!-- MARKET -->
@@ -1669,6 +1684,7 @@ const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
+  sankeySvg:$('sankey-svg'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -1795,16 +1811,8 @@ function quickSimplize(){
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
 // ═══════════════════════════════════════════════════════
-const HMAP_COLS=[
-  {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
-  {groups:[{name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},{name:"DAU KHI",syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]}]},
-  {groups:[{name:"CHUNG KHOAN",syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},{name:"XAY DUNG",syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]}]},
-  {groups:[{name:"BAT DONG SAN",syms:["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},{name:"PHAN BON",syms:["BFC","DCM","DPM"]},{name:"THEP",syms:["HPG","HSG","NKG"]}]},
-  {groups:[{name:"BAN LE",syms:["MSN","FPT","FRT","MWG","PNJ","DGW"]},{name:"THUY SAN",syms:["ANV","FMC","CMX","VHC","IDI"]},{name:"CANG BIEN",syms:["HAH","GMD","SGP","VSC"]},{name:"CAO SU",syms:["GVR","DPR","DRI","PHR","DRC"]},{name:"NHUA",syms:["AAA","BMP","NTP"]}]},
-  {groups:[{name:"DIEN NUOC",syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},{name:"DET MAY",syms:["TCM","TNG","VGT","MSH"]},{name:"HANG KHONG",syms:["NCT","ACV","AST","HVN","SCS","VJC"]},{name:"BAO HIEM",syms:["BMI","MIG","BVH"]},{name:"MIA DUONG",syms:["LSS","SBT","QNS"]}]},
-  {groups:[{name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]}]},
-];
-const TS_POOL=["AAA","ACB","AGG","ANV","BFC","BID","BMI","BSR","BVB","BVH","BWE","CII","CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DSE","DGW","DIG","DPG","DPM","DRC","DRH","DXG","FCN","FMC","FPT","FRT","FTS","GAS","GEG","GEX","GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","VCK","HDG","HNG","HPG","HSG","HTN","HVN","IDC","IJC","KBC","KDH","KSB","LCG","LDG","LPB","LTG","MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET","PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT","SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2","VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE"];
+const HMAP_COLS=__HMAP_COLS_CONFIG__;
+const TS_POOL=__TS_POOL_CONFIG__;
 // ═══════════════════════════════════════════════════════
 // HEATMAP RENDER
 // ═══════════════════════════════════════════════════════
@@ -1833,7 +1841,7 @@ function mkSectorCol(d){
   const groups=[];
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')groups.push({name:g.name,avg:avgPct(g.syms,d)});}));
   groups.sort((a,b)=>b.avg-a.avg);
-  return`<div class="hmap-group hmap-sector-group"><div class="hmap-ghdr"><span class="hmap-gname">NGANH NGHE</span></div>${groups.slice(0,10).map(g=>{const{bg,fg}=cellStyle(g.avg),sign=g.avg>=0?'+':'';return`<div class="hmap-sector-cell" style="background:${bg};color:${fg}"><span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span></div>`;}).join('')}</div>`;
+  return`<div class="hmap-group hmap-sector-group"><div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>${groups.slice(0,10).map(g=>{const{bg,fg}=cellStyle(g.avg),sign=g.avg>=0?'+':'';return`<div class="hmap-sector-cell" style="background:${bg};color:${fg}"><span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span></div>`;}).join('')}</div>`;
 }
 function renderHeatmap(d){
   if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
@@ -1887,6 +1895,145 @@ DOM.sigList.addEventListener('dblclick',e=>{
   openChart(row.dataset.sym);
 });
 // ═══════════════════════════════════════════════════════
+// SANKEY RENDER
+// ═══════════════════════════════════════════════════════
+const SANKEY_SECTORS=[];
+HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=='VN30')SANKEY_SECTORS.push(g);}));
+const SANKEY_SVG_NS='http://www.w3.org/2000/svg';
+const SANKEY_COLORS=['#ec8784','#a378e0','#da9672','#d5cc71','#72dacd','#a1e078','#7882e0','#e0b478','#78e0b4','#e078c8','#96c8fa','#b5d67a'];
+const SANKEY_MIN_WEIGHT=10000000;
+function sankeyFmtNum(v){return(!Number.isFinite(v)||v<=0)?'--':(v/1e9).toFixed(1)+'B';}
+function sankeyFmtPct(v){return Number.isFinite(v)?(v>=0?'+':'')+v.toFixed(2)+'%':'--';}
+function sankeyBadgeColor(pct){
+  if(pct>0)return{fill:'#0e9f6e',text:'#fff'};
+  if(pct<0)return{fill:'#e02424',text:'#fff'};
+  return{fill:'#d4a017',text:'#fff'};
+}
+function sankeyWeight(entry){
+  if(!entry||typeof entry!=='object')return 0;
+  const totalValue=Number(entry.total_value);
+  return Number.isFinite(totalValue)&&totalValue>0?totalValue:0;
+}
+function sankeyPath(x1,y1t,y1b,x2,y2t,y2b){
+  const c1=x1+(x2-x1)*0.45,c2=x1+(x2-x1)*0.55;
+  return`M ${x1} ${y1t} C ${c1} ${y1t}, ${c2} ${y2t}, ${x2} ${y2t} L ${x2} ${y2b} C ${c2} ${y2b}, ${c1} ${y1b}, ${x1} ${y1b} Z`;
+}
+function sankeyEl(tag,attrs={},text=''){
+  const el=document.createElementNS(SANKEY_SVG_NS,tag);
+  Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));
+  if(text)el.textContent=text;
+  return el;
+}
+function sankeyLimit(rank){
+  if(rank<=1)return 10;
+  if(rank<=4)return 6;
+  if(rank<=7)return 4;
+  if(rank<=11)return 2;
+  return 1;
+}
+function sankeyDataset(data){
+  const sectors=SANKEY_SECTORS.map(g=>{
+    const stocks=g.syms.map(sym=>{
+      const entry=data[sym],weight=sankeyWeight(entry);
+      return{id:`${g.name}::${sym}`,sym,entry,pct:Number(entry?.pct),price:Number(entry?.price),weight,sector:g.name};
+    }).filter(x=>x.entry&&x.weight>SANKEY_MIN_WEIGHT);
+    return{name:g.name,stocks,weight:stocks.reduce((sum,s)=>sum+s.weight,0)};
+  }).filter(sec=>sec.weight>0);
+  sectors.sort((a,b)=>b.weight-a.weight);
+  sectors.forEach((sec,idx)=>{sec.rank=idx;sec.limit=sankeyLimit(idx);sec.color=SANKEY_COLORS[idx%SANKEY_COLORS.length];});
+  const globalStocks=sectors.flatMap(sec=>sec.stocks).sort((a,b)=>b.weight-a.weight);
+  sectors.forEach(sec=>{
+    let drawn=0;sec.visibleStocks=[];
+    for(const stock of globalStocks){
+      if(stock.sector!==sec.name)continue;
+      sec.visibleStocks.push(stock);
+      drawn+=1;
+      if(drawn>=sec.limit)break;
+    }
+  });
+  return{sectors,total:sectors.reduce((sum,sec)=>sum+sec.weight,0)};
+}
+function renderSankey(data){
+  const svg=DOM.sankeySvg;if(!svg)return;
+  svg.innerHTML='';
+  const dataset=sankeyDataset(data||{}),sectors=dataset.sectors;
+  if(!sectors.length||dataset.total<=0){
+    const fo=sankeyEl('foreignObject',{x:0,y:0,width:1600,height:900});
+    const div=document.createElement('div');
+    div.className='sankey-empty';div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
+    fo.appendChild(div);svg.appendChild(fo);return;
+  }
+  const total=dataset.total;
+  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
+  const gapSector=5,marketH=chart.drawH*0.5,marketY=chart.yStart+(chart.drawH-marketH)/2+30;
+  svg.appendChild(sankeyEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'}));
+  svg.appendChild(sankeyEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':14,'font-weight':700},'MARKET'));
+  let ySector=chart.yStart,yMarket=marketY;
+  const stockLayouts=[];
+  sectors.forEach(sec=>{
+    sec.h=chart.drawH*(sec.weight/total);sec.y=ySector;sec.marketH=marketH*(sec.weight/total);sec.marketY=yMarket;
+    ySector+=sec.h+gapSector;yMarket+=sec.marketH;
+    sec.visibleStocks.forEach(stock=>stockLayouts.push({sec,stock}));
+  });
+  const stockDest=new Map();
+  stockLayouts.forEach(({stock})=>{
+    let dest=stockDest.get(stock.sym);
+    if(!dest){dest={...stock,flows:[],flowWeight:0,destWeight:stock.weight};stockDest.set(stock.sym,dest);}
+    dest.flows.push(stock);dest.flowWeight=Math.max(dest.flowWeight||0,stock.weight);
+    if(stock.weight>dest.weight)Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
+  });
+  let stockY=chart.yStart-60;
+  const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
+  stockNodes.forEach(stock=>{stock.nodeH=Math.max(3,chart.drawH*(stock.destWeight/total)*1.6-6);stock.destY=stockY;stockY+=stock.nodeH+3;});
+  sectors.forEach(sec=>svg.appendChild(sankeyEl('path',{d:sankeyPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'})));
+  const sectorSourceY=new Map(sectors.map(sec=>[sec.name,sec.y]));
+  stockLayouts.forEach(({sec,stock})=>{
+    const dest=stockDest.get(stock.sym);if(!dest)return;
+    const flowH=chart.drawH*(stock.weight/total),sourceY=sectorSourceY.get(sec.name)||sec.y;
+    sectorSourceY.set(sec.name,sourceY+flowH);
+    svg.appendChild(sankeyEl('path',{d:sankeyPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,dest.destY,dest.destY+dest.nodeH),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
+  });
+  stockNodes.forEach(stock=>{
+    const h2=stock.nodeH,flows=stock.flows.length?stock.flows:[stock];
+    let segY=stock.destY,flowTotal=flows.reduce((s,f)=>s+f.weight,0);
+    flows.forEach((flow,idx)=>{
+      const sec=sectors.find(s=>s.name===flow.sector),remaining=stock.destY+h2-segY;
+      const segH=idx===flows.length-1?remaining:Math.max(1,h2*(flow.weight/flowTotal));
+      svg.appendChild(sankeyEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
+      segY+=segH;
+    });
+    if(h2>6){
+      const b=sankeyBadgeColor(stock.pct),badgeX=chart.stockX+chart.barW+8,badgeY=stock.destY+h2/2-10,badgeW=152;
+      const grp=sankeyEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
+      grp.appendChild(sankeyEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
+      grp.appendChild(sankeyEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':11,'font-weight':600},`${stock.sym} (${sankeyFmtNum(stock.weight)}, ${sankeyFmtPct(stock.pct)})`));
+      svg.appendChild(grp);
+    }
+  });
+  sectors.forEach(sec=>{
+    svg.appendChild(sankeyEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
+    if(sec.h>16){
+      svg.appendChild(sankeyEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700},sec.name));
+      svg.appendChild(sankeyEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':10},sankeyFmtNum(sec.weight)));
+    }
+  });
+}
+DOM.sankeySvg.addEventListener('click',e=>{
+  const node=e.target.closest('[data-sym]');if(!node)return;
+  const sym=node.dataset.sym;
+  if(IS_MOBILE()){openChart(sym);return;}
+  _hmapDesktopClick(sym);
+});
+DOM.sankeySvg.addEventListener('dblclick',e=>{
+  const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  const sym=node.dataset.sym;
+  _syncHoverPreview(sym);
+  updatePopout(sym);
+  updateSimplize(sym);
+  openChart(sym);
+});
+// ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
 // ═══════════════════════════════════════════════════════
 function tick(){
@@ -1916,6 +2063,7 @@ async function fetchHmap(){
     DOM.hmapTs.textContent=`Data: ${j.timestamp||'--'} • Cập nhật: ${now}`;
     window._lastHmapData=j.data||{};
     renderHeatmap(j.data||{});
+    renderSankey(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
     if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
       _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
@@ -2658,316 +2806,6 @@ async function init(){
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
 }
 init();
-</script>
-</body>
-</html>
-"""
-
-SANKEY_HTML = r"""<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Sankey Heatmap</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<script>
-try{
-  if(new URLSearchParams(window.location.search).get('embedded')==='1')
-    document.documentElement.classList.add('embedded-sankey');
-}catch(e){}
-</script>
-<style>
-:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--text:#111827;--muted:#6b7280;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%}
-body{background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;overflow:hidden}
-.page{height:100vh;display:flex;flex-direction:column}
-.hdr{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surf2);border-bottom:1px solid var(--border)}
-html.embedded-sankey .hdr{display:none}
-.title{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.4px;color:var(--accent);white-space:nowrap}
-.hdr-spacer{flex:1}
-.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:600;cursor:pointer}
-.btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-.btn-close{width:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:15px}
-.btn-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
-.main{flex:1;min-height:0;display:flex;flex-direction:column}
-#wrap{flex:1;min-height:0;padding:0}
-#svg{width:100%;height:100%;display:block;background:var(--surface);border:none;border-radius:0}
-.empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
-@media(max-width:900px){
-  .hdr{flex-wrap:nowrap}
-}
-</style>
-</head>
-<body>
-<div class="page">
-  <div class="hdr">
-    <span class="title">Sankey Diagram</span>
-    <span class="hdr-spacer"></span>
-    <button class="btn btn-close" id="btn-close">✕</button>
-  </div>
-  <div class="main">
-    <div id="wrap"><svg id="svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
-  </div>
-</div>
-<script>
-'use strict';
-const $=id=>document.getElementById(id);
-const HMAP_COLS=[
-  {groups:[{name:"VN30",syms:["FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ","BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN","SSI","ACB","BVH","GVR","TPB"]}]},
-  {groups:[{name:"NGAN HANG",syms:["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},{name:"DAU KHI",syms:["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]}]},
-  {groups:[{name:"CHUNG KHOAN",syms:["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},{name:"XAY DUNG",syms:["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]}]},
-  {groups:[{name:"BAT DONG SAN",syms:["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},{name:"PHAN BON",syms:["BFC","DCM","DPM"]},{name:"THEP",syms:["HPG","HSG","NKG"]}]},
-  {groups:[{name:"BAN LE",syms:["MSN","FPT","FRT","MWG","PNJ","DGW"]},{name:"THUY SAN",syms:["ANV","FMC","CMX","VHC","IDI"]},{name:"CANG BIEN",syms:["HAH","GMD","SGP","VSC"]},{name:"CAO SU",syms:["GVR","DPR","DRI","PHR","DRC"]},{name:"NHUA",syms:["AAA","BMP","NTP"]}]},
-  {groups:[{name:"DIEN NUOC",syms:["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},{name:"DET MAY",syms:["TCM","TNG","VGT","MSH"]},{name:"HANG KHONG",syms:["NCT","ACV","AST","HVN","SCS","VJC"]},{name:"BAO HIEM",syms:["BMI","MIG","BVH"]},{name:"MIA DUONG",syms:["LSS","SBT","QNS"]}]},
-  {groups:[{name:"DAU TU CONG",syms:["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]}]},
-];
-const SECTOR_ORDER=[];
-HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=="VN30")SECTOR_ORDER.push(g);}));
-const SVG_NS='http://www.w3.org/2000/svg';
-const COLORS=['#ec8784','#a378e0','#da9672','#d5cc71','#72dacd','#a1e078','#7882e0','#e0b478','#78e0b4','#e078c8','#96c8fa','#b5d67a'];
-const MIN_WEIGHT=10000000;
-let _ttlMs=120000;
-let _timer=null;
-
-function fmtNum(v){
-  if(!Number.isFinite(v)||v<=0)return '--';
-  return (v/1e9).toFixed(1)+'B';
-}
-function fmtPct(v){
-  if(!Number.isFinite(v))return '--';
-  return (v>=0?'+':'')+v.toFixed(2)+'%';
-}
-function badgeColor(pct){
-  if(pct>0)return {fill:'#0e9f6e',text:'#fff'};
-  if(pct<0)return {fill:'#e02424',text:'#fff'};
-  return {fill:'#d4a017',text:'#fff'};
-}
-function resolveWeight(entry){
-  if(!entry||typeof entry!=='object')return 0;
-  const totalValue=Number(entry.total_value);
-  return Number.isFinite(totalValue)&&totalValue>0 ? totalValue : 0;
-}
-function ribbonPath(x1,y1t,y1b,x2,y2t,y2b){
-  const c1=x1+(x2-x1)*0.45;
-  const c2=x1+(x2-x1)*0.55;
-  return `M ${x1} ${y1t} C ${c1} ${y1t}, ${c2} ${y2t}, ${x2} ${y2t} L ${x2} ${y2b} C ${c2} ${y2b}, ${c1} ${y1b}, ${x1} ${y1b} Z`;
-}
-function makeEl(tag,attrs={},text=''){
-  const el=document.createElementNS(SVG_NS,tag);
-  Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));
-  if(text)el.textContent=text;
-  return el;
-}
-function sectorLimit(rank){
-  if(rank<=1)return 10;
-  if(rank<=4)return 6;
-  if(rank<=7)return 4;
-  if(rank<=11)return 2;
-  return 1;
-}
-function notifyHost(sym){
-  const payload={type:'SANKEY_SYM_SELECT',symbol:sym};
-  try{
-    if(window.self!==window.top)window.parent.postMessage(payload,'*');
-    if(window.opener&&!window.opener.closed)window.opener.postMessage(payload,'*');
-  }catch(e){}
-}
-function notifyClose(){
-  try{
-    if(window.self!==window.top)window.parent.postMessage({type:'SANKEY_CLOSE'},'*');
-    else window.close();
-  }catch(e){}
-}
-function buildDataset(data){
-  const sectors=SECTOR_ORDER.map(g=>{
-    const stocks=g.syms.map(sym=>{
-      const entry=data[sym];
-      const weight=resolveWeight(entry);
-      return {
-        id:`${g.name}::${sym}`,
-        sym,entry,
-        pct:Number(entry?.pct),
-        price:Number(entry?.price),
-        weight,
-        sector:g.name,
-      };
-    }).filter(x=>x.entry&&x.weight>MIN_WEIGHT);
-    return {name:g.name,stocks,weight:stocks.reduce((sum,s)=>sum+s.weight,0)};
-  }).filter(sec=>sec.weight>0);
-  sectors.sort((a,b)=>b.weight-a.weight);
-  sectors.forEach((sec,idx)=>{
-    sec.rank=idx;
-    sec.limit=sectorLimit(idx);
-    sec.color=COLORS[idx%COLORS.length];
-  });
-  const globalStocks=sectors.flatMap(sec=>sec.stocks).sort((a,b)=>b.weight-a.weight);
-  sectors.forEach(sec=>{
-    let drawn=0;
-    sec.visibleStocks=[];
-    for(const stock of globalStocks){
-      if(stock.sector!==sec.name)continue;
-      sec.visibleStocks.push(stock);
-      drawn+=1;
-      if(drawn>=sec.limit)break;
-    }
-  });
-  return {
-    sectors,
-    globalStocks,
-    total:sectors.reduce((sum,sec)=>sum+sec.weight,0),
-  };
-}
-function render(data,ts){
-  const svg=$('svg');
-  svg.innerHTML='';
-  const dataset=buildDataset(data);
-  const sectors=dataset.sectors;
-  if(!sectors.length||dataset.total<=0){
-    const fo=document.createElementNS(SVG_NS,'foreignObject');
-    fo.setAttribute('x','0'); fo.setAttribute('y','0'); fo.setAttribute('width','1600'); fo.setAttribute('height','900');
-    const div=document.createElement('div');
-    div.className='empty';
-    div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
-    fo.appendChild(div);
-    svg.appendChild(fo);
-    return;
-  }
-  const total=dataset.total;
-  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
-  const gapSector=5;
-  const marketH=chart.drawH*0.5;
-  const marketY=chart.yStart+(chart.drawH-marketH)/2+30;
-  const marketRect=makeEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'});
-  svg.appendChild(marketRect);
-  svg.appendChild(makeEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'14','font-weight':'700'},'MARKET'));
-  let ySector=chart.yStart;
-  let yMarket=marketY;
-  const stockLayouts=[];
-  sectors.forEach(sec=>{
-    sec.h = chart.drawH*(sec.weight/total);
-    sec.y = ySector;
-    sec.marketH = marketH*(sec.weight/total);
-    sec.marketY = yMarket;
-    ySector += sec.h + gapSector;
-    yMarket += sec.marketH;
-    sec.visibleStocks.forEach(stock=>{
-      stockLayouts.push({sec,stock});
-    });
-  });
-  const stockDest=new Map();
-  stockLayouts.forEach(({stock})=>{
-    let dest=stockDest.get(stock.sym);
-    if(!dest){
-      dest={...stock,flows:[],flowWeight:0,destWeight:stock.weight};
-      stockDest.set(stock.sym,dest);
-    }
-    dest.flows.push(stock);
-    dest.flowWeight = Math.max(dest.flowWeight || 0,stock.weight);
-    if(stock.weight>dest.weight){
-      Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
-    }
-  });
-  let stockY=chart.yStart-60, stockGap=3;
-  const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
-  stockNodes.forEach(stock=>{
-    stock.nodeH=Math.max(3,chart.drawH*(stock.destWeight/total)*1.6-6);
-    stock.destY=stockY;
-    stockY+=stock.nodeH+stockGap;
-  });
-  sectors.forEach(sec=>{
-    svg.appendChild(makeEl('path',{d:ribbonPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'}));
-  });
-  const sectorSourceY=new Map(sectors.map(sec=>[sec.name,sec.y]));
-  stockLayouts.forEach(({sec,stock})=>{
-    const dest=stockDest.get(stock.sym);
-    if(!dest)return;
-    const flowH=chart.drawH*(stock.weight/total);
-    const sourceY=sectorSourceY.get(sec.name)||sec.y;
-    sectorSourceY.set(sec.name,sourceY+flowH);
-    svg.appendChild(makeEl('path',{d:ribbonPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,dest.destY,dest.destY+dest.nodeH),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
-  });
-  stockNodes.forEach(stock=>{
-    const h2=stock.nodeH, flows=stock.flows.length?stock.flows:[stock];
-    let segY=stock.destY;
-    flows.forEach((flow,idx)=>{
-      const sec=sectors.find(s=>s.name===flow.sector);
-      const remaining=stock.destY+h2-segY;
-      const segH=idx===flows.length-1 ? remaining : Math.max(1,h2*(flow.weight/flows.reduce((s,f)=>s+f.weight,0)));
-      svg.appendChild(makeEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
-      segY+=segH;
-    });
-    if(h2>6){
-      const b=badgeColor(stock.pct);
-      const badgeX=chart.stockX+chart.barW+8;
-      const badgeY=stock.destY+h2/2-10;
-      const badgeW=152;
-      const grp=makeEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
-      grp.appendChild(makeEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
-      const label=`${stock.sym} (${fmtNum(stock.weight)}, ${fmtPct(stock.pct)})`;
-      grp.appendChild(makeEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':'11','font-weight':'600'},label));
-      svg.appendChild(grp);
-    }
-  });
-  sectors.forEach(sec=>{
-    svg.appendChild(makeEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
-    if(sec.h>16){
-      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'12','font-weight':'700'},sec.name));
-      svg.appendChild(makeEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':'10'},fmtNum(sec.weight)));
-    }
-  });
-}
-async function fetchConfig(){
-  try{
-    const cfg=await fetch('/api/config').then(r=>r.json());
-    _ttlMs=(Number(cfg.heatmap_ttl_sec)||120)*1000;
-  }catch(e){}
-}
-async function fetchAndRender(){
-  try{
-    const j=await fetch('/api/heatmap').then(r=>r.json());
-    render(j.data||{},j.timestamp||'');
-  }catch(e){}
-}
-function startAuto(){
-  if(_timer)clearInterval(_timer);
-  _timer=setInterval(fetchAndRender,_ttlMs);
-}
-$('btn-close').addEventListener('click',notifyClose);
-$('svg').addEventListener('click',e=>{
-  const t=e.target.closest('[data-sym]');
-  if(!t)return;
-  if(window.innerWidth<=768) return;
-  try{
-    const sym=t.dataset.sym;
-    notifyHost(sym);
-    window.parent.focus();
-    parent._hmapDesktopClick(sym);
-  }catch(err){
-    console.error(err);
-  }
-});
-$('svg').addEventListener('dblclick',e=>{
-  const t=e.target.closest('[data-sym]');
-  if(!t)return;
-  if(window.innerWidth<=768) return;
-  try{
-    const sym=t.dataset.sym;
-    notifyHost(sym);
-    window.parent.focus();
-    parent._syncHoverPreview(sym);
-    parent.updatePopout(sym);
-    parent.updateSimplize(sym);
-    parent.openChart(sym);
-  }catch(err){
-    console.error(err);
-  }
-});
-(async function init(){
-  await fetchConfig();
-  await fetchAndRender();
-  startAuto();
-})();
 </script>
 </body>
 </html>
