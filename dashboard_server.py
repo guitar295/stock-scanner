@@ -1814,12 +1814,14 @@ const TS_POOL=__TS_POOL_CONFIG__;
 // ═══════════════════════════════════════════════════════
 function cellStyle(pct){
   let r,g,b;
-  if(pct>=6.5){r=250;g=170;b=225}else if(pct>=5){r=125;g=205;b=145}
-  else if(pct>=4){r=150;g=218;b=165}else if(pct>=3){r=175;g=228;b=185}
+  if(pct>=6.5){r=250;g=170;b=225}else if(pct>=5){r=148;g=216;b=160}
+  else if(pct>=4){r=160;g=220;b=170}else if(pct>=3){r=178;g=228;b=186}
   else if(pct>=2){r=195;g=235;b=200}else if(pct>=1){r=215;g=242;b=220}
   else if(pct>=0.5){r=225;g=245;b=228}else if(pct>=0.05){r=235;g=248;b=238}
-  else if(pct>-0.05){r=245;g=245;b=200}else if(pct>=-2){r=255;g=220;b=210}
-  else if(pct>=-4){r=250;g=185;b=175}else if(pct>=-6.5){r=240;g=150;b=145}
+  else if(pct>-0.05){r=245;g=245;b=200}else if(pct>=-0.5){r=255;g=232;b=225}
+  else if(pct>=-1){r=255;g=220;b=210}else if(pct>=-2){r=253;g=205;b=197}
+  else if(pct>=-3){r=250;g=185;b=175}else if(pct>=-4){r=246;g=168;b=160}
+  else if(pct>=-5){r=243;g=158;b=152}else if(pct>=-6.5){r=240;g=150;b=145}
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
