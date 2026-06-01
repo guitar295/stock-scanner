@@ -1122,6 +1122,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+.sankey-panel .panel-hdr{cursor:pointer;user-select:none}
+.sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
+.sankey-panel.collapsed .sankey-wrap{display:none}
+.sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 
 /* ═══════════════════════════════════════════
@@ -1530,9 +1534,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   </div>
 
   <!-- SANKEY -->
-  <div class="panel">
-    <div class="panel-hdr">
+  <div class="panel sankey-panel collapsed" id="sankey-panel">
+    <div class="panel-hdr" id="sankey-toggle">
       <span class="panel-title">Sankey</span>
+      <span class="sankey-toggle">▶</span>
     </div>
     <div class="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
@@ -1684,6 +1689,7 @@ const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
+  sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),
   sankeySvg:$('sankey-svg'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
@@ -2033,6 +2039,7 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   updateSimplize(sym);
   openChart(sym);
 });
+DOM.sankeyToggle.addEventListener('click',()=>DOM.sankeyPanel.classList.toggle('collapsed'));
 // ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
 // ═══════════════════════════════════════════════════════
