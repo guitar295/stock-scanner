@@ -519,14 +519,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 .page{height:100vh;display:flex;flex-direction:column}
 .phdr{display:flex;align-items:center;justify-content:center;padding:7px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 html.embedded-popout .phdr{display:none !important}
-.phdr-left{display:flex;align-items:center;gap:8px}
 .phdr-center{display:flex;align-items:flex-end;justify-content:center}
 .phdr-right{display:flex;align-items:center;justify-content:flex-end}
-.ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.4px;white-space:nowrap}
-.search-wrap{position:relative;display:flex;align-items:center}
-.s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
-.search-input{width:108px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
-.search-input:focus{width:180px;border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 .ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center}
 .ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
@@ -566,7 +560,7 @@ html.embedded-popout .phdr{display:none !important}
   }
 @media(max-width:980px){
   .phdr{grid-template-columns:1fr;gap:8px}
-  .phdr-left,.phdr-center,.phdr-right{justify-content:center}
+  .phdr-center,.phdr-right{justify-content:center}
 }
 @media(max-width:768px){
   .phdr{display:flex !important;align-items:center !important;justify-content:flex-start !important;padding:4px 6px !important;gap:4px !important}
@@ -1733,10 +1727,6 @@ const BADGE_MAP={
   'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
   'BOTTOMBREAKP':'b-BBREAKP','BOTTOMFISH':'b-BFISH','MA_CROSS':'b-MACROSS'
 };
-const MOB_TABS=[
-  ['vs','📈 Vietstock'],['scanner','🖼 Scanner'],['vnd-cs','⚖️ Cơ bản'],
-  ['vnd-news','🗞️ Tin tức'],['vnd-sum','📄 Tổng quan'],['24h','💬 Fireant'],
-];
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
@@ -1941,8 +1931,8 @@ function sankeyDataset(data){
   const sectors=SANKEY_SECTORS.map(g=>{
     const stocks=g.syms.map(sym=>{
       const entry=data[sym],weight=sankeyWeight(entry);
-      return{id:`${g.name}::${sym}`,sym,entry,pct:Number(entry?.pct),price:Number(entry?.price),weight,sector:g.name};
-    }).filter(x=>x.entry&&x.weight>SANKEY_MIN_WEIGHT);
+      return{sym,pct:Number(entry?.pct),weight,sector:g.name};
+    }).filter(x=>x.weight>SANKEY_MIN_WEIGHT);
     return{name:g.name,stocks,weight:stocks.reduce((sum,s)=>sum+s.weight,0)};
   }).filter(sec=>sec.weight>0);
   sectors.sort((a,b)=>b.weight-a.weight);
@@ -1970,7 +1960,7 @@ function renderSankey(data){
     fo.appendChild(div);svg.appendChild(fo);return;
   }
   const total=dataset.total;
-  const chart={w:1600,h:900,yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
+  const chart={yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
   const gapSector=5,marketH=chart.drawH*0.5,marketY=chart.yStart+(chart.drawH-marketH)/2+30;
   svg.appendChild(sankeyEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'}));
   svg.appendChild(sankeyEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':14,'font-weight':700},'MARKET'));
@@ -1986,7 +1976,7 @@ function renderSankey(data){
     let dest=stockDest.get(stock.sym);
     if(!dest){dest={...stock,flows:[],flowWeight:0,destWeight:stock.weight};stockDest.set(stock.sym,dest);}
     dest.flows.push(stock);dest.flowWeight=Math.max(dest.flowWeight||0,stock.weight);
-    if(stock.weight>dest.weight)Object.assign(dest,{entry:stock.entry,pct:stock.pct,price:stock.price,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
+    if(stock.weight>dest.weight)Object.assign(dest,{pct:stock.pct,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
   });
   let stockY=chart.yStart-60;
   const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
@@ -2776,11 +2766,6 @@ window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _syncHoverPreview(e.data.symbol);
     updateSimplize(e.data.symbol);
-  }else if(e.data.type==='SANKEY_SYM_SELECT'&&e.data.symbol){
-    if(_hoverPreviewOn)_syncHoverPreview(e.data.symbol);
-    else _syncHoverPreview(e.data.symbol,false);
-    updatePopout(e.data.symbol);
-    updateSimplize(e.data.symbol);
   }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
@@ -2795,8 +2780,6 @@ window.addEventListener('message',e=>{
     openChart(sym);
   }else if(e.data.type==='JOURNAL_CLOSE'){
     closeJournal();
-  }else if(e.data.type==='SANKEY_CLOSE'){
-    closePopup();
   }else if(e.data.type==='POPOUT_MINIMIZE'){
     minimizePopout();
   }else if(e.data.type==='POPOUT_CLOSE'){
