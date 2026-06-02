@@ -156,22 +156,32 @@ HEATMAP_COLUMNS = [
     ]},
 ]
 
-HMAP_COLORS = {
-    "tran": (250,170,225), "xd": (160,220,170), "xv": (195,235,200),
-    "xn":   (225,245,228), "tc": (245,245,200),  "dn": (255,220,210),
-    "dv":   (250,185,175), "dd": (240,150,145),  "san":(175,250,255),
-}
+HMAP_POS_COLORS = [
+    (235,248,238), (231,247,234), (225,245,228), (220,243,224),
+    (215,242,220), (205,238,211), (195,235,200), (186,232,193),
+    (178,228,186), (169,224,178), (160,220,170), (154,218,165),
+    (148,216,160),
+]
+HMAP_NEG_COLORS = [
+    (255,232,225), (255,224,216), (255,220,210), (254,212,204),
+    (253,205,197), (252,195,186), (250,185,175), (248,176,167),
+    (246,168,160), (244,163,156), (243,158,152), (242,154,149),
+    (240,150,145),
+]
+HMAP_CEIL_COLOR = (250,170,225)
+HMAP_REF_COLOR  = (245,245,200)
+HMAP_FLOOR_COLOR = (175,250,255)
 
 def _hmap_cell_color(pct):
-    if   pct >=  6.5: return HMAP_COLORS["tran"]
-    elif pct >=  4.0: return HMAP_COLORS["xd"]
-    elif pct >=  2.0: return HMAP_COLORS["xv"]
-    elif pct >   0.0: return HMAP_COLORS["xn"]
-    elif pct ==  0.0: return HMAP_COLORS["tc"]
-    elif pct >= -2.0: return HMAP_COLORS["dn"]
-    elif pct >= -4.0: return HMAP_COLORS["dv"]
-    elif pct >= -6.5: return HMAP_COLORS["dd"]
-    else:             return HMAP_COLORS["san"]
+    if pct >= 6.5:
+        return HMAP_CEIL_COLOR
+    if pct >= 0.05:
+        return HMAP_POS_COLORS[min(len(HMAP_POS_COLORS) - 1, math.floor(pct * 2))]
+    if pct > -0.05:
+        return HMAP_REF_COLOR
+    if pct >= -6.5:
+        return HMAP_NEG_COLORS[min(len(HMAP_NEG_COLORS) - 1, math.floor(abs(pct) * 2))]
+    return HMAP_FLOOR_COLOR
 
 def _hmap_fg(bg):
     lum = 0.299*bg[0] + 0.587*bg[1] + 0.114*bg[2]
@@ -313,10 +323,11 @@ def fetch_heatmap_data() -> tuple:
                 if not sym: continue
                 close = float(row.get("close_price", 0) or 0) / 1000
                 ref_p = float(row.get("reference_price", 0) or 0) / 1000
+                total_value = float(row.get("total_value", 0) or 0)
                 if close <= 0 and ref_p > 0:
                     close = ref_p
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-                result[sym] = {"price": close, "pct": pct}
+                result[sym] = {"price": close, "pct": pct, "total_value": total_value}
 
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
@@ -424,6 +435,12 @@ def build_weekly_df(df_daily):
     }).dropna()
     return compute_indicators(df_w)
 
+def build_monthly_df(df_daily):
+    df_m = df_daily[['open','high','low','close','volume']].resample('ME').agg({
+        'open':'first','high':'max','low':'min','close':'last','volume':'sum',
+    }).dropna()
+    return compute_indicators(df_m)
+
 def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=None):
     if image_path and not image_paths:
         image_paths = [image_path]
@@ -499,6 +516,11 @@ def llv(series, n):  return series.rolling(n).min()
 
 def cross_above(s1, s2):
     return (s1 >= s2) & (s1.shift(1) < s2.shift(1))
+
+def afl_cross(s1, s2):
+    if not isinstance(s2, pd.Series):
+        s2 = pd.Series(s2, index=s1.index)
+    return ((s1 > s2) & (s1.shift(1) <= s2.shift(1))).astype(bool)
 
 def compute_indicators(df):
     df = df.copy()
@@ -890,6 +912,88 @@ def calc_liquidity(df):
         (df['VMA30']>=50_000)&(df['VMA50']>=50_000)
     )
 
+def calc_dmbuy(df):
+    C, V = df['close'], df['volume']
+    return (
+        (C > 5) &
+        (df['VMA30'] >= 50_000) &
+        (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) &
+        (df['VMA50'] >= 50_000) &
+        (V * C > 2_000_000) &
+        (df['VMA5'] * df['MA5'] > 2_000_000) &
+        (df['VMA10'] * df['MA10'] > 2_000_000) &
+        (df['VMA15'] * df['MA15'] > 2_000_000)
+    )
+
+def _macd_buy_on_frame(df):
+    if df is None or len(df) < 3:
+        return pd.Series(False, index=df.index if df is not None else [])
+    macd_cross_signal = afl_cross(df['MACD'], df['MACD_Signal'])
+    macd_cross_zero = afl_cross(df['MACD'], 0)
+    mb = macd_cross_signal | macd_cross_zero
+    return mb | mb.shift(1, fill_value=False)
+
+def _expand_signal_to_daily(frame_signal, daily_index, freq):
+    if frame_signal is None or frame_signal.empty:
+        return pd.Series(False, index=daily_index)
+    signal_by_period = {
+        period: bool(value)
+        for period, value in zip(frame_signal.index.to_period(freq), frame_signal.astype(bool))
+    }
+    daily_periods = daily_index.to_period(freq)
+    return pd.Series([signal_by_period.get(period, False) for period in daily_periods], index=daily_index)
+
+def calc_macdbuy_signals(df_daily):
+    df_d = compute_indicators(df_daily)
+    dmbuy = calc_dmbuy(df_d).iloc[-1]
+    if not dmbuy:
+        return []
+    df_w = build_weekly_df(df_daily)
+    df_m = build_monthly_df(df_daily)
+    wmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_w), df_d.index, 'W-FRI')
+    mmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_m), df_d.index, 'M')
+    wmbuy = bool(wmbuy_series.iloc[-1])
+    mmbuy = bool(mmbuy_series.iloc[-1])
+    signals = []
+    if wmbuy:
+        signals.append("MACD_W")
+    if mmbuy:
+        signals.append("MACD_M")
+    return signals
+
+def calc_rtmbuy(df_daily):
+    df_d = compute_indicators(df_daily)
+    if not bool(calc_dmbuy(df_d).iloc[-1]):
+        return False
+    df_w = build_weekly_df(df_daily)
+    if len(df_w) < 6:
+        return False
+    C, O, H = df_w['close'], df_w['open'], df_w['high']
+    rtm = (
+        (ref(C, 1) < ref(hhv(H, 5), 2)) &
+        (ref(H, 1) < 1.05 * ref(hhv(H, 5), 2)) &
+        (ref(C, 2) < ref(hhv(H, 4), 3)) &
+        (ref(C, 3) < ref(hhv(H, 3), 4)) &
+        (C > 0.97 * ref(hhv(H, 5), 1)) &
+        (C > O) &
+        (C > 0.94 * hhv(H, 5)) &
+        (C < 1.15 * ref(hhv(H, 5), 1)) &
+        (C > df_w['EMA10']) &
+        (df_w['EMA10'] > df_w['EMA50']) &
+        (df_w['EMA20'] > df_w['EMA50'])
+    )
+    wrtm = rtm | rtm.shift(1, fill_value=False)
+    wrtm_daily = _expand_signal_to_daily(wrtm, df_d.index, 'W-FRI')
+    return bool(wrtm_daily.iloc[-1])
+
+def detect_momentum_signals(df_daily):
+    signals = []
+    signals.extend(calc_macdbuy_signals(df_daily))
+    if calc_rtmbuy(df_daily):
+        signals.append("RTM")
+    return signals
+
 # =============================================================================
 # BƯỚC 6B: CÁC TÍN HIỆU MỚI
 # =============================================================================
@@ -1140,8 +1244,9 @@ SIGNAL_EMOJI = {
     'MA_CROSS':     '⚪',
 }
 
-def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
+def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_today: dict):
     new_signals  = []
+    current_momentum = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=2)...")
@@ -1155,6 +1260,15 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if today_bar is None: continue
 
             df_merged   = merge_today_bar(df_hist, today_bar, current_date)
+            try:
+                momentum_signals = detect_momentum_signals(df_merged)
+                if momentum_signals:
+                    df_mom = compute_indicators(df_merged)
+                    mom_pct = (df_mom['close'].iloc[-1] - df_mom['close'].iloc[-2]) / df_mom['close'].iloc[-2] * 100
+                    current_momentum[symbol] = {"signals": momentum_signals, "pct": round(mom_pct, 1)}
+            except Exception as e:
+                print(f"    ⚠️  Momentum {symbol}: {e}")
+
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
                 time.sleep(0.3); continue
@@ -1217,6 +1331,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             print(f"  ❌ Lỗi mã {symbol}: {e}")
         time.sleep(0.3)
 
+    momentum_today.clear()
+    momentum_today.update(current_momentum)
     return new_signals
 
 # =============================================================================
@@ -1658,6 +1774,7 @@ except NameError:
     pass
 
 alerted_today = {}
+momentum_today = {}
 last_run_date = datetime.now(TZ_VN).date()
 
 _stop_listener  = threading.Event()
@@ -1672,6 +1789,7 @@ start_dashboard(
     signal_emoji_ref  = SIGNAL_EMOJI,
     signal_rank_ref   = SIGNAL_RANK,
     fetch_chart_fn    = dashboard_chart_fn,
+    momentum_today_ref = lambda: momentum_today,
     port              = 8888,
 )
 
@@ -1718,6 +1836,7 @@ while True:
 
         if current_date > last_run_date:
             alerted_today.clear()
+            momentum_today.clear()
             last_run_date = current_date
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
             print("🔧 Reload cache lịch sử cho ngày mới...")
@@ -1750,7 +1869,7 @@ while True:
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
         print(f"{'='*60}")
 
-        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
+        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today)
 
         if new_signals:
             print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
@@ -1760,6 +1879,9 @@ while True:
         if alerted_today:
             summary_str = " | ".join([f"{k}:{v['signal']}" for k,v in alerted_today.items()])
             print(f"   📋 Đã báo hôm nay: {summary_str}")
+        if momentum_today:
+            summary_mom = " | ".join([f"{k}:{'/'.join(v['signals'])}" for k,v in sorted(momentum_today.items())])
+            print(f"   ⚡ Động lượng: {summary_mom}")
 
         print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
         time.sleep(SCAN_INTERVAL_SEC)
