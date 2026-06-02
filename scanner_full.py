@@ -517,6 +517,11 @@ def llv(series, n):  return series.rolling(n).min()
 def cross_above(s1, s2):
     return (s1 >= s2) & (s1.shift(1) < s2.shift(1))
 
+def afl_cross(s1, s2):
+    if not isinstance(s2, pd.Series):
+        s2 = pd.Series(s2, index=s1.index)
+    return ((s1 > s2) & (s1.shift(1) <= s2.shift(1))).fillna(False)
+
 def compute_indicators(df):
     df = df.copy()
     for n in [2,3,5,10,15,20,30,50,200]:
@@ -924,10 +929,20 @@ def calc_dmbuy(df):
 def _macd_buy_on_frame(df):
     if df is None or len(df) < 3:
         return pd.Series(False, index=df.index if df is not None else [])
-    macd_cross_signal = cross_above(df['MACD'], df['MACD_Signal'])
-    macd_cross_zero = cross_above(df['MACD'], pd.Series(0, index=df.index))
+    macd_cross_signal = afl_cross(df['MACD'], df['MACD_Signal'])
+    macd_cross_zero = afl_cross(df['MACD'], 0)
     mb = macd_cross_signal | macd_cross_zero
     return mb | mb.shift(1).fillna(False)
+
+def _expand_signal_to_daily(frame_signal, daily_index, freq):
+    if frame_signal is None or frame_signal.empty:
+        return pd.Series(False, index=daily_index)
+    signal_by_period = {
+        period: bool(value)
+        for period, value in zip(frame_signal.index.to_period(freq), frame_signal.fillna(False))
+    }
+    daily_periods = daily_index.to_period(freq)
+    return pd.Series([signal_by_period.get(period, False) for period in daily_periods], index=daily_index)
 
 def calc_macdbuy(df_daily):
     df_d = compute_indicators(df_daily)
@@ -936,8 +951,10 @@ def calc_macdbuy(df_daily):
         return False
     df_w = build_weekly_df(df_daily)
     df_m = build_monthly_df(df_daily)
-    wmbuy = bool(_macd_buy_on_frame(df_w).iloc[-1]) if len(df_w) else False
-    mmbuy = bool(_macd_buy_on_frame(df_m).iloc[-1]) if len(df_m) else False
+    wmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_w), df_d.index, 'W-FRI')
+    mmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_m), df_d.index, 'M')
+    wmbuy = bool(wmbuy_series.iloc[-1])
+    mmbuy = bool(mmbuy_series.iloc[-1])
     return bool(wmbuy or mmbuy)
 
 def calc_rtmbuy(df_daily):
@@ -962,7 +979,8 @@ def calc_rtmbuy(df_daily):
         (df_w['EMA20'] > df_w['EMA50'])
     )
     wrtm = rtm | rtm.shift(1).fillna(False)
-    return bool(wrtm.iloc[-1])
+    wrtm_daily = _expand_signal_to_daily(wrtm, df_d.index, 'W-FRI')
+    return bool(wrtm_daily.iloc[-1])
 
 def detect_momentum_signals(df_daily):
     signals = []
