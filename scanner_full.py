@@ -125,53 +125,63 @@ HEATMAP_COLUMNS = [
         ]},
     ]},
     {"col": 2, "groups": [
-        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
-        {"name": "DAU KHI",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
+        {"name": "NGÂN HÀNG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
+        {"name": "DẦU KHÍ",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
     ]},
     {"col": 3, "groups": [
-        {"name": "CHUNG KHOAN", "symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
-        {"name": "XAY DUNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
+        {"name": "CHỨNG KHOÁN", "symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
+        {"name": "XÂY DỰNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
     ]},
     {"col": 4, "groups": [
-        {"name": "BAT DONG SAN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
-        {"name": "PHAN BON",     "symbols": ["BFC","DCM","DPM"]},
-        {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
+        {"name": "BẤT ĐỘNG SẢN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
+        {"name": "PHÂN BÓN",     "symbols": ["BFC","DCM","DPM"]},
+        {"name": "THÉP",         "symbols": ["HPG","HSG","NKG"]},
     ]},
     {"col": 5, "groups": [
-        {"name": "BAN LE",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW"]},
-        {"name": "THUY SAN",  "symbols": ["ANV","FMC","CMX","VHC","IDI"]},
-        {"name": "CANG BIEN", "symbols": ["HAH","GMD","SGP","VSC"]},
+        {"name": "BÁN LẺ",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW"]},
+        {"name": "THỦY SẢN",  "symbols": ["ANV","FMC","CMX","VHC","IDI"]},
+        {"name": "CẢNG BIỂN", "symbols": ["HAH","GMD","SGP","VSC"]},
         {"name": "CAO SU",    "symbols": ["GVR","DPR","DRI","PHR","DRC"]},
-        {"name": "NHUA",      "symbols": ["AAA","BMP","NTP"]},
+        {"name": "NHỰA",      "symbols": ["AAA","BMP","NTP"]},
     ]},
     {"col": 6, "groups": [
-        {"name": "DIEN NUOC",  "symbols": ["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},
-        {"name": "DET MAY",    "symbols": ["TCM","TNG","VGT","MSH"]},
-        {"name": "HANG KHONG", "symbols": ["NCT","ACV","AST","HVN","SCS","VJC"]},
-        {"name": "BAO HIEM",   "symbols": ["BMI","MIG","BVH"]},
-        {"name": "MIA DUONG",  "symbols": ["LSS","SBT","QNS"]},
+        {"name": "ĐIỆN NƯỚC",  "symbols": ["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},
+        {"name": "DỆT MAY",    "symbols": ["TCM","TNG","VGT","MSH"]},
+        {"name": "HÀNG KHÔNG", "symbols": ["NCT","ACV","AST","HVN","SCS","VJC"]},
+        {"name": "BẢO HIỂM",   "symbols": ["BMI","MIG","BVH"]},
+        {"name": "MÍA ĐƯỜNG",  "symbols": ["LSS","SBT","QNS"]},
     ]},
     {"col": 7, "groups": [
-        {"name": "DAU TU CONG", "symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
+        {"name": "ĐẦU TƯ CÔNG", "symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
     ]},
 ]
 
-HMAP_COLORS = {
-    "tran": (250,170,225), "xd": (160,220,170), "xv": (195,235,200),
-    "xn":   (225,245,228), "tc": (245,245,200),  "dn": (255,220,210),
-    "dv":   (250,185,175), "dd": (240,150,145),  "san":(175,250,255),
-}
+HMAP_POS_COLORS = [
+    (235,248,238), (231,247,234), (225,245,228), (220,243,224),
+    (215,242,220), (205,238,211), (195,235,200), (186,232,193),
+    (178,228,186), (169,224,178), (160,220,170), (154,218,165),
+    (148,216,160),
+]
+HMAP_NEG_COLORS = [
+    (255,232,225), (255,224,216), (255,220,210), (254,212,204),
+    (253,205,197), (252,195,186), (250,185,175), (248,176,167),
+    (246,168,160), (244,163,156), (243,158,152), (242,154,149),
+    (240,150,145),
+]
+HMAP_CEIL_COLOR = (250,170,225)
+HMAP_REF_COLOR  = (245,245,200)
+HMAP_FLOOR_COLOR = (175,250,255)
 
 def _hmap_cell_color(pct):
-    if   pct >=  6.5: return HMAP_COLORS["tran"]
-    elif pct >=  4.0: return HMAP_COLORS["xd"]
-    elif pct >=  2.0: return HMAP_COLORS["xv"]
-    elif pct >   0.0: return HMAP_COLORS["xn"]
-    elif pct ==  0.0: return HMAP_COLORS["tc"]
-    elif pct >= -2.0: return HMAP_COLORS["dn"]
-    elif pct >= -4.0: return HMAP_COLORS["dv"]
-    elif pct >= -6.5: return HMAP_COLORS["dd"]
-    else:             return HMAP_COLORS["san"]
+    if pct >= 6.5:
+        return HMAP_CEIL_COLOR
+    if pct >= 0.05:
+        return HMAP_POS_COLORS[min(len(HMAP_POS_COLORS) - 1, math.floor(pct * 2))]
+    if pct > -0.05:
+        return HMAP_REF_COLOR
+    if pct >= -6.5:
+        return HMAP_NEG_COLORS[min(len(HMAP_NEG_COLORS) - 1, math.floor(abs(pct) * 2))]
+    return HMAP_FLOOR_COLOR
 
 def _hmap_fg(bg):
     lum = 0.299*bg[0] + 0.587*bg[1] + 0.114*bg[2]
