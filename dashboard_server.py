@@ -1244,6 +1244,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   .sig-list{display:flex;flex-direction:column;gap:3px}
   .momentum-list{display:flex;flex-direction:column;gap:3px}
+  #signal-header{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
+  #signal-header .panel-hdr-left{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%}
+  #signal-header .panel-title{white-space:nowrap;flex-shrink:0}
+  #signal-header #sig-meta{display:block;width:100%;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  #signal-header #sig-meta::-webkit-scrollbar{display:none}
   .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
   .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
