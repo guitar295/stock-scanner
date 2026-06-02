@@ -166,7 +166,7 @@ def api_signals():
                         "rank": rank, "pct": pct})
     result.sort(key=lambda x: x["rank"], reverse=True)
     momentum_result = []
-    for sig in ("MACD", "RTM"):
+    for sig in ("MACD_W", "MACD_M", "RTM"):
         rows = []
         for sym in sorted(momentum.keys()):
             entry = momentum[sym]
@@ -1112,7 +1112,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .momentum-row{display:grid;grid-template-columns:68px 1fr 72px;align-items:center;padding:6px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
 .momentum-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .momentum-row:hover .s-sym{color:var(--accent)}
-.b-MACD{background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc}
+.b-MACD_W{background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc}
+.b-MACD_M{background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe}
 .b-RTM{background:#ecfdf5;color:#047857;border:1px solid #86efac}
 .empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px;grid-column:1/-1}
 .empty .big{font-size:30px;margin-bottom:8px}
