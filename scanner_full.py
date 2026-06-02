@@ -221,23 +221,48 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
 
 def _hmap_load_fonts():
     bold_paths = [
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode MS.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf",
+        "/System/Library/Fonts/Supplemental/NotoSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Noto Sans CJK Bold.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/arialuni.ttf",
     ]
     reg_paths = [
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode MS.ttf",
+        "/Library/Fonts/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf",
+        "/System/Library/Fonts/Supplemental/NotoSans-Regular.ttf",
+        "/System/Library/Fonts/Supplemental/Noto Sans CJK Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/arialuni.ttf",
     ]
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
+    bold_or_reg = bold or reg
     try:
-        f_title  = ImageFont.truetype(bold, 13)
-        f_hdr    = ImageFont.truetype(bold, 10)
-        f_sym    = ImageFont.truetype(bold, 10)
-        f_data   = ImageFont.truetype(reg or bold, 9)
-        f_sector = ImageFont.truetype(bold, 11)
+        f_title  = ImageFont.truetype(bold_or_reg, 13)
+        f_hdr    = ImageFont.truetype(bold_or_reg, 10)
+        f_sym    = ImageFont.truetype(bold_or_reg, 10)
+        f_data   = ImageFont.truetype(reg or bold_or_reg, 9)
+        f_sector = ImageFont.truetype(bold_or_reg, 11)
         return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
@@ -434,6 +459,12 @@ def build_weekly_df(df_daily):
         'open':'first','high':'max','low':'min','close':'last','volume':'sum',
     }).dropna()
     return compute_indicators(df_w)
+
+def build_monthly_df(df_daily):
+    df_m = df_daily[['open','high','low','close','volume']].resample('M').agg({
+        'open':'first','high':'max','low':'min','close':'last','volume':'sum',
+    }).dropna()
+    return compute_indicators(df_m)
 
 def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=None):
     if image_path and not image_paths:
@@ -901,6 +932,71 @@ def calc_liquidity(df):
         (df['VMA30']>=50_000)&(df['VMA50']>=50_000)
     )
 
+def calc_dmbuy(df):
+    C, V = df['close'], df['volume']
+    return (
+        (C > 5) &
+        (df['VMA30'] >= 50_000) &
+        (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) &
+        (df['VMA50'] >= 50_000) &
+        (V * C > 2_000_000) &
+        (df['VMA5'] * df['MA5'] > 2_000_000) &
+        (df['VMA10'] * df['MA10'] > 2_000_000) &
+        (df['VMA15'] * df['MA15'] > 2_000_000)
+    )
+
+def _macd_buy_on_frame(df):
+    if df is None or len(df) < 3:
+        return pd.Series(False, index=df.index if df is not None else [])
+    macd_cross_signal = cross_above(df['MACD'], df['MACD_Signal'])
+    macd_cross_zero = cross_above(df['MACD'], pd.Series(0, index=df.index))
+    mb = macd_cross_signal | macd_cross_zero
+    return mb | mb.shift(1).fillna(False)
+
+def calc_macdbuy(df_daily):
+    df_d = compute_indicators(df_daily)
+    dmbuy = calc_dmbuy(df_d).iloc[-1]
+    if not dmbuy:
+        return False
+    df_w = build_weekly_df(df_daily)
+    df_m = build_monthly_df(df_daily)
+    wmbuy = bool(_macd_buy_on_frame(df_w).iloc[-1]) if len(df_w) else False
+    mmbuy = bool(_macd_buy_on_frame(df_m).iloc[-1]) if len(df_m) else False
+    return bool(wmbuy or mmbuy)
+
+def calc_rtmbuy(df_daily):
+    df_d = compute_indicators(df_daily)
+    if not bool(calc_dmbuy(df_d).iloc[-1]):
+        return False
+    df_w = build_weekly_df(df_daily)
+    if len(df_w) < 6:
+        return False
+    C, O, H = df_w['close'], df_w['open'], df_w['high']
+    rtm = (
+        (ref(C, 1) < ref(hhv(H, 5), 2)) &
+        (ref(H, 1) < 1.05 * ref(hhv(H, 5), 2)) &
+        (ref(C, 2) < ref(hhv(H, 4), 3)) &
+        (ref(C, 3) < ref(hhv(H, 3), 4)) &
+        (C > 0.97 * ref(hhv(H, 5), 1)) &
+        (C > O) &
+        (C > 0.94 * hhv(H, 5)) &
+        (C < 1.15 * ref(hhv(H, 5), 1)) &
+        (C > df_w['EMA10']) &
+        (df_w['EMA10'] > df_w['EMA50']) &
+        (df_w['EMA20'] > df_w['EMA50'])
+    )
+    wrtm = rtm | rtm.shift(1).fillna(False)
+    return bool(wrtm.iloc[-1])
+
+def detect_momentum_signals(df_daily):
+    signals = []
+    if calc_macdbuy(df_daily):
+        signals.append("MACD")
+    if calc_rtmbuy(df_daily):
+        signals.append("RTM")
+    return signals
+
 # =============================================================================
 # BƯỚC 6B: CÁC TÍN HIỆU MỚI
 # =============================================================================
@@ -1151,8 +1247,9 @@ SIGNAL_EMOJI = {
     'MA_CROSS':     '⚪',
 }
 
-def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
+def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_today: dict):
     new_signals  = []
+    current_momentum = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=2)...")
@@ -1166,6 +1263,15 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             if today_bar is None: continue
 
             df_merged   = merge_today_bar(df_hist, today_bar, current_date)
+            try:
+                momentum_signals = detect_momentum_signals(df_merged)
+                if momentum_signals:
+                    df_mom = compute_indicators(df_merged)
+                    mom_pct = (df_mom['close'].iloc[-1] - df_mom['close'].iloc[-2]) / df_mom['close'].iloc[-2] * 100
+                    current_momentum[symbol] = {"signals": momentum_signals, "pct": round(mom_pct, 1)}
+            except Exception as e:
+                print(f"    ⚠️  Momentum {symbol}: {e}")
+
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
                 time.sleep(0.3); continue
@@ -1228,6 +1334,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict):
             print(f"  ❌ Lỗi mã {symbol}: {e}")
         time.sleep(0.3)
 
+    momentum_today.clear()
+    momentum_today.update(current_momentum)
     return new_signals
 
 # =============================================================================
@@ -1669,6 +1777,7 @@ except NameError:
     pass
 
 alerted_today = {}
+momentum_today = {}
 last_run_date = datetime.now(TZ_VN).date()
 
 _stop_listener  = threading.Event()
@@ -1683,6 +1792,7 @@ start_dashboard(
     signal_emoji_ref  = SIGNAL_EMOJI,
     signal_rank_ref   = SIGNAL_RANK,
     fetch_chart_fn    = dashboard_chart_fn,
+    momentum_today_ref = lambda: momentum_today,
     port              = 8888,
 )
 
@@ -1729,6 +1839,7 @@ while True:
 
         if current_date > last_run_date:
             alerted_today.clear()
+            momentum_today.clear()
             last_run_date = current_date
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
             print("🔧 Reload cache lịch sử cho ngày mới...")
@@ -1761,7 +1872,7 @@ while True:
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
         print(f"{'='*60}")
 
-        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today)
+        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today)
 
         if new_signals:
             print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
@@ -1771,6 +1882,9 @@ while True:
         if alerted_today:
             summary_str = " | ".join([f"{k}:{v['signal']}" for k,v in alerted_today.items()])
             print(f"   📋 Đã báo hôm nay: {summary_str}")
+        if momentum_today:
+            summary_mom = " | ".join([f"{k}:{'/'.join(v['signals'])}" for k,v in sorted(momentum_today.items())])
+            print(f"   ⚡ Động lượng: {summary_mom}")
 
         print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
         time.sleep(SCAN_INTERVAL_SEC)
