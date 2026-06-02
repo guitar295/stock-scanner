@@ -952,7 +952,7 @@ def calc_macdbuy(df_daily):
     df_w = build_weekly_df(df_daily)
     df_m = build_monthly_df(df_daily)
     wmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_w), df_d.index, 'W-FRI')
-    mmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_m), df_d.index, 'ME')
+    mmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_m), df_d.index, 'M')
     wmbuy = bool(wmbuy_series.iloc[-1])
     mmbuy = bool(mmbuy_series.iloc[-1])
     return bool(wmbuy or mmbuy)
