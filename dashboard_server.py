@@ -1105,7 +1105,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .b-BFISH{background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
 .b-MACROSS{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .signal-header-toggle{cursor:pointer;user-select:none}
-.momentum-box{display:none;border-top:1px solid var(--border);background:#fbfcff;padding:8px}
+.momentum-box{display:none;border-top:1px solid var(--border);background:#fbfcff;padding:8px 16px}
 .momentum-box.on{display:block}
 .momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
 .momentum-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
@@ -1244,6 +1244,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   .sig-list{display:flex;flex-direction:column;gap:3px}
   .momentum-list{display:flex;flex-direction:column;gap:3px}
+  .momentum-box{padding:8px 10px}
   #signal-header{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
   #signal-header .panel-hdr-left{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%}
   #signal-header .panel-title{white-space:nowrap;flex-shrink:0}
