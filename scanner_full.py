@@ -944,18 +944,23 @@ def _expand_signal_to_daily(frame_signal, daily_index, freq):
     daily_periods = daily_index.to_period(freq)
     return pd.Series([signal_by_period.get(period, False) for period in daily_periods], index=daily_index)
 
-def calc_macdbuy(df_daily):
+def calc_macdbuy_signals(df_daily):
     df_d = compute_indicators(df_daily)
     dmbuy = calc_dmbuy(df_d).iloc[-1]
     if not dmbuy:
-        return False
+        return []
     df_w = build_weekly_df(df_daily)
     df_m = build_monthly_df(df_daily)
     wmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_w), df_d.index, 'W-FRI')
     mmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_m), df_d.index, 'M')
     wmbuy = bool(wmbuy_series.iloc[-1])
     mmbuy = bool(mmbuy_series.iloc[-1])
-    return bool(wmbuy or mmbuy)
+    signals = []
+    if wmbuy:
+        signals.append("MACD_W")
+    if mmbuy:
+        signals.append("MACD_M")
+    return signals
 
 def calc_rtmbuy(df_daily):
     df_d = compute_indicators(df_daily)
@@ -984,8 +989,7 @@ def calc_rtmbuy(df_daily):
 
 def detect_momentum_signals(df_daily):
     signals = []
-    if calc_macdbuy(df_daily):
-        signals.append("MACD")
+    signals.extend(calc_macdbuy_signals(df_daily))
     if calc_rtmbuy(df_daily):
         signals.append("RTM")
     return signals
