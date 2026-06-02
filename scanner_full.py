@@ -125,34 +125,34 @@ HEATMAP_COLUMNS = [
         ]},
     ]},
     {"col": 2, "groups": [
-        {"name": "NGÂN HÀNG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
-        {"name": "DẦU KHÍ",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
+        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
+        {"name": "DAU KHI",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
     ]},
     {"col": 3, "groups": [
-        {"name": "CHỨNG KHOÁN", "symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
-        {"name": "XÂY DỰNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
+        {"name": "CHUNG KHOAN", "symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
+        {"name": "XAY DUNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
     ]},
     {"col": 4, "groups": [
-        {"name": "BẤT ĐỘNG SẢN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
-        {"name": "PHÂN BÓN",     "symbols": ["BFC","DCM","DPM"]},
-        {"name": "THÉP",         "symbols": ["HPG","HSG","NKG"]},
+        {"name": "BAT DONG SAN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
+        {"name": "PHAN BON",     "symbols": ["BFC","DCM","DPM"]},
+        {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
     ]},
     {"col": 5, "groups": [
-        {"name": "BÁN LẺ",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW"]},
-        {"name": "THỦY SẢN",  "symbols": ["ANV","FMC","CMX","VHC","IDI"]},
-        {"name": "CẢNG BIỂN", "symbols": ["HAH","GMD","SGP","VSC"]},
+        {"name": "BAN LE",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW"]},
+        {"name": "THUY SAN",  "symbols": ["ANV","FMC","CMX","VHC","IDI"]},
+        {"name": "CANG BIEN", "symbols": ["HAH","GMD","SGP","VSC"]},
         {"name": "CAO SU",    "symbols": ["GVR","DPR","DRI","PHR","DRC"]},
-        {"name": "NHỰA",      "symbols": ["AAA","BMP","NTP"]},
+        {"name": "NHUA",      "symbols": ["AAA","BMP","NTP"]},
     ]},
     {"col": 6, "groups": [
-        {"name": "ĐIỆN NƯỚC",  "symbols": ["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},
-        {"name": "DỆT MAY",    "symbols": ["TCM","TNG","VGT","MSH"]},
-        {"name": "HÀNG KHÔNG", "symbols": ["NCT","ACV","AST","HVN","SCS","VJC"]},
-        {"name": "BẢO HIỂM",   "symbols": ["BMI","MIG","BVH"]},
-        {"name": "MÍA ĐƯỜNG",  "symbols": ["LSS","SBT","QNS"]},
+        {"name": "DIEN NUOC",  "symbols": ["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},
+        {"name": "DET MAY",    "symbols": ["TCM","TNG","VGT","MSH"]},
+        {"name": "HANG KHONG", "symbols": ["NCT","ACV","AST","HVN","SCS","VJC"]},
+        {"name": "BAO HIEM",   "symbols": ["BMI","MIG","BVH"]},
+        {"name": "MIA DUONG",  "symbols": ["LSS","SBT","QNS"]},
     ]},
     {"col": 7, "groups": [
-        {"name": "ĐẦU TƯ CÔNG", "symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
+        {"name": "DAU TU CONG", "symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
     ]},
 ]
 
@@ -221,48 +221,23 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
 
 def _hmap_load_fonts():
     bold_paths = [
-        "/Library/Fonts/Arial Unicode.ttf",
-        "/Library/Fonts/Arial Unicode MS.ttf",
-        "/Library/Fonts/Arial Bold.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf",
-        "/System/Library/Fonts/Supplemental/NotoSans-Bold.ttf",
-        "/System/Library/Fonts/Supplemental/Noto Sans CJK Bold.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "C:/Windows/Fonts/arialbd.ttf",
-        "C:/Windows/Fonts/arialuni.ttf",
     ]
     reg_paths = [
-        "/Library/Fonts/Arial Unicode.ttf",
-        "/Library/Fonts/Arial Unicode MS.ttf",
-        "/Library/Fonts/Arial.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf",
-        "/System/Library/Fonts/Supplemental/NotoSans-Regular.ttf",
-        "/System/Library/Fonts/Supplemental/Noto Sans CJK Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/arialuni.ttf",
     ]
     bold = next((p for p in bold_paths if os.path.exists(p)), None)
     reg  = next((p for p in reg_paths  if os.path.exists(p)), None)
-    bold_or_reg = bold or reg
     try:
-        f_title  = ImageFont.truetype(bold_or_reg, 13)
-        f_hdr    = ImageFont.truetype(bold_or_reg, 10)
-        f_sym    = ImageFont.truetype(bold_or_reg, 10)
-        f_data   = ImageFont.truetype(reg or bold_or_reg, 9)
-        f_sector = ImageFont.truetype(bold_or_reg, 11)
+        f_title  = ImageFont.truetype(bold, 13)
+        f_hdr    = ImageFont.truetype(bold, 10)
+        f_sym    = ImageFont.truetype(bold, 10)
+        f_data   = ImageFont.truetype(reg or bold, 9)
+        f_sector = ImageFont.truetype(bold, 11)
         return f_title, f_hdr, f_sym, f_data, f_sector
     except Exception:
         d = ImageFont.load_default()
