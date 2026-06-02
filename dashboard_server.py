@@ -1528,7 +1528,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="momentum-box" id="momentum-box">
       <div class="momentum-title">Động lượng</div>
       <div class="momentum-list" id="momentum-list">
-        <div class="empty">Chưa có tín hiệu MACD/RTM</div>
       </div>
     </div>
   </div>
@@ -2096,7 +2095,7 @@ async function fetchSigs(){
     DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
     const momentum=j.momentum||[];
     if(!momentum.length){
-      DOM.momentumList.innerHTML='<div class="empty">Chưa có tín hiệu MACD/RTM</div>';
+      DOM.momentumList.innerHTML='';
     }else{
       DOM.momentumList.innerHTML=momentum.map(s=>{
         const pct=s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—';
