@@ -21,6 +21,7 @@ app.secret_key = os.environ.get("DASHBOARD_SECRET_KEY", "change-this-dashboard-s
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 _get_alerted_today = None
+_get_momentum_today = None
 _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
@@ -154,6 +155,7 @@ def _uploaded_ext(filename):
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
+    momentum = _get_momentum_today() if _get_momentum_today else {}
     result = []
     for sym, entry in alerted.items():
         sig = entry["signal"] if isinstance(entry, dict) else entry
@@ -163,9 +165,22 @@ def api_signals():
         result.append({"symbol": sym, "signal": sig, "emoji": emoji,
                         "rank": rank, "pct": pct})
     result.sort(key=lambda x: x["rank"], reverse=True)
+    momentum_result = []
+    for sig in ("MACD_W", "MACD_M", "RTM"):
+        rows = []
+        for sym in sorted(momentum.keys()):
+            entry = momentum[sym]
+            sigs = entry.get("signals", []) if isinstance(entry, dict) else []
+            if sig not in sigs:
+                continue
+            pct = entry.get("pct") if isinstance(entry, dict) else None
+            rows.append({"symbol": sym, "signal": sig, "pct": pct})
+        momentum_result.extend(rows)
     return jsonify({
         "signals": result,
         "count":   len(result),
+        "momentum": momentum_result,
+        "momentum_count": len(momentum_result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
     })
 
@@ -474,10 +489,11 @@ def index():
 # =============================================================================
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
-                    fetch_chart_fn=None, port=8888):
-    global _get_alerted_today, _get_history_cache, _cache_lock
+                    fetch_chart_fn=None, momentum_today_ref=None, port=8888):
+    global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
     global _fetch_heatmap_fn, _fetch_chart_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
+    _get_momentum_today = momentum_today_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
@@ -1088,6 +1104,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .b-BBREAKP{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
 .b-BFISH{background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
 .b-MACROSS{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
+.signal-header-toggle{cursor:pointer;user-select:none}
+.momentum-box{display:none;border-top:1px solid var(--border);background:#fbfcff;padding:8px 16px}
+.momentum-box.on{display:block}
+.momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+.momentum-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.momentum-row{display:grid;grid-template-columns:68px 1fr 72px;align-items:center;padding:6px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.momentum-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
+.momentum-row:hover .s-sym{color:var(--accent)}
+.b-MACD_W{background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc}
+.b-MACD_M{background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe}
+.b-RTM{background:#ecfdf5;color:#047857;border:1px solid #86efac}
 .empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px;grid-column:1/-1}
 .empty .big{font-size:30px;margin-bottom:8px}
 
@@ -1217,6 +1244,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .phdr-left,.phdr-center,.phdr-right{display:none}
 
   .sig-list{display:flex;flex-direction:column;gap:3px}
+  .momentum-list{display:flex;flex-direction:column;gap:3px}
+  .momentum-box{padding:8px 10px}
+  #signal-header{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
+  #signal-header .panel-hdr-left{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%}
+  #signal-header .panel-title{white-space:nowrap;flex-shrink:0}
+  #signal-header #sig-meta{display:block;width:100%;white-space:nowrap;overflow:visible;line-height:1.35}
   .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
   .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
@@ -1485,7 +1518,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 <div class="wrap" id="main-wrap">
   <!-- SIGNALS -->
   <div class="panel">
-    <div class="panel-hdr">
+    <div class="panel-hdr signal-header-toggle" id="signal-header">
       <div class="panel-hdr-left">
         <span class="panel-title">Tín hiệu hôm nay</span>
         <button class="journal-star-btn" id="journal-open-btn" title="Mở Note mua">★</button>
@@ -1496,6 +1529,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="panel-body">
       <div class="sig-list" id="sig-list">
         <div class="empty"><div class="big">📡</div><div>Đang tải...</div></div>
+      </div>
+    </div>
+    <div class="momentum-box" id="momentum-box">
+      <div class="momentum-title">Động lượng</div>
+      <div class="momentum-list" id="momentum-list">
       </div>
     </div>
   </div>
@@ -1682,6 +1720,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
+  signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   sankeySvg:$('sankey-svg'),
@@ -1890,6 +1929,14 @@ DOM.sigList.addEventListener('dblclick',e=>{
   updateSimplize(row.dataset.sym);
   openChart(row.dataset.sym);
 });
+DOM.momentumList.addEventListener('click',e=>{
+  const row=e.target.closest('.momentum-row');if(!row)return;
+  const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
+});
+DOM.signalHeader.addEventListener('click',e=>{
+  if(e.target.closest('#journal-open-btn'))return;
+  DOM.momentumBox.classList.toggle('on');
+});
 // ═══════════════════════════════════════════════════════
 // SANKEY RENDER
 // ═══════════════════════════════════════════════════════
@@ -2051,9 +2098,19 @@ async function loadConfig(){
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
-    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu`;
+    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
+    const momentum=j.momentum||[];
+    if(!momentum.length){
+      DOM.momentumList.innerHTML='';
+    }else{
+      DOM.momentumList.innerHTML=momentum.map(s=>{
+        const pct=s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—';
+        const pctColor=s.pct==null?'#6b7280':s.pct>=0?'#0e9f6e':'#e02424';
+        return `<div class="momentum-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${pctColor}">${pct}</span><span class="s-badge b-${s.signal}">${s.signal}</span></div>`;
+      }).join('');
+    }
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
-    DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${s.signal.replace('POCKET PIVOT','PIVOT').replace('PRE-BREAK','PRE')}</span></div>`).join('');
+    DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${s.signal.replace('POCKET PIVOT','PIVOT')}</span></div>`).join('');
   }catch(e){console.error('fetchSigs:',e);}
 }
 async function fetchHmap(){
