@@ -2182,14 +2182,23 @@ function _bindSearch(el,onEnter){
 }
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 saveFollowSymbols(FOLLOW);
+let _followClickTimer=null;
 $('hmap-follow-btn').addEventListener('click',function(){
-  if(!FOLLOW.length){editFollowSymbols();this.blur();return;}
-  FOLLOW_ON=!FOLLOW_ON;
-  saveFollowSymbols(FOLLOW);
-  renderHeatmap(window._lastHmapData||{});
+  clearTimeout(_followClickTimer);
+  _followClickTimer=setTimeout(()=>{
+    if(!FOLLOW.length){editFollowSymbols();this.blur();return;}
+    FOLLOW_ON=!FOLLOW_ON;
+    saveFollowSymbols(FOLLOW);
+    renderHeatmap(window._lastHmapData||{});
+    this.blur();
+  },180);
+});
+$('hmap-follow-btn').addEventListener('dblclick',function(e){
+  e.preventDefault();
+  clearTimeout(_followClickTimer);
+  editFollowSymbols();
   this.blur();
 });
-$('hmap-follow-btn').addEventListener('dblclick',function(e){e.preventDefault();editFollowSymbols();this.blur();});
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
