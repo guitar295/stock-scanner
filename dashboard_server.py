@@ -1086,6 +1086,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
+#hmap-follow-btn{color:var(--muted)}
 #hmap-follow-btn.on{background:#fef3c7;color:#92400e;border-color:#f59e0b}
 
 /* ═══════════════════════════════════════════
@@ -1776,7 +1777,9 @@ const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
+const FOLLOW_ON_KEY='dashboard_follow_on';
 let FOLLOW=loadFollowSymbols();
+let FOLLOW_ON=localStorage.getItem(FOLLOW_ON_KEY)!=='0';
 function loadFollowSymbols(){
   try{return JSON.parse(localStorage.getItem(FOLLOW_KEY)||'[]').filter(Boolean).map(s=>String(s).toUpperCase());}
   catch(e){return [];}
@@ -1787,7 +1790,16 @@ function parseFollowSymbols(raw){
 function saveFollowSymbols(syms){
   FOLLOW=syms;
   localStorage.setItem(FOLLOW_KEY,JSON.stringify(FOLLOW));
-  const btn=$('hmap-follow-btn');if(btn){btn.classList.toggle('on',FOLLOW.length>0);btn.title=FOLLOW.length?FOLLOW.join(', '):'Nhập danh sách mã follow';}
+  localStorage.setItem(FOLLOW_ON_KEY,FOLLOW_ON?'1':'0');
+  const btn=$('hmap-follow-btn');if(btn){btn.classList.toggle('on',FOLLOW.length>0&&FOLLOW_ON);btn.title=FOLLOW.length?`${FOLLOW_ON?'ON':'OFF'}: ${FOLLOW.join(', ')}`:'Nhập danh sách mã follow';}
+}
+function editFollowSymbols(){
+  const raw=prompt('Nhập mã FOLLOW, cách nhau bằng dấu phẩy:',FOLLOW.join(', '));
+  if(raw===null)return false;
+  FOLLOW_ON=true;
+  saveFollowSymbols(parseFollowSymbols(raw));
+  renderHeatmap(window._lastHmapData||{});
+  return true;
 }
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
@@ -1900,7 +1912,7 @@ function mkSectorCol(d){
   return`<div class="hmap-group hmap-sector-group"><div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>${groups.slice(0,10).map(g=>{const{bg,fg}=cellStyle(g.avg),sign=g.avg>=0?'+':'';return`<div class="hmap-sector-cell" style="background:${bg};color:${fg}"><span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span></div>`;}).join('')}</div>`;
 }
 function mkFollowGroup(d){
-  if(!FOLLOW.length)return'';
+  if(!FOLLOW.length||!FOLLOW_ON)return'';
   return `<div class="hmap-col"><div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${FOLLOW.map(s=>mkCell(s,d)).join('')}</div></div>`;
 }
 function renderHeatmap(d){
@@ -2171,12 +2183,13 @@ function _bindSearch(el,onEnter){
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 saveFollowSymbols(FOLLOW);
 $('hmap-follow-btn').addEventListener('click',function(){
-  const raw=prompt('Nhập mã FOLLOW, cách nhau bằng dấu phẩy:',FOLLOW.join(', '));
-  if(raw===null)return;
-  saveFollowSymbols(parseFollowSymbols(raw));
+  if(!FOLLOW.length){editFollowSymbols();this.blur();return;}
+  FOLLOW_ON=!FOLLOW_ON;
+  saveFollowSymbols(FOLLOW);
   renderHeatmap(window._lastHmapData||{});
   this.blur();
 });
+$('hmap-follow-btn').addEventListener('dblclick',function(e){e.preventDefault();editFollowSymbols();this.blur();});
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
