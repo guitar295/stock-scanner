@@ -1913,7 +1913,7 @@ function mkSectorCol(d){
 }
 function mkFollowGroup(d){
   if(!FOLLOW.length||!FOLLOW_ON)return'';
-  return `<div class="hmap-col"><div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${FOLLOW.map(s=>mkCell(s,d)).join('')}</div></div>`;
+  return `<div class="hmap-col"><div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div></div>`;
 }
 function renderHeatmap(d){
   if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
