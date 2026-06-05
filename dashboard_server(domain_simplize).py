@@ -1086,6 +1086,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
 .hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
+#hmap-follow-btn.on{background:#fef3c7;color:#92400e;border-color:#f59e0b}
 
 /* ═══════════════════════════════════════════
    SIGNALS
@@ -1549,6 +1550,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <span class="s-icon">🔍</span>
           <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
+        <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
         <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
@@ -1773,6 +1775,20 @@ const SIGNAL_LABEL_MAP={
 const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
+const FOLLOW_KEY='dashboard_follow_symbols';
+let FOLLOW=loadFollowSymbols();
+function loadFollowSymbols(){
+  try{return JSON.parse(localStorage.getItem(FOLLOW_KEY)||'[]').filter(Boolean).map(s=>String(s).toUpperCase());}
+  catch(e){return [];}
+}
+function parseFollowSymbols(raw){
+  return [...new Set(String(raw||'').toUpperCase().split(/[^A-Z0-9]+/).map(s=>s.trim()).filter(s=>s.length>=2))];
+}
+function saveFollowSymbols(syms){
+  FOLLOW=syms;
+  localStorage.setItem(FOLLOW_KEY,JSON.stringify(FOLLOW));
+  const btn=$('hmap-follow-btn');if(btn){btn.classList.toggle('on',FOLLOW.length>0);btn.title=FOLLOW.length?FOLLOW.join(', '):'Nhập danh sách mã follow';}
+}
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
@@ -1883,6 +1899,10 @@ function mkSectorCol(d){
   groups.sort((a,b)=>b.avg-a.avg);
   return`<div class="hmap-group hmap-sector-group"><div class="hmap-ghdr"><span class="hmap-gname">NGÀNH NGHỀ</span></div>${groups.slice(0,10).map(g=>{const{bg,fg}=cellStyle(g.avg),sign=g.avg>=0?'+':'';return`<div class="hmap-sector-cell" style="background:${bg};color:${fg}"><span class="hsc-name">${g.name}</span><span class="hsc-pct">${sign}${g.avg.toFixed(1)}%</span></div>`;}).join('')}</div>`;
 }
+function mkFollowGroup(d){
+  if(!FOLLOW.length)return'';
+  return `<div class="hmap-col"><div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${FOLLOW.map(s=>mkCell(s,d)).join('')}</div></div>`;
+}
 function renderHeatmap(d){
   if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
   const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
@@ -1892,6 +1912,7 @@ function renderHeatmap(d){
     const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
     parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${extra}</div>`);
   });
+  const follow=mkFollowGroup(d);if(follow)parts.push(follow);
   DOM.hmapGrid.innerHTML=parts.join('');
 }
 // Event delegation heatmap
@@ -2148,6 +2169,14 @@ function _bindSearch(el,onEnter){
   el.addEventListener('focus',function(){this.select();});
 }
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
+saveFollowSymbols(FOLLOW);
+$('hmap-follow-btn').addEventListener('click',function(){
+  const raw=prompt('Nhập mã FOLLOW, cách nhau bằng dấu phẩy:',FOLLOW.join(', '));
+  if(raw===null)return;
+  saveFollowSymbols(parseFollowSymbols(raw));
+  renderHeatmap(window._lastHmapData||{});
+  this.blur();
+});
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
