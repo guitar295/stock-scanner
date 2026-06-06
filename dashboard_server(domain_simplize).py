@@ -1078,8 +1078,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-panel-hdr{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .hmap-hdr-row1{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .hmap-ts-wrap{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted)}
-.hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--accent);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
-.hmap-link-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
+.hmap-link-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hmap-link-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 #hmap-simplize-btn{color:var(--muted)}
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
@@ -1134,7 +1134,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-gavg{font-family:var(--font-mono);font-size:9px;flex-shrink:0}
 .hmap-gavg.pos{color:rgb(22,120,40)}.hmap-gavg.neg{color:rgb(185,25,25)}.hmap-gavg.zer{color:rgb(110,105,20)}
 .hmap-cell{display:grid;grid-template-columns:56px 48px 1fr;align-items:center;height:24px;border-radius:4px;cursor:pointer;border:1px solid rgba(0,0,0,.1);transition:filter .12s,transform .1s,box-shadow .12s;overflow:hidden}
-.hmap-cell:hover{filter:brightness(.95);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.hmap-cell:hover{filter:brightness(.96);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .hmap-cell>span{display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;white-space:nowrap;font-family:var(--font-mono)}
 .hc-sym{font-size:10px}.hc-price{font-size:8.5px;opacity:.82}.hc-pct{font-size:9.5px}
 .hmap-sector-group{width:130px;margin:26px auto 0}
@@ -1230,7 +1230,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hv-ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hv-ctrl.danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
 #hover-preview-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s}
-#hover-preview-btn:hover,#hover-preview-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#hover-preview-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
+#hover-preview-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 
 /* ═══════════════════════════════════════════
    MOBILE PORTRAIT
