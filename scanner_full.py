@@ -106,10 +106,10 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # =============================================================================
 TRADING_STOCKS_POOL = [
     "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVB","BVH","BWE","VCK","CII",
-    "CKG","CRE","CTD","CTG","CTI","CTR","CTS","D2D","DBC","DCM","DGW","DIG",
+    "CKG","CRE","CTD","CTG","CTI","CTR","CTS","ORS","DBC","DCM","DGW","DIG",
     "DPG","DPM","DRC","DRH","DXG","FCN","FPT","FRT","FTS","GAS","GEG","GEX",
     "GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","HDG","HNG","HPG","HSG",
-    "HTN","HVN","IDC","IJC","DSE","KBC","KDH","KSB","LDG","LPB","LSS","LTG",
+    "HTN","HVN","IDC","IJC","DSE","KBC","KDH","KSB","LDG","LPB","D2D","LTG",
     "MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET",
     "PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT",
     "SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2",
