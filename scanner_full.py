@@ -105,7 +105,7 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
 TRADING_STOCKS_POOL = [
-    "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVB","BVH","BWE","VCK","CII",
+    "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVH","BWE","VCK","CII",
     "CKG","CRE","CTD","CTG","CTI","CTR","CTS","ORS","DBC","DCM","DGW","DIG",
     "DPG","DPM","DRC","DRH","DXG","FCN","FPT","FRT","FTS","GAS","GEG","GEX",
     "GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","HDG","HNG","HPG","HSG",
@@ -125,7 +125,7 @@ HEATMAP_COLUMNS = [
         ]},
     ]},
     {"col": 2, "groups": [
-        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
+        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","LPB"]},
         {"name": "DAU KHI",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
     ]},
     {"col": 3, "groups": [
