@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 import os
 import re
 import tempfile
+from io import BytesIO
 from datetime import datetime, date
 import pytz
 import json
@@ -1116,7 +1117,7 @@ def detect_signal(df, now_time):
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
-def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None):
+def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None, as_bytes=False):
     is_daily  = (timeframe == 'Daily')
     is_weekly = (timeframe == 'Weekly')
     is_15m    = (timeframe == '15m')
@@ -1155,12 +1156,14 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     mc           = mpf.make_marketcolors(up='#26A69A',down='#EF5350',edge='inherit',wick='inherit',alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles',marketcolors=mc,gridstyle='',facecolor='white')
 
-    fd, img_name = tempfile.mkstemp(suffix=f'_{symbol}_{timeframe.lower()}.png')
-    os.close(fd)
+    img_name = None
+    if not as_bytes:
+        fd, img_name = tempfile.mkstemp(suffix=f'_{symbol}_{timeframe.lower()}.png')
+        os.close(fd)
 
     fig, axlist = mpf.plot(
         df_plot, type='candle', volume=False, addplot=apds,
-        style=custom_style, savefig=dict(fname=img_name, dpi=150),
+        style=custom_style,
         figratio=(16,9), returnfig=True, show_nontrading=False, tight_layout=True
     )
     ax_price = axlist[0]
@@ -1221,6 +1224,13 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
 
     xlim = ax_price.get_xlim()
     ax_price.set_xlim(xlim[0], xlim[1]+20)
+    if as_bytes:
+        buf = BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.15, dpi=150)
+        png_bytes = buf.getvalue()
+        buf.close()
+        plt.close('all')
+        return png_bytes
     fig.savefig(img_name, bbox_inches='tight', pad_inches=0.15, dpi=150)
     plt.close('all')
     return img_name
@@ -1487,12 +1497,32 @@ def _build_daily_weekly_chart_paths(ctx):
         print(f"  [ChartCore] ❌ Weekly {symbol}: {e}")
     return paths, labels
 
-def _paths_to_png_bytes(paths):
-    png_bytes = []
-    for path in paths:
-        with open(path, 'rb') as f:
-            png_bytes.append(f.read())
-    return png_bytes
+def _build_daily_weekly_chart_bytes(ctx):
+    png_bytes, labels = [], []
+    symbol = ctx["symbol"]
+    signal_type = ctx["signal_type"]
+    try:
+        png_bytes.append(draw_chart(
+            ctx["df_calc"].tail(250).copy(), symbol, signal_type, ctx["today"],
+            timeframe='Daily', add_arrow=False, date_str=ctx["date_str"], as_bytes=True
+        ))
+        labels.append('📊 Daily [D]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Daily bytes {symbol}: {e}")
+
+    try:
+        df_weekly = build_weekly_df(ctx["df_raw"])
+        df_plot_w = df_weekly.tail(200).copy()
+        today_w = df_plot_w.iloc[-1]
+        date_str_w = _date_str_from_df(ctx["df_raw"])
+        png_bytes.append(draw_chart(
+            df_plot_w, symbol, signal_type, today_w,
+            timeframe='Weekly', add_arrow=False, date_str=date_str_w, as_bytes=True
+        ))
+        labels.append('📈 Weekly [W]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Weekly bytes {symbol}: {e}")
+    return png_bytes, labels
 
 def _cleanup_chart_paths(paths):
     for path in paths:
@@ -1586,20 +1616,16 @@ def dashboard_chart_fn(symbol: str):
     Không gửi Telegram.
     """
     symbol = symbol.upper().strip()
-    paths = []
     try:
         ctx = _get_chart_context(symbol)
         if ctx is None:
             return [], []
         print(f"  [DashChart] {symbol}: Daily/Weekly từ {ctx['source']}")
-        paths, labels = _build_daily_weekly_chart_paths(ctx)
-        return _paths_to_png_bytes(paths), labels
+        return _build_daily_weekly_chart_bytes(ctx)
 
     except Exception as e:
         print(f"  [DashChart] ❌ {symbol}: {e}")
         return [], []
-    finally:
-        _cleanup_chart_paths(paths)
 
 def dashboard_chart_15m_fn(symbol: str):
     """
@@ -1607,21 +1633,24 @@ def dashboard_chart_15m_fn(symbol: str):
     Tạo riêng chart 15m để dashboard tải sau Daily/Weekly.
     """
     symbol = symbol.upper().strip()
-    path_15m = None
     try:
         ctx = _get_chart_context(symbol)
         if ctx is None or ctx["is_index"]:
             return [], []
-        path_15m = _build_15m_chart(symbol, ctx["signal_type"])
-        if not path_15m:
+        df_15m = fetch_intraday_15m(symbol)
+        if df_15m is None or len(df_15m) < 2:
+            print(f"  ⚠️  {symbol}: không có dữ liệu 15m")
             return [], []
-        return _paths_to_png_bytes([path_15m]), ['⚡ 15 phút [15m]']
+        today_15m = df_15m.iloc[-1]
+        date_str_15m = _date_str_from_df(df_15m)
+        png_15m = draw_chart(
+            df_15m.tail(200).copy(), symbol, ctx["signal_type"], today_15m,
+            timeframe='15m', add_arrow=False, date_str=date_str_15m, as_bytes=True
+        )
+        return [png_15m], ['⚡ 15 phút [15m]']
     except Exception as e:
         print(f"  [DashChart] ❌ 15m {symbol}: {e}")
         return [], []
-    finally:
-        if path_15m:
-            _cleanup_chart_paths([path_15m])
 
 # =============================================================================
 # BƯỚC 8E: TELEGRAM LISTENER
