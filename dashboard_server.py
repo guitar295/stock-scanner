@@ -5,6 +5,7 @@ DASHBOARD SERVER
 from flask import Flask, jsonify, Response, request, session, send_from_directory
 from functools import wraps
 from pathlib import Path
+import base64
 import hmac
 import json
 import math
@@ -164,6 +165,33 @@ def _uploaded_ext(filename):
 # =============================================================================
 # API
 # =============================================================================
+def _serve_chart_images(symbol, fetch_fn, cache_key, label):
+    symbol = symbol.upper().strip()
+    now = time.time()
+    with _chart_lock:
+        cached = _chart_cache.get(cache_key)
+        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
+            return jsonify({"symbol": symbol, "images": cached["images"],
+                            "labels": cached["labels"], "cached": True})
+    if not fetch_fn:
+        return jsonify({"error": f"{label}_fn_not_registered"}), 503
+    try:
+        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [Dashboard] 📊 Tạo {label} {symbol}...")
+        png_list, labels = fetch_fn(symbol)
+        if not png_list:
+            return jsonify({"error": "no_data"}), 404
+        b64_list = [base64.b64encode(b).decode() for b in png_list]
+        with _chart_lock:
+            _chart_cache[cache_key] = {"images": b64_list, "labels": labels,
+                                       "updated_at": time.time()}
+        print(f"  [Dashboard] ✅ {label} {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
+        return jsonify({"symbol": symbol, "images": b64_list,
+                        "labels": labels, "cached": False})
+    except Exception as e:
+        print(f"  [Dashboard] ❌ {label} {symbol} lỗi: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
@@ -217,64 +245,13 @@ def api_heatmap():
 
 @app.route("/api/chart_images/<symbol>")
 def api_chart_images(symbol):
-    import base64
     symbol = symbol.upper().strip()
-    now = time.time()
-    with _chart_lock:
-        cached = _chart_cache.get(symbol)
-        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
-            return jsonify({"symbol": symbol, "images": cached["images"],
-                            "labels": cached["labels"], "cached": True})
-    if not _fetch_chart_fn:
-        return jsonify({"error": "chart_fn_not_registered"}), 503
-    try:
-        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [Dashboard] 📊 Tạo chart {symbol}...")
-        png_list, labels = _fetch_chart_fn(symbol)
-        if not png_list:
-            return jsonify({"error": "no_data"}), 404
-        b64_list = [base64.b64encode(b).decode() for b in png_list]
-        fetch_time = time.time()
-        with _chart_lock:
-            _chart_cache[symbol] = {"images": b64_list, "labels": labels,
-                                    "updated_at": fetch_time}
-        print(f"  [Dashboard] ✅ Chart {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
-        return jsonify({"symbol": symbol, "images": b64_list,
-                        "labels": labels, "cached": False})
-    except Exception as e:
-        print(f"  [Dashboard] ❌ Chart {symbol} lỗi: {e}")
-        return jsonify({"error": str(e)}), 500
+    return _serve_chart_images(symbol, _fetch_chart_fn, symbol, "chart")
 
 @app.route("/api/chart_image_15m/<symbol>")
 def api_chart_image_15m(symbol):
-    import base64
     symbol = symbol.upper().strip()
-    cache_key = f"{symbol}:15m"
-    now = time.time()
-    with _chart_lock:
-        cached = _chart_cache.get(cache_key)
-        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
-            return jsonify({"symbol": symbol, "images": cached["images"],
-                            "labels": cached["labels"], "cached": True})
-    if not _fetch_chart_15m_fn:
-        return jsonify({"error": "chart_15m_fn_not_registered"}), 503
-    try:
-        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [Dashboard] ⚡ Tạo chart 15m {symbol}...")
-        png_list, labels = _fetch_chart_15m_fn(symbol)
-        if not png_list:
-            return jsonify({"error": "no_data"}), 404
-        b64_list = [base64.b64encode(b).decode() for b in png_list]
-        fetch_time = time.time()
-        with _chart_lock:
-            _chart_cache[cache_key] = {"images": b64_list, "labels": labels,
-                                       "updated_at": fetch_time}
-        print(f"  [Dashboard] ✅ Chart 15m {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
-        return jsonify({"symbol": symbol, "images": b64_list,
-                        "labels": labels, "cached": False})
-    except Exception as e:
-        print(f"  [Dashboard] ❌ Chart 15m {symbol} lỗi: {e}")
-        return jsonify({"error": str(e)}), 500
+    return _serve_chart_images(symbol, _fetch_chart_15m_fn, f"{symbol}:15m", "chart_15m")
 
 @app.route("/api/cache_info")
 def api_cache_info():
@@ -786,7 +763,7 @@ async function loadScannerChart(sym){
     const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
     const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent=j.cached?'♻️ Daily/Weekly dùng cache • đang tải 15m...':'Đang tải 15m...';
+    if(h)h.textContent='Đang tải 15m...';
     loadScannerChart15m(sym);
   }catch(e){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
@@ -796,17 +773,17 @@ async function loadScannerChart15m(sym){
   const s=(sym||'').toUpperCase().trim();
   try{
     const r=await fetch('/api/chart_image_15m/'+s);
-    if(!r.ok){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='Daily/Weekly đã sẵn sàng';return;}
+    if(!r.ok){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='';return;}
     const j=await r.json();
     if((_sym||'').toUpperCase().trim()!==s)return;
     if(!j.images?.length)return;
     const labels=j.labels||['⚡ 15 phút [15m]'];
     _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
     const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent=j.cached?'♻️ 15m dùng cache':'⚡ 15m đã tải xong';
+    if(h)h.textContent='';
   }catch(e){
     const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent='Daily/Weekly đã sẵn sàng • 15m chưa tải được';
+    if(h)h.textContent='';
   }
 }
 document.addEventListener('keydown',e=>{
@@ -2349,7 +2326,7 @@ async function loadScannerChart(sym){
     const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
     const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent=j.cached?'♻️ Daily/Weekly dùng cache • đang tải 15m...':'Đang tải 15m...';
+    if(h)h.textContent='Đang tải 15m...';
     loadScannerChart15m(sym);
   }catch(e){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
@@ -2359,17 +2336,17 @@ async function loadScannerChart15m(sym){
   const s=(sym||'').toUpperCase().trim();
   try{
     const r=await fetch('/api/chart_image_15m/'+s);
-    if(!r.ok){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='Daily/Weekly đã sẵn sàng';return;}
+    if(!r.ok){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='';return;}
     const j=await r.json();
     if((_sym||'').toUpperCase().trim()!==s)return;
     if(!j.images?.length)return;
     const labels=j.labels||['⚡ 15 phút [15m]'];
     _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
     const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent=j.cached?'♻️ 15m dùng cache':'⚡ 15m đã tải xong';
+    if(h)h.textContent='';
   }catch(e){
     const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent='Daily/Weekly đã sẵn sàng • 15m chưa tải được';
+    if(h)h.textContent='';
   }
 }
 // ═══════════════════════════════════════════════════════
