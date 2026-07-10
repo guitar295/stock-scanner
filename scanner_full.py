@@ -561,6 +561,7 @@ def compute_indicators(df):
 # BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
 history_cache: dict = {}
+merged_cache: dict = {}
 cache_date          = None
 cache_lock          = threading.Lock()
 
@@ -584,19 +585,23 @@ def build_history_cache(symbols: list, current_date: date):
     global cache_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã...")
-    loaded = 0
+    new_history = {}
     for i, symbol in enumerate(symbols, 1):
         df = load_history_for_symbol(symbol, current_date)
         if df is not None and len(df) >= 60:
-            with cache_lock: history_cache[symbol] = df
-            loaded += 1
+            new_history[symbol] = df
         if i % 20 == 0:
             ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
             print(f"  [{ts2}] Đã load {i}/{len(symbols)} mã...")
         time.sleep(0.3)
-    with cache_lock: cache_date = current_date
+    with cache_lock:
+        history_cache.clear()
+        history_cache.update(new_history)
+        merged_cache.clear()
+        merged_cache.update({sym: df.copy() for sym, df in new_history.items()})
+        cache_date = current_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"✅ [{ts}] Cache hoàn tất: {loaded}/{len(symbols)} mã có dữ liệu.")
+    print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
 
 # =============================================================================
 # BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
@@ -1269,6 +1274,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             if today_bar is None: continue
 
             df_merged   = merge_today_bar(df_hist, today_bar, current_date)
+            with cache_lock:
+                merged_cache[symbol] = df_merged.copy()
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
@@ -1379,96 +1386,155 @@ def _filter_symbols(raw_list: list):
     return result if result else None
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND — FETCH FRESH, KHÔNG DÙNG CACHE
+# BƯỚC 8C: PIPELINE CHART DÙNG CHUNG — DASHBOARD + TELEGRAM
 # =============================================================================
+def _get_chart_context(symbol: str):
+    symbol = symbol.upper().strip()
+    current_date = datetime.now(TZ_VN).date()
+    is_index = symbol in INDEX_SYMBOLS
+    source = "index"
+
+    if is_index:
+        df_raw = fetch_index_history(symbol)
+    else:
+        with cache_lock:
+            cached = merged_cache.get(symbol)
+            df_raw = cached.copy() if cached is not None and len(cached) >= 10 else None
+        if df_raw is not None:
+            source = "merged_cache"
+        else:
+            source = "fresh"
+            df_raw = fetch_fresh_for_chart(symbol, current_date)
+
+    if df_raw is None or len(df_raw) < 10:
+        return None
+
+    df_calc = compute_indicators(df_raw)
+    today = df_calc.iloc[-1]
+    now_time = int(datetime.now(TZ_VN).strftime("%H%M%S"))
+    signal_type = "INDEX" if is_index else (detect_signal(df_raw, now_time) or "ON-DEMAND")
+    return {
+        "symbol": symbol,
+        "is_index": is_index,
+        "source": source,
+        "df_raw": df_raw,
+        "df_calc": df_calc,
+        "today": today,
+        "signal_type": signal_type,
+        "date_str": _date_str_from_df(df_calc),
+    }
+
+def _build_chart_message(ctx):
+    symbol = ctx["symbol"]
+    df_calc = ctx["df_calc"]
+    today = ctx["today"]
+    date_str = ctx["date_str"]
+    pct = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
+    change = today['close'] - df_calc['close'].iloc[-2]
+    vol_vs_prev = (today['volume'] - df_calc['volume'].iloc[-2]) / df_calc['volume'].iloc[-2] * 100
+    vol_vs_vma50 = (today['volume'] - today['VMA50']) / today['VMA50'] * 100 if today['VMA50'] > 0 else 0
+
+    if ctx["is_index"]:
+        return (
+            f"#{symbol}  {date_str}\n"
+            f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+            f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%"
+        )
+
+    link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
+    link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
+    link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
+    link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
+    link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
+    return (
+        f"#{symbol}  {date_str}\n"
+        f"Sig: {ctx['signal_type']}\n"
+        f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+        f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
+        f"<a href='{link_vnd_detail}'>⚖️</a> "
+        f"<a href='{link_vnd_news}'>🗞️</a> "
+        f"<a href='{link_vietstock}'>📈</a> "
+        f"<a href='{link_vnd_summary}'>📄</a> "
+        f"<a href='{link_24h_money}'>📄</a>"
+    )
+
+def _build_daily_weekly_chart_paths(ctx):
+    paths, labels = [], []
+    symbol = ctx["symbol"]
+    signal_type = ctx["signal_type"]
+    try:
+        path_d = draw_chart(
+            ctx["df_calc"].tail(250).copy(), symbol, signal_type, ctx["today"],
+            timeframe='Daily', add_arrow=False, date_str=ctx["date_str"]
+        )
+        paths.append(path_d)
+        labels.append('📊 Daily [D]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Daily {symbol}: {e}")
+
+    try:
+        df_weekly = build_weekly_df(ctx["df_raw"])
+        df_plot_w = df_weekly.tail(200).copy()
+        today_w = df_plot_w.iloc[-1]
+        date_str_w = _date_str_from_df(ctx["df_raw"])
+        path_w = draw_chart(
+            df_plot_w, symbol, signal_type, today_w,
+            timeframe='Weekly', add_arrow=False, date_str=date_str_w
+        )
+        paths.append(path_w)
+        labels.append('📈 Weekly [W]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Weekly {symbol}: {e}")
+    return paths, labels
+
+def _paths_to_png_bytes(paths):
+    png_bytes = []
+    for path in paths:
+        with open(path, 'rb') as f:
+            png_bytes.append(f.read())
+    return png_bytes
+
+def _cleanup_chart_paths(paths):
+    for path in paths:
+        try:
+            if os.path.exists(path): os.remove(path)
+        except Exception:
+            pass
+
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
     symbol    = symbol.upper().strip()
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    is_index  = symbol in INDEX_SYMBOLS
-    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol} (index={is_index})")
+    image_paths = []
+    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol}")
 
     try:
-        current_date = datetime.now(TZ_VN).date()
+        ctx = _get_chart_context(symbol)
+        if ctx is None:
+            requests.post(url_msg, data={
+                'chat_id': chat_id,
+                'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
+                'parse_mode': 'HTML'
+            })
+            return
 
-        if is_index:
-            df_raw = fetch_index_history(symbol)
-            if df_raw is None or len(df_raw) < 10:
-                requests.post(url_msg, data={
-                    'chat_id': chat_id,
-                    'text': f"❌ Không tìm thấy dữ liệu chỉ số <b>{symbol}</b>.",
-                    'parse_mode': 'HTML'
-                })
-                return
-        else:
-            ts_log   = datetime.now(TZ_VN).strftime('%H:%M:%S')
-            df_raw   = fetch_fresh_for_chart(symbol, current_date)
-            if df_raw is not None:
-                print(f"  [{ts_log}] ℹ️  {symbol}: fresh fetch OK (nến cuối: {df_raw.index[-1].date()})")
-            else:
-                requests.post(url_msg, data={
-                    'chat_id': chat_id,
-                    'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
-                    'parse_mode': 'HTML'
-                })
-                return
-
-        df_calc  = compute_indicators(df_raw)
-        today    = df_calc.iloc[-1]
-        now_time = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-
-        if is_index:
-            signal_type = "INDEX"
-        else:
-            signal_type = detect_signal(df_raw, now_time) or "ON-DEMAND"
-
-        date_str     = _date_str_from_df(df_calc)
-        pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
-        change       = today['close'] - df_calc['close'].iloc[-2]
-        vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
-        vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
-
-        if is_index:
-            msg = (
-                f"#{symbol}  {date_str}\n"
-                f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
-                f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%"
-            )
-        else:
-            link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
-            link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
-            link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
-            link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
-            link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
-            msg = (
-                f"#{symbol}  {date_str}\n"
-                f"Sig: {signal_type}\n"
-                f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
-                f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
-                f"<a href='{link_vnd_detail}'>⚖️</a> "
-                f"<a href='{link_vnd_news}'>🗞️</a> "
-                f"<a href='{link_vietstock}'>📈</a> "
-                f"<a href='{link_vnd_summary}'>📄</a> "
-                f"<a href='{link_24h_money}'>📄</a>"
-            )
-
-        df_plot_d  = df_calc.tail(250).copy()
-        img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
-                                timeframe='Daily', add_arrow=False, date_str=date_str)
-        df_weekly  = build_weekly_df(df_raw)
-        df_plot_w  = df_weekly.tail(200).copy()
-        today_w    = df_plot_w.iloc[-1]
-        date_str_w = _date_str_from_df(df_raw)
-        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
-                                timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-
-        image_paths = [img_daily, img_weekly]
-        if not is_index:
-            img_15m = _build_15m_chart(symbol, signal_type)
+        print(f"  🧵 [{thread_id}] {symbol}: dùng nguồn {ctx['source']} (nến cuối: {ctx['df_raw'].index[-1].date()})")
+        image_paths, _ = _build_daily_weekly_chart_paths(ctx)
+        if not ctx["is_index"]:
+            img_15m = _build_15m_chart(symbol, ctx["signal_type"])
             if img_15m: image_paths.append(img_15m)
 
+        if not image_paths:
+            requests.post(url_msg, data={
+                'chat_id': chat_id,
+                'text': f"❌ Không tạo được chart cho <b>{symbol}</b>",
+                'parse_mode': 'HTML'
+            })
+            return
+
         print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi {len(image_paths)} chart")
-        _send_chart_to_chat(msg, image_paths, chat_id)
+        _send_chart_to_chat(_build_chart_message(ctx), image_paths, chat_id)
+        image_paths = []
         print(f"  🧵 [{thread_id}] {symbol} — đã gửi xong")
 
     except Exception as e:
@@ -1478,6 +1544,8 @@ def fetch_and_send_chart(symbol, chat_id):
             'text': f"❌ Lỗi lấy dữ liệu <b>{symbol}</b>: {e}",
             'parse_mode': 'HTML'
         })
+    finally:
+        _cleanup_chart_paths(image_paths)
 
 def _send_chart_to_chat(msg, image_paths, chat_id):
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -1514,74 +1582,46 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
 def dashboard_chart_fn(symbol: str):
     """
     Được truyền vào start_dashboard(fetch_chart_fn=...).
-    Tạo 3 ảnh chart (Daily, Weekly, 15m), trả về (list[bytes], list[str]).
+    Tạo nhanh Daily + Weekly từ merged_cache nếu có, trả về (list[bytes], list[str]).
     Không gửi Telegram.
     """
-    symbol       = symbol.upper().strip()
-    current_date = datetime.now(TZ_VN).date()
-    png_bytes    = []
-    labels       = []
-    tmp_files    = []
+    symbol = symbol.upper().strip()
+    paths = []
     try:
-        is_index = symbol in INDEX_SYMBOLS
-        if is_index:
-            df_raw = fetch_index_history(symbol)
-        else:
-            df_raw = fetch_fresh_for_chart(symbol, current_date)
-        if df_raw is None or len(df_raw) < 10:
+        ctx = _get_chart_context(symbol)
+        if ctx is None:
             return [], []
-        df_calc     = compute_indicators(df_raw)
-        today       = df_calc.iloc[-1]
-        now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-        signal_type = "INDEX" if is_index else (detect_signal(df_raw, now_time) or "ON-DEMAND")
-        date_str    = _date_str_from_df(df_calc)
-
-        # Daily
-        try:
-            path_d = draw_chart(df_calc.tail(250).copy(), symbol, signal_type, today,
-                                timeframe='Daily', add_arrow=False, date_str=date_str)
-            tmp_files.append(path_d)
-            with open(path_d, 'rb') as f: png_bytes.append(f.read())
-            labels.append('📊 Daily [D]')
-        except Exception as e:
-            print(f"  [DashChart] ❌ Daily {symbol}: {e}")
-
-        # Weekly
-        try:
-            df_weekly  = build_weekly_df(df_raw)
-            df_plot_w  = df_weekly.tail(200).copy()
-            today_w    = df_plot_w.iloc[-1]
-            date_str_w = _date_str_from_df(df_raw)
-            path_w = draw_chart(df_plot_w, symbol, signal_type, today_w,
-                                timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-            tmp_files.append(path_w)
-            with open(path_w, 'rb') as f: png_bytes.append(f.read())
-            labels.append('📈 Weekly [W]')
-        except Exception as e:
-            print(f"  [DashChart] ❌ Weekly {symbol}: {e}")
-
-        # 15m (bỏ qua cho index)
-        if not is_index:
-            try:
-                path_15m = _build_15m_chart(symbol, signal_type)
-                if path_15m:
-                    tmp_files.append(path_15m)
-                    with open(path_15m, 'rb') as f: png_bytes.append(f.read())
-                    labels.append('⚡ 15 phút [15m]')
-            except Exception as e:
-                print(f"  [DashChart] ❌ 15m {symbol}: {e}")
-
-        return png_bytes, labels
+        print(f"  [DashChart] {symbol}: Daily/Weekly từ {ctx['source']}")
+        paths, labels = _build_daily_weekly_chart_paths(ctx)
+        return _paths_to_png_bytes(paths), labels
 
     except Exception as e:
         print(f"  [DashChart] ❌ {symbol}: {e}")
         return [], []
     finally:
-        for p in tmp_files:
-            try:
-                if os.path.exists(p): os.remove(p)
-            except Exception:
-                pass
+        _cleanup_chart_paths(paths)
+
+def dashboard_chart_15m_fn(symbol: str):
+    """
+    Được truyền vào start_dashboard(fetch_chart_15m_fn=...).
+    Tạo riêng chart 15m để dashboard tải sau Daily/Weekly.
+    """
+    symbol = symbol.upper().strip()
+    path_15m = None
+    try:
+        ctx = _get_chart_context(symbol)
+        if ctx is None or ctx["is_index"]:
+            return [], []
+        path_15m = _build_15m_chart(symbol, ctx["signal_type"])
+        if not path_15m:
+            return [], []
+        return _paths_to_png_bytes([path_15m]), ['⚡ 15 phút [15m]']
+    except Exception as e:
+        print(f"  [DashChart] ❌ 15m {symbol}: {e}")
+        return [], []
+    finally:
+        if path_15m:
+            _cleanup_chart_paths([path_15m])
 
 # =============================================================================
 # BƯỚC 8E: TELEGRAM LISTENER
@@ -1798,6 +1838,7 @@ start_dashboard(
     signal_emoji_ref  = SIGNAL_EMOJI,
     signal_rank_ref   = SIGNAL_RANK,
     fetch_chart_fn    = dashboard_chart_fn,
+    fetch_chart_15m_fn = dashboard_chart_15m_fn,
     momentum_today_ref = lambda: momentum_today,
     port              = 8888,
 )
