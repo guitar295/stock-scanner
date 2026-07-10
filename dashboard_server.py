@@ -27,6 +27,7 @@ _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
 _fetch_chart_fn = None
+_fetch_chart_15m_fn = None
 _signal_emoji = {}
 _signal_rank = {}
 
@@ -37,7 +38,7 @@ SIGNAL_TTL_SEC = 10
 
 _chart_cache: dict = {}
 _chart_lock = threading.Lock()
-CHART_TTL_SEC = 0
+CHART_TTL_SEC = 120
 
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
@@ -244,6 +245,37 @@ def api_chart_images(symbol):
         print(f"  [Dashboard] ❌ Chart {symbol} lỗi: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/chart_image_15m/<symbol>")
+def api_chart_image_15m(symbol):
+    import base64
+    symbol = symbol.upper().strip()
+    cache_key = f"{symbol}:15m"
+    now = time.time()
+    with _chart_lock:
+        cached = _chart_cache.get(cache_key)
+        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
+            return jsonify({"symbol": symbol, "images": cached["images"],
+                            "labels": cached["labels"], "cached": True})
+    if not _fetch_chart_15m_fn:
+        return jsonify({"error": "chart_15m_fn_not_registered"}), 503
+    try:
+        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [Dashboard] ⚡ Tạo chart 15m {symbol}...")
+        png_list, labels = _fetch_chart_15m_fn(symbol)
+        if not png_list:
+            return jsonify({"error": "no_data"}), 404
+        b64_list = [base64.b64encode(b).decode() for b in png_list]
+        fetch_time = time.time()
+        with _chart_lock:
+            _chart_cache[cache_key] = {"images": b64_list, "labels": labels,
+                                       "updated_at": fetch_time}
+        print(f"  [Dashboard] ✅ Chart 15m {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
+        return jsonify({"symbol": symbol, "images": b64_list,
+                        "labels": labels, "cached": False})
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Chart 15m {symbol} lỗi: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/cache_info")
 def api_cache_info():
     cache = _get_history_cache() if _get_history_cache else {}
@@ -266,8 +298,9 @@ def api_status():
 def api_chart_cache_clear(symbol):
     symbol = symbol.upper().strip()
     with _chart_lock:
-        removed = symbol in _chart_cache
+        removed = symbol in _chart_cache or f"{symbol}:15m" in _chart_cache
         _chart_cache.pop(symbol, None)
+        _chart_cache.pop(f"{symbol}:15m", None)
     return jsonify({"symbol": symbol, "cleared": removed})
 
 @app.route("/api/config")
@@ -500,15 +533,17 @@ def index():
 # =============================================================================
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
-                    fetch_chart_fn=None, momentum_today_ref=None, port=8888):
+                    fetch_chart_fn=None, fetch_chart_15m_fn=None,
+                    momentum_today_ref=None, port=8888):
     global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_chart_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_chart_fn    = fetch_chart_fn
+    _fetch_chart_15m_fn = fetch_chart_15m_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
 
@@ -711,6 +746,14 @@ function _showAlbum(images){
   _updateAlbumNav();
   DOM.outer.style.display='flex';DOM.loading.style.display='none';
 }
+function _appendAlbumImages(images){
+  if(!images.length)return;
+  const start=_albumImages.length;
+  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
+  DOM.slides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`;}).join(''));
+  DOM.dots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
+  _updateAlbumNav();
+}
 DOM.dots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
 DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
 DOM.btnNext.addEventListener('click',()=>albumNav(1));
@@ -740,11 +783,30 @@ async function loadScannerChart(sym){
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
     const j=await r.json();
     if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
+    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    if(j.cached){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
+    const h=DOM.outer.querySelector('.album-hint');
+    if(h)h.textContent=j.cached?'♻️ Daily/Weekly dùng cache • đang tải 15m...':'Đang tải 15m...';
+    loadScannerChart15m(sym);
   }catch(e){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+  }
+}
+async function loadScannerChart15m(sym){
+  const s=(sym||'').toUpperCase().trim();
+  try{
+    const r=await fetch('/api/chart_image_15m/'+s);
+    if(!r.ok){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='Daily/Weekly đã sẵn sàng';return;}
+    const j=await r.json();
+    if((_sym||'').toUpperCase().trim()!==s)return;
+    if(!j.images?.length)return;
+    const labels=j.labels||['⚡ 15 phút [15m]'];
+    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
+    const h=DOM.outer.querySelector('.album-hint');
+    if(h)h.textContent=j.cached?'♻️ 15m dùng cache':'⚡ 15m đã tải xong';
+  }catch(e){
+    const h=DOM.outer.querySelector('.album-hint');
+    if(h)h.textContent='Daily/Weekly đã sẵn sàng • 15m chưa tải được';
   }
 }
 document.addEventListener('keydown',e=>{
@@ -2237,6 +2299,14 @@ function _showAlbum(images){
   _updateAlbumNav();
   DOM.albumOuter.style.display='flex';DOM.loading.style.display='none';
 }
+function _appendAlbumImages(images){
+  if(!images.length)return;
+  const mob=IS_MOBILE(),start=_albumImages.length;
+  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
+  DOM.albumSlides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}></div>`;}).join(''));
+  DOM.albumDots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
+  _updateAlbumNav();
+}
 DOM.albumDots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
 DOM.albumSlides.addEventListener('click',e=>{
   const img=e.target.closest('img');
@@ -2270,17 +2340,36 @@ DOM.btnRef.addEventListener('click',async()=>{
 });
 async function loadScannerChart(sym){
   DOM.albumOuter.style.display='none';DOM.loading.style.display='flex';
-  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
+  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
   try{
     const r=await fetch('/api/chart_images/'+sym);
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
     const j=await r.json();
     if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
+    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    if(j.cached){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
+    const h=DOM.albumOuter.querySelector('.album-hint');
+    if(h)h.textContent=j.cached?'♻️ Daily/Weekly dùng cache • đang tải 15m...':'Đang tải 15m...';
+    loadScannerChart15m(sym);
   }catch(e){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+  }
+}
+async function loadScannerChart15m(sym){
+  const s=(sym||'').toUpperCase().trim();
+  try{
+    const r=await fetch('/api/chart_image_15m/'+s);
+    if(!r.ok){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='Daily/Weekly đã sẵn sàng';return;}
+    const j=await r.json();
+    if((_sym||'').toUpperCase().trim()!==s)return;
+    if(!j.images?.length)return;
+    const labels=j.labels||['⚡ 15 phút [15m]'];
+    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
+    const h=DOM.albumOuter.querySelector('.album-hint');
+    if(h)h.textContent=j.cached?'♻️ 15m dùng cache':'⚡ 15m đã tải xong';
+  }catch(e){
+    const h=DOM.albumOuter.querySelector('.album-hint');
+    if(h)h.textContent='Daily/Weekly đã sẵn sàng • 15m chưa tải được';
   }
 }
 // ═══════════════════════════════════════════════════════
