@@ -105,7 +105,7 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
 TRADING_STOCKS_POOL = [
-    "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVH","BWE","VCK","CII",
+    "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVB","BVH","BWE","VCK","CII",
     "CKG","CRE","CTD","CTG","CTI","CTR","CTS","ORS","DBC","DCM","DGW","DIG",
     "DPG","DPM","DRC","DRH","DXG","FCN","FPT","FRT","FTS","GAS","GEG","GEX",
     "GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","HDG","HNG","HPG","HSG",
@@ -125,7 +125,7 @@ HEATMAP_COLUMNS = [
         ]},
     ]},
     {"col": 2, "groups": [
-        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","LPB"]},
+        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
         {"name": "DAU KHI",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
     ]},
     {"col": 3, "groups": [
@@ -281,6 +281,13 @@ def _hmap_avg_pct(syms, data):
     vals = [data[s]["pct"] for s in syms if s in data]
     return round(sum(vals) / len(vals), 1) if vals else 0.0
 
+def _finite_num(value, default=0.0):
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return default
+    return num if math.isfinite(num) else default
+
 def _hmap_col_height(groups):
     h = HMAP_TOP_BAR + HMAP_MARGIN
     for g in groups:
@@ -321,12 +328,14 @@ def fetch_heatmap_data() -> tuple:
             for _, row in df.iterrows():
                 sym   = str(row.get("symbol", "")).strip()
                 if not sym: continue
-                close = float(row.get("close_price", 0) or 0) / 1000
-                ref_p = float(row.get("reference_price", 0) or 0) / 1000
-                total_value = float(row.get("total_value", 0) or 0)
+                close = _finite_num(row.get("close_price", 0)) / 1000
+                ref_p = _finite_num(row.get("reference_price", 0)) / 1000
+                total_value = _finite_num(row.get("total_value", 0))
                 if close <= 0 and ref_p > 0:
                     close = ref_p
                 pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                if not math.isfinite(pct):
+                    pct = 0.0
                 result[sym] = {"price": close, "pct": pct, "total_value": total_value}
 
     except Exception as e:
