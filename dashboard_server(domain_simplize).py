@@ -7,6 +7,7 @@ from functools import wraps
 from pathlib import Path
 import hmac
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -60,6 +61,16 @@ TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BFC", "BID", "BMI", "BSR", "BVB",
 
 def _now_vn_iso():
     return datetime.now(TZ_VN).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return 0.0
+    return obj
 
 
 def _init_journal_storage():
@@ -198,7 +209,7 @@ def api_heatmap():
                 print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
         snap_time = _heatmap_cache["updated_at"]
     return jsonify({
-        "data":      _heatmap_cache["data"],
+        "data":      _json_safe(_heatmap_cache["data"]),
         "timestamp": _heatmap_cache["ts"],
         "cached_age": int(now - snap_time),
     })
