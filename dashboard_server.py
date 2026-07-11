@@ -1258,11 +1258,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-input{width:78px;height:24px;border:1px solid var(--border);border-radius:6px;padding:0 8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none}
 .lite-tf-tabs{display:flex;align-items:center;gap:3px}
 .lite-tf-btn{height:24px;min-width:28px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
-.lite-tf-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.lite-tf-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 .lite-indicators{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer}
 .lite-indicators input{width:12px;height:12px;margin:0}
-.lite-chart-title{font-family:var(--font-mono);font-size:10px;color:#111827;white-space:nowrap}
+.lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
+.lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:130px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none}
+.lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
 
 /* ═══════════════════════════════════════════
@@ -1720,9 +1722,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <label><input type="checkbox" value="macd">MACD</label>
         </div>
       </div>
-      <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
     </div>
-    <div class="lite-chart-frame">
+    <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
+      <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
+      <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off">
       <div id="lite-chart"></div>
       <div id="lite-macd-chart"></div>
       <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
@@ -1873,6 +1876,7 @@ const DOM={
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),liteChartSymbol:$('lite-chart-symbol'),
+  liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
   liteMacdChart:$('lite-macd-chart'),liteChartInput:$('lite-chart-input'),
   liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
@@ -1967,7 +1971,7 @@ function initLiteChart(){
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    timeScale:{borderColor:'#dde3ee'},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+    timeScale:{borderColor:'#dde3ee',rightOffset:12},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
@@ -2044,7 +2048,7 @@ function updateLiteTitle(bar){
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
-  const last=_liteData.length-1,to=last+50,from=Math.max(0,to-170);
+  const last=_liteData.length-1,to=last+12,from=Math.max(0,to-155);
   _liteChart.timeScale().setVisibleLogicalRange({from,to});
   if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
 }
@@ -2085,28 +2089,35 @@ function _macd(data){
   }));
   return{macd,signal,hist};
 }
+function alignLiteSeries(points){
+  const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
+  return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
+}
 function renderLiteIndicators(){
   if(!_liteChart||!_liteMacdChart)return;
   _clearLiteIndicators();
-  DOM.liteMacdChart.style.display=_liteChecked('macd')?'block':'none';
-  DOM.liteChart.style.height=_liteChecked('macd')?'460px':'620px';
+  const showMacd=_liteChecked('macd');
+  DOM.liteMacdChart.style.display=showMacd?'block':'none';
+  DOM.liteChart.style.height=showMacd?'460px':'620px';
   _liteChart.applyOptions({height:DOM.liteChart.clientHeight});
   _liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'red',lineWidth:1,title:'EMA10',priceLineVisible:false,lastValueVisible:true})});
-  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'EMA20',priceLineVisible:false,lastValueVisible:true})});
-  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'EMA50',priceLineVisible:false,lastValueVisible:true})});
-  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'brown',lineWidth:1,title:'MA200',priceLineVisible:false,lastValueVisible:true})});
+  _liteChart.applyOptions({timeScale:{visible:!showMacd,rightOffset:12}});
+  _liteMacdChart.applyOptions({timeScale:{visible:true,rightOffset:12}});
+  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'red',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
+  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
+  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
+  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'brown',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
   let i=0;
   if(_liteChecked('ema10'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
   if(_liteChecked('ema20'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
   if(_liteChecked('ema50'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,50));
   if(_liteChecked('ma200'))_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
-  if(_liteChecked('macd')){
+  if(showMacd){
     const m=_macd(_liteData);
     const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
-    const macdLine=_liteMacdChart.addLineSeries({color:'blue',lineWidth:1,title:'MACD',priceLineVisible:false,lastValueVisible:true});
-    const sigLine=_liteMacdChart.addLineSeries({color:'orange',lineWidth:1,title:'Signal',priceLineVisible:false,lastValueVisible:true});
-    hist.setData(m.hist);macdLine.setData(m.macd);sigLine.setData(m.signal);
+    const macdLine=_liteMacdChart.addLineSeries({color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
+    const sigLine=_liteMacdChart.addLineSeries({color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
+    hist.setData(alignLiteSeries(m.hist));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
 }
@@ -2164,6 +2175,28 @@ function bindLiteChartControls(){
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
   if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();renderLiteIndicators();setLiteRightOffset();});
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>DOM.liteChartFrame.focus());
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseenter',()=>{
+    const tag=(document.activeElement?.tagName||'').toLowerCase();
+    if(tag!=='input'&&tag!=='textarea')DOM.liteChartFrame.focus();
+  });
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('keydown',e=>{
+    if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
+    e.preventDefault();
+    DOM.liteChartSearch.value=e.key.toUpperCase();
+    DOM.liteChartSearch.classList.add('on');
+    DOM.liteChartSearch.focus();
+  });
+  if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('input',e=>{
+    const raw=String(e.target.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    e.target.value=raw;
+    if(_liteInputTimer)clearTimeout(_liteInputTimer);
+    if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
+  });
+  if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){DOM.liteChartSearch.classList.remove('on');DOM.liteChartFrame.focus();}
+    if(e.key==='Enter'&&DOM.liteChartSearch.value){DOM.liteChartSearch.classList.remove('on');loadLiteChart(DOM.liteChartSearch.value,0);}
+  });
 }
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
