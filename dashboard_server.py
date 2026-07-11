@@ -1281,14 +1281,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
-.lite-chart-frame{width:100%;height:699px;background:#fff;position:relative}
+.lite-chart-frame{width:100%;height:710px;background:#fff;position:relative}
 #lite-chart{width:100%;height:540px}
 #lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
 #lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
 .lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
 .lite-macd-resizer.on{display:block}
 .lite-macd-resizer:hover{background:rgba(26,86,219,.12)}
-.lite-chart-toolbar{display:flex;align-items:center;gap:8px}
+.lite-chart-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .lite-chart-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none;transition:border-color .15s,width .2s}
 .lite-chart-input::placeholder{color:var(--muted);text-transform:none}
 .lite-chart-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
@@ -1310,16 +1310,23 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
 .lite-chart-status.on{opacity:1}
 .lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
-.lite-draw-toolbar{position:absolute;top:36px;left:6px;z-index:6;display:flex;flex-direction:column;gap:3px;background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 2px 8px rgba(17,24,39,.08)}
-.lite-draw-btn{width:26px;height:26px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lite-draw-toolbar{display:flex;align-items:center;gap:3px;flex-wrap:wrap;padding-left:6px;border-left:1px solid var(--border)}
+.lite-draw-btn{width:24px;height:24px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lite-draw-btn:hover{background:#f1f5f9}
 .lite-draw-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
-.lite-draw-sep{height:1px;background:var(--border);margin:2px 0}
-.lite-draw-color{width:26px;height:22px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
+.lite-draw-sep{width:1px;height:16px;background:var(--border);margin:0 2px}
+.lite-draw-color{width:24px;height:20px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
 .lite-draw-color::-webkit-color-swatch-wrapper{padding:2px}
 .lite-draw-color::-webkit-color-swatch{border:none;border-radius:4px}
 .lite-draw-canvas{position:absolute;top:0;left:0;z-index:2;pointer-events:none}
 .lite-draw-canvas.drawing{pointer-events:auto;cursor:crosshair}
+.lite-shape-bar{position:absolute;z-index:7;display:none;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px 4px;box-shadow:0 2px 8px rgba(17,24,39,.14);transform:translate(-50%,-100%);margin-top:-6px}
+.lite-shape-bar.on{display:flex}
+.lite-shape-color{width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:5px;background:none;cursor:pointer}
+.lite-shape-color::-webkit-color-swatch-wrapper{padding:2px}
+.lite-shape-color::-webkit-color-swatch{border:none;border-radius:4px}
+.lite-shape-del{width:20px;height:20px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#ef4444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lite-shape-del:hover{background:#fef2f2}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -1778,27 +1785,31 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <label><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <label><input type="checkbox" value="macd">MACD</label>
         </div>
+        <div class="lite-draw-toolbar" id="lite-draw-toolbar">
+          <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
+          <button class="lite-draw-btn" data-tool="trendline" title="Đường kẻ chéo">╱</button>
+          <button class="lite-draw-btn" data-tool="hline" title="Đường kẻ ngang">▬</button>
+          <button class="lite-draw-btn" data-tool="vline" title="Đường kẻ dọc">❘</button>
+          <button class="lite-draw-btn" data-tool="rect" title="Hình chữ nhật">▭</button>
+          <button class="lite-draw-btn" data-tool="channel" title="Kênh giá: vẽ đường chéo rồi rê chuột để tạo kênh, click để chốt">⫽</button>
+          <button class="lite-draw-btn" data-tool="position" title="Entry/Target/Stoploss">🎯</button>
+          <button class="lite-draw-btn" data-tool="text" title="Text">Aa</button>
+          <div class="lite-draw-sep"></div>
+          <input type="color" id="lite-draw-color" class="lite-draw-color" value="#1a56db" title="Màu công cụ vẽ">
+          <div class="lite-draw-sep"></div>
+          <button class="lite-draw-btn" id="lite-draw-undo" title="Xóa nét vừa vẽ">↩</button>
+          <button class="lite-draw-btn" id="lite-draw-delete" title="Xóa hình đang chọn">✕</button>
+          <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
+        </div>
       </div>
     </div>
     <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
-      <div class="lite-draw-toolbar" id="lite-draw-toolbar">
-        <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
-        <button class="lite-draw-btn" data-tool="trendline" title="Đường kẻ chéo">╱</button>
-        <button class="lite-draw-btn" data-tool="hline" title="Đường kẻ ngang">▬</button>
-        <button class="lite-draw-btn" data-tool="vline" title="Đường kẻ dọc">❘</button>
-        <button class="lite-draw-btn" data-tool="rect" title="Hình chữ nhật">▭</button>
-        <button class="lite-draw-btn" data-tool="channel" title="Kênh giá: vẽ đường chéo rồi rê chuột để tạo kênh, click để chốt">⫽</button>
-        <button class="lite-draw-btn" data-tool="position" title="Entry/Target/Stoploss">🎯</button>
-        <button class="lite-draw-btn" data-tool="text" title="Text">Aa</button>
-        <div class="lite-draw-sep"></div>
-        <input type="color" id="lite-draw-color" class="lite-draw-color" value="#1a56db" title="Màu công cụ vẽ">
-        <div class="lite-draw-sep"></div>
-        <button class="lite-draw-btn" id="lite-draw-undo" title="Xóa nét vừa vẽ">↩</button>
-        <button class="lite-draw-btn" id="lite-draw-delete" title="Xóa hình đang chọn">✕</button>
-        <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
-      </div>
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
       <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
+      <div class="lite-shape-bar" id="lite-shape-bar">
+        <input type="color" id="lite-shape-color" class="lite-shape-color" title="Đổi màu hình vẽ">
+        <button id="lite-shape-delete" class="lite-shape-del" title="Xóa hình này">✕</button>
+      </div>
       <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off" lang="en" autocapitalize="characters" autocorrect="off" inputmode="text" translate="no">
       <div id="lite-chart"></div>
       <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
@@ -1960,6 +1971,7 @@ const DOM={
   liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
   liteDrawUndo:$('lite-draw-undo'),liteDrawClear:$('lite-draw-clear'),
   liteDrawColor:$('lite-draw-color'),liteDrawDelete:$('lite-draw-delete'),
+  liteShapeBar:$('lite-shape-bar'),liteShapeColor:$('lite-shape-color'),liteShapeDelete:$('lite-shape-delete'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -2101,8 +2113,7 @@ function initLiteChart(){
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal,horzLine:{visible:false,labelVisible:false}},
     rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
-  });
-  _liteCandle=_liteChart.addCandlestickSeries({
+  });  _liteCandle=_liteChart.addCandlestickSeries({
     upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
     borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'
   });
@@ -2128,16 +2139,22 @@ function initLiteChart(){
     if(key&&_liteDataByTime.has(key))updateLiteTitle(_liteDataByTime.get(key));
     else updateLiteTitle(_liteData[_liteData.length-1]);
     if(_liteCrosshairSyncing||!_liteMacdChart)return;
-    if(!param||!param.time){_liteMacdChart.clearCrosshairPosition();return;}
+    if(!param||!param.point){_liteMacdChart.clearCrosshairPosition();return;}
     _liteCrosshairSyncing=true;
-    if(_liteMacdCrosshairSeries)_liteMacdChart.setCrosshairPosition(0,param.time,_liteMacdCrosshairSeries);
+    // Chuột đang ở panel chart → panel này giữ horzLine, panel MACD tắt horzLine (chỉ còn 1 vạch ngang duy nhất)
+    _liteChart.applyOptions({crosshair:{horzLine:{visible:true}}});
+    _liteMacdChart.applyOptions({crosshair:{horzLine:{visible:false}}});
+    if(param.time&&_liteMacdCrosshairSeries)_liteMacdChart.setCrosshairPosition(0,param.time,_liteMacdCrosshairSeries);
     _liteCrosshairSyncing=false;
   });
   _liteMacdChart.subscribeCrosshairMove(param=>{
     if(_liteCrosshairSyncing||!_liteChart)return;
-    if(!param||!param.time){_liteChart.clearCrosshairPosition();return;}
+    if(!param||!param.point){_liteChart.clearCrosshairPosition();return;}
     _liteCrosshairSyncing=true;
-    _liteChart.setCrosshairPosition(0,param.time,_liteCandle);
+    // Chuột đang ở panel MACD → panel này giữ horzLine, panel chart tắt horzLine
+    _liteMacdChart.applyOptions({crosshair:{horzLine:{visible:true}}});
+    _liteChart.applyOptions({crosshair:{horzLine:{visible:false}}});
+    if(param.time)_liteChart.setCrosshairPosition(0,param.time,_liteCandle);
     _liteCrosshairSyncing=false;
   });
   if(!_liteResizeBound){
@@ -2287,7 +2304,7 @@ function alignLiteSeries(points){
 }
 function applyLitePaneLayout(){
   const showMacd=_liteChecked('macd');
-  const totalH=699;
+  const totalH=710;
   const macdH=showMacd?Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176)):0;
   DOM.liteMacdChart.style.display=showMacd?'block':'none';
   DOM.liteMacdResizer.classList.toggle('on',showMacd);
@@ -2384,7 +2401,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     _liteDrawLine(ctx,x1,y1,x2,y2,color);
     if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
   }else if(d.type==='hline'){
-    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?1.8:1.2;ctx.setLineDash([4,3]);
+    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?1.8:1.2;
     ctx.beginPath();ctx.moveTo(0,y1);ctx.lineTo(DOM.liteChart.clientWidth,y1);ctx.stroke();ctx.restore();
     if(selected)_liteDrawHandle(ctx,DOM.liteChart.clientWidth/2,y1);
   }else if(d.type==='vline'){
@@ -2399,8 +2416,20 @@ function _liteDrawShapeToCanvas(ctx,d){
   }else if(d.type==='channel'){
     const offPrice=_liteChannelOffset(d);
     const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
-    _liteDrawLine(ctx,x1,y1,x2,y2,color);
-    if(y1b!==null&&y2b!==null)_liteDrawLine(ctx,x1,y1b,x2,y2b,color,[3,3]);
+    if(y1b!==null&&y2b!==null){
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.lineTo(x2,y2b);ctx.lineTo(x1,y1b);ctx.closePath();
+      ctx.fillStyle=_liteHexAlpha(color,.12);ctx.fill();
+      ctx.restore();
+      // đường giữa: nét đứt, mờ, chia đôi kênh
+      _liteDrawLine(ctx,x1,(y1+y1b)/2,x2,(y2+y2b)/2,_liteHexAlpha(color,.5),[4,3]);
+    }
+    // 2 cạnh biên kênh: nét liền, đậm
+    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?2.6:2.1;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    if(y1b!==null&&y2b!==null){ctx.beginPath();ctx.moveTo(x1,y1b);ctx.lineTo(x2,y2b);ctx.stroke();}
+    ctx.restore();
     if(selected){
       _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
       if(y1b!==null&&y2b!==null){_liteDrawHandle(ctx,x1,y1b);_liteDrawHandle(ctx,x2,y2b);}
@@ -2441,6 +2470,7 @@ function redrawLiteDrawings(){
   for(const d of _liteDrawings)_liteDrawShapeToCanvas(_liteDrawCtx,d);
   if(_liteDrawActive)_liteDrawShapeToCanvas(_liteDrawCtx,_liteDrawActive);
   if(_liteChannelPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteChannelPending);
+  _liteUpdateFloatingBar();
 }
 function setLiteDrawTool(tool){
   _liteDrawTool=tool||'cursor';
@@ -2451,11 +2481,53 @@ function setLiteDrawTool(tool){
   if(DOM.liteChart)DOM.liteChart.style.cursor='';
   redrawLiteDrawings();
 }
+function _liteShapeAnchor(d){
+  const pts=d.points;
+  if(!pts||!pts.length)return null;
+  if(d.type==='text'){
+    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    return(x===null||y===null)?null:{x,y};
+  }
+  if(pts.length<2)return null;
+  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  if(x1===null||y1===null||x2===null||y2===null)return null;
+  if(d.type==='hline')return{x:DOM.liteChart.clientWidth/2,y:y1};
+  if(d.type==='vline')return{x:x1,y:12};
+  if(d.type==='position'){
+    const entryP=pts[0].p,targetP=pts[1].p;
+    const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
+    const stopY=_litePriceToY(stopP);
+    const ys=[y1,y2,stopY!==null?stopY:y1];
+    return{x:(x1+x2)/2,y:Math.min(...ys)};
+  }
+  if(d.type==='channel'){
+    const offPrice=_liteChannelOffset(d);
+    const y1b=_litePriceToY(pts[0].p+offPrice);
+    return{x:(x1+x2)/2,y:Math.min(y1,y1b!==null?y1b:y1,y2)};
+  }
+  return{x:(x1+x2)/2,y:Math.min(y1,y2)};
+}
+function _liteUpdateFloatingBar(){
+  if(!DOM.liteShapeBar)return;
+  const d=_liteSelectedId!=null?_liteDrawings.find(x=>x.id===_liteSelectedId):null;
+  if(!d){DOM.liteShapeBar.classList.remove('on');return;}
+  const anchor=_liteShapeAnchor(d);
+  if(!anchor){DOM.liteShapeBar.classList.remove('on');return;}
+  DOM.liteShapeBar.classList.add('on');
+  DOM.liteShapeBar.style.left=Math.max(30,Math.min((DOM.liteChart?.clientWidth||600)-30,anchor.x))+'px';
+  DOM.liteShapeBar.style.top=Math.max(24,anchor.y)+'px';
+  if(DOM.liteShapeColor){
+    DOM.liteShapeColor.style.display=d.type==='position'?'none':'';
+    if(d.color)DOM.liteShapeColor.value=d.color;
+  }
+}
 function _liteSelectShape(id){
   _liteSelectedId=id;
   const d=_liteDrawings.find(x=>x.id===id);
   if(d&&d.type!=='position'&&d.color&&DOM.liteDrawColor)DOM.liteDrawColor.value=d.color;
   redrawLiteDrawings();
+  _liteUpdateFloatingBar();
 }
 // ─── Hit-testing (để chọn / kéo hình đã vẽ khi ở chế độ con trỏ) ───
 function _liteSegDist(px,py,x1,y1,x2,y2){
@@ -2506,9 +2578,11 @@ function _liteHitTestShape(d,x,y){
     if(x<rx-LITE_HIT_TOL||x>rx+rw+LITE_HIT_TOL)return null;
     if(Math.abs(x-rx)<=LITE_HIT_TOL)return{part:'edgeL'};
     if(Math.abs(x-(rx+rw))<=LITE_HIT_TOL)return{part:'edgeR'};
-    if(Math.abs(y-entryY)<=LITE_HIT_TOL)return{part:'entry'};
     if(Math.abs(y-targetY)<=LITE_HIT_TOL)return{part:'target'};
     if(stopY!==null&&Math.abs(y-stopY)<=LITE_HIT_TOL)return{part:'stop'};
+    const ys=[entryY,targetY,stopY!==null?stopY:entryY];
+    const top=Math.min(...ys),bottom=Math.max(...ys);
+    if(y>=top-LITE_HIT_TOL&&y<=bottom+LITE_HIT_TOL)return{part:'body'};
     return null;
   }
   return null;
@@ -2533,7 +2607,7 @@ function _liteApplyDrag(d,info,cur){
     d.points[0]={...op[0],l:op[0].l+dl};d.points[1]={...op[1],l:op[1].l+dl};
   }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
-  }else if(key==='position:entry'){
+  }else if(key==='position:body'){
     d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
     d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
@@ -2596,6 +2670,22 @@ function bindLiteDrawToolbar(){
       if(sel&&sel.type!=='position'){sel.color=_liteDrawColor;saveLiteDrawings();redrawLiteDrawings();}
     }
   });
+  DOM.liteShapeColor?.addEventListener('input',()=>{
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type!=='position'){
+      sel.color=DOM.liteShapeColor.value;
+      _liteDrawColor=DOM.liteShapeColor.value;
+      if(DOM.liteDrawColor)DOM.liteDrawColor.value=_liteDrawColor;
+      try{localStorage.setItem(LITE_DRAW_COLOR_KEY,_liteDrawColor);}catch(e){}
+      saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
+  DOM.liteShapeDelete?.addEventListener('click',()=>{
+    if(_liteSelectedId!=null){
+      _liteDrawings=_liteDrawings.filter(d=>d.id!==_liteSelectedId);
+      _liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
   // ── Kéo / chọn / di chuyển hình đã vẽ (chế độ con trỏ) ──
   // Bắt ở pha capture trên container chart để chặn thao tác pan/zoom mặc định của
   // Lightweight Charts ĐÚNG lúc người dùng nhắm trúng 1 hình đã vẽ.
@@ -2632,23 +2722,32 @@ function bindLiteDrawToolbar(){
       const lineP=pend.points[0].p+(pend.points[1].p-pend.points[0].p)*(p0.l-pend.points[0].l)/denom;
       pend.points[2]={offsetPrice:p0.p-lineP};
       _liteDrawings.push(pend);_liteChannelPending=null;
-      saveLiteDrawings();redrawLiteDrawings();
+      saveLiteDrawings();
+      setLiteDrawTool('cursor');_liteSelectShape(pend.id);
       return;
     }
     if(_liteDrawTool==='text'){
       const text=prompt('Nhập text:','');
-      if(text)_liteDrawings.push({id:_liteDrawSeq++,type:'text',points:[p0],text,color:_liteDrawColor});
-      saveLiteDrawings();redrawLiteDrawings();
+      if(text){
+        const id=_liteDrawSeq++;
+        _liteDrawings.push({id,type:'text',points:[p0],text,color:_liteDrawColor});
+        saveLiteDrawings();
+        setLiteDrawTool('cursor');_liteSelectShape(id);
+      }
       return;
     }
     if(_liteDrawTool==='hline'){
-      _liteDrawings.push({id:_liteDrawSeq++,type:'hline',points:[p0,p0],color:_liteDrawColor});
-      saveLiteDrawings();redrawLiteDrawings();
+      const id=_liteDrawSeq++;
+      _liteDrawings.push({id,type:'hline',points:[p0,p0],color:_liteDrawColor});
+      saveLiteDrawings();
+      setLiteDrawTool('cursor');_liteSelectShape(id);
       return;
     }
     if(_liteDrawTool==='vline'){
-      _liteDrawings.push({id:_liteDrawSeq++,type:'vline',points:[p0,p0],color:_liteDrawColor});
-      saveLiteDrawings();redrawLiteDrawings();
+      const id=_liteDrawSeq++;
+      _liteDrawings.push({id,type:'vline',points:[p0,p0],color:_liteDrawColor});
+      saveLiteDrawings();
+      setLiteDrawTool('cursor');_liteSelectShape(id);
       return;
     }
     _liteDrawActive={id:_liteDrawSeq++,type:_liteDrawTool,points:[p0,p0],color:_liteDrawTool==='position'?'#111827':_liteDrawColor};
@@ -2670,10 +2769,21 @@ function bindLiteDrawToolbar(){
         redrawLiteDrawings();
         return;
       }
-      if(_liteDrawActive.type==='position')_liteDrawActive.stopP=2*_liteDrawActive.points[0].p-_liteDrawActive.points[1].p;
-      if(moved)_liteDrawings.push(_liteDrawActive);
-      _liteDrawActive=null;
-      saveLiteDrawings();redrawLiteDrawings();
+      if(_liteDrawActive.type==='position'){
+        const entryP=_liteDrawActive.points[0].p,targetP=_liteDrawActive.points[1].p;
+        const dir=targetP>=entryP?1:-1;
+        _liteDrawActive.stopP=entryP-dir*entryP*0.07;
+      }
+      if(moved){
+        _liteDrawings.push(_liteDrawActive);
+        const newId=_liteDrawActive.id;
+        _liteDrawActive=null;
+        saveLiteDrawings();
+        setLiteDrawTool('cursor');_liteSelectShape(newId);
+      }else{
+        _liteDrawActive=null;
+        redrawLiteDrawings();
+      }
     };
     window.addEventListener('pointermove',move);
     window.addEventListener('pointerup',up);
