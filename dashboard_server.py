@@ -1258,9 +1258,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
-.lite-chart-frame{width:100%;height:620px;background:#fff;position:relative}
-#lite-chart{width:100%;height:500px}
-#lite-macd-chart{width:100%;height:116px;border-top:1px solid var(--border);display:none}
+.lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
+#lite-chart{width:100%;height:540px}
+#lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
 #lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
 .lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
 .lite-macd-resizer.on{display:block}
@@ -2079,7 +2079,7 @@ function updateLiteTitle(bar){
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
-  const last=_liteData.length-1,to=last+20,from=Math.max(0,to-220);
+  const last=_liteData.length-1,to=last+20,from=Math.max(0,to-270);
   _liteChart.timeScale().setVisibleLogicalRange({from,to});
   if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
 }
@@ -2129,11 +2129,12 @@ function alignLiteSeries(points){
 }
 function applyLitePaneLayout(){
   const showMacd=_liteChecked('macd');
-  const macdH=showMacd?Math.max(80,Math.min(260,DOM.liteMacdChart.clientHeight||116)):0;
+  const totalH=720;
+  const macdH=showMacd?Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176)):0;
   DOM.liteMacdChart.style.display=showMacd?'block':'none';
   DOM.liteMacdResizer.classList.toggle('on',showMacd);
   DOM.liteChart.classList.toggle('hide-tv-logo',showMacd);
-  DOM.liteChart.style.height=showMacd?`${Math.max(300,620-macdH-4)}px`:'620px';
+  DOM.liteChart.style.height=showMacd?`${Math.max(360,totalH-macdH-4)}px`:`${totalH}px`;
   _liteChart.applyOptions({
     width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
     timeScale:{visible:!showMacd,rightOffset:20},
@@ -2170,10 +2171,10 @@ function renderLiteIndicators(){
   if(_liteChecked('ma200'))_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
   if(showMacd){
     const m=_macd(_liteData);
-    const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'',base:0,lastValueVisible:false,priceLineVisible:false});
-    const zeroLine=_liteMacdChart.addLineSeries({color:'#9ca3af',lineWidth:1,lineStyle:2,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    const macdLine=_liteMacdChart.addLineSeries({color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
-    const sigLine=_liteMacdChart.addLineSeries({color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'right',base:0,lastValueVisible:false,priceLineVisible:false});
+    const zeroLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    const macdLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    const sigLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     hist.setData(alignLiteSeries(m.hist));zeroLine.setData(_liteData.map(bar=>({time:bar.time,value:0})));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
     hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
     _liteMacdCrosshairSeries=macdLine;
@@ -2266,9 +2267,9 @@ function bindLiteChartControls(){
   });
   if(DOM.liteMacdResizer)DOM.liteMacdResizer.addEventListener('pointerdown',e=>{
     e.preventDefault();
-    const startY=e.clientY,startH=DOM.liteMacdChart.clientHeight||116;
+    const startY=e.clientY,startH=DOM.liteMacdChart.clientHeight||176;
     const move=ev=>{
-      const h=Math.max(80,Math.min(260,startH-(ev.clientY-startY)));
+      const h=Math.max(120,Math.min(340,startH-(ev.clientY-startY)));
       DOM.liteMacdChart.style.height=h+'px';
       applyLitePaneLayout();setLiteRightOffset();
     };
