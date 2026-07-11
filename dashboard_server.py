@@ -1281,7 +1281,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
-.lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
+.lite-chart-frame{width:100%;height:699px;background:#fff;position:relative}
 #lite-chart{width:100%;height:540px}
 #lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
 #lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
@@ -1298,15 +1298,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-tf-btn{height:24px;min-width:28px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
 .lite-tf-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 .lite-indicators{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer}
+.lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer;position:relative}
+.lite-ind-label{cursor:pointer;border-bottom:1px dotted currentColor}
+.lite-ind-label:hover{color:var(--accent)}
+.lite-ind-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
 .lite-indicators input{width:12px;height:12px;margin:0}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
-.lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;font-family:var(--font-mono);font-size:10px;font-weight:700;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;padding:2px 7px;border-radius:10px;pointer-events:none;opacity:0;transition:opacity .25s}
+.lite-chart-status{position:fixed;top:14px;right:16px;z-index:9999;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;color:#0369a1;background:rgba(224,242,254,.95);border:1.5px solid #7dd3fc;border-radius:50%;pointer-events:none;opacity:0;transition:opacity .25s;box-shadow:0 2px 10px rgba(17,24,39,.14)}
 .lite-chart-status.on{opacity:1}
-.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
+.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.95);border-color:#fdba74}
 .lite-draw-toolbar{position:absolute;top:36px;left:6px;z-index:6;display:flex;flex-direction:column;gap:3px;background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 2px 8px rgba(17,24,39,.08)}
 .lite-draw-btn{width:26px;height:26px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lite-draw-btn:hover{background:#f1f5f9}
@@ -1761,18 +1764,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <span class="panel-title">CHART</span>
         <div class="lite-chart-search-wrap">
           <span class="s-icon">🔍</span>
-          <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false">
+          <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
         </div>
         <div class="lite-tf-tabs" id="lite-chart-tf">
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
         </div>
         <div class="lite-indicators" id="lite-indicators">
-          <label><input type="checkbox" value="ema10">EMA10</label>
-          <label><input type="checkbox" value="ema20">EMA20</label>
-          <label><input type="checkbox" value="ema50">EMA50</label>
-          <label><input type="checkbox" value="ma200">MA200</label>
-          <label><input type="checkbox" value="bb">BB</label>
+          <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#ff0000"></label>
+          <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#008000"></label>
+          <label><input type="checkbox" value="ema50"><span class="lite-ind-label" data-ind="ema50" title="Bấm để đổi màu">EMA50</span><input type="color" class="lite-ind-color" data-ind="ema50" value="#800080"></label>
+          <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
+          <label><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <label><input type="checkbox" value="macd">MACD</label>
         </div>
       </div>
@@ -1795,8 +1798,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
       </div>
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
-      <span class="lite-chart-status" id="lite-chart-status"></span>
-      <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off">
+      <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">💡</span>
+      <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off" lang="en" autocapitalize="characters" autocorrect="off" inputmode="text" translate="no">
       <div id="lite-chart"></div>
       <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
       <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
@@ -2040,10 +2043,47 @@ let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
+const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
+const LITE_IND_DEFAULT_COLORS={ema10:'#ff0000',ema20:'#008000',ema50:'#800080',ma200:'#8b4513',bb:'#9333ea'};
+let _liteIndColors={...LITE_IND_DEFAULT_COLORS};
+function loadLiteIndColors(){
+  let stored={};
+  try{stored=JSON.parse(localStorage.getItem(LITE_IND_COLOR_KEY)||'{}')||{};}catch(e){stored={};}
+  _liteIndColors={...LITE_IND_DEFAULT_COLORS,...stored};
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-color').forEach(inp=>{
+    if(_liteIndColors[inp.dataset.ind])inp.value=_liteIndColors[inp.dataset.ind];
+  });
+}
+function saveLiteIndColors(){
+  try{localStorage.setItem(LITE_IND_COLOR_KEY,JSON.stringify(_liteIndColors));}catch(e){}
+}
+function bindLiteIndColorPickers(){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-label').forEach(span=>{
+    span.addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();
+      const inp=DOM.liteIndicators.querySelector(`.lite-ind-color[data-ind="${span.dataset.ind}"]`);
+      if(inp)inp.click();
+    });
+  });
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-color').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      _liteIndColors[inp.dataset.ind]=inp.value;
+      saveLiteIndColors();
+      renderLiteIndicators();
+    });
+  });
+}
+function _liteHexToRgba(hex,alpha){
+  const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'');
+  if(!m)return `rgba(147,51,234,${alpha})`;
+  const r=parseInt(m[1],16),g=parseInt(m[2],16),b=parseInt(m[3],16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
+let _liteMainWhite=null,_liteMacdWhite=null;
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_liteCrosshairSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-const LITE_BARS_VISIBLE=400,LITE_RIGHT_OFFSET=40,LITE_HIST_SCALE=1.7;
+const LITE_BARS_VISIBLE=400,LITE_RIGHT_OFFSET=40,LITE_HIST_SCALE=2.1;
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   const chartOpts={
@@ -2069,6 +2109,10 @@ function initLiteChart(){
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
+  // Series "whitespace" vô hình: chỉ chứa các mốc thời gian tương lai (vùng trống bên phải nến cuối),
+  // giúp time-scale nhận biết vùng này để cross hair đồng bộ liền mạch giữa 2 panel kể cả khi trỏ vào vùng trống.
+  _liteMainWhite=_liteChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
+  _liteMacdWhite=_liteMacdChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     redrawLiteDrawings();
     if(_liteSyncing||!range||!_liteMacdChart)return;
@@ -2119,6 +2163,7 @@ function loadLiteIndicatorPrefs(){
   DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
     cb.checked=prefs[cb.value]===true;
   });
+  loadLiteIndColors();
 }
 function saveLiteIndicatorPrefs(){
   const prefs={};
@@ -2132,6 +2177,32 @@ function fmtLiteDate(t){
   const p=String(t||'').split('-');
   return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(t||'--');
 }
+function _liteCleanSym(v){
+  // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
+  // ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
+  return String(v||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[đĐ]/g,'d')
+    .toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+function _liteFutureTimes(lastTimeStr,n,tf){
+  const out=[];
+  let d=new Date(lastTimeStr+'T00:00:00Z'),added=0,guard=0;
+  while(added<n&&guard<n*4){
+    guard++;
+    d=new Date(d.getTime()+(tf==='1W'?7:1)*86400000);
+    if(tf!=='1W'){const wd=d.getUTCDay();if(wd===0||wd===6)continue;}
+    out.push(d.toISOString().slice(0,10));added++;
+  }
+  return out;
+}
+function _liteUpdateWhitespace(){
+  if(!_liteData.length)return;
+  const lastT=liteTimeKey(_liteData[_liteData.length-1].time);
+  const future=_liteFutureTimes(lastT,LITE_RIGHT_OFFSET+10,_liteTf).map(t=>({time:t}));
+  if(_liteMainWhite)_liteMainWhite.setData(future);
+  if(_liteMacdWhite)_liteMacdWhite.setData(future);
+}
 function liteTimeKey(t){
   if(typeof t==='string')return t;
   if(t&&typeof t==='object'&&'year'in t&&'month'in t&&'day'in t){
@@ -2144,7 +2215,10 @@ function updateLiteTitle(bar){
   const tf=_liteTf==='1W'?'W':'D';
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
   const sign=pct>0?'+':'';
-  DOM.liteChartTitle.textContent=`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:${fmtLiteNum(bar.open)} H:${fmtLiteNum(bar.high)} L:${fmtLiteNum(bar.low)} C:${fmtLiteNum(bar.close)} (${sign}${pct.toFixed(2)}%)`;
+  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
+  const col=up?'#26a69a':'#ef5350';
+  const v=n=>`<span style="color:${col}">${fmtLiteNum(n)}</span>`;
+  DOM.liteChartTitle.innerHTML=`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:${v(bar.open)} H:${v(bar.high)} L:${v(bar.low)} C:${v(bar.close)} (<span style="color:${col}">${sign}${pct.toFixed(2)}%</span>)`;
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -2212,7 +2286,7 @@ function alignLiteSeries(points){
 }
 function applyLitePaneLayout(){
   const showMacd=_liteChecked('macd');
-  const totalH=720;
+  const totalH=699;
   const macdH=showMacd?Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176)):0;
   DOM.liteMacdChart.style.display=showMacd?'block':'none';
   DOM.liteMacdResizer.classList.toggle('on',showMacd);
@@ -2622,26 +2696,27 @@ function renderLiteIndicators(){
   const showMacd=_liteChecked('macd');
   applyLitePaneLayout();
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'red',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'brown',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema10,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema20,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema50,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ma200,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   if(_liteChecked('bb')){
-    // Area giữa upper/lower: vẽ area tím mờ cho upper trước, rồi area trắng (che) cho lower đè lên trên
-    // → phần lộ ra chính là dải Bollinger Band (giống style TradingView "Bollinger Bands Fill")
+    // Dải Bollinger: chỉ tô nhạt phần SÁT đường upper rồi mờ dần về 0 khi xuống gần đáy khung
+    // (không dùng area trắng che tới đáy như trước) → không còn che mất volume phía dưới.
+    // Đường lower vẽ dạng line (không phải area) để không ảnh hưởng gì tới phần dưới khung chart.
+    const bbCol=_liteIndColors.bb;
     _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addAreaSeries({
-      topColor:'rgba(147,51,234,.16)',bottomColor:'rgba(147,51,234,.16)',
-      lineColor:'rgba(147,51,234,.55)',lineWidth:1,
+      topColor:_liteHexToRgba(bbCol,.09),bottomColor:_liteHexToRgba(bbCol,0),
+      lineColor:_liteHexToRgba(bbCol,.5),lineWidth:1,
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
     _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({
-      color:'#9333ea',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
+      color:bbCol,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
-    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addAreaSeries({
-      topColor:'#ffffff',bottomColor:'#ffffff',
-      lineColor:'rgba(147,51,234,.55)',lineWidth:1,
-      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({
+      color:_liteHexToRgba(bbCol,.5),lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
+      title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false
     })});
   }
   let i=0;
@@ -2659,7 +2734,7 @@ function renderLiteIndicators(){
     const m=_macd(_liteData);
     const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'right',base:0,lastValueVisible:false,priceLineVisible:false});
     const zeroLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    const macdLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    const macdLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'#26a69a',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     const sigLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
     hist.setData(histScaled);zeroLine.setData(_liteData.map(bar=>({time:bar.time,value:0})));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
@@ -2673,7 +2748,7 @@ function showLiteChartStatus(status){
   if(!DOM.liteChartStatus)return;
   if(!status){DOM.liteChartStatus.classList.remove('on');return;}
   const fetching=!!status.need_fetch;
-  DOM.liteChartStatus.textContent=fetching?'🌐 Đang update chart (vnstock)':'🗄 Đã tải từ cache';
+  DOM.liteChartStatus.title=fetching?'Đang update chart (vnstock)':'Đã tải từ cache';
   DOM.liteChartStatus.classList.toggle('fetching',fetching);
   DOM.liteChartStatus.classList.add('on');
   clearTimeout(DOM.liteChartStatus._hideTimer);
@@ -2712,6 +2787,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteVolumeData=j.volume||[];
     _liteCandle.setData(_liteData);
     _liteVolume.setData(_liteVolumeData);
+    _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
     _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.16,bottom:.24}});
@@ -2727,9 +2803,10 @@ async function loadLiteChart(sym='FPT',retry=1){
 }
 function bindLiteChartControls(){
   loadLiteIndicatorPrefs();
+  bindLiteIndColorPickers();
   bindLiteDrawToolbar();
   if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('input',e=>{
-    const raw=String(e.target.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const raw=_liteCleanSym(e.target.value);
     e.target.value=raw;
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
@@ -2774,7 +2851,7 @@ function bindLiteChartControls(){
     openLiteSearchWithChar(e.key);
   });
   if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('input',e=>{
-    const raw=String(e.target.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const raw=_liteCleanSym(e.target.value);
     e.target.value=raw;
     resizeLiteSearchInput();
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
