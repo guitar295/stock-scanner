@@ -29,6 +29,7 @@ _cache_lock = None
 _fetch_heatmap_fn = None
 _fetch_chart_fn = None
 _fetch_chart_15m_fn = None
+_ensure_chart_symbol_fn = None
 _signal_emoji = {}
 _signal_rank = {}
 
@@ -262,6 +263,11 @@ def api_lightweight_chart(symbol):
     except (TypeError, ValueError):
         limit = 320
     limit = max(50, min(1000, limit))
+    if _ensure_chart_symbol_fn:
+        try:
+            _ensure_chart_symbol_fn(symbol)
+        except Exception as exc:
+            print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
     cache = _get_history_cache() if _get_history_cache else {}
     if not _cache_lock:
         return jsonify({"error": "cache_not_ready"}), 503
@@ -561,9 +567,10 @@ def index():
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
                     fetch_chart_fn=None, fetch_chart_15m_fn=None,
+                    ensure_chart_symbol_fn=None,
                     momentum_today_ref=None, port=8888):
     global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_history_cache = history_cache_ref
@@ -571,6 +578,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_chart_fn    = fetch_chart_fn
     _fetch_chart_15m_fn = fetch_chart_15m_fn
+    _ensure_chart_symbol_fn = ensure_chart_symbol_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
 
@@ -1251,8 +1259,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:620px;background:#fff;position:relative}
-#lite-chart{width:100%;height:460px}
-#lite-macd-chart{width:100%;height:160px;border-top:1px solid var(--border)}
+#lite-chart{width:100%;height:620px}
+#lite-macd-chart{display:none!important}
 .lite-chart-toolbar{display:flex;align-items:center;gap:8px}
 .lite-chart-symbol{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.5px}
 .lite-chart-input{width:78px;height:24px;border:1px solid var(--border);border-radius:6px;padding:0 8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none}
@@ -1977,10 +1985,6 @@ function initLiteChart(){
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
     rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.28}}
   });
-  _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
-    ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.12}}
-  });
   _liteCandle=_liteChart.addCandlestickSeries({
     upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
     borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'
@@ -1988,15 +1992,7 @@ function initLiteChart(){
   _liteVolume=_liteChart.addHistogramSeries({
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
-  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.72,bottom:0}});
-  _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
-    if(_liteSyncing||!range||!_liteMacdChart)return;
-    _liteSyncing=true;_liteMacdChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
-  });
-  _liteMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
-    if(_liteSyncing||!range||!_liteChart)return;
-    _liteSyncing=true;_liteChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
-  });
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.84,bottom:0}});
   _liteChart.subscribeCrosshairMove(param=>{
     const key=param&&param.time?liteTimeKey(param.time):'';
     if(key&&_liteDataByTime.has(key))updateLiteTitle(_liteDataByTime.get(key));
@@ -2006,7 +2002,6 @@ function initLiteChart(){
     _liteResizeBound=true;
     window.addEventListener('resize',()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
     });
   }
 }
@@ -2050,7 +2045,6 @@ function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
   const last=_liteData.length-1,to=last+12,from=Math.max(0,to-155);
   _liteChart.timeScale().setVisibleLogicalRange({from,to});
-  if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
   _liteTf=tf==='1W'?'1W':'1D';
@@ -2094,15 +2088,17 @@ function alignLiteSeries(points){
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
 function renderLiteIndicators(){
-  if(!_liteChart||!_liteMacdChart)return;
+  if(!_liteChart)return;
   _clearLiteIndicators();
   const showMacd=_liteChecked('macd');
-  DOM.liteMacdChart.style.display=showMacd?'block':'none';
-  DOM.liteChart.style.height=showMacd?'460px':'620px';
-  _liteChart.applyOptions({height:DOM.liteChart.clientHeight});
-  _liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-  _liteChart.applyOptions({timeScale:{visible:!showMacd,rightOffset:12}});
-  _liteMacdChart.applyOptions({timeScale:{visible:true,rightOffset:12}});
+  DOM.liteMacdChart.style.display='none';
+  DOM.liteChart.style.height='620px';
+  _liteChart.applyOptions({
+    height:DOM.liteChart.clientHeight,
+    timeScale:{visible:true,rightOffset:12},
+    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:showMacd ? .34 : .08}}
+  });
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:showMacd ? .88 : .84,bottom:0}});
   if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'red',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
   if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
   if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
@@ -2114,11 +2110,13 @@ function renderLiteIndicators(){
   if(_liteChecked('ma200'))_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
   if(showMacd){
     const m=_macd(_liteData);
-    const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
-    const macdLine=_liteMacdChart.addLineSeries({color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
-    const sigLine=_liteMacdChart.addLineSeries({color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
+    const hist=_liteChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'macd',base:0,lastValueVisible:false,priceLineVisible:false});
+    const macdLine=_liteChart.addLineSeries({priceScaleId:'macd',color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
+    const sigLine=_liteChart.addLineSeries({priceScaleId:'macd',color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
     hist.setData(alignLiteSeries(m.hist));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
-    _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
+    hist.createPriceLine({price:0,color:'#9ca3af',lineWidth:1,lineStyle:2,axisLabelVisible:false,title:''});
+    hist.priceScale().applyOptions({scaleMargins:{top:.70,bottom:.08}});
+    _liteIndicatorSeries.push({chart:_liteChart,series:hist},{chart:_liteChart,series:macdLine},{chart:_liteChart,series:sigLine});
   }
 }
 async function loadLiteChart(sym='FPT',retry=1){
@@ -2183,7 +2181,8 @@ function bindLiteChartControls(){
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('keydown',e=>{
     if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
     e.preventDefault();
-    DOM.liteChartSearch.value=e.key.toUpperCase();
+    const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
+    DOM.liteChartSearch.value=(cur+e.key.toUpperCase()).slice(0,10);
     DOM.liteChartSearch.classList.add('on');
     DOM.liteChartSearch.focus();
   });
