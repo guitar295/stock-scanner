@@ -256,6 +256,7 @@ def api_chart_image_15m(symbol):
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
+    tf = (request.args.get("tf") or "1D").upper()
     try:
         limit = int(request.args.get("limit", 320) or 320)
     except (TypeError, ValueError):
@@ -269,6 +270,17 @@ def api_lightweight_chart(symbol):
         df = df.copy() if df is not None and len(df) else None
     if df is None or df.empty:
         return jsonify({"error": "no_cache", "symbol": symbol}), 404
+    if tf in ("1W", "W", "WEEK", "WEEKLY"):
+        try:
+            df = df.resample("W-FRI").agg({
+                "open": "first", "high": "max", "low": "min",
+                "close": "last", "volume": "sum"
+            }).dropna(subset=["open", "high", "low", "close"])
+            tf = "1W"
+        except Exception as exc:
+            return jsonify({"error": "weekly_resample_failed", "detail": str(exc)}), 500
+    else:
+        tf = "1D"
     df = df.tail(limit)
     candles, volume = [], []
     for idx, row in df.iterrows():
@@ -288,7 +300,7 @@ def api_lightweight_chart(symbol):
                        "color": "rgba(14,159,110,.35)" if c >= o else "rgba(224,36,36,.35)"})
     if not candles:
         return jsonify({"error": "no_data", "symbol": symbol}), 404
-    return jsonify({"symbol": symbol, "candles": candles, "volume": volume,
+    return jsonify({"symbol": symbol, "timeframe": tf, "candles": candles, "volume": volume,
                     "last_date": candles[-1]["time"]})
 
 @app.route("/api/cache_info")
@@ -1238,10 +1250,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
-.lite-chart-frame{width:100%;height:560px;background:#fff;position:relative}
-#lite-chart{width:100%;height:100%}
+.lite-chart-frame{width:100%;height:620px;background:#fff;position:relative}
+#lite-chart{width:100%;height:460px}
+#lite-macd-chart{width:100%;height:160px;border-top:1px solid var(--border)}
 .lite-chart-toolbar{display:flex;align-items:center;gap:8px}
 .lite-chart-symbol{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.5px}
+.lite-chart-input{width:78px;height:24px;border:1px solid var(--border);border-radius:6px;padding:0 8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none}
+.lite-chart-btn,.lite-chart-select{height:24px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--text);font-family:var(--font-mono);font-size:10px;cursor:pointer}
+.lite-chart-btn{padding:0 9px}.lite-chart-select{padding:0 6px}
+.lite-indicators{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer}
+.lite-indicators input{width:12px;height:12px;margin:0}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
 
 /* ═══════════════════════════════════════════
@@ -1686,11 +1705,25 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <div class="lite-chart-toolbar">
         <span class="panel-title">CHART</span>
         <span class="lite-chart-symbol" id="lite-chart-symbol">FPT</span>
+        <input class="lite-chart-input" id="lite-chart-input" value="FPT" maxlength="10" spellcheck="false">
+        <button class="lite-chart-btn" id="lite-chart-load">Tải</button>
+        <select class="lite-chart-select" id="lite-chart-tf">
+          <option value="1D">Ngày</option>
+          <option value="1W">Tuần</option>
+        </select>
+        <div class="lite-indicators" id="lite-indicators">
+          <label><input type="checkbox" value="ema10" checked>EMA10</label>
+          <label><input type="checkbox" value="ema20" checked>EMA20</label>
+          <label><input type="checkbox" value="ema50">EMA50</label>
+          <label><input type="checkbox" value="ma200">MA200</label>
+          <label><input type="checkbox" value="macd">MACD</label>
+        </div>
       </div>
       <span class="panel-meta" id="lite-chart-meta">Đang tải...</span>
     </div>
     <div class="lite-chart-frame">
       <div id="lite-chart"></div>
+      <div id="lite-macd-chart"></div>
       <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
     </div>
   </div>
@@ -1839,6 +1872,8 @@ const DOM={
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),liteChartSymbol:$('lite-chart-symbol'),
+  liteMacdChart:$('lite-macd-chart'),liteChartInput:$('lite-chart-input'),
+  liteChartLoad:$('lite-chart-load'),liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartMeta:$('lite-chart-meta'),liteChartEmpty:$('lite-chart-empty'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
@@ -1922,15 +1957,22 @@ let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
-let _liteChart=null,_liteCandle=null,_liteVolume=null,_liteSymbol='FPT',_liteResizeBound=false;
+let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteSymbol='FPT';
+let _liteTf='1D',_liteResizeBound=false,_liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[];
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
-  _liteChart=LightweightCharts.createChart(DOM.liteChart,{
-    width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
+  const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.28}},
     timeScale:{borderColor:'#dde3ee'},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+  };
+  _liteChart=LightweightCharts.createChart(DOM.liteChart,{
+    ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
+    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.28}}
+  });
+  _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
+    ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
+    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.12}}
   });
   _liteCandle=_liteChart.addCandlestickSeries({
     upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
@@ -1944,14 +1986,79 @@ function initLiteChart(){
     _liteResizeBound=true;
     window.addEventListener('resize',()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
     });
   }
+}
+function _liteChecked(name){
+  return !!DOM.liteIndicators?.querySelector(`input[value="${name}"]:checked`);
+}
+function _clearLiteIndicators(){
+  for(const s of _liteIndicatorSeries){
+    try{s.chart.removeSeries(s.series);}catch(e){}
+  }
+  _liteIndicatorSeries=[];
+}
+function _sma(data,n){
+  const out=[];let sum=0;
+  for(let i=0;i<data.length;i++){
+    sum+=data[i].close;if(i>=n)sum-=data[i-n].close;
+    if(i>=n-1)out.push({time:data[i].time,value:sum/n});
+  }
+  return out;
+}
+function _ema(data,n){
+  const out=[];let e=null,k=2/(n+1);
+  for(let i=0;i<data.length;i++){
+    const c=data[i].close;e=e===null?c:c*k+e*(1-k);
+    if(i>=n-1)out.push({time:data[i].time,value:e});
+  }
+  return out;
+}
+function _macd(data){
+  const e12=_ema(data,12),e26=_ema(data,26),byTime=new Map(e12.map(x=>[x.time,x.value]));
+  const macd=e26.map(x=>({time:x.time,value:(byTime.get(x.time)||0)-x.value}));
+  const signal=_ema(macd.map(x=>({time:x.time,close:x.value})),9);
+  const sigMap=new Map(signal.map(x=>[x.time,x.value]));
+  const hist=macd.filter(x=>sigMap.has(x.time)).map(x=>({
+    time:x.time,value:x.value-sigMap.get(x.time),
+    color:x.value>=sigMap.get(x.time)?'rgba(14,159,110,.55)':'rgba(224,36,36,.55)'
+  }));
+  return{macd,signal,hist};
+}
+function renderLiteIndicators(){
+  if(!_liteChart||!_liteMacdChart)return;
+  _clearLiteIndicators();
+  DOM.liteMacdChart.style.display=_liteChecked('macd')?'block':'none';
+  DOM.liteChart.style.height=_liteChecked('macd')?'460px':'620px';
+  _liteChart.applyOptions({height:DOM.liteChart.clientHeight});
+  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#2563eb',lineWidth:1,title:'EMA10'})});
+  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#f59e0b',lineWidth:1,title:'EMA20'})});
+  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#7c3aed',lineWidth:1,title:'EMA50'})});
+  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#111827',lineWidth:1,title:'MA200'})});
+  let i=0;
+  if(_liteChecked('ema10'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
+  if(_liteChecked('ema20'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
+  if(_liteChecked('ema50'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,50));
+  if(_liteChecked('ma200'))_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
+  if(_liteChecked('macd')){
+    const m=_macd(_liteData);
+    const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
+    const macdLine=_liteMacdChart.addLineSeries({color:'#2563eb',lineWidth:1,title:'MACD'});
+    const sigLine=_liteMacdChart.addLineSeries({color:'#ef4444',lineWidth:1,title:'Signal'});
+    hist.setData(m.hist);macdLine.setData(m.macd);sigLine.setData(m.signal);
+    _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
+  }
+  _liteChart.timeScale().fitContent();
+  if(_liteChecked('macd'))_liteMacdChart.timeScale().fitContent();
 }
 async function loadLiteChart(sym='FPT',retry=1){
   const s=(sym||'FPT').toUpperCase().trim();
   if(!DOM.liteChart)return;
+  _liteTf=DOM.liteChartTf?.value||_liteTf;
   initLiteChart();
   DOM.liteChartSymbol.textContent=s;
+  if(DOM.liteChartInput)DOM.liteChartInput.value=s;
   DOM.liteChartMeta.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -1960,21 +2067,31 @@ async function loadLiteChart(sym='FPT',retry=1){
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s));
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf));
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     initLiteChart();
-    _liteCandle.setData(j.candles||[]);
-    _liteVolume.setData(j.volume||[]);
+    _liteData=j.candles||[];_liteVolumeData=j.volume||[];
+    _liteCandle.setData(_liteData);
+    _liteVolume.setData(_liteVolumeData);
+    renderLiteIndicators();
     _liteChart.timeScale().fitContent();
     DOM.liteChartEmpty.style.display='none';
-    DOM.liteChartMeta.textContent=`${j.last_date||'--'} • ${(j.candles||[]).length} nến`;
-    _liteSymbol=s;
+    DOM.liteChartMeta.textContent=`${j.timeframe||_liteTf} • ${j.last_date||'--'} • ${_liteData.length} nến`;
+    _liteSymbol=s;_liteTf=j.timeframe||_liteTf;
   }catch(e){
     DOM.liteChartMeta.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),5000);
   }
+}
+function bindLiteChartControls(){
+  if(DOM.liteChartLoad)DOM.liteChartLoad.addEventListener('click',()=>loadLiteChart(DOM.liteChartInput?.value||_liteSymbol,0));
+  if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('keydown',e=>{
+    if(e.key==='Enter')loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
+  });
+  if(DOM.liteChartTf)DOM.liteChartTf.addEventListener('change',()=>loadLiteChart(_liteSymbol,0));
+  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',renderLiteIndicators);
 }
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
@@ -3103,6 +3220,7 @@ window.addEventListener('message',e=>{
 async function init(){
   await loadConfig();
   _refreshChartModeUI();
+  bindLiteChartControls();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
   loadLiteChart(_liteSymbol);
