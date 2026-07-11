@@ -1299,7 +1299,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-tf-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 .lite-indicators{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer;position:relative}
-.lite-ind-label{cursor:pointer;border-bottom:1px dotted currentColor}
+.lite-ind-label{cursor:pointer}
 .lite-ind-label:hover{color:var(--accent)}
 .lite-ind-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
 .lite-indicators input{width:12px;height:12px;margin:0}
@@ -1307,9 +1307,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
-.lite-chart-status{position:fixed;top:14px;right:16px;z-index:9999;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;color:#0369a1;background:rgba(224,242,254,.95);border:1.5px solid #7dd3fc;border-radius:50%;pointer-events:none;opacity:0;transition:opacity .25s;box-shadow:0 2px 10px rgba(17,24,39,.14)}
+.lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
 .lite-chart-status.on{opacity:1}
-.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.95);border-color:#fdba74}
+.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
 .lite-draw-toolbar{position:absolute;top:36px;left:6px;z-index:6;display:flex;flex-direction:column;gap:3px;background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 2px 8px rgba(17,24,39,.08)}
 .lite-draw-btn{width:26px;height:26px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lite-draw-btn:hover{background:#f1f5f9}
@@ -1798,7 +1798,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
       </div>
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
-      <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">💡</span>
+      <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
       <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off" lang="en" autocapitalize="characters" autocorrect="off" inputmode="text" translate="no">
       <div id="lite-chart"></div>
       <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
@@ -2098,6 +2098,7 @@ function initLiteChart(){
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal,horzLine:{visible:false,labelVisible:false}},
     rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });
@@ -2701,22 +2702,24 @@ function renderLiteIndicators(){
   if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema50,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ma200,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   if(_liteChecked('bb')){
-    // Dải Bollinger: chỉ tô nhạt phần SÁT đường upper rồi mờ dần về 0 khi xuống gần đáy khung
-    // (không dùng area trắng che tới đáy như trước) → không còn che mất volume phía dưới.
-    // Đường lower vẽ dạng line (không phải area) để không ảnh hưởng gì tới phần dưới khung chart.
+    // Dải Bollinger: fill nhạt đều (không gradient) chỉ trong dải giữa upper/lower.
+    // Area "lower" tô lại đúng màu nền panel (trắng, đặc) để xoá phần tô của area "upper" phía dưới
+    // đường band dưới → vùng đó không còn dính màu band, chỉ còn là nền panel. Volume được vẽ lại
+    // sau cùng (xem _liteRefreshVolumeTop bên dưới) nên luôn nổi trên phần nền trắng này, không bị che.
     const bbCol=_liteIndColors.bb;
     _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addAreaSeries({
-      topColor:_liteHexToRgba(bbCol,.09),bottomColor:_liteHexToRgba(bbCol,0),
-      lineColor:_liteHexToRgba(bbCol,.5),lineWidth:1,
+      topColor:_liteHexToRgba(bbCol,.12),bottomColor:_liteHexToRgba(bbCol,.12),
+      lineColor:_liteHexToRgba(bbCol,.85),lineWidth:1,
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
     _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({
-      color:bbCol,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
+      color:_liteHexToRgba(bbCol,.4),lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
-    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({
-      color:_liteHexToRgba(bbCol,.5),lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
-      title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false
+    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addAreaSeries({
+      topColor:'#ffffff',bottomColor:'#ffffff',
+      lineColor:_liteHexToRgba(bbCol,.85),lineWidth:1,
+      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
   }
   let i=0;
@@ -2734,7 +2737,7 @@ function renderLiteIndicators(){
     const m=_macd(_liteData);
     const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'right',base:0,lastValueVisible:false,priceLineVisible:false});
     const zeroLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    const macdLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'#26a69a',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    const macdLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'rgba(59,130,246,.6)',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     const sigLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
     hist.setData(histScaled);zeroLine.setData(_liteData.map(bar=>({time:bar.time,value:0})));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
@@ -2742,6 +2745,15 @@ function renderLiteIndicators(){
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:zeroLine},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
+  _liteRefreshVolumeTop();
+}
+function _liteRefreshVolumeTop(){
+  // Vẽ lại volume sau cùng để nó luôn nổi trên phần fill/nền trắng của BB, không bị che.
+  if(!_liteChart||!_liteVolume)return;
+  try{_liteChart.removeSeries(_liteVolume);}catch(e){}
+  _liteVolume=_liteChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
+  _liteVolume.setData(_liteVolumeData);
 }
 let _liteStatusPending=null;
 function showLiteChartStatus(status){
