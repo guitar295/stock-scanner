@@ -26,6 +26,7 @@ import requests
 import time
 import mplfinance as mpf
 import matplotlib.pyplot as plt
+import logging
 import os
 import re
 import tempfile
@@ -37,6 +38,8 @@ import threading
 import math
 from PIL import Image, ImageDraw, ImageFont
 from dashboard_server import start_dashboard
+
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
 # =============================================================================
 # BƯỚC 2: CẤU HÌNH
