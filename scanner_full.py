@@ -576,8 +576,8 @@ def compute_indicators(df):
 history_cache: dict = {}
 cache_date          = None
 cache_lock          = threading.Lock()
-chart_live_touch: dict = {}
-CHART_LIVE_TTL_SEC = 60
+last_bar_update: dict = {}   # {symbol: timestamp} - dùng chung cho CẢ scan cycle lẫn chart on-demand
+BAR_UPDATE_TTL_SEC = 60
 
 def load_history_for_symbol(symbol: str, current_date: date):
     for attempt in range(3):
@@ -742,8 +742,8 @@ def chart_symbol_status(symbol: str) -> dict:
     if current_date.weekday() >= 5 or now_time < 90000:
         return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "outside_session"}
 
-    last_touch = chart_live_touch.get(symbol, 0)
-    if time.time() - last_touch < CHART_LIVE_TTL_SEC:
+    last_touch = last_bar_update.get(symbol, 0)
+    if time.time() - last_touch < BAR_UPDATE_TTL_SEC:
         return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "recently_updated"}
 
     return {"symbol": symbol, "cached": True, "need_fetch": True, "reason": "live_update_due"}
@@ -768,12 +768,12 @@ def ensure_symbol_live_in_cache(symbol: str) -> bool:
     if current_date.weekday() >= 5 or now_time < 90000:
         return True
 
-    last_touch = chart_live_touch.get(symbol, 0)
-    if time.time() - last_touch < CHART_LIVE_TTL_SEC:
+    last_touch = last_bar_update.get(symbol, 0)
+    if time.time() - last_touch < BAR_UPDATE_TTL_SEC:
         return True
 
     today_bar = fetch_today_bar(symbol, current_date)
-    chart_live_touch[symbol] = time.time()
+    last_bar_update[symbol] = time.time()
     if today_bar is None:
         return True
 
@@ -1362,6 +1362,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 latest = upsert_today_bar(history_cache[symbol], today_bar)
                 history_cache[symbol] = latest
                 df_merged = latest.copy()
+            last_bar_update[symbol] = time.time()
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
