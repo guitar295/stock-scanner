@@ -562,7 +562,6 @@ def compute_indicators(df):
 # BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
 history_cache: dict = {}
-merged_cache: dict = {}
 cache_date          = None
 cache_lock          = threading.Lock()
 
@@ -575,7 +574,6 @@ def load_history_for_symbol(symbol: str, current_date: date):
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
-            df_raw = df_raw[df_raw.index.date < current_date]
             return df_raw[['open','high','low','close','volume']].copy()
         except Exception as e:
             if attempt < 2: time.sleep(2)
@@ -598,8 +596,6 @@ def build_history_cache(symbols: list, current_date: date):
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
-        merged_cache.clear()
-        merged_cache.update({sym: df.copy() for sym, df in new_history.items()})
         cache_date = current_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
@@ -703,11 +699,11 @@ def fetch_today_bar(symbol: str, current_date: date):
             else: print(f"    ❌ fetch_today_bar {symbol}: {e}")
     return None
 
-def merge_today_bar(df_hist, today_bar, current_date: date):
-    today_ts = pd.Timestamp(current_date)
-    new_row  = pd.DataFrame([today_bar], index=[today_ts])
-    df_hist  = df_hist[df_hist.index.date < current_date]
-    return pd.concat([df_hist, new_row])
+def upsert_today_bar(df_hist, today_bar):
+    bar_date = pd.Timestamp(today_bar.name).date()
+    new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
+    df_hist = df_hist[df_hist.index.date != bar_date]
+    return pd.concat([df_hist, new_row]).sort_index()
 
 # =============================================================================
 # BƯỚC 5C: HÀM TIỆN ÍCH
@@ -1283,9 +1279,10 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             today_bar = fetch_today_bar(symbol, current_date)
             if today_bar is None: continue
 
-            df_merged   = merge_today_bar(df_hist, today_bar, current_date)
             with cache_lock:
-                merged_cache[symbol] = df_merged.copy()
+                latest = upsert_today_bar(history_cache[symbol], today_bar)
+                history_cache[symbol] = latest
+                df_merged = latest.copy()
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
@@ -1408,11 +1405,19 @@ def _get_chart_context(symbol: str):
         df_raw = fetch_index_history(symbol)
     else:
         with cache_lock:
-            cached = merged_cache.get(symbol)
+            cached = history_cache.get(symbol)
             df_raw = cached.copy() if cached is not None and len(cached) >= 10 else None
         if df_raw is not None:
-            source = "merged_cache"
-        else:
+            expected_last = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
+            if current_date.weekday() < 5 and int(datetime.now(TZ_VN).strftime("%H%M%S")) >= 150000:
+                expected_last = current_date
+            cache_last = df_raw.index[-1].date()
+            if cache_last < expected_last:
+                print(f"  [ChartCore] {symbol}: cache stale ({cache_last} < {expected_last}) → fresh")
+                df_raw = None
+            else:
+                source = "history_cache"
+        if df_raw is None:
             source = "fresh"
             df_raw = fetch_fresh_for_chart(symbol, current_date)
 
@@ -1612,7 +1617,7 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
 def dashboard_chart_fn(symbol: str):
     """
     Được truyền vào start_dashboard(fetch_chart_fn=...).
-    Tạo nhanh Daily + Weekly từ merged_cache nếu có, trả về (list[bytes], list[str]).
+    Tạo nhanh Daily + Weekly từ history_cache nếu có, trả về (list[bytes], list[str]).
     Không gửi Telegram.
     """
     symbol = symbol.upper().strip()
@@ -1888,7 +1893,7 @@ print(f"   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
 print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
 print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
 print(f"   Cache check : Tự động trước mỗi chu kỳ quét")
-print(f"   On-demand   : Fetch fresh, không phụ thuộc cache")
+print(f"   On-demand   : Ưu tiên cache, fallback fetch fresh")
 print(f"   Nghỉ quét   : Thứ 7 và Chủ nhật")
 print("="*60)
 
