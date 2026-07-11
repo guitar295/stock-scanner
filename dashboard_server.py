@@ -1256,11 +1256,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-toolbar{display:flex;align-items:center;gap:8px}
 .lite-chart-symbol{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.5px}
 .lite-chart-input{width:78px;height:24px;border:1px solid var(--border);border-radius:6px;padding:0 8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none}
-.lite-chart-btn,.lite-chart-select{height:24px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--text);font-family:var(--font-mono);font-size:10px;cursor:pointer}
-.lite-chart-btn{padding:0 9px}.lite-chart-select{padding:0 6px}
+.lite-tf-tabs{display:flex;align-items:center;gap:3px}
+.lite-tf-btn{height:24px;min-width:28px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
+.lite-tf-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .lite-indicators{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer}
 .lite-indicators input{width:12px;height:12px;margin:0}
+.lite-chart-title{font-family:var(--font-mono);font-size:10px;color:#111827;white-space:nowrap}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
 
 /* ═══════════════════════════════════════════
@@ -1706,20 +1708,19 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <span class="panel-title">CHART</span>
         <span class="lite-chart-symbol" id="lite-chart-symbol">FPT</span>
         <input class="lite-chart-input" id="lite-chart-input" value="FPT" maxlength="10" spellcheck="false">
-        <button class="lite-chart-btn" id="lite-chart-load">Tải</button>
-        <select class="lite-chart-select" id="lite-chart-tf">
-          <option value="1D">Ngày</option>
-          <option value="1W">Tuần</option>
-        </select>
+        <div class="lite-tf-tabs" id="lite-chart-tf">
+          <button class="lite-tf-btn on" data-tf="1D">D</button>
+          <button class="lite-tf-btn" data-tf="1W">W</button>
+        </div>
         <div class="lite-indicators" id="lite-indicators">
-          <label><input type="checkbox" value="ema10" checked>EMA10</label>
-          <label><input type="checkbox" value="ema20" checked>EMA20</label>
+          <label><input type="checkbox" value="ema10">EMA10</label>
+          <label><input type="checkbox" value="ema20">EMA20</label>
           <label><input type="checkbox" value="ema50">EMA50</label>
           <label><input type="checkbox" value="ma200">MA200</label>
           <label><input type="checkbox" value="macd">MACD</label>
         </div>
       </div>
-      <span class="panel-meta" id="lite-chart-meta">Đang tải...</span>
+      <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
     </div>
     <div class="lite-chart-frame">
       <div id="lite-chart"></div>
@@ -1873,8 +1874,8 @@ const DOM={
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),liteChartSymbol:$('lite-chart-symbol'),
   liteMacdChart:$('lite-macd-chart'),liteChartInput:$('lite-chart-input'),
-  liteChartLoad:$('lite-chart-load'),liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
-  liteChartMeta:$('lite-chart-meta'),liteChartEmpty:$('lite-chart-empty'),
+  liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
+  liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -1957,8 +1958,10 @@ let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
+const LITE_IND_KEY='dashboard_lite_indicators';
 let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteSymbol='FPT';
-let _liteTf='1D',_liteResizeBound=false,_liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[];
+let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_liteInputTimer=null;
+let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   const chartOpts={
@@ -1982,6 +1985,19 @@ function initLiteChart(){
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.72,bottom:0}});
+  _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+    if(_liteSyncing||!range||!_liteMacdChart)return;
+    _liteSyncing=true;_liteMacdChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
+  });
+  _liteMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+    if(_liteSyncing||!range||!_liteChart)return;
+    _liteSyncing=true;_liteChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
+  });
+  _liteChart.subscribeCrosshairMove(param=>{
+    const key=param&&param.time?liteTimeKey(param.time):'';
+    if(key&&_liteDataByTime.has(key))updateLiteTitle(_liteDataByTime.get(key));
+    else updateLiteTitle(_liteData[_liteData.length-1]);
+  });
   if(!_liteResizeBound){
     _liteResizeBound=true;
     window.addEventListener('resize',()=>{
@@ -1992,6 +2008,49 @@ function initLiteChart(){
 }
 function _liteChecked(name){
   return !!DOM.liteIndicators?.querySelector(`input[value="${name}"]:checked`);
+}
+function loadLiteIndicatorPrefs(){
+  let prefs={};
+  try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
+  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    cb.checked=prefs[cb.value]===true;
+  });
+}
+function saveLiteIndicatorPrefs(){
+  const prefs={};
+  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{prefs[cb.value]=cb.checked;});
+  localStorage.setItem(LITE_IND_KEY,JSON.stringify(prefs));
+}
+function fmtLiteNum(v){
+  return Number.isFinite(v)?Number(v).toFixed(2):'--';
+}
+function fmtLiteDate(t){
+  const p=String(t||'').split('-');
+  return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(t||'--');
+}
+function liteTimeKey(t){
+  if(typeof t==='string')return t;
+  if(t&&typeof t==='object'&&'year'in t&&'month'in t&&'day'in t){
+    return `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
+  }
+  return String(t||'');
+}
+function updateLiteTitle(bar){
+  if(!DOM.liteChartTitle||!bar)return;
+  const tf=_liteTf==='1W'?'W':'D';
+  const pct=Number.isFinite(bar.pct)?bar.pct:0;
+  const sign=pct>0?'+':'';
+  DOM.liteChartTitle.textContent=`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:${fmtLiteNum(bar.open)} H:${fmtLiteNum(bar.high)} L:${fmtLiteNum(bar.low)} C:${fmtLiteNum(bar.close)} (${sign}${pct.toFixed(2)}%)`;
+}
+function setLiteRightOffset(){
+  if(!_liteData.length||!_liteChart)return;
+  const last=_liteData.length-1,to=last+50,from=Math.max(0,to-170);
+  _liteChart.timeScale().setVisibleLogicalRange({from,to});
+  if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
+}
+function setLiteTf(tf){
+  _liteTf=tf==='1W'?'1W':'1D';
+  DOM.liteChartTf?.querySelectorAll('.lite-tf-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.tf===_liteTf));
 }
 function _clearLiteIndicators(){
   for(const s of _liteIndicatorSeries){
@@ -2032,10 +2091,11 @@ function renderLiteIndicators(){
   DOM.liteMacdChart.style.display=_liteChecked('macd')?'block':'none';
   DOM.liteChart.style.height=_liteChecked('macd')?'460px':'620px';
   _liteChart.applyOptions({height:DOM.liteChart.clientHeight});
-  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#2563eb',lineWidth:1,title:'EMA10'})});
-  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#f59e0b',lineWidth:1,title:'EMA20'})});
-  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#7c3aed',lineWidth:1,title:'EMA50'})});
-  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#111827',lineWidth:1,title:'MA200'})});
+  _liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'red',lineWidth:1,title:'EMA10',priceLineVisible:false,lastValueVisible:true})});
+  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'EMA20',priceLineVisible:false,lastValueVisible:true})});
+  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'EMA50',priceLineVisible:false,lastValueVisible:true})});
+  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'brown',lineWidth:1,title:'MA200',priceLineVisible:false,lastValueVisible:true})});
   let i=0;
   if(_liteChecked('ema10'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
   if(_liteChecked('ema20'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
@@ -2044,22 +2104,19 @@ function renderLiteIndicators(){
   if(_liteChecked('macd')){
     const m=_macd(_liteData);
     const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
-    const macdLine=_liteMacdChart.addLineSeries({color:'#2563eb',lineWidth:1,title:'MACD'});
-    const sigLine=_liteMacdChart.addLineSeries({color:'#ef4444',lineWidth:1,title:'Signal'});
+    const macdLine=_liteMacdChart.addLineSeries({color:'blue',lineWidth:1,title:'MACD',priceLineVisible:false,lastValueVisible:true});
+    const sigLine=_liteMacdChart.addLineSeries({color:'orange',lineWidth:1,title:'Signal',priceLineVisible:false,lastValueVisible:true});
     hist.setData(m.hist);macdLine.setData(m.macd);sigLine.setData(m.signal);
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
-  _liteChart.timeScale().fitContent();
-  if(_liteChecked('macd'))_liteMacdChart.timeScale().fitContent();
 }
 async function loadLiteChart(sym='FPT',retry=1){
   const s=(sym||'FPT').toUpperCase().trim();
   if(!DOM.liteChart)return;
-  _liteTf=DOM.liteChartTf?.value||_liteTf;
   initLiteChart();
   DOM.liteChartSymbol.textContent=s;
   if(DOM.liteChartInput)DOM.liteChartInput.value=s;
-  DOM.liteChartMeta.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
+  if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
   if(!window.LightweightCharts){
@@ -2071,27 +2128,42 @@ async function loadLiteChart(sym='FPT',retry=1){
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     initLiteChart();
-    _liteData=j.candles||[];_liteVolumeData=j.volume||[];
+    _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
+      const prev=idx>0?arr[idx-1].close:null;
+      const pct=prev?((bar.close-prev)/prev*100):0;
+      return{...bar,pct};
+    });
+    _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
+    _liteVolumeData=j.volume||[];
     _liteCandle.setData(_liteData);
     _liteVolume.setData(_liteVolumeData);
     renderLiteIndicators();
-    _liteChart.timeScale().fitContent();
+    setLiteRightOffset();
     DOM.liteChartEmpty.style.display='none';
-    DOM.liteChartMeta.textContent=`${j.timeframe||_liteTf} • ${j.last_date||'--'} • ${_liteData.length} nến`;
-    _liteSymbol=s;_liteTf=j.timeframe||_liteTf;
+    updateLiteTitle(_liteData[_liteData.length-1]);
   }catch(e){
-    DOM.liteChartMeta.textContent='Không có dữ liệu';
+    if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),5000);
   }
 }
 function bindLiteChartControls(){
-  if(DOM.liteChartLoad)DOM.liteChartLoad.addEventListener('click',()=>loadLiteChart(DOM.liteChartInput?.value||_liteSymbol,0));
+  loadLiteIndicatorPrefs();
+  if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('input',e=>{
+    const raw=String(e.target.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    e.target.value=raw;
+    if(_liteInputTimer)clearTimeout(_liteInputTimer);
+    if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
+  });
   if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('keydown',e=>{
     if(e.key==='Enter')loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
   });
-  if(DOM.liteChartTf)DOM.liteChartTf.addEventListener('change',()=>loadLiteChart(_liteSymbol,0));
-  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',renderLiteIndicators);
+  if(DOM.liteChartTf)DOM.liteChartTf.addEventListener('click',e=>{
+    const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
+    setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
+  });
+  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();renderLiteIndicators();setLiteRightOffset();});
 }
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
