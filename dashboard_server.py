@@ -30,6 +30,7 @@ _fetch_heatmap_fn = None
 _fetch_chart_fn = None
 _fetch_chart_15m_fn = None
 _ensure_chart_symbol_fn = None
+_chart_symbol_status_fn = None
 _signal_emoji = {}
 _signal_rank = {}
 
@@ -253,6 +254,26 @@ def api_chart_images(symbol):
 def api_chart_image_15m(symbol):
     symbol = symbol.upper().strip()
     return _serve_chart_images(symbol, _fetch_chart_15m_fn, f"{symbol}:15m", "chart_15m")
+
+@app.route("/api/lightweight_chart_status/<symbol>")
+def api_lightweight_chart_status(symbol):
+    """Kiểm tra nhanh, không gọi mạng: chart sẽ phục vụ từ cache hay cần
+    update (vnstock) — dùng để hiển thị trạng thái trước khi tải dữ liệu."""
+    symbol = symbol.upper().strip()
+    if _chart_symbol_status_fn:
+        try:
+            return jsonify(_chart_symbol_status_fn(symbol))
+        except Exception as exc:
+            return jsonify({"symbol": symbol, "cached": False, "need_fetch": True,
+                            "reason": "status_error", "detail": str(exc)})
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not _cache_lock:
+        return jsonify({"symbol": symbol, "cached": False, "need_fetch": True, "reason": "unknown"})
+    with _cache_lock:
+        df = cache.get(symbol)
+        has_cache = df is not None and len(df) >= 60
+    return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
+                    "reason": "fallback_check"})
 
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
@@ -568,9 +589,10 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
                     fetch_chart_fn=None, fetch_chart_15m_fn=None,
                     ensure_chart_symbol_fn=None,
+                    chart_symbol_status_fn=None,
                     momentum_today_ref=None, port=8888):
     global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_history_cache = history_cache_ref
@@ -579,6 +601,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _fetch_chart_fn    = fetch_chart_fn
     _fetch_chart_15m_fn = fetch_chart_15m_fn
     _ensure_chart_symbol_fn = ensure_chart_symbol_fn
+    _chart_symbol_status_fn = chart_symbol_status_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
 
@@ -1281,6 +1304,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
+.lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;font-family:var(--font-mono);font-size:10px;font-weight:700;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;padding:2px 7px;border-radius:10px;pointer-events:none;opacity:0;transition:opacity .25s}
+.lite-chart-status.on{opacity:1}
+.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
+.lite-draw-toolbar{position:absolute;top:36px;left:6px;z-index:6;display:flex;flex-direction:column;gap:3px;background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 2px 8px rgba(17,24,39,.08)}
+.lite-draw-btn{width:26px;height:26px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lite-draw-btn:hover{background:#f1f5f9}
+.lite-draw-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+.lite-draw-sep{height:1px;background:var(--border);margin:2px 0}
+.lite-draw-canvas{position:absolute;top:0;left:0;z-index:2;pointer-events:none}
+.lite-draw-canvas.drawing{pointer-events:auto;cursor:crosshair}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -1736,14 +1769,29 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <label><input type="checkbox" value="ema20">EMA20</label>
           <label><input type="checkbox" value="ema50">EMA50</label>
           <label><input type="checkbox" value="ma200">MA200</label>
+          <label><input type="checkbox" value="bb">BB</label>
           <label><input type="checkbox" value="macd">MACD</label>
         </div>
       </div>
     </div>
     <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
+      <div class="lite-draw-toolbar" id="lite-draw-toolbar">
+        <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ">▲</button>
+        <button class="lite-draw-btn" data-tool="trendline" title="Đường kẻ chéo">╱</button>
+        <button class="lite-draw-btn" data-tool="hline" title="Đường kẻ ngang">▬</button>
+        <button class="lite-draw-btn" data-tool="rect" title="Hình chữ nhật">▭</button>
+        <button class="lite-draw-btn" data-tool="channel" title="Kênh giá">⫽</button>
+        <button class="lite-draw-btn" data-tool="position" title="Entry/Target/Stoploss">🎯</button>
+        <button class="lite-draw-btn" data-tool="text" title="Text">Aa</button>
+        <div class="lite-draw-sep"></div>
+        <button class="lite-draw-btn" id="lite-draw-undo" title="Xóa nét vừa vẽ">↩</button>
+        <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
+      </div>
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
+      <span class="lite-chart-status" id="lite-chart-status"></span>
       <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off">
       <div id="lite-chart"></div>
+      <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
       <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
       <div id="lite-macd-chart"></div>
       <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
@@ -1898,6 +1946,9 @@ const DOM={
   liteMacdChart:$('lite-macd-chart'),liteMacdResizer:$('lite-macd-resizer'),liteChartInput:$('lite-chart-input'),
   liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
+  liteChartStatus:$('lite-chart-status'),
+  liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
+  liteDrawUndo:$('lite-draw-undo'),liteDrawClear:$('lite-draw-clear'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -1984,21 +2035,23 @@ const LITE_IND_KEY='dashboard_lite_indicators';
 let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_liteCrosshairSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
+const LITE_BARS_VISIBLE=250,LITE_RIGHT_OFFSET=40,LITE_HIST_SCALE=1.7;
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    timeScale:{borderColor:'#dde3ee',rightOffset:20},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.28}}
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.16,bottom:.28}},
+    handleScale:{axisPressedMouseMove:{time:true,price:true}}
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
     rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
-    handleScale:{axisPressedMouseMove:false}
+    handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });
   _liteCandle=_liteChart.addCandlestickSeries({
     upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
@@ -2009,6 +2062,7 @@ function initLiteChart(){
   });
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+    redrawLiteDrawings();
     if(_liteSyncing||!range||!_liteMacdChart)return;
     _liteSyncing=true;_liteMacdChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
   });
@@ -2038,7 +2092,14 @@ function initLiteChart(){
     window.addEventListener('resize',()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
       if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+      resizeLiteDrawCanvas();redrawLiteDrawings();
     });
+    // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục)
+    const _liteDrawLoop=()=>{
+      if(_liteDrawCtx&&(_liteDrawings.length||_liteDrawActive))redrawLiteDrawings();
+      requestAnimationFrame(_liteDrawLoop);
+    };
+    requestAnimationFrame(_liteDrawLoop);
   }
 }
 function _liteChecked(name){
@@ -2079,7 +2140,7 @@ function updateLiteTitle(bar){
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
-  const last=_liteData.length-1,to=last+20,from=Math.max(0,to-270);
+  const last=_liteData.length-1,to=last+LITE_RIGHT_OFFSET,from=Math.max(0,to-LITE_BARS_VISIBLE);
   _liteChart.timeScale().setVisibleLogicalRange({from,to});
   if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
 }
@@ -2110,6 +2171,20 @@ function _ema(data,n){
   }
   return out;
 }
+function _bbands(data,n=20,mult=2){
+  const mid=_sma(data,n),midByTime=new Map(mid.map(x=>[liteTimeKey(x.time),x.value]));
+  const upper=[],lower=[];
+  for(let i=n-1;i<data.length;i++){
+    const slice=data.slice(i-n+1,i+1);
+    const m=midByTime.get(liteTimeKey(data[i].time));
+    if(m===undefined)continue;
+    let sq=0;for(const b of slice)sq+=(b.close-m)*(b.close-m);
+    const sd=Math.sqrt(sq/n);
+    upper.push({time:data[i].time,value:m+mult*sd});
+    lower.push({time:data[i].time,value:m-mult*sd});
+  }
+  return{upper,mid,lower};
+}
 function _macd(data){
   const e12=_ema(data,12),e26=_ema(data,26),byTime=new Map(e12.map(x=>[x.time,x.value]));
   const macd=e26.map(x=>({time:x.time,value:(byTime.get(x.time)||0)-x.value}));
@@ -2137,10 +2212,166 @@ function applyLitePaneLayout(){
   DOM.liteChart.style.height=showMacd?`${Math.max(360,totalH-macdH-4)}px`:`${totalH}px`;
   _liteChart.applyOptions({
     width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    timeScale:{visible:!showMacd,rightOffset:20},
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.08,bottom:.24}}
+    timeScale:{visible:!showMacd,rightOffset:LITE_RIGHT_OFFSET},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.16,bottom:.24}}
   });
-  if(_liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,timeScale:{visible:true,rightOffset:20},rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}});
+  if(_liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,timeScale:{visible:true,rightOffset:LITE_RIGHT_OFFSET},rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}});
+  resizeLiteDrawCanvas();redrawLiteDrawings();
+}
+// ═══ DRAWING TOOLS (trend line, horizontal line, rectangle, channel, entry/target/stop, text) ═══
+const LITE_DRAW_KEY='dashboard_lite_drawings';
+let _liteDrawTool='cursor',_liteDrawings=[],_liteDrawActive=null,_liteDrawCtx=null,_liteDrawSeq=1;
+function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
+function loadLiteDrawings(){
+  try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
+  catch(e){_liteDrawings=[];}
+}
+function saveLiteDrawings(){
+  try{localStorage.setItem(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));}catch(e){}
+}
+function resizeLiteDrawCanvas(){
+  if(!DOM.liteDrawCanvas||!DOM.liteChart)return;
+  const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight,dpr=window.devicePixelRatio||1;
+  DOM.liteDrawCanvas.style.width=w+'px';DOM.liteDrawCanvas.style.height=h+'px';
+  DOM.liteDrawCanvas.width=Math.max(1,Math.round(w*dpr));DOM.liteDrawCanvas.height=Math.max(1,Math.round(h*dpr));
+  _liteDrawCtx=DOM.liteDrawCanvas.getContext('2d');
+  _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+function _liteLogicalToX(l){
+  const c=_liteChart&&_liteChart.timeScale().logicalToCoordinate(l);
+  return Number.isFinite(c)?c:null;
+}
+function _liteXToLogical(x){
+  const l=_liteChart&&_liteChart.timeScale().coordinateToLogical(x);
+  return Number.isFinite(l)?l:null;
+}
+function _litePriceToY(p){
+  const c=_liteCandle&&_liteCandle.priceToCoordinate(p);
+  return Number.isFinite(c)?c:null;
+}
+function _liteYToPrice(y){
+  const p=_liteCandle&&_liteCandle.coordinateToPrice(y);
+  return Number.isFinite(p)?p:null;
+}
+function _litePtFromEvent(ev){
+  const rect=DOM.liteDrawCanvas.getBoundingClientRect();
+  const x=ev.clientX-rect.left,y=ev.clientY-rect.top;
+  const l=_liteXToLogical(x),p=_liteYToPrice(y);
+  if(l===null||p===null)return null;
+  return{l,p};
+}
+function _liteDrawLine(ctx,x1,y1,x2,y2,color,dash){
+  ctx.save();ctx.strokeStyle=color;ctx.lineWidth=1.4;if(dash)ctx.setLineDash(dash);
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.restore();
+}
+function _liteDrawShapeToCanvas(ctx,d){
+  const pts=d.points;
+  if(d.type==='text'){
+    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    if(x===null||y===null)return;
+    ctx.save();ctx.font='11px "IBM Plex Mono",monospace';ctx.fillStyle=d.color||'#111827';
+    ctx.fillText(d.text||'',x+3,y-3);ctx.restore();
+    return;
+  }
+  if(pts.length<2)return;
+  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  if(x1===null||y1===null||x2===null||y2===null)return;
+  const color=d.color||'#1a56db';
+  if(d.type==='trendline'){
+    _liteDrawLine(ctx,x1,y1,x2,y2,color);
+  }else if(d.type==='hline'){
+    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=1.2;ctx.setLineDash([4,3]);
+    ctx.beginPath();ctx.moveTo(0,y1);ctx.lineTo(DOM.liteChart.clientWidth,y1);ctx.stroke();ctx.restore();
+  }else if(d.type==='rect'){
+    ctx.save();ctx.strokeStyle=color;ctx.fillStyle=_liteHexAlpha(color,.10);
+    ctx.lineWidth=1.2;const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
+    ctx.fillRect(rx,ry,rw,rh);ctx.strokeRect(rx,ry,rw,rh);ctx.restore();
+  }else if(d.type==='channel'){
+    const offPrice=(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:Math.abs(pts[1].p-pts[0].p)||1;
+    const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
+    _liteDrawLine(ctx,x1,y1,x2,y2,color);
+    if(y1b!==null&&y2b!==null)_liteDrawLine(ctx,x1,y1b,x2,y2b,color,[3,3]);
+  }else if(d.type==='position'){
+    const entryY=y1,targetY=y2,stopY=2*y1-y2;
+    const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
+    ctx.save();
+    ctx.fillStyle='rgba(38,166,154,.16)';ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
+    ctx.fillStyle='rgba(239,83,80,.16)';ctx.fillRect(rx,Math.min(entryY,stopY),rw,Math.abs(entryY-stopY));
+    _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#111827');
+    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,'#26a69a');
+    _liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
+    ctx.font='10px "IBM Plex Mono",monospace';
+    ctx.fillStyle='#111827';ctx.fillText('Entry '+fmtLiteNum(pts[0].p),rx+4,entryY-3);
+    ctx.fillStyle='#26a69a';ctx.fillText('Target '+fmtLiteNum(pts[1].p),rx+4,targetY-3);
+    ctx.fillStyle='#ef5350';ctx.fillText('Stop '+fmtLiteNum(2*pts[0].p-pts[1].p),rx+4,stopY+11);
+    ctx.restore();
+  }
+}
+function _liteHexAlpha(hex,a){
+  const m=/^#?([0-9a-f]{6})$/i.exec(hex||'');
+  if(!m)return `rgba(26,86,219,${a})`;
+  const n=parseInt(m[1],16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+function redrawLiteDrawings(){
+  if(!_liteDrawCtx||!DOM.liteDrawCanvas)return;
+  const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight;
+  _liteDrawCtx.clearRect(0,0,w,h);
+  for(const d of _liteDrawings)_liteDrawShapeToCanvas(_liteDrawCtx,d);
+  if(_liteDrawActive)_liteDrawShapeToCanvas(_liteDrawCtx,_liteDrawActive);
+}
+function setLiteDrawTool(tool){
+  _liteDrawTool=tool||'cursor';
+  DOM.liteDrawToolbar?.querySelectorAll('.lite-draw-btn[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===_liteDrawTool));
+  if(DOM.liteDrawCanvas)DOM.liteDrawCanvas.classList.toggle('drawing',_liteDrawTool!=='cursor');
+}
+function bindLiteDrawToolbar(){
+  resizeLiteDrawCanvas();
+  DOM.liteDrawToolbar?.addEventListener('click',e=>{
+    const btn=e.target.closest('.lite-draw-btn');if(!btn)return;
+    if(btn===DOM.liteDrawUndo){_liteDrawings.pop();saveLiteDrawings();redrawLiteDrawings();return;}
+    if(btn===DOM.liteDrawClear){if(_liteDrawings.length&&confirm('Xóa tất cả hình vẽ trên chart này?')){_liteDrawings=[];saveLiteDrawings();redrawLiteDrawings();}return;}
+    const tool=btn.dataset.tool;if(tool)setLiteDrawTool(tool);
+  });
+  if(!DOM.liteDrawCanvas)return;
+  DOM.liteDrawCanvas.addEventListener('pointerdown',e=>{
+    if(_liteDrawTool==='cursor')return;
+    const p0=_litePtFromEvent(e);if(!p0)return;
+    if(_liteDrawTool==='text'){
+      const text=prompt('Nhập text:','');
+      if(text)_liteDrawings.push({id:_liteDrawSeq++,type:'text',points:[p0],text,color:'#111827'});
+      saveLiteDrawings();redrawLiteDrawings();
+      return;
+    }
+    if(_liteDrawTool==='hline'){
+      _liteDrawings.push({id:_liteDrawSeq++,type:'hline',points:[p0,p0],color:'#1a56db'});
+      saveLiteDrawings();redrawLiteDrawings();
+      return;
+    }
+    _liteDrawActive={id:_liteDrawSeq++,type:_liteDrawTool,points:[p0,p0],color:_liteDrawTool==='position'?'#111827':'#1a56db'};
+    const move=ev=>{
+      const p1=_litePtFromEvent(ev);if(!p1||!_liteDrawActive)return;
+      _liteDrawActive.points[1]=p1;
+      redrawLiteDrawings();
+    };
+    const up=ev=>{
+      window.removeEventListener('pointermove',move);
+      window.removeEventListener('pointerup',up);
+      const p1=_litePtFromEvent(ev)||_liteDrawActive.points[1];
+      _liteDrawActive.points[1]=p1;
+      if(_liteDrawActive.type==='channel'){
+        const offsetPrice=Math.abs(p1.p-_liteDrawActive.points[0].p)||(p1.p*0.02)||1;
+        _liteDrawActive.points[2]={offsetPrice};
+      }
+      if(Math.abs(p1.l-_liteDrawActive.points[0].l)>0.4||Math.abs(p1.p-_liteDrawActive.points[0].p)>1e-9)
+        _liteDrawings.push(_liteDrawActive);
+      _liteDrawActive=null;
+      saveLiteDrawings();redrawLiteDrawings();
+    };
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
+  });
 }
 function resizeLiteSearchInput(){
   if(!DOM.liteChartSearch)return;
@@ -2164,22 +2395,45 @@ function renderLiteIndicators(){
   if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'brown',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('bb')){
+    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#9333ea',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false})});
+    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#9333ea',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false})});
+    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'#9333ea',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false})});
+  }
   let i=0;
   if(_liteChecked('ema10'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
   if(_liteChecked('ema20'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
   if(_liteChecked('ema50'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,50));
   if(_liteChecked('ma200'))_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
+  if(_liteChecked('bb')){
+    const bb=_bbands(_liteData,20,2);
+    _liteIndicatorSeries[i++].series.setData(bb.upper);
+    _liteIndicatorSeries[i++].series.setData(bb.mid);
+    _liteIndicatorSeries[i++].series.setData(bb.lower);
+  }
   if(showMacd){
     const m=_macd(_liteData);
     const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'right',base:0,lastValueVisible:false,priceLineVisible:false});
     const zeroLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
     const macdLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     const sigLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
-    hist.setData(alignLiteSeries(m.hist));zeroLine.setData(_liteData.map(bar=>({time:bar.time,value:0})));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
+    const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
+    hist.setData(histScaled);zeroLine.setData(_liteData.map(bar=>({time:bar.time,value:0})));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
     hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:zeroLine},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
+}
+let _liteStatusPending=null;
+function showLiteChartStatus(status){
+  if(!DOM.liteChartStatus)return;
+  if(!status){DOM.liteChartStatus.classList.remove('on');return;}
+  const fetching=!!status.need_fetch;
+  DOM.liteChartStatus.textContent=fetching?'🌐 Đang update chart (vnstock)':'🗄 Đã tải từ cache';
+  DOM.liteChartStatus.classList.toggle('fetching',fetching);
+  DOM.liteChartStatus.classList.add('on');
+  clearTimeout(DOM.liteChartStatus._hideTimer);
+  DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
 }
 async function loadLiteChart(sym='FPT',retry=1){
   const s=(sym||'FPT').toUpperCase().trim();
@@ -2189,10 +2443,16 @@ async function loadLiteChart(sym='FPT',retry=1){
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
+  showLiteChartStatus(null);
   if(!window.LightweightCharts){
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),1200);
     return;
   }
+  try{
+    const st=await fetch('/api/lightweight_chart_status/'+encodeURIComponent(s)).then(x=>x.json()).catch(()=>null);
+    _liteStatusPending=st;
+    DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
+  }catch(e){}
   try{
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf));
     if(!r.ok)throw new Error('no_cache');
@@ -2210,9 +2470,11 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteVolume.setData(_liteVolumeData);
     renderLiteIndicators();
     setLiteRightOffset();
-    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.08,bottom:.24}});
+    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.16,bottom:.24}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
+    loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
+    showLiteChartStatus(_liteStatusPending);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
@@ -2221,6 +2483,7 @@ async function loadLiteChart(sym='FPT',retry=1){
 }
 function bindLiteChartControls(){
   loadLiteIndicatorPrefs();
+  bindLiteDrawToolbar();
   if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('input',e=>{
     const raw=String(e.target.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
     e.target.value=raw;
