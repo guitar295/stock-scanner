@@ -1147,7 +1147,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 header{
   display:flex;align-items:center;justify-content:space-between;
   padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);
-  position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow);
+  position:static;z-index:100;box-shadow:0 1px 6px var(--shadow);
   flex-wrap:wrap;gap:6px;
 }
 header h1{
@@ -1981,23 +1981,23 @@ let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
-let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteSymbol='FPT';
-let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_liteInputTimer=null;
+let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
+let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_liteCrosshairSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    timeScale:{borderColor:'#dde3ee',rightOffset:12},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+    timeScale:{borderColor:'#dde3ee',rightOffset:20},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.28}}
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.28}}
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.12}},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
     handleScale:{axisPressedMouseMove:false}
   });
   _liteCandle=_liteChart.addCandlestickSeries({
@@ -2020,6 +2020,18 @@ function initLiteChart(){
     const key=param&&param.time?liteTimeKey(param.time):'';
     if(key&&_liteDataByTime.has(key))updateLiteTitle(_liteDataByTime.get(key));
     else updateLiteTitle(_liteData[_liteData.length-1]);
+    if(_liteCrosshairSyncing||!_liteMacdChart)return;
+    if(!param||!param.time){_liteMacdChart.clearCrosshairPosition();return;}
+    _liteCrosshairSyncing=true;
+    if(_liteMacdCrosshairSeries)_liteMacdChart.setCrosshairPosition(0,param.time,_liteMacdCrosshairSeries);
+    _liteCrosshairSyncing=false;
+  });
+  _liteMacdChart.subscribeCrosshairMove(param=>{
+    if(_liteCrosshairSyncing||!_liteChart)return;
+    if(!param||!param.time){_liteChart.clearCrosshairPosition();return;}
+    _liteCrosshairSyncing=true;
+    _liteChart.setCrosshairPosition(0,param.time,_liteCandle);
+    _liteCrosshairSyncing=false;
   });
   if(!_liteResizeBound){
     _liteResizeBound=true;
@@ -2067,7 +2079,7 @@ function updateLiteTitle(bar){
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
-  const last=_liteData.length-1,to=last+12,from=Math.max(0,to-155);
+  const last=_liteData.length-1,to=last+20,from=Math.max(0,to-220);
   _liteChart.timeScale().setVisibleLogicalRange({from,to});
   if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
 }
@@ -2080,6 +2092,7 @@ function _clearLiteIndicators(){
     try{s.chart.removeSeries(s.series);}catch(e){}
   }
   _liteIndicatorSeries=[];
+  _liteMacdCrosshairSeries=null;
 }
 function _sma(data,n){
   const out=[];let sum=0;
@@ -2102,10 +2115,12 @@ function _macd(data){
   const macd=e26.map(x=>({time:x.time,value:(byTime.get(x.time)||0)-x.value}));
   const signal=_ema(macd.map(x=>({time:x.time,close:x.value})),9);
   const sigMap=new Map(signal.map(x=>[x.time,x.value]));
-  const hist=macd.filter(x=>sigMap.has(x.time)).map(x=>({
-    time:x.time,value:x.value-sigMap.get(x.time),
-    color:x.value>=sigMap.get(x.time)?'#26a69a':'#ef5350'
-  }));
+  const histRaw=macd.filter(x=>sigMap.has(x.time)).map(x=>({time:x.time,value:x.value-sigMap.get(x.time)}));
+  const hist=histRaw.map((x,i)=>{
+    const prev=i>0?histRaw[i-1].value:x.value;
+    const color=x.value>=0?(x.value>=prev?'#26a69a':'#b2dfdb'):(x.value<=prev?'#ef5350':'#ffcdd2');
+    return{...x,color};
+  });
   return{macd,signal,hist};
 }
 function alignLiteSeries(points){
@@ -2121,15 +2136,22 @@ function applyLitePaneLayout(){
   DOM.liteChart.style.height=showMacd?`${Math.max(300,620-macdH-4)}px`:'620px';
   _liteChart.applyOptions({
     width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    timeScale:{visible:!showMacd,rightOffset:12},
-    rightPriceScale:{borderColor:'#dde3ee',autoScale:true,scaleMargins:{top:.08,bottom:.24}}
+    timeScale:{visible:!showMacd,rightOffset:20},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.08,bottom:.24}}
   });
-  if(_liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,timeScale:{visible:true,rightOffset:12}});
+  if(_liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,timeScale:{visible:true,rightOffset:20},rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}});
 }
 function resizeLiteSearchInput(){
   if(!DOM.liteChartSearch)return;
   const n=Math.max(1,DOM.liteChartSearch.value.length);
   DOM.liteChartSearch.style.width=`${Math.min(120,Math.max(42,26+n*16))}px`;
+}
+function openLiteSearchWithChar(ch){
+  const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
+  DOM.liteChartSearch.value=(cur+String(ch||'').toUpperCase()).slice(0,10);
+  resizeLiteSearchInput();
+  DOM.liteChartSearch.classList.add('on');
+  DOM.liteChartSearch.focus();
 }
 function renderLiteIndicators(){
   if(!_liteChart||!_liteMacdChart)return;
@@ -2149,12 +2171,13 @@ function renderLiteIndicators(){
   if(showMacd){
     const m=_macd(_liteData);
     const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'',base:0,lastValueVisible:false,priceLineVisible:false});
+    const zeroLine=_liteMacdChart.addLineSeries({color:'#9ca3af',lineWidth:1,lineStyle:2,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
     const macdLine=_liteMacdChart.addLineSeries({color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     const sigLine=_liteMacdChart.addLineSeries({color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
-    hist.setData(alignLiteSeries(m.hist));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
-    hist.createPriceLine({price:0,color:'#9ca3af',lineWidth:1,lineStyle:2,axisLabelVisible:false,title:''});
+    hist.setData(alignLiteSeries(m.hist));zeroLine.setData(_liteData.map(bar=>({time:bar.time,value:0})));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
     hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
-    _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
+    _liteMacdCrosshairSeries=macdLine;
+    _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:zeroLine},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
 }
 async function loadLiteChart(sym='FPT',retry=1){
@@ -2213,17 +2236,22 @@ function bindLiteChartControls(){
   if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();renderLiteIndicators();setLiteRightOffset();});
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>DOM.liteChartFrame.focus());
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseenter',()=>{
+    _litePointerInside=true;
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag!=='input'&&tag!=='textarea')DOM.liteChartFrame.focus();
   });
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseleave',()=>{_litePointerInside=false;});
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('keydown',e=>{
     if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
     e.preventDefault();
-    const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
-    DOM.liteChartSearch.value=(cur+e.key.toUpperCase()).slice(0,10);
-    resizeLiteSearchInput();
-    DOM.liteChartSearch.classList.add('on');
-    DOM.liteChartSearch.focus();
+    openLiteSearchWithChar(e.key);
+  });
+  document.addEventListener('keydown',e=>{
+    if(!_litePointerInside||e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
+    const tag=(document.activeElement?.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='textarea'||tag==='select')return;
+    e.preventDefault();
+    openLiteSearchWithChar(e.key);
   });
   if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('input',e=>{
     const raw=String(e.target.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
