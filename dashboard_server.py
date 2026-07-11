@@ -253,6 +253,44 @@ def api_chart_image_15m(symbol):
     symbol = symbol.upper().strip()
     return _serve_chart_images(symbol, _fetch_chart_15m_fn, f"{symbol}:15m", "chart_15m")
 
+@app.route("/api/lightweight_chart/<symbol>")
+def api_lightweight_chart(symbol):
+    symbol = symbol.upper().strip()
+    try:
+        limit = int(request.args.get("limit", 320) or 320)
+    except (TypeError, ValueError):
+        limit = 320
+    limit = max(50, min(1000, limit))
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not _cache_lock:
+        return jsonify({"error": "cache_not_ready"}), 503
+    with _cache_lock:
+        df = cache.get(symbol)
+        df = df.copy() if df is not None and len(df) else None
+    if df is None or df.empty:
+        return jsonify({"error": "no_cache", "symbol": symbol}), 404
+    df = df.tail(limit)
+    candles, volume = [], []
+    for idx, row in df.iterrows():
+        try:
+            o = float(row.get("open", 0) or 0)
+            h = float(row.get("high", 0) or 0)
+            l = float(row.get("low", 0) or 0)
+            c = float(row.get("close", 0) or 0)
+            v = float(row.get("volume", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
+            continue
+        day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+        candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
+        volume.append({"time": day, "value": max(0, v),
+                       "color": "rgba(14,159,110,.35)" if c >= o else "rgba(224,36,36,.35)"})
+    if not candles:
+        return jsonify({"error": "no_data", "symbol": symbol}), 404
+    return jsonify({"symbol": symbol, "candles": candles, "volume": volume,
+                    "last_date": candles[-1]["time"]})
+
 @app.route("/api/cache_info")
 def api_cache_info():
     cache = _get_history_cache() if _get_history_cache else {}
@@ -1200,6 +1238,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
+.lite-chart-frame{width:100%;height:560px;background:#fff;position:relative}
+#lite-chart{width:100%;height:100%}
+.lite-chart-toolbar{display:flex;align-items:center;gap:8px}
+.lite-chart-symbol{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.5px}
+.lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -1345,6 +1388,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   }
   .market-frame{height:70vh}
   #market-panel{display:none !important;}
+  #lite-chart-panel{display:none !important;}
 }
 
 /* ═══════════════════════════════════════════
@@ -1635,6 +1679,21 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
     <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
   </div>
+
+  <!-- LIGHTWEIGHT CHART -->
+  <div class="panel" id="lite-chart-panel">
+    <div class="panel-hdr">
+      <div class="lite-chart-toolbar">
+        <span class="panel-title">CHART</span>
+        <span class="lite-chart-symbol" id="lite-chart-symbol">FPT</span>
+      </div>
+      <span class="panel-meta" id="lite-chart-meta">Đang tải...</span>
+    </div>
+    <div class="lite-chart-frame">
+      <div id="lite-chart"></div>
+      <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
+    </div>
+  </div>
 </div>
 
 <!-- TRADE JOURNAL -->
@@ -1766,6 +1825,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 </div>
 <div id="edge-swipe-zone"></div>
 
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -1778,6 +1838,8 @@ const DOM={
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   sankeySvg:$('sankey-svg'),
+  liteChart:$('lite-chart'),liteChartSymbol:$('lite-chart-symbol'),
+  liteChartMeta:$('lite-chart-meta'),liteChartEmpty:$('lite-chart-empty'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -1860,6 +1922,60 @@ let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
+let _liteChart=null,_liteCandle=null,_liteVolume=null,_liteSymbol='FPT',_liteResizeBound=false;
+function initLiteChart(){
+  if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
+  _liteChart=LightweightCharts.createChart(DOM.liteChart,{
+    width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
+    layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
+    grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
+    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.28}},
+    timeScale:{borderColor:'#dde3ee'},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+  });
+  _liteCandle=_liteChart.addCandlestickSeries({
+    upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
+    borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'
+  });
+  _liteVolume=_liteChart.addHistogramSeries({
+    priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
+  });
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.72,bottom:0}});
+  if(!_liteResizeBound){
+    _liteResizeBound=true;
+    window.addEventListener('resize',()=>{
+      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+    });
+  }
+}
+async function loadLiteChart(sym='FPT',retry=1){
+  const s=(sym||'FPT').toUpperCase().trim();
+  if(!DOM.liteChart)return;
+  initLiteChart();
+  DOM.liteChartSymbol.textContent=s;
+  DOM.liteChartMeta.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
+  DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
+  DOM.liteChartEmpty.style.display='flex';
+  if(!window.LightweightCharts){
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),1200);
+    return;
+  }
+  try{
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s));
+    if(!r.ok)throw new Error('no_cache');
+    const j=await r.json();
+    initLiteChart();
+    _liteCandle.setData(j.candles||[]);
+    _liteVolume.setData(j.volume||[]);
+    _liteChart.timeScale().fitContent();
+    DOM.liteChartEmpty.style.display='none';
+    DOM.liteChartMeta.textContent=`${j.last_date||'--'} • ${(j.candles||[]).length} nến`;
+    _liteSymbol=s;
+  }catch(e){
+    DOM.liteChartMeta.textContent='Không có dữ liệu';
+    DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),5000);
+  }
+}
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
   const top=Number.isFinite(window.screen.availTop)?window.screen.availTop:0;
@@ -1991,6 +2107,7 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   _syncHoverPreview(cell.dataset.sym);
   updatePopout(cell.dataset.sym);
   updateSimplize(cell.dataset.sym);
+  loadLiteChart(cell.dataset.sym,0);
   openChart(cell.dataset.sym);
 });
 let _hmapClickTimer=null;
@@ -2000,6 +2117,7 @@ function _hmapDesktopClick(sym){
     _syncHoverPreview(sym);
     updatePopout(sym);
     updateSimplize(sym);
+    loadLiteChart(sym,0);
     if(_isPopoutMode)return;
     if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
@@ -2016,6 +2134,7 @@ DOM.sigList.addEventListener('dblclick',e=>{
   _syncHoverPreview(row.dataset.sym);
   updatePopout(row.dataset.sym);
   updateSimplize(row.dataset.sym);
+  loadLiteChart(row.dataset.sym,0);
   openChart(row.dataset.sym);
 });
 DOM.momentumList.addEventListener('click',e=>{
@@ -2986,6 +3105,7 @@ async function init(){
   _refreshChartModeUI();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
+  loadLiteChart(_liteSymbol);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
 }
