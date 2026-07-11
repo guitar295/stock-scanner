@@ -303,7 +303,7 @@ def api_lightweight_chart(symbol):
         day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
         candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
         volume.append({"time": day, "value": max(0, v),
-                       "color": "rgba(14,159,110,.35)" if c >= o else "rgba(224,36,36,.35)"})
+                       "color": "#26a69a" if c >= o else "#ef5350"})
     if not candles:
         return jsonify({"error": "no_data", "symbol": symbol}), 404
     return jsonify({"symbol": symbol, "timeframe": tf, "candles": candles, "volume": volume,
@@ -1259,11 +1259,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:620px;background:#fff;position:relative}
-#lite-chart{width:100%;height:620px}
-#lite-macd-chart{display:none!important}
+#lite-chart{width:100%;height:500px}
+#lite-macd-chart{width:100%;height:116px;border-top:1px solid var(--border);display:none}
+#lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
+.lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
+.lite-macd-resizer.on{display:block}
+.lite-macd-resizer:hover{background:rgba(26,86,219,.12)}
 .lite-chart-toolbar{display:flex;align-items:center;gap:8px}
-.lite-chart-symbol{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.5px}
-.lite-chart-input{width:78px;height:24px;border:1px solid var(--border);border-radius:6px;padding:0 8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none}
+.lite-chart-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none;transition:border-color .15s,width .2s}
+.lite-chart-input::placeholder{color:var(--muted);text-transform:none}
+.lite-chart-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
+.lite-chart-search-wrap{position:relative;display:flex;align-items:center}
+.lite-chart-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .lite-tf-tabs{display:flex;align-items:center;gap:3px}
 .lite-tf-btn{height:24px;min-width:28px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
 .lite-tf-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
@@ -1271,7 +1278,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer}
 .lite-indicators input{width:12px;height:12px;margin:0}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
-.lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:130px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none}
+.lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
 
@@ -1716,8 +1723,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     <div class="panel-hdr">
       <div class="lite-chart-toolbar">
         <span class="panel-title">CHART</span>
-        <span class="lite-chart-symbol" id="lite-chart-symbol">FPT</span>
-        <input class="lite-chart-input" id="lite-chart-input" value="FPT" maxlength="10" spellcheck="false">
+        <div class="lite-chart-search-wrap">
+          <span class="s-icon">🔍</span>
+          <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false">
+        </div>
         <div class="lite-tf-tabs" id="lite-chart-tf">
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
@@ -1735,6 +1744,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
       <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off">
       <div id="lite-chart"></div>
+      <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
       <div id="lite-macd-chart"></div>
       <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
     </div>
@@ -1883,9 +1893,9 @@ const DOM={
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   sankeySvg:$('sankey-svg'),
-  liteChart:$('lite-chart'),liteChartSymbol:$('lite-chart-symbol'),
+  liteChart:$('lite-chart'),
   liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
-  liteMacdChart:$('lite-macd-chart'),liteChartInput:$('lite-chart-input'),
+  liteMacdChart:$('lite-macd-chart'),liteMacdResizer:$('lite-macd-resizer'),liteChartInput:$('lite-chart-input'),
   liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
@@ -1985,6 +1995,11 @@ function initLiteChart(){
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
     rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.28}}
   });
+  _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
+    ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
+    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:.12}},
+    handleScale:{axisPressedMouseMove:false}
+  });
   _liteCandle=_liteChart.addCandlestickSeries({
     upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
     borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'
@@ -1992,7 +2007,15 @@ function initLiteChart(){
   _liteVolume=_liteChart.addHistogramSeries({
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
-  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.84,bottom:0}});
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
+  _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+    if(_liteSyncing||!range||!_liteMacdChart)return;
+    _liteSyncing=true;_liteMacdChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
+  });
+  _liteMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+    if(_liteSyncing||!range||!_liteChart)return;
+    _liteSyncing=true;_liteChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
+  });
   _liteChart.subscribeCrosshairMove(param=>{
     const key=param&&param.time?liteTimeKey(param.time):'';
     if(key&&_liteDataByTime.has(key))updateLiteTitle(_liteDataByTime.get(key));
@@ -2002,6 +2025,7 @@ function initLiteChart(){
     _liteResizeBound=true;
     window.addEventListener('resize',()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
     });
   }
 }
@@ -2045,6 +2069,7 @@ function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
   const last=_liteData.length-1,to=last+12,from=Math.max(0,to-155);
   _liteChart.timeScale().setVisibleLogicalRange({from,to});
+  if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
   _liteTf=tf==='1W'?'1W':'1D';
@@ -2079,7 +2104,7 @@ function _macd(data){
   const sigMap=new Map(signal.map(x=>[x.time,x.value]));
   const hist=macd.filter(x=>sigMap.has(x.time)).map(x=>({
     time:x.time,value:x.value-sigMap.get(x.time),
-    color:x.value>=sigMap.get(x.time)?'rgba(14,159,110,.55)':'rgba(224,36,36,.55)'
+    color:x.value>=sigMap.get(x.time)?'#26a69a':'#ef5350'
   }));
   return{macd,signal,hist};
 }
@@ -2087,22 +2112,35 @@ function alignLiteSeries(points){
   const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
+function applyLitePaneLayout(){
+  const showMacd=_liteChecked('macd');
+  const macdH=showMacd?Math.max(80,Math.min(260,DOM.liteMacdChart.clientHeight||116)):0;
+  DOM.liteMacdChart.style.display=showMacd?'block':'none';
+  DOM.liteMacdResizer.classList.toggle('on',showMacd);
+  DOM.liteChart.classList.toggle('hide-tv-logo',showMacd);
+  DOM.liteChart.style.height=showMacd?`${Math.max(300,620-macdH-4)}px`:'620px';
+  _liteChart.applyOptions({
+    width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
+    timeScale:{visible:!showMacd,rightOffset:12},
+    rightPriceScale:{borderColor:'#dde3ee',autoScale:true,scaleMargins:{top:.08,bottom:.24}}
+  });
+  if(_liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,timeScale:{visible:true,rightOffset:12}});
+}
+function resizeLiteSearchInput(){
+  if(!DOM.liteChartSearch)return;
+  const n=Math.max(1,DOM.liteChartSearch.value.length);
+  DOM.liteChartSearch.style.width=`${Math.min(120,Math.max(42,26+n*16))}px`;
+}
 function renderLiteIndicators(){
-  if(!_liteChart)return;
+  if(!_liteChart||!_liteMacdChart)return;
   _clearLiteIndicators();
   const showMacd=_liteChecked('macd');
-  DOM.liteMacdChart.style.display='none';
-  DOM.liteChart.style.height='620px';
-  _liteChart.applyOptions({
-    height:DOM.liteChart.clientHeight,
-    timeScale:{visible:true,rightOffset:12},
-    rightPriceScale:{borderColor:'#dde3ee',scaleMargins:{top:.08,bottom:showMacd ? .34 : .08}}
-  });
-  _liteVolume.priceScale().applyOptions({scaleMargins:{top:showMacd ? .88 : .84,bottom:0}});
-  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'red',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
-  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
-  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
-  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'brown',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true})});
+  applyLitePaneLayout();
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
+  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'red',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'green',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'purple',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:'brown',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   let i=0;
   if(_liteChecked('ema10'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
   if(_liteChecked('ema20'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
@@ -2110,21 +2148,20 @@ function renderLiteIndicators(){
   if(_liteChecked('ma200'))_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
   if(showMacd){
     const m=_macd(_liteData);
-    const hist=_liteChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'macd',base:0,lastValueVisible:false,priceLineVisible:false});
-    const macdLine=_liteChart.addLineSeries({priceScaleId:'macd',color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
-    const sigLine=_liteChart.addLineSeries({priceScaleId:'macd',color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true});
+    const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'',base:0,lastValueVisible:false,priceLineVisible:false});
+    const macdLine=_liteMacdChart.addLineSeries({color:'blue',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    const sigLine=_liteMacdChart.addLineSeries({color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
     hist.setData(alignLiteSeries(m.hist));macdLine.setData(alignLiteSeries(m.macd));sigLine.setData(alignLiteSeries(m.signal));
     hist.createPriceLine({price:0,color:'#9ca3af',lineWidth:1,lineStyle:2,axisLabelVisible:false,title:''});
-    hist.priceScale().applyOptions({scaleMargins:{top:.70,bottom:.08}});
-    _liteIndicatorSeries.push({chart:_liteChart,series:hist},{chart:_liteChart,series:macdLine},{chart:_liteChart,series:sigLine});
+    hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
+    _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
 }
 async function loadLiteChart(sym='FPT',retry=1){
   const s=(sym||'FPT').toUpperCase().trim();
   if(!DOM.liteChart)return;
   initLiteChart();
-  DOM.liteChartSymbol.textContent=s;
-  if(DOM.liteChartInput)DOM.liteChartInput.value=s;
+  if(DOM.liteChartInput)DOM.liteChartInput.value='';
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -2149,6 +2186,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteVolume.setData(_liteVolumeData);
     renderLiteIndicators();
     setLiteRightOffset();
+    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.08,bottom:.24}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
   }catch(e){
@@ -2183,18 +2221,35 @@ function bindLiteChartControls(){
     e.preventDefault();
     const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
     DOM.liteChartSearch.value=(cur+e.key.toUpperCase()).slice(0,10);
+    resizeLiteSearchInput();
     DOM.liteChartSearch.classList.add('on');
     DOM.liteChartSearch.focus();
   });
   if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('input',e=>{
     const raw=String(e.target.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
     e.target.value=raw;
+    resizeLiteSearchInput();
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
   });
   if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('keydown',e=>{
     if(e.key==='Escape'){DOM.liteChartSearch.classList.remove('on');DOM.liteChartFrame.focus();}
     if(e.key==='Enter'&&DOM.liteChartSearch.value){DOM.liteChartSearch.classList.remove('on');loadLiteChart(DOM.liteChartSearch.value,0);}
+  });
+  if(DOM.liteMacdResizer)DOM.liteMacdResizer.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    const startY=e.clientY,startH=DOM.liteMacdChart.clientHeight||116;
+    const move=ev=>{
+      const h=Math.max(80,Math.min(260,startH-(ev.clientY-startY)));
+      DOM.liteMacdChart.style.height=h+'px';
+      applyLitePaneLayout();setLiteRightOffset();
+    };
+    const up=()=>{
+      window.removeEventListener('pointermove',move);
+      window.removeEventListener('pointerup',up);
+    };
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
   });
 }
 function _getPopupViewport(){
