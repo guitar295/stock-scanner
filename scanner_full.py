@@ -719,6 +719,36 @@ def upsert_today_bar(df_hist, today_bar):
     df_hist = df_hist[df_hist.index.date != bar_date]
     return pd.concat([df_hist, new_row]).sort_index()
 
+def chart_symbol_status(symbol: str) -> dict:
+    """
+    Kiểm tra nhanh (KHÔNG gọi mạng/vnstock) xem việc tải chart cho `symbol`
+    sẽ được phục vụ từ cache có sẵn hay sẽ cần ensure_symbol_live_in_cache()
+    thực hiện một lượt gọi mạng (tải mới toàn bộ lịch sử, hoặc cập nhật nến
+    hôm nay từ vnstock). Dùng để hiển thị trạng thái "Đang tải cache" /
+    "Đang update chart" ở giao diện TRƯỚC khi gọi endpoint tải dữ liệu thật.
+    """
+    symbol = symbol.upper().strip()
+    now = datetime.now(TZ_VN)
+    current_date = now.date()
+    now_time = int(now.strftime("%H%M%S"))
+
+    with cache_lock:
+        df_hist = history_cache.get(symbol)
+    has_cache = df_hist is not None and len(df_hist) >= 60
+
+    if not has_cache:
+        return {"symbol": symbol, "cached": False, "need_fetch": True, "reason": "no_cache"}
+
+    if current_date.weekday() >= 5 or now_time < 90000:
+        return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "outside_session"}
+
+    last_touch = chart_live_touch.get(symbol, 0)
+    if time.time() - last_touch < CHART_LIVE_TTL_SEC:
+        return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "recently_updated"}
+
+    return {"symbol": symbol, "cached": True, "need_fetch": True, "reason": "live_update_due"}
+
+
 def ensure_symbol_live_in_cache(symbol: str) -> bool:
     symbol = symbol.upper().strip()
     now = datetime.now(TZ_VN)
@@ -1923,6 +1953,7 @@ start_dashboard(
     fetch_chart_fn    = dashboard_chart_fn,
     fetch_chart_15m_fn = dashboard_chart_15m_fn,
     ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
+    chart_symbol_status_fn = chart_symbol_status,
     momentum_today_ref = lambda: momentum_today,
     port              = 8888,
 )
