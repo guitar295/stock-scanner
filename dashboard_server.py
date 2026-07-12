@@ -3359,9 +3359,16 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='text'){
-      // Click thẳng lên chart để gõ chữ tại đúng vị trí click, không dùng hộp thoại prompt() nữa.
-      // Nếu đang gõ dở 1 ô chữ khác (chưa blur) thì chốt nó lại trước khi mở ô mới.
-      if(_liteTextEditPos)_liteCommitTextInput();
+      // Đang soạn dở 1 ô chữ (chưa blur): click ra ngoài phạm vi ô chữ chỉ để KẾT THÚC soạn (chốt chữ),
+      // không mở thêm khung chữ mới tại vị trí vừa click. Muốn viết chữ tiếp, người dùng phải bấm lại
+      // công cụ Text rồi click vị trí mới.
+      if(_liteTextEditPos){
+        _liteCommitTextInput();
+        setLiteDrawTool('cursor');
+        return;
+      }
+      // Chưa soạn gì (mới bật công cụ Text): click thẳng lên chart để gõ chữ tại đúng vị trí click,
+      // không dùng hộp thoại prompt() nữa.
       _liteOpenTextInput(p0,e);
       return;
     }
