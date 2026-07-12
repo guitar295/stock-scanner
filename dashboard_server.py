@@ -1876,6 +1876,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button id="lite-shape-bg-clear" class="lite-shape-del" title="Bỏ màu nền">⊘</button>
         <button id="lite-shape-edit" class="lite-shape-del" title="Sửa nội dung">✎</button>
         <button id="lite-shape-dash" class="lite-shape-del" title="Chuyển nét liền / nét đứt">┈</button>
+        <select id="lite-shape-arrow-width" class="lite-shape-select" title="Độ dày mũi tên">
+          <option value="1">Mỏng</option>
+          <option value="2">Vừa</option>
+          <option value="3">Đậm</option>
+          <option value="4">Rất đậm</option>
+          <option value="6">Siêu đậm</option>
+        </select>
         <button id="lite-shape-arrow-style" class="lite-shape-del" title="Chuyển mũi tên thường / mũi tên vệt (đuôi nhọn, thân phình to, đầu nhọn)">◭</button>
         <button id="lite-shape-zigzag-fill" class="lite-shape-del" title="Bật/tắt dải màu tô nền ZigZag (tắt = chỉ còn đường lên xuống)">▥</button>
         <button id="lite-shape-delete" class="lite-shape-del" title="Xóa hình này">✕</button>
@@ -2074,6 +2081,7 @@ const DOM={
   liteTextInput:$('lite-text-input'),
   liteShapeDash:$('lite-shape-dash'),liteDrawCopy:$('lite-draw-copy'),
   liteShapeArrowStyle:$('lite-shape-arrow-style'),liteShapeZigzagFill:$('lite-shape-zigzag-fill'),
+  liteShapeArrowWidth:$('lite-shape-arrow-width'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -2634,13 +2642,15 @@ function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
 }
 // Mũi tên "vệt" (extended/spike arrow): thân thon dần từ đuôi nhọn, rồi xòe rộng hẳn ra thành đầu mũi tên
 // tam giác rõ nét ở phía ngọn — khác mũi tên thân thẳng + đầu tam giác nhỏ thông thường.
-function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color){
+// widthScale: hệ số độ dày do người dùng chọn trên thanh điều chỉnh (mặc định 2 = "Vừa").
+function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,widthScale){
   const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
   if(len<1e-3)return;
+  const ws=Number.isFinite(widthScale)?widthScale/2:1; // chuẩn hoá quanh mức "Vừa" (=2) → hệ số 1
   const ux=dx/len,uy=dy/len,px=-uy,py=ux; // vector đơn vị: dọc thân & vuông góc thân
   const headLen=Math.max(10,Math.min(len*.42,32)); // chiều dài phần đầu mũi tên (tam giác xòe rộng)
-  const shaftW=Math.max(3,Math.min(len*.09,7)); // độ rộng thân (thon, hẹp hơn hẳn đầu mũi tên)
-  const headW=Math.max(14,Math.min(len*.34,26)); // độ rộng đáy đầu mũi tên (xòe rộng)
+  const shaftW=Math.max(2,Math.min(len*.09,7))*ws; // độ rộng thân (thon, hẹp hơn hẳn đầu mũi tên)
+  const headW=Math.max(10,Math.min(len*.34,26))*ws; // độ rộng đáy đầu mũi tên (xòe rộng)
   const baseT=Math.max(0,len-headLen); // vị trí bắt đầu xòe đầu mũi tên, tính từ đuôi
   const bx=x1+ux*baseT,by=y1+uy*baseT;
   ctx.save();
@@ -2767,12 +2777,13 @@ function _liteDrawShapeToCanvas(ctx,d){
       if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
     }
   }else if(d.type==='arrow'){
+    const aw=Number.isFinite(d.arrowW)?d.arrowW:2;
     if(d.wide){
-      _liteDrawWideArrow(ctx,x1,y1,x2,y2,color);
+      _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,aw);
     }else{
-      _liteDrawLine(ctx,x1,y1,x2,y2,color,d.dash?[5,4]:null);
-      const ang=Math.atan2(y2-y1,x2-x1),headLen=10;
-      ctx.save();ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=1.4;
+      _liteDrawLine(ctx,x1,y1,x2,y2,color,d.dash?[5,4]:null,aw);
+      const ang=Math.atan2(y2-y1,x2-x1),headLen=8+aw*3;
+      ctx.save();ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=aw;
       ctx.beginPath();
       ctx.moveTo(x2,y2);
       ctx.lineTo(x2-headLen*Math.cos(ang-Math.PI/7),y2-headLen*Math.sin(ang-Math.PI/7));
@@ -2833,7 +2844,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     if(target2Y!==null)ctx.fillStyle=_liteHexAlpha(targetColor,.16),ctx.fillRect(rx,Math.min(targetY,target2Y),rw,Math.abs(targetY-target2Y));
     ctx.lineWidth=selected?2:1.4;
     _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
-    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor,null,hasT2?0.9:1.4);
+    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor,null,hasT2?0.6:1.4);
     if(stopY!==null)_liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
     if(target2Y!==null)_liteDrawLine(ctx,rx,target2Y,rx+rw,target2Y,targetColor);
     ctx.font='10px "IBM Plex Mono",monospace';
@@ -3091,6 +3102,11 @@ function _liteUpdateFloatingBar(){
     const isArrow=d.type==='arrow';
     DOM.liteShapeArrowStyle.style.display=isArrow?'':'none';
     DOM.liteShapeArrowStyle.classList.toggle('on',isArrow&&!!d.wide);
+  }
+  if(DOM.liteShapeArrowWidth){
+    const isArrow=d.type==='arrow';
+    DOM.liteShapeArrowWidth.style.display=isArrow?'':'none';
+    if(isArrow)DOM.liteShapeArrowWidth.value=String(d.arrowW||2);
   }
   if(DOM.liteShapeZigzagFill){
     const isZZ=d.type==='zigzag';
@@ -3458,6 +3474,13 @@ function bindLiteDrawToolbar(){
     if(sel&&sel.type==='arrow'){
       sel.wide=!sel.wide;
       saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
+    }
+  });
+  DOM.liteShapeArrowWidth?.addEventListener('change',()=>{
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type==='arrow'){
+      sel.arrowW=parseFloat(DOM.liteShapeArrowWidth.value)||2;
+      saveLiteDrawings();redrawLiteDrawings();
     }
   });
   DOM.liteShapeZigzagFill?.addEventListener('click',()=>{
