@@ -1304,6 +1304,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-ind-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
 .lite-indicators input{width:12px;height:12px;margin:0}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
+.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
+.lite-chart-signal.on{display:flex}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
@@ -1822,6 +1824,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
     <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
+      <span class="lite-chart-signal" id="lite-chart-signal"></span>
       <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
       <div class="lite-shape-bar" id="lite-shape-bar">
         <input type="color" id="lite-shape-color" class="lite-shape-color" title="Đổi màu hình vẽ">
@@ -2011,6 +2014,7 @@ const DOM={
   liteMacdChart:$('lite-macd-chart'),liteMacdResizer:$('lite-macd-resizer'),liteChartInput:$('lite-chart-input'),
   liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
+  liteChartSignal:$('lite-chart-signal'),
   liteChartStatus:$('lite-chart-status'),
   liteXhairV:$('lite-xhair-v'),liteXhairH:$('lite-xhair-h'),liteXhairPrice:$('lite-xhair-price'),liteXhairTime:$('lite-xhair-time'),
   liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
@@ -2069,6 +2073,9 @@ const SIGNAL_LABEL_MAP={
   'POCKET PIVOT':'POCKET'
 };
 const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
+// Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
+// SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
+let _sigTodayMap=new Map();
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -2327,6 +2334,26 @@ function updateLiteTitle(bar){
   const col=up?'#26a69a':'#ef5350';
   const v=n=>`<span style="color:${col}">${fmtLiteNum(n)}</span>`;
   DOM.liteChartTitle.innerHTML=`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:${v(bar.open)} H:${v(bar.high)} L:${v(bar.low)} C:${v(bar.close)} (<span style="color:${col}">${sign}${pct.toFixed(2)}%</span>)`;
+}
+// Gắn mũi tên điểm mua lên nến cuối cùng (= nến giao dịch gần nhất, kể cả khi hôm nay không phải
+// ngày giao dịch) cho mã đang xem, dựa HOÀN TOÀN vào _sigTodayMap đã cache sẵn từ fetchSigs() —
+// không gọi thêm API nào, không tính toán chỉ báo riêng, nên gần như không tốn thêm chi phí.
+function _liteApplyBuySignal(){
+  if(!_liteCandle||!_liteData.length)return;
+  const sig=_sigTodayMap.get(_liteSymbol);
+  if(sig){
+    _liteCandle.setMarkers([{
+      time:_liteData[_liteData.length-1].time,position:'belowBar',color:'#9333ea',shape:'arrowUp',size:2,
+      text:(sig.emoji||'📌')+' '+signalLabel(sig.signal)
+    }]);
+    if(DOM.liteChartSignal){
+      DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
+      DOM.liteChartSignal.classList.add('on');
+    }
+  }else{
+    _liteCandle.setMarkers([]);
+    if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
+  }
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -3609,6 +3636,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.16,bottom:.24}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
+    _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
     showLiteChartStatus(_liteStatusPending);
   }catch(e){
@@ -4056,6 +4084,10 @@ async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
     DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
+    // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung
+    // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
+    _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
+    _liteApplyBuySignal();
     const momentum=j.momentum||[];
     if(!momentum.length){
       DOM.momentumList.innerHTML='';
