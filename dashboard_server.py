@@ -2615,7 +2615,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.fillStyle='rgba(38,166,154,.16)';ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
     if(stopY!==null)ctx.fillStyle='rgba(239,83,80,.16)',ctx.fillRect(rx,Math.min(entryY,stopY),rw,Math.abs(entryY-stopY));
     ctx.lineWidth=selected?2:1.4;
-    _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#111827');
+    _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
     _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,'#26a69a');
     if(stopY!==null)_liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
     ctx.font='10px "IBM Plex Mono",monospace';
@@ -2695,6 +2695,11 @@ function _liteFinishZigzag(){
 // thay vì hộp thoại prompt(). Enter (không giữ Shift) hoặc rời focus (blur) sẽ chốt chữ; Escape huỷ.
 function _liteOpenTextInput(p0,ev){
   if(!DOM.liteTextInput)return;
+  // Chặn hành vi mặc định của trình duyệt khi click chuột trái lên 1 phần tử không focus-able (canvas):
+  // mặc định trình duyệt sẽ tự dời focus sang phần tử focus-able gần nhất (khung chart), "cướp" mất focus
+  // trước khi kịp focus ô chữ bên dưới → gõ chữ bị lọt ra ngoài (thành phím tắt / tìm mã). preventDefault()
+  // trên pointerdown/mousedown ngăn được việc dời focus mặc định này.
+  if(ev&&ev.preventDefault)ev.preventDefault();
   const{x,y}=_liteXYFromEvent(ev);
   _liteTextEditPos=p0;
   DOM.liteTextInput.textContent='';
@@ -2702,6 +2707,9 @@ function _liteOpenTextInput(p0,ev){
   DOM.liteTextInput.style.top=Math.max(0,y-13)+'px';
   DOM.liteTextInput.style.color=_liteDrawColor;
   DOM.liteTextInput.classList.add('on');
+  // Focus ngay lập tức (đa số trường hợp đã đủ), rồi focus lại 1 lần nữa ở animation frame kế tiếp để
+  // phòng trường hợp trình duyệt chưa kịp layout xong phần tử vừa chuyển từ display:none sang hiện ra.
+  DOM.liteTextInput.focus();
   requestAnimationFrame(()=>DOM.liteTextInput.focus());
 }
 function _liteCommitTextInput(){
@@ -2760,9 +2768,16 @@ function _liteShapeAnchor(d){
     return{x:(x1+x2)/2,y:Math.min(...ys)};
   }
   if(d.type==='channel'){
+    // Lấy điểm cao nhất (y nhỏ nhất) trong CẢ 4 góc của kênh (2 góc cạnh gốc + 2 góc cạnh đã dịch offset).
+    // Trước đây chỉ xét y1b (góc dịch của điểm đầu) nên khi đường chéo kênh bị nghiêng, góc dịch của điểm
+    // cuối (y2b) có thể cao hơn mà không được tính tới → thanh điều chỉnh bị đặt thấp hơn đỉnh kênh thật,
+    // khiến nó nằm lọt vào trong kênh thay vì nằm hẳn phía trên.
     const offPrice=_liteChannelOffset(d);
-    const y1b=_litePriceToY(pts[0].p+offPrice);
-    return{x:(x1+x2)/2,y:Math.min(y1,y1b!==null?y1b:y1,y2)};
+    const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
+    const ys=[y1,y2];
+    if(y1b!==null)ys.push(y1b);
+    if(y2b!==null)ys.push(y2b);
+    return{x:(x1+x2)/2,y:Math.min(...ys)};
   }
   if(d.type==='arc'){
     const ty=(pts[2]&&Number.isFinite(pts[2].p))?_litePriceToY(pts[2].p):null;
@@ -3423,14 +3438,24 @@ function bindLiteChartControls(){
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
   if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();renderLiteIndicators();setLiteRightOffset();});
-  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>DOM.liteChartFrame.focus());
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>{
+    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
+    // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
+    if(_liteTextEditPos)return;
+    DOM.liteChartFrame.focus();
+  });
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseenter',()=>{
     _litePointerInside=true;
+    if(_liteTextEditPos)return;
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag!=='input'&&tag!=='textarea')DOM.liteChartFrame.focus();
   });
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseleave',()=>{_litePointerInside=false;});
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('keydown',e=>{
+    // Đang gõ chữ (công cụ Text) → không xử lý phím tắt của khung chart (xoá hình, mở tìm mã...) ở đây.
+    // Bản thân ô chữ (#lite-text-input) đã tự xử lý Enter/Escape và stopPropagation() cho các phím khác,
+    // đây chỉ là lớp bảo vệ thêm phòng khi ô chữ chưa kịp nhận focus.
+    if(_liteTextEditPos)return;
     if((e.key==='Delete'||e.key==='Backspace')&&_liteSelectedId!=null){
       e.preventDefault();
       _liteDrawings=_liteDrawings.filter(d=>d.id!==_liteSelectedId);
@@ -3456,6 +3481,10 @@ function bindLiteChartControls(){
   });
   document.addEventListener('keydown',e=>{
     if(!_litePointerInside||e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
+    // Bỏ qua khi đang gõ vào ô chữ của công cụ Text (#lite-text-input là div contenteditable, không phải
+    // input/textarea/select nên check tag ở dưới không bắt được) — trước đây bug này khiến gõ chữ chú thích
+    // bị "cướp" thành gõ tìm mã cổ phiếu.
+    if(_liteTextEditPos||document.activeElement?.isContentEditable)return;
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag==='input'||tag==='textarea'||tag==='select')return;
     e.preventDefault();
