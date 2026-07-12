@@ -1312,7 +1312,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-ind-label:hover{color:var(--accent)}
 .lite-ind-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
 .lite-indicators input{width:12px;height:12px;margin:0}
-.lite-ind-group{position:relative}
+.lite-ind-group{position:relative;display:flex;align-items:center;gap:4px}
+.lite-ind-color-visible{position:static!important;width:14px!important;height:14px!important;opacity:1!important;pointer-events:auto!important;border:1px solid var(--border);border-radius:3px;padding:0;cursor:pointer}
+.lite-ind-dropdown-sub-title{font-size:9px;font-weight:700;color:var(--muted);margin:4px 0 1px;letter-spacing:.03em}
+.lite-ind-dropdown-master{padding-bottom:6px;margin-bottom:2px;border-bottom:1px solid var(--border);font-weight:700}
 .lite-ind-group-btn{display:flex;align-items:center;gap:3px;height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
 .lite-ind-group-btn:hover{color:var(--accent);border-color:var(--accent)}
 .lite-ind-group.open .lite-ind-group-btn{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
@@ -1799,20 +1802,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="lite-tf-btn" data-tf="1W">W</button>
         </div>
         <div class="lite-indicators" id="lite-indicators">
-          <div class="lite-ind-group" data-group="ma">
-            <button type="button" class="lite-ind-group-btn" data-group-btn="ma">MA<span class="lite-ind-count" data-count="ma"></span><span class="lite-ind-caret">▾</span></button>
-            <div class="lite-ind-dropdown" data-dropdown="ma">
+          <div class="lite-ind-group" data-group="maema">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="maema">MA/EMA<span class="lite-ind-count" data-count="maema"></span><span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="maema" style="min-width:120px">
+              <label class="lite-ind-dropdown-master"><input type="checkbox" class="lite-ind-master" value="maema_on"><span>Bật MA/EMA</span></label>
+              <div class="lite-ind-dropdown-sub-title">MA</div>
               <label><input type="checkbox" value="ma10"><span class="lite-ind-label" data-ind="ma10" title="Bấm để đổi màu">MA10</span><input type="color" class="lite-ind-color" data-ind="ma10" value="#ff0000"></label>
               <label><input type="checkbox" value="ma20"><span class="lite-ind-label" data-ind="ma20" title="Bấm để đổi màu">MA20</span><input type="color" class="lite-ind-color" data-ind="ma20" value="#008000"></label>
               <label><input type="checkbox" value="ma30"><span class="lite-ind-label" data-ind="ma30" title="Bấm để đổi màu">MA30</span><input type="color" class="lite-ind-color" data-ind="ma30" value="#1a56db"></label>
               <label><input type="checkbox" value="ma50"><span class="lite-ind-label" data-ind="ma50" title="Bấm để đổi màu">MA50</span><input type="color" class="lite-ind-color" data-ind="ma50" value="#800080"></label>
               <label><input type="checkbox" value="ma100"><span class="lite-ind-label" data-ind="ma100" title="Bấm để đổi màu">MA100</span><input type="color" class="lite-ind-color" data-ind="ma100" value="#d97706"></label>
               <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
-            </div>
-          </div>
-          <div class="lite-ind-group" data-group="ema">
-            <button type="button" class="lite-ind-group-btn" data-group-btn="ema">EMA<span class="lite-ind-count" data-count="ema"></span><span class="lite-ind-caret">▾</span></button>
-            <div class="lite-ind-dropdown" data-dropdown="ema">
+              <div class="lite-ind-dropdown-sub-title">EMA</div>
               <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#f97316"></label>
               <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#16a34a"></label>
               <label><input type="checkbox" value="ema30"><span class="lite-ind-label" data-ind="ema30" title="Bấm để đổi màu">EMA30</span><input type="color" class="lite-ind-color" data-ind="ema30" value="#0ea5e9"></label>
@@ -1823,12 +1824,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           </div>
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <div class="lite-ind-group" data-group="trend">
-            <button type="button" class="lite-ind-group-btn" data-group-btn="trend">Trend<span class="lite-ind-count" data-count="trend"></span><span class="lite-ind-caret">▾</span></button>
+            <input type="checkbox" value="trend">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="trend">Trend<span class="lite-ind-caret">▾</span></button>
             <div class="lite-ind-dropdown" data-dropdown="trend">
-              <label><input type="checkbox" value="trend"><span class="lite-ind-label" title="Trailing Stop/Reverse — vùng xanh khi tăng, hồng khi giảm">Bật Trend</span></label>
-              <div style="display:flex;gap:10px;margin-top:2px;padding-top:6px;border-top:1px solid var(--border)">
+              <div style="display:flex;gap:10px">
                 <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="radio" name="trend-mode" value="regular" checked>Regular</label>
                 <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="radio" name="trend-mode" value="smoothed">Smoothed</label>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Tăng<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-up" value="#84cc16"></label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Giảm<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-down" value="#ef5350"></label>
               </div>
             </div>
           </div>
@@ -2206,7 +2211,7 @@ const LITE_MA_PERIODS=[10,20,30,50,100,200];
 const LITE_EMA_PERIODS=[10,20,30,50,100,200];
 const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
 const LITE_EMA_DEFAULT_COLORS=['#f97316','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
-const LITE_IND_DEFAULT_COLORS={bb:'#9333ea'};
+const LITE_IND_DEFAULT_COLORS={bb:'#9333ea','trend-up':'#84cc16','trend-down':'#ef5350'};
 LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
 LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
 let _liteIndColors={...LITE_IND_DEFAULT_COLORS};
@@ -2240,7 +2245,7 @@ function bindLiteIndColorPickers(){
 function updateLiteIndGroupCounts(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group').forEach(grp=>{
     const key=grp.dataset.group;
-    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked').length;
+    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked:not(.lite-ind-master)').length;
     const badge=grp.querySelector(`.lite-ind-count[data-count="${key}"]`);
     if(badge){badge.textContent=n||'';badge.classList.toggle('on',n>0);}
   });
@@ -2401,7 +2406,9 @@ function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
   DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-    cb.checked=prefs[cb.value]===true;
+    // maema_on là checkbox mới thêm — mặc định BẬT để không làm ẩn mất các đường MA/EMA
+    // người dùng đã bật từ trước (localStorage cũ chưa có key này). Các checkbox khác giữ quy ước cũ.
+    cb.checked=cb.value==='maema_on'?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
 }
@@ -3026,7 +3033,8 @@ function _liteDrawTrendCloud(ctx){
       ctx.lineTo(x,y);
     }
     if(started){
-      ctx.fillStyle=trend===1?'rgba(34,197,94,.28)':'rgba(244,63,94,.24)';
+      const col=trend===1?(_liteIndColors['trend-up']||'#84cc16'):(_liteIndColors['trend-down']||'#ef5350');
+      ctx.fillStyle=_liteHexAlpha(col,trend===1?.28:.24);
       ctx.fill();
     }
     i=j;
@@ -3864,8 +3872,9 @@ function renderLiteIndicators(){
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showMacd=_liteChecked('macd');
-  const maOn=LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p));
-  const emaOn=LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p));
+  const maEmaOn=_liteChecked('maema_on');
+  const maOn=maEmaOn?LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p)):[];
+  const emaOn=maEmaOn?LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p)):[];
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   applyLitePaneLayout();
