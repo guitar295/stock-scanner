@@ -1280,6 +1280,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
+.lite-chart-title-toggle{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}
+.lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s}
+.lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
+.lite-chart-panel.collapsed .lite-chart-search-wrap,
+.lite-chart-panel.collapsed .lite-tf-tabs,
+.lite-chart-panel.collapsed .lite-indicators,
+.lite-chart-panel.collapsed .lite-draw-toolbar,
+.lite-chart-panel.collapsed .lite-chart-frame{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:710px;background:#fff;position:relative}
 #lite-chart{width:100%;height:540px}
@@ -1762,28 +1770,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
   </div>
 
-  <!-- SANKEY -->
-  <div class="panel sankey-panel collapsed" id="sankey-panel">
-    <div class="panel-hdr" id="sankey-toggle">
-      <span class="panel-title">Sankey</span>
-      <span class="sankey-toggle">▶</span>
-    </div>
-    <div class="sankey-wrap" id="sankey-wrap" hidden><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
-  </div>
-
-  <!-- MARKET -->
-  <div class="panel" id="market-panel">
-    <div class="panel-hdr">
-      <span class="panel-title">MARKET</span>
-    </div>
-    <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
-  </div>
-
   <!-- LIGHTWEIGHT CHART -->
-  <div class="panel" id="lite-chart-panel">
+  <div class="panel lite-chart-panel collapsed" id="lite-chart-panel">
     <div class="panel-hdr">
       <div class="lite-chart-toolbar">
-        <span class="panel-title">CHART</span>
+        <span class="panel-title lite-chart-title-toggle" id="lite-chart-toggle">CHART<span class="lite-chart-toggle-icon">▶</span></span>
         <div class="lite-chart-search-wrap">
           <span class="s-icon">🔍</span>
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
@@ -1864,6 +1855,23 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <div class="lite-xhair-time" id="lite-xhair-time"></div>
       <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
     </div>
+  </div>
+
+  <!-- MARKET -->
+  <div class="panel" id="market-panel">
+    <div class="panel-hdr">
+      <span class="panel-title">MARKET</span>
+    </div>
+    <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
+  </div>
+
+  <!-- SANKEY -->
+  <div class="panel sankey-panel collapsed" id="sankey-panel">
+    <div class="panel-hdr" id="sankey-toggle">
+      <span class="panel-title">Sankey</span>
+      <span class="sankey-toggle">▶</span>
+    </div>
+    <div class="sankey-wrap" id="sankey-wrap" hidden><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 </div>
 
@@ -2008,6 +2016,7 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
+  liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
   liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
@@ -2107,6 +2116,7 @@ let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
+let _isChartPanelOpen=false;
 let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
@@ -3896,6 +3906,7 @@ function _hmapDesktopClick(sym){
     updateSimplize(sym);
     loadLiteChart(sym,0);
     if(_isPopoutMode)return;
+    if(_isChartPanelOpen)return;
     if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
   },220);
@@ -4064,6 +4075,19 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
 DOM.sankeyToggle.addEventListener('click',()=>{
   const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
   DOM.sankeyWrap.hidden=collapsed;
+});
+DOM.liteChartToggle.addEventListener('click',()=>{
+  const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
+  _isChartPanelOpen=!collapsed;
+  if(_isChartPanelOpen){
+    // Panel vừa được mở lại sau khi bị ẩn (display:none) — canvas của lightweight-charts
+    // có thể đang mang kích thước 0 nên cần ép resize lại đúng như handler window 'resize'.
+    requestAnimationFrame(()=>{
+      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+      resizeLiteDrawCanvas();redrawLiteDrawings();
+    });
+  }
 });
 // ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
