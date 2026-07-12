@@ -1310,6 +1310,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
 .lite-chart-status.on{opacity:1}
 .lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
+.lite-xhair-v{position:absolute;top:0;bottom:0;left:0;width:0;border-left:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
+.lite-xhair-h{position:absolute;left:0;right:0;top:0;height:0;border-top:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
+.lite-xhair-price{position:absolute;right:1px;top:0;transform:translateY(-50%);min-width:54px;padding:2px 6px;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;text-align:center;white-space:nowrap}
+.lite-xhair-time{position:absolute;left:0;bottom:2px;transform:translateX(-50%);padding:2px 6px;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;white-space:nowrap}
 .lite-draw-toolbar{display:flex;align-items:center;gap:3px;flex-wrap:wrap;padding-left:6px;border-left:1px solid var(--border)}
 .lite-draw-btn{width:24px;height:24px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lite-draw-btn:hover{background:#f1f5f9}
@@ -1851,6 +1855,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
       <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
       <div id="lite-macd-chart"></div>
+      <div class="lite-xhair-v" id="lite-xhair-v"></div>
+      <div class="lite-xhair-h" id="lite-xhair-h"></div>
+      <div class="lite-xhair-price" id="lite-xhair-price"></div>
+      <div class="lite-xhair-time" id="lite-xhair-time"></div>
       <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
     </div>
   </div>
@@ -2004,6 +2012,7 @@ const DOM={
   liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
   liteChartStatus:$('lite-chart-status'),
+  liteXhairV:$('lite-xhair-v'),liteXhairH:$('lite-xhair-h'),liteXhairPrice:$('lite-xhair-price'),liteXhairTime:$('lite-xhair-time'),
   liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
   liteDrawUndo:$('lite-draw-undo'),liteDrawClear:$('lite-draw-clear'),
   liteDrawColor:$('lite-draw-color'),
@@ -2134,18 +2143,27 @@ function _liteHexToRgba(hex,alpha){
 }
 let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
 let _liteMainWhite=null,_liteMacdWhite=null,_liteBBFillData=null;
-let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_liteCrosshairSyncing=false,_litePointerInside=false,_liteInputTimer=null;
+let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-// Panel nào đang thực sự có con trỏ ('main'|'macd'|null) — dùng để chỉ hiện 1 đường ngang duy nhất,
-// và chỉ gọi applyOptions khi CHUYỂN panel (không gọi mỗi lần di chuột) để tránh giật/nháy.
-let _liteActivePane=null,_liteMacdValueByTime=new Map();
+let _liteMacdValueByTime=new Map();
 const LITE_BARS_VISIBLE=400,LITE_RIGHT_OFFSET=40,LITE_HIST_SCALE=2.1;
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
+  // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
+  // Lý do: cách cũ dùng applyOptions() để bật/tắt horzLine mỗi khi đổi panel — applyOptions là thao tác
+  // nặng (buộc chart vẽ lại toàn bộ), gọi liên tục theo mousemove nên gây giật/nháy và có lúc lộ ra
+  // đồng thời 2 đường ngang (do độ trễ giữa 2 lệnh applyOptions ở 2 chart). Từ nay chỉ vẽ 1 crosshair
+  // DUY NHẤT bằng overlay DOM riêng (xem _liteMoveXhair/_liteHideXhair) — mượt tuyệt đối vì chỉ set
+  // style.left/top, không đụng tới engine vẽ của lightweight-charts.
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET},
+    crosshair:{
+      mode:LightweightCharts.CrosshairMode.Normal,
+      vertLine:{visible:false,labelVisible:false},
+      horzLine:{visible:false,labelVisible:false}
+    }
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
@@ -2154,7 +2172,6 @@ function initLiteChart(){
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
-    crosshair:{mode:LightweightCharts.CrosshairMode.Normal,horzLine:{visible:false,labelVisible:false}},
     rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });  _liteCandle=_liteChart.addCandlestickSeries({
@@ -2166,7 +2183,8 @@ function initLiteChart(){
   });
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
   // Series "whitespace" vô hình: chỉ chứa các mốc thời gian tương lai (vùng trống bên phải nến cuối),
-  // giúp time-scale nhận biết vùng này để cross hair đồng bộ liền mạch giữa 2 panel kể cả khi trỏ vào vùng trống.
+  // giúp time-scale nhận biết vùng này nên subscribeCrosshairMove vẫn trả về param.time hợp lệ khi
+  // trỏ vào vùng trống đó (để overlay crosshair + nhãn ngày vẫn hoạt động, không bị "rớt").
   _liteMainWhite=_liteChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteMacdWhite=_liteMacdChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
@@ -2178,59 +2196,54 @@ function initLiteChart(){
     if(_liteSyncing||!range||!_liteChart)return;
     _liteSyncing=true;_liteChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
   });
+  // ─── Crosshair hợp nhất (1 đường dọc + 1 đường ngang) cho cả 2 panel ───────────────────────────
+  // Nguyên lý: KHÔNG dùng crosshair gốc của lightweight-charts nữa (đã tắt hẳn ở chartOpts phía trên).
+  // Mỗi panel tự báo toạ độ con trỏ (x,y cục bộ) qua subscribeCrosshairMove, ta cộng thêm offsetTop
+  // của panel đó so với khung frame để ra toạ độ TUYỆT ĐỐI trong #lite-chart-frame, rồi set thẳng
+  // style.left/top cho 4 phần tử overlay (vạch dọc xuyên suốt cả khung, vạch ngang, nhãn giá, nhãn ngày).
+  // Vì #lite-chart và #lite-macd-chart có cùng chiều rộng & cùng gốc trái (0), toạ độ x của 2 panel
+  // khớp tuyệt đối nhau nên vạch dọc luôn thẳng hàng liền mạch qua cả 2 panel — không lệch, không giật,
+  // vì mỗi lần di chuột chỉ là một phép gán style (rẻ), hoàn toàn không gọi applyOptions/setCrosshairPosition.
+  function _liteHideXhair(){
+    if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
+    if(DOM.liteXhairH)DOM.liteXhairH.style.display='none';
+    if(DOM.liteXhairPrice)DOM.liteXhairPrice.style.display='none';
+    if(DOM.liteXhairTime)DOM.liteXhairTime.style.display='none';
+  }
+  function _liteMoveXhair(x,y,priceTxt,timeTxt){
+    if(DOM.liteXhairV){DOM.liteXhairV.style.left=x+'px';DOM.liteXhairV.style.display='block';}
+    if(DOM.liteXhairH){DOM.liteXhairH.style.top=y+'px';DOM.liteXhairH.style.display='block';}
+    if(DOM.liteXhairPrice){
+      DOM.liteXhairPrice.style.top=y+'px';
+      DOM.liteXhairPrice.textContent=priceTxt;
+      DOM.liteXhairPrice.style.display=priceTxt?'block':'none';
+    }
+    if(DOM.liteXhairTime){
+      DOM.liteXhairTime.style.left=x+'px';
+      DOM.liteXhairTime.textContent=timeTxt;
+      DOM.liteXhairTime.style.display=timeTxt?'block':'none';
+    }
+  }
   _liteChart.subscribeCrosshairMove(param=>{
     const key=param&&param.time?liteTimeKey(param.time):'';
-    if(key&&_liteDataByTime.has(key))updateLiteTitle(_liteDataByTime.get(key));
-    else updateLiteTitle(_liteData[_liteData.length-1]);
-    if(_liteCrosshairSyncing||!_liteMacdChart)return;
-    if(!param||!param.point){
-      _liteMacdChart.clearCrosshairPosition();
-      _liteActivePane=null;
-      return;
-    }
-    // Chuột đang ở panel chart → panel này giữ horzLine, panel MACD tắt horzLine (chỉ còn 1 vạch ngang duy nhất).
-    // CHỈ gọi applyOptions khi thật sự đổi panel (không gọi mỗi lần di chuột) để tránh giật/nháy.
-    if(_liteActivePane!=='main'){
-      _liteActivePane='main';
-      _liteChart.applyOptions({crosshair:{horzLine:{visible:true,labelVisible:true}}});
-      _liteMacdChart.applyOptions({crosshair:{horzLine:{visible:false,labelVisible:false}}});
-    }
-    _liteCrosshairSyncing=true;
-    // QUAN TRỌNG: dùng series whitespace ẩn (_liteMacdWhite) để đặt vị trí crosshair bên MACD, KHÔNG
-    // dùng _liteMacdCrosshairSeries vì series đó chỉ tồn tại khi người dùng bật checkbox MACD (và bị
-    // set về null mỗi lần đổi mã/tải lại indicator) — dẫn đến mất đường dọc bên panel MACD. Whitespace
-    // series luôn tồn tại xuyên suốt vòng đời chart nên đồng bộ ổn định kể cả khi trỏ vào vùng trống.
-    if(param.time&&_liteMacdWhite){
-      // Dùng giá trị MACD thực tại mốc thời gian này (không hard-code 0) để nếu marker/label
-      // có bật lên thì vẫn đúng vị trí, thay vì luôn dính cứng ở mức 0.
-      const mv=_liteMacdValueByTime.get(key);
-      _liteMacdChart.setCrosshairPosition(Number.isFinite(mv)?mv:0,param.time,_liteMacdWhite);
-    }
-    _liteCrosshairSyncing=false;
+    const bar=key?_liteDataByTime.get(key):null;
+    if(bar)updateLiteTitle(bar);else updateLiteTitle(_liteData[_liteData.length-1]);
+    if(!param||!param.point){_liteHideXhair();return;}
+    const x=param.point.x,y=(DOM.liteChart.offsetTop||0)+param.point.y;
+    const priceTxt=bar&&Number.isFinite(bar.close)?fmtLiteNum(bar.close):'';
+    const timeTxt=key?fmtLiteDate(key):'';
+    _liteMoveXhair(x,y,priceTxt,timeTxt);
   });
   _liteMacdChart.subscribeCrosshairMove(param=>{
-    if(_liteCrosshairSyncing||!_liteChart)return;
-    if(!param||!param.point){
-      _liteChart.clearCrosshairPosition();
-      _liteActivePane=null;
-      return;
-    }
-    // Chuột đang ở panel MACD → panel này giữ horzLine, panel chart tắt horzLine
-    if(_liteActivePane!=='macd'){
-      _liteActivePane='macd';
-      _liteMacdChart.applyOptions({crosshair:{horzLine:{visible:true,labelVisible:true}}});
-      _liteChart.applyOptions({crosshair:{horzLine:{visible:false,labelVisible:false}}});
-    }
-    _liteCrosshairSyncing=true;
-    // Tương tự chiều trên: dùng _liteMainWhite (luôn tồn tại, kể cả vùng thời gian tương lai chưa có
-    // nến) thay vì _liteCandle (không có dữ liệu ở vùng trống bên phải) để đường dọc bên panel chart
-    // luôn hiện, không bị "rớt" mỗi khi trỏ vào vùng chưa có nến hoặc vừa đổi mã/tải lại.
-    if(param.time&&_liteMainWhite){
-      const key=liteTimeKey(param.time);
-      const bar=_liteDataByTime.get(key);
-      _liteChart.setCrosshairPosition(bar&&Number.isFinite(bar.close)?bar.close:0,param.time,_liteMainWhite);
-    }
-    _liteCrosshairSyncing=false;
+    if(!param||!param.point){_liteHideXhair();return;}
+    const key=param.time?liteTimeKey(param.time):'';
+    const bar=key?_liteDataByTime.get(key):null;
+    if(bar)updateLiteTitle(bar);
+    const x=param.point.x,y=(DOM.liteMacdChart.offsetTop||0)+param.point.y;
+    const mv=key?_liteMacdValueByTime.get(key):undefined;
+    const priceTxt=Number.isFinite(mv)?fmtLiteNum(mv):'';
+    const timeTxt=key?fmtLiteDate(key):'';
+    _liteMoveXhair(x,y,priceTxt,timeTxt);
   });
   if(!_liteResizeBound){
     _liteResizeBound=true;
