@@ -2251,7 +2251,7 @@ function _liteHexToRgba(hex,alpha){
   return `rgba(${r},${g},${b},${alpha})`;
 }
 let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
-let _liteMainWhite=null,_liteMacdWhite=null,_liteBBFillData=null;
+let _liteMainWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
 let _liteMacdValueByTime=new Map();
@@ -2365,7 +2365,7 @@ function initLiteChart(){
     // chỉ thực sự vẽ khi panel Chart đang hiển thị (offsetParent!==null) để không tốn CPU vô ích
     // lúc người dùng đang ở tab khác của dashboard.
     const _liteDrawLoop=()=>{
-      if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData))redrawLiteDrawings();
+      if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData))redrawLiteDrawings();
       requestAnimationFrame(_liteDrawLoop);
     };
     requestAnimationFrame(_liteDrawLoop);
@@ -2475,6 +2475,7 @@ function _clearLiteIndicators(){
   _liteMacdCrosshairSeries=null;
   _liteMacdValueByTime=new Map();
   _liteBBFillData=null;
+  _liteTrendFillData=null;
 }
 function _sma(data,n){
   const out=[];let sum=0;
@@ -2559,15 +2560,16 @@ function _trendNRTR(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT){
   }
   return data.map((b,i)=>({time:b.time,value:nw[i],trend:trend[i]}));
 }
-function _trendSeries(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT){
+function _trendCloudData(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT){
+  // Vùng tô nằm giữa đường trailing-stop (NW) và giá đóng cửa: xanh khi đang tăng, hồng khi đang giảm.
   const t=_trendNRTR(data,period,mult);
-  const up=[],down=[];
-  for(const p of t){
-    if(p.value==null)continue;
-    if(p.trend===1)up.push({time:p.time,value:p.value});
-    else down.push({time:p.time,value:p.value});
+  const out=[];
+  for(let i=0;i<t.length;i++){
+    if(t[i].value==null)continue;
+    const close=data[i].close;
+    out.push({time:t[i].time,top:Math.max(t[i].value,close),bottom:Math.min(t[i].value,close),trend:t[i].trend});
   }
-  return{up,down};
+  return out;
 }
 function alignLiteSeries(points){
   const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
@@ -2954,10 +2956,41 @@ function _liteDrawBBBand(ctx){
   if(started){ctx.closePath();ctx.fillStyle=_liteHexAlpha(color,.12);ctx.fill();}
   ctx.restore();
 }
+function _liteDrawTrendCloud(ctx){
+  if(!_liteTrendFillData||!_liteChart||!_liteTrendFillData.length)return;
+  const pts=_liteTrendFillData;
+  ctx.save();
+  let i=0;
+  while(i<pts.length){
+    const trend=pts[i].trend;
+    let j=i+1;
+    while(j<pts.length&&pts[j].trend===trend)j++;
+    const seg=pts.slice(i,j);
+    ctx.beginPath();
+    let started=false;
+    for(let k=0;k<seg.length;k++){
+      const x=_liteTimeToX(seg[k].time),y=_litePriceToY(seg[k].top);
+      if(x===null||y===null)continue;
+      if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+    }
+    for(let k=seg.length-1;k>=0;k--){
+      const x=_liteTimeToX(seg[k].time),y=_litePriceToY(seg[k].bottom);
+      if(x===null||y===null)continue;
+      ctx.lineTo(x,y);
+    }
+    if(started){
+      ctx.fillStyle=trend===1?'rgba(22,163,74,.16)':'rgba(244,63,94,.16)';
+      ctx.fill();
+    }
+    i=j;
+  }
+  ctx.restore();
+}
 function redrawLiteDrawings(){
   if(!_liteDrawCtx||!DOM.liteDrawCanvas)return;
   const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight;
   _liteDrawCtx.clearRect(0,0,w,h);
+  _liteDrawTrendCloud(_liteDrawCtx);
   _liteDrawBBBand(_liteDrawCtx);
   for(const d of _liteDrawings)_liteDrawShapeToCanvas(_liteDrawCtx,d);
   if(_liteDrawActive)_liteDrawShapeToCanvas(_liteDrawCtx,_liteDrawActive);
@@ -3815,15 +3848,6 @@ function renderLiteIndicators(){
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
   }
-  if(trendOn){
-    // Đường trailing-stop/reverse: xanh khi đang tăng, đỏ khi đang giảm — không có kênh hồi quy.
-    _liteIndicatorSeries.push({chart:_liteChart,kind:'trend-up',series:_liteChart.addLineSeries({
-      color:'#16a34a',lineWidth:2,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
-    })});
-    _liteIndicatorSeries.push({chart:_liteChart,kind:'trend-down',series:_liteChart.addLineSeries({
-      color:'#ef4444',lineWidth:2,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
-    })});
-  }
   _liteIndicatorSeries.forEach(s=>{
     if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
     else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
@@ -3838,9 +3862,10 @@ function renderLiteIndicators(){
     _liteBBFillData=null;
   }
   if(trendOn){
-    const tr=_trendSeries(_liteData);
-    _liteIndicatorSeries.find(s=>s.kind==='trend-up').series.setData(tr.up);
-    _liteIndicatorSeries.find(s=>s.kind==='trend-down').series.setData(tr.down);
+    // Không dùng series đường kẻ — tô vùng (cloud) bám theo giá bằng canvas, xem _liteDrawTrendCloud.
+    _liteTrendFillData=_trendCloudData(_liteData);
+  }else{
+    _liteTrendFillData=null;
   }
   if(showMacd){
     const m=_macd(_liteData);
