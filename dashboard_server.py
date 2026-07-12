@@ -2731,9 +2731,9 @@ function _liteDrawShapeToCanvas(ctx,d){
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
     const targetColor=d.targetColor||'#26a69a';
     ctx.save();
-    ctx.fillStyle=_liteHexAlpha(targetColor,.16);ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
+    ctx.fillStyle=_liteHexAlpha(targetColor,hasT2?.09:.16);ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
     if(stopY!==null)ctx.fillStyle='rgba(239,83,80,.16)',ctx.fillRect(rx,Math.min(entryY,stopY),rw,Math.abs(entryY-stopY));
-    if(target2Y!==null)ctx.fillStyle=_liteHexAlpha(targetColor,.09),ctx.fillRect(rx,Math.min(targetY,target2Y),rw,Math.abs(targetY-target2Y));
+    if(target2Y!==null)ctx.fillStyle=_liteHexAlpha(targetColor,.16),ctx.fillRect(rx,Math.min(targetY,target2Y),rw,Math.abs(targetY-target2Y));
     ctx.lineWidth=selected?2:1.4;
     _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
     _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor);
@@ -3268,13 +3268,16 @@ function bindLiteDrawToolbar(){
     const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
     if(!sel||sel.type!=='position')return;
     if(Number.isFinite(sel.target2P)){
-      // Đang bật → tắt: xoá hẳn giá Target 2, quay về mặc định chỉ 1 target.
+      // Đang bật → tắt: đường Target (đang là Target 1) biến mất, đường Target 2 (giá đã vẽ/kéo ban đầu)
+      // trở lại thành đường Target duy nhất — quay về đúng mặc định chỉ 1 target.
+      sel.points[1]={...sel.points[1],p:sel.target2P};
       delete sel.target2P;
     }else{
-      // Đang tắt → bật: đặt giá Target 2 mặc định, kéo dài thêm nửa khoảng cách Entry→Target 1
-      // theo đúng hướng lệnh (mua/bán), rồi người dùng có thể kéo lại theo ý muốn.
-      const entryP=sel.points[0].p,targetP=sel.points[1].p;
-      sel.target2P=targetP+(targetP-entryP)*0.5;
+      // Đang tắt → bật: đường Target hiện có (đã vẽ) đổi thành Target 2 — giữ nguyên đúng giá đó.
+      // Đường Target mới (Target 1) được chèn vào giữa Entry và Target 2, nằm ở nửa khoảng cách.
+      const entryP=sel.points[0].p,oldTargetP=sel.points[1].p;
+      sel.target2P=oldTargetP;
+      sel.points[1]={...sel.points[1],p:entryP+(oldTargetP-entryP)*0.5};
     }
     saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
   });
