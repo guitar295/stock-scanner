@@ -2736,9 +2736,9 @@ function _liteDrawShapeToCanvas(ctx,d){
     if(target2Y!==null)ctx.fillStyle=_liteHexAlpha(targetColor,.16),ctx.fillRect(rx,Math.min(targetY,target2Y),rw,Math.abs(targetY-target2Y));
     ctx.lineWidth=selected?2:1.4;
     _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
-    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor);
+    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor,hasT2?[5,4]:null);
     if(stopY!==null)_liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
-    if(target2Y!==null)_liteDrawLine(ctx,rx,target2Y,rx+rw,target2Y,targetColor,[5,4]);
+    if(target2Y!==null)_liteDrawLine(ctx,rx,target2Y,rx+rw,target2Y,targetColor);
     ctx.font='10px "IBM Plex Mono",monospace';
     ctx.fillStyle='#111827';ctx.fillText('Entry '+fmtLiteNum(entryP),rx+4,entryY-3);
     const pctT=entryP?((targetP-entryP)/entryP*100):0;
