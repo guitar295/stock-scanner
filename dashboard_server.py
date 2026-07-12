@@ -1280,8 +1280,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
-.lite-chart-title-toggle{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}
-.lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s}
+.lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
+.lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel.collapsed .lite-chart-search-wrap,
 .lite-chart-panel.collapsed .lite-tf-tabs,
@@ -1772,9 +1772,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
   <!-- LIGHTWEIGHT CHART -->
   <div class="panel lite-chart-panel collapsed" id="lite-chart-panel">
-    <div class="panel-hdr">
+    <div class="panel-hdr" id="lite-chart-toggle">
       <div class="lite-chart-toolbar">
-        <span class="panel-title lite-chart-title-toggle" id="lite-chart-toggle">CHART<span class="lite-chart-toggle-icon">▶</span></span>
+        <span class="panel-title">CHART</span>
         <div class="lite-chart-search-wrap">
           <span class="s-icon">🔍</span>
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
@@ -1812,6 +1812,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="lite-draw-btn" id="lite-draw-copy" title="Copy hình chart (cả MACD)">📋</button>
         </div>
       </div>
+      <span class="lite-chart-toggle-icon">▶</span>
     </div>
     <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
@@ -4076,15 +4077,24 @@ DOM.sankeyToggle.addEventListener('click',()=>{
   const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
   DOM.sankeyWrap.hidden=collapsed;
 });
-DOM.liteChartToggle.addEventListener('click',()=>{
+DOM.liteChartToggle.addEventListener('click',e=>{
+  // Khi thẻ đang mở, các control bên trong thanh công cụ (tìm mã, D/W, chỉ báo, vẽ...)
+  // vẫn phải bấm được bình thường — chỉ coi là "bấm vào thẻ để thu/mở" khi không bấm
+  // trúng các vùng control đó. Khi thẻ đang thu gọn thì các vùng đó đã ẩn (display:none)
+  // nên toàn bộ header luôn hoạt động như nút mở ra, giống hệt SANKEY.
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
     // Panel vừa được mở lại sau khi bị ẩn (display:none) — canvas của lightweight-charts
-    // có thể đang mang kích thước 0 nên cần ép resize lại đúng như handler window 'resize'.
+    // có thể đang mang kích thước 0 nên cần ép resize lại đúng như handler window 'resize',
+    // đồng thời set lại visible logical range (số bar hiển thị + khoảng trống lề phải) như
+    // mặc định ban đầu, tránh trường hợp nến bị dồn cụm vào một góc do resize sau khi range
+    // đã được tính với width=0 lúc panel còn ẩn.
     requestAnimationFrame(()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
       if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+      if(_liteData.length)setLiteRightOffset();
       resizeLiteDrawCanvas();redrawLiteDrawings();
     });
   }
