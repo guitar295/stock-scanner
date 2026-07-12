@@ -1832,8 +1832,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
                 <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="radio" name="trend-mode" value="smoothed">Smoothed</label>
               </div>
               <div style="display:flex;gap:10px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
-                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Tăng<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-up" value="#84cc16"></label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Giảm<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-down" value="#ef5350"></label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Tăng<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-up" value="#64fa96"></label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Giảm<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-down" value="#fa9696"></label>
               </div>
             </div>
           </div>
@@ -2211,7 +2211,7 @@ const LITE_MA_PERIODS=[10,20,30,50,100,200];
 const LITE_EMA_PERIODS=[10,20,30,50,100,200];
 const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
 const LITE_EMA_DEFAULT_COLORS=['#f97316','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
-const LITE_IND_DEFAULT_COLORS={bb:'#9333ea','trend-up':'#84cc16','trend-down':'#ef5350'};
+const LITE_IND_DEFAULT_COLORS={bb:'#9333ea','trend-up':'#64fa96','trend-down':'#fa9696'};
 LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
 LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
 let _liteIndColors={...LITE_IND_DEFAULT_COLORS};
@@ -3033,7 +3033,7 @@ function _liteDrawTrendCloud(ctx){
       ctx.lineTo(x,y);
     }
     if(started){
-      const col=trend===1?(_liteIndColors['trend-up']||'#84cc16'):(_liteIndColors['trend-down']||'#ef5350');
+      const col=trend===1?(_liteIndColors['trend-up']||'#64fa96'):(_liteIndColors['trend-down']||'#fa9696');
       ctx.fillStyle=_liteHexAlpha(col,trend===1?.28:.24);
       ctx.fill();
     }
