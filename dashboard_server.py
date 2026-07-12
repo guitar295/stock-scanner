@@ -2553,6 +2553,19 @@ function _liteDrawShapeToCanvas(ctx,d){
     const ctrlLP=_liteArcControlLP(d);
     if(ctrlLP){
       const cx=_liteLogicalToX(ctrlLP.l),cy=_litePriceToY(ctrlLP.p);
+      // Tô màu phần diện tích giữa dây cung (đường thẳng nối 2 điểm đầu-cuối) và đường cong, giống kiểu
+      // dải màu của công cụ Kênh giá, để dễ nhìn thấy "vùng" mà bán nguyệt bao lấy.
+      if(cx!==null&&cy!==null){
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.quadraticCurveTo(cx,cy,x2,y2);
+        ctx.lineTo(x1,y1);
+        ctx.closePath();
+        ctx.fillStyle=_liteHexAlpha(color,.12);
+        ctx.fill();
+        ctx.restore();
+      }
       ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?2.4:1.8;ctx.lineCap='round';
       if(d.dash)ctx.setLineDash([5,4]);
       ctx.beginPath();ctx.moveTo(x1,y1);
