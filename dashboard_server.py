@@ -2252,9 +2252,11 @@ function initLiteChart(){
       if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
       resizeLiteDrawCanvas();redrawLiteDrawings();
     });
-    // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục)
+    // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục);
+    // chỉ thực sự vẽ khi panel Chart đang hiển thị (offsetParent!==null) để không tốn CPU vô ích
+    // lúc người dùng đang ở tab khác của dashboard.
     const _liteDrawLoop=()=>{
-      if(_liteDrawCtx&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData))redrawLiteDrawings();
+      if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData))redrawLiteDrawings();
       requestAnimationFrame(_liteDrawLoop);
     };
     requestAnimationFrame(_liteDrawLoop);
@@ -3489,14 +3491,17 @@ function openLiteSearchWithChar(ch){
 function renderLiteIndicators(){
   if(!_liteChart||!_liteMacdChart)return;
   _clearLiteIndicators();
+  // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showMacd=_liteChecked('macd');
+  const on={ema10:_liteChecked('ema10'),ema20:_liteChecked('ema20'),ema50:_liteChecked('ema50'),ma200:_liteChecked('ma200'),bb:_liteChecked('bb')};
   applyLitePaneLayout();
-  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  if(_liteChecked('ema10'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema10,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(_liteChecked('ema20'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema20,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(_liteChecked('ema50'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema50,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(_liteChecked('ma200'))_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ma200,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(_liteChecked('bb')){
+  // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
+  // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
+  if(on.ema10)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema10,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(on.ema20)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema20,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(on.ema50)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema50,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(on.ma200)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ma200,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  if(on.bb){
     // Chỉ vẽ 3 đường (upper/mid/lower) bằng series thật của thư viện.
     // Phần TÔ MÀU giữa 2 đường band được vẽ riêng bằng canvas (xem _liteDrawBBBand)
     // để clip chính xác trong dải, không đụng gì tới phần dưới đường band dưới.
@@ -3515,11 +3520,11 @@ function renderLiteIndicators(){
     })});
   }
   let i=0;
-  if(_liteChecked('ema10'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
-  if(_liteChecked('ema20'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
-  if(_liteChecked('ema50'))_liteIndicatorSeries[i++].series.setData(_ema(_liteData,50));
-  if(_liteChecked('ma200'))_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
-  if(_liteChecked('bb')){
+  if(on.ema10)_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
+  if(on.ema20)_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
+  if(on.ema50)_liteIndicatorSeries[i++].series.setData(_ema(_liteData,50));
+  if(on.ma200)_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
+  if(on.bb){
     const bb=_bbands(_liteData,20,2);
     _liteIndicatorSeries[i++].series.setData(bb.upper);
     _liteIndicatorSeries[i++].series.setData(bb.mid);
@@ -3696,14 +3701,25 @@ function bindLiteChartControls(){
   if(DOM.liteMacdResizer)DOM.liteMacdResizer.addEventListener('pointerdown',e=>{
     e.preventDefault();
     const startY=e.clientY,startH=DOM.liteMacdChart.clientHeight||176;
-    const move=ev=>{
-      const h=Math.max(120,Math.min(340,startH-(ev.clientY-startY)));
-      DOM.liteMacdChart.style.height=h+'px';
+    // Gộp các sự kiện pointermove (bắn nhiều hơn tốc độ khung hình màn hình) thành đúng 1 lần
+    // cập nhật layout/chart mỗi khung hình bằng rAF — applyLitePaneLayout() gọi applyOptions() trên
+    // cả 2 chart nên là thao tác nặng, gọi trực tiếp theo từng pointermove sẽ gây giật khi kéo.
+    let pendingH=null,rafId=null;
+    const flush=()=>{
+      rafId=null;
+      if(pendingH===null)return;
+      DOM.liteMacdChart.style.height=pendingH+'px';
       applyLitePaneLayout();setLiteRightOffset();
+      pendingH=null;
+    };
+    const move=ev=>{
+      pendingH=Math.max(120,Math.min(340,startH-(ev.clientY-startY)));
+      if(rafId===null)rafId=requestAnimationFrame(flush);
     };
     const up=()=>{
       window.removeEventListener('pointermove',move);
       window.removeEventListener('pointerup',up);
+      if(rafId!==null){cancelAnimationFrame(rafId);flush();}
     };
     window.addEventListener('pointermove',move);
     window.addEventListener('pointerup',up);
