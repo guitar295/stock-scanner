@@ -1290,6 +1290,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:710px;background:#fff;position:relative}
+.lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
 #lite-chart{width:100%;height:540px}
 #lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
 #lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
