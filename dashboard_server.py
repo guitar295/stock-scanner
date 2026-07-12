@@ -1324,9 +1324,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-ind-group.open .lite-ind-dropdown{display:flex}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
-.lite-ma-hide-btn{height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
-.lite-ma-hide-btn:hover{border-color:var(--accent);color:var(--accent)}
-.lite-ma-hide-btn.on{background:#fef2f2;border-color:#ef4444;color:#ef4444}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
 .lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
 .lite-chart-signal.on{display:flex}
@@ -1827,7 +1824,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
         </div>
-        <button type="button" class="lite-ma-hide-btn" id="lite-ma-hide-toggle" title="Tạm ẩn tất cả đường MA/EMA đang bật để xem nến trơn (không mất lựa chọn đã tick)">Ẩn MA/EMA</button>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
           <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
           <button class="lite-draw-btn" data-tool="trendline" title="Đường kẻ chéo">╱</button>
@@ -2078,7 +2074,6 @@ const DOM={
   liteTextInput:$('lite-text-input'),
   liteShapeDash:$('lite-shape-dash'),liteDrawCopy:$('lite-draw-copy'),
   liteShapeArrowStyle:$('lite-shape-arrow-style'),liteShapeZigzagFill:$('lite-shape-zigzag-fill'),
-  liteMaHideToggle:$('lite-ma-hide-toggle'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -2175,8 +2170,6 @@ const LITE_IND_DEFAULT_COLORS={bb:'#9333ea'};
 LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
 LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
 let _liteIndColors={...LITE_IND_DEFAULT_COLORS};
-// Tạm ẩn tất cả đường MA/EMA (không đụng tới các checkbox đã tick, chỉ ẩn hiển thị) để xem nến trơn.
-let _liteMaHidden=false;
 function loadLiteIndColors(){
   let stored={};
   try{stored=JSON.parse(localStorage.getItem(LITE_IND_COLOR_KEY)||'{}')||{};}catch(e){stored={};}
@@ -2639,22 +2632,25 @@ function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
   }
   return min;
 }
-// Mũi tên "vệt" (extended/spike arrow): đuôi nhọn, thân phình to dần, rồi thu về đỉnh nhọn ở đầu mũi tên —
-// kiểu mũi tên xu hướng hay dùng trong biểu đồ tài chính (khác mũi tên thân thẳng + đầu tam giác thông thường).
+// Mũi tên "vệt" (extended/spike arrow): thân thon dần từ đuôi nhọn, rồi xòe rộng hẳn ra thành đầu mũi tên
+// tam giác rõ nét ở phía ngọn — khác mũi tên thân thẳng + đầu tam giác nhỏ thông thường.
 function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color){
   const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
   if(len<1e-3)return;
   const ux=dx/len,uy=dy/len,px=-uy,py=ux; // vector đơn vị: dọc thân & vuông góc thân
-  const headLen=Math.min(len*.35,26); // đoạn từ "vai" (chỗ phình rộng nhất) tới đỉnh nhọn
-  const maxW=Math.max(6,Math.min(len*.22,16)); // độ phình lớn nhất của thân
-  const shoulderT=Math.max(0,len-headLen); // vị trí "vai" tính từ đuôi
-  const sx=x1+ux*shoulderT,sy=y1+uy*shoulderT;
+  const headLen=Math.max(10,Math.min(len*.42,32)); // chiều dài phần đầu mũi tên (tam giác xòe rộng)
+  const shaftW=Math.max(3,Math.min(len*.09,7)); // độ rộng thân (thon, hẹp hơn hẳn đầu mũi tên)
+  const headW=Math.max(14,Math.min(len*.34,26)); // độ rộng đáy đầu mũi tên (xòe rộng)
+  const baseT=Math.max(0,len-headLen); // vị trí bắt đầu xòe đầu mũi tên, tính từ đuôi
+  const bx=x1+ux*baseT,by=y1+uy*baseT;
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(x1,y1); // đuôi — điểm nhọn
-  ctx.lineTo(sx+px*maxW/2,sy+py*maxW/2); // vai trái
+  ctx.lineTo(bx+px*shaftW/2,by+py*shaftW/2); // mép thân trái, thon dần tới đáy đầu mũi tên
+  ctx.lineTo(bx+px*headW/2,by+py*headW/2); // xòe rộng ra đáy đầu mũi tên bên trái
   ctx.lineTo(x2,y2); // đỉnh mũi tên
-  ctx.lineTo(sx-px*maxW/2,sy-py*maxW/2); // vai phải
+  ctx.lineTo(bx-px*headW/2,by-py*headW/2); // đáy đầu mũi tên bên phải
+  ctx.lineTo(bx-px*shaftW/2,by-py*shaftW/2); // mép thân phải
   ctx.closePath();
   ctx.fillStyle=color;
   ctx.fill();
@@ -3703,8 +3699,8 @@ function renderLiteIndicators(){
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showMacd=_liteChecked('macd');
-  const maOn=_liteMaHidden?[]:LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p));
-  const emaOn=_liteMaHidden?[]:LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p));
+  const maOn=LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p));
+  const emaOn=LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p));
   const bbOn=_liteChecked('bb');
   applyLitePaneLayout();
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
@@ -3850,12 +3846,6 @@ function bindLiteChartControls(){
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
   if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();updateLiteIndGroupCounts();renderLiteIndicators();setLiteRightOffset();});
-  DOM.liteMaHideToggle?.addEventListener('click',()=>{
-    _liteMaHidden=!_liteMaHidden;
-    DOM.liteMaHideToggle.classList.toggle('on',_liteMaHidden);
-    DOM.liteMaHideToggle.textContent=_liteMaHidden?'Hiện MA/EMA':'Ẩn MA/EMA';
-    renderLiteIndicators();
-  });
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
     // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
