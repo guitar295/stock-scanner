@@ -1822,7 +1822,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             </div>
           </div>
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
-          <label class="lite-ind-simple"><input type="checkbox" value="trend" title="Trailing Stop/Reverse (xanh=tăng, đỏ=giảm)">Trend</label>
+          <div class="lite-ind-group" data-group="trend">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="trend">Trend<span class="lite-ind-count" data-count="trend"></span><span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="trend">
+              <label><input type="checkbox" value="trend"><span class="lite-ind-label" title="Trailing Stop/Reverse — vùng xanh khi tăng, hồng khi giảm">Bật Trend</span></label>
+              <div style="display:flex;gap:10px;margin-top:2px;padding-top:6px;border-top:1px solid var(--border)">
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="radio" name="trend-mode" value="regular" checked>Regular</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="radio" name="trend-mode" value="smoothed">Smoothed</label>
+              </div>
+            </div>
+          </div>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
@@ -2171,6 +2180,20 @@ const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
+const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
+function loadLiteTrendMode(){
+  let mode='regular';
+  try{mode=localStorage.getItem(LITE_TREND_MODE_KEY)||'regular';}catch(e){}
+  DOM.liteIndicators?.querySelectorAll('input[name="trend-mode"]').forEach(r=>{r.checked=(r.value===mode);});
+}
+function saveLiteTrendMode(){
+  const mode=_liteTrendMode();
+  try{localStorage.setItem(LITE_TREND_MODE_KEY,mode);}catch(e){}
+}
+function _liteTrendMode(){
+  const el=DOM.liteIndicators?.querySelector('input[name="trend-mode"]:checked');
+  return el?el.value:'regular';
+}
 // Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch
 // lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
 function _liteLSGet(key,fallback){
@@ -2522,7 +2545,8 @@ function _macd(data){
 }
 // ═══ TREND (Trailing Stop/Reverse kiểu NRTR) ═══
 // mult = hệ số nhân biên độ đảo chiều, period = chu kỳ WMA biên độ H-L.
-// Không vẽ kênh hồi quy — chỉ vẽ đường trailing-stop đổi màu theo xu hướng.
+// mode: 'regular' dùng H-L/Close thường; 'smoothed' dùng nến Heikin Ashi (đúng công thức AFL gốc).
+// Không vẽ kênh hồi quy — chỉ tô vùng trailing-stop đổi màu theo xu hướng.
 const LITE_TREND_MULT=1.75, LITE_TREND_PERIOD=10;
 function _wma(values,n){
   // values: mảng số thô (không phải {time,value}) đã align 1-1 theo index với dữ liệu nến.
@@ -2535,34 +2559,57 @@ function _wma(values,n){
   }
   return out;
 }
-function _trendNRTR(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT){
+function _heikinAshi(data){
+  // HaOpen[i] = AMA(Ref(HaClose,-1), 0.5) = (HaOpen[i-1]+HaClose[i-1])/2 — đúng công thức trong AFL gốc.
+  const out=[];
+  let prevHaOpen=null,prevHaClose=null;
+  for(let i=0;i<data.length;i++){
+    const o=data[i].open,h=data[i].high,l=data[i].low,c=data[i].close;
+    const haClose=(o+h+l+c)/4;
+    const haOpen=(prevHaOpen==null)?(o+c)/2:(prevHaOpen+prevHaClose)/2;
+    const haHigh=Math.max(h,haOpen,haClose);
+    const haLow=Math.min(l,haOpen,haClose);
+    out.push({haOpen,haHigh,haLow,haClose});
+    prevHaOpen=haOpen;prevHaClose=haClose;
+  }
+  return out;
+}
+function _trendNRTR(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT,mode='regular'){
   const n=data.length;
-  const hl=data.map(b=>b.high-b.low);
-  const wma=_wma(hl,period);
+  let nm,j;
+  if(mode==='smoothed'){
+    const ha=_heikinAshi(data);
+    nm=ha.map(b=>b.haHigh-b.haLow);
+    j=ha.map(b=>(b.haOpen+b.haHigh+b.haLow+b.haClose)/4);
+  }else{
+    nm=data.map(b=>b.high-b.low);
+    j=data.map(b=>b.close);
+  }
+  const wma=_wma(nm,period);
   const trend=new Array(n).fill(1);
   const nw=new Array(n).fill(null);
   let started=false;
   for(let i=0;i<n;i++){
     if(wma[i]==null)continue;
     const rev=mult*wma[i];
-    const j=data[i].close;
+    const jj=j[i];
     if(!started){
-      trend[i]=1;nw[i]=j-rev;started=true;continue;
+      trend[i]=1;nw[i]=jj-rev;started=true;continue;
     }
-    const prevTrend=trend[i-1],prevNw=nw[i-1]!=null?nw[i-1]:(j-rev);
+    const prevTrend=trend[i-1],prevNw=nw[i-1]!=null?nw[i-1]:(jj-rev);
     if(prevTrend===1){
-      if(j<prevNw){trend[i]=-1;nw[i]=j+rev;}
-      else{trend[i]=1;nw[i]=Math.max(j-rev,prevNw);}
+      if(jj<prevNw){trend[i]=-1;nw[i]=jj+rev;}
+      else{trend[i]=1;nw[i]=Math.max(jj-rev,prevNw);}
     }else{
-      if(j>prevNw){trend[i]=1;nw[i]=j-rev;}
-      else{trend[i]=-1;nw[i]=Math.min(j+rev,prevNw);}
+      if(jj>prevNw){trend[i]=1;nw[i]=jj-rev;}
+      else{trend[i]=-1;nw[i]=Math.min(jj+rev,prevNw);}
     }
   }
   return data.map((b,i)=>({time:b.time,value:nw[i],trend:trend[i]}));
 }
-function _trendCloudData(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT){
-  // Vùng tô nằm giữa đường trailing-stop (NW) và giá đóng cửa: xanh khi đang tăng, hồng khi đang giảm.
-  const t=_trendNRTR(data,period,mult);
+function _trendCloudData(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT,mode='regular'){
+  // Vùng tô nằm giữa đường trailing-stop (NW) và giá đóng cửa thực: xanh khi đang tăng, hồng khi đang giảm.
+  const t=_trendNRTR(data,period,mult,mode);
   const out=[];
   for(let i=0;i<t.length;i++){
     if(t[i].value==null)continue;
@@ -2979,7 +3026,7 @@ function _liteDrawTrendCloud(ctx){
       ctx.lineTo(x,y);
     }
     if(started){
-      ctx.fillStyle=trend===1?'rgba(22,163,74,.16)':'rgba(244,63,94,.16)';
+      ctx.fillStyle=trend===1?'rgba(34,197,94,.28)':'rgba(244,63,94,.24)';
       ctx.fill();
     }
     i=j;
@@ -3863,7 +3910,7 @@ function renderLiteIndicators(){
   }
   if(trendOn){
     // Không dùng series đường kẻ — tô vùng (cloud) bám theo giá bằng canvas, xem _liteDrawTrendCloud.
-    _liteTrendFillData=_trendCloudData(_liteData);
+    _liteTrendFillData=_trendCloudData(_liteData,LITE_TREND_PERIOD,LITE_TREND_MULT,_liteTrendMode());
   }else{
     _liteTrendFillData=null;
   }
@@ -3954,6 +4001,7 @@ async function loadLiteChart(sym='FPT',retry=1){
 }
 function bindLiteChartControls(){
   loadLiteIndicatorPrefs();
+  loadLiteTrendMode();
   bindLiteIndColorPickers();
   bindLiteIndGroupDropdowns();
   bindLiteDrawToolbar();
@@ -3970,7 +4018,7 @@ function bindLiteChartControls(){
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
-  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();updateLiteIndGroupCounts();renderLiteIndicators();setLiteRightOffset();});
+  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();setLiteRightOffset();});
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
     // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
