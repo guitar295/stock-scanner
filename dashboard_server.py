@@ -2170,6 +2170,14 @@ const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
+// Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch
+// lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
+function _liteLSGet(key,fallback){
+  try{return localStorage.getItem(key)||fallback;}catch(e){return fallback;}
+}
+function _liteLSSet(key,val){
+  try{localStorage.setItem(key,val);}catch(e){}
+}
 const LITE_MA_PERIODS=[10,20,30,50,100,200];
 const LITE_EMA_PERIODS=[10,20,30,50,100,200];
 const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
@@ -2187,7 +2195,7 @@ function loadLiteIndColors(){
   });
 }
 function saveLiteIndColors(){
-  try{localStorage.setItem(LITE_IND_COLOR_KEY,JSON.stringify(_liteIndColors));}catch(e){}
+  _liteLSSet(LITE_IND_COLOR_KEY,JSON.stringify(_liteIndColors));
 }
 function bindLiteIndColorPickers(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-label').forEach(span=>{
@@ -2566,7 +2574,7 @@ function loadLiteDrawings(){
   _liteSelectedId=null;_liteChannelPending=null;_liteArcPending=null;_liteZigzagPending=null;_liteLinePending=null;_liteDrawActive=null;
 }
 function saveLiteDrawings(){
-  try{localStorage.setItem(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));}catch(e){}
+  _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
 function resizeLiteDrawCanvas(){
   if(!DOM.liteDrawCanvas||!DOM.liteChart)return;
@@ -3071,9 +3079,14 @@ function _liteShapeAnchor(d){
   }
   return{x:(x1+x2)/2,y:Math.min(y1,y2)};
 }
+// Lấy hình đang được chọn (theo _liteSelectedId) — gộp lại 1 chỗ duy nhất thay vì lặp lại
+// cùng 1 biểu thức tra cứu ở rất nhiều handler bên dưới.
+function _liteGetSelectedShape(){
+  return _liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+}
 function _liteUpdateFloatingBar(){
   if(!DOM.liteShapeBar)return;
-  const d=_liteSelectedId!=null?_liteDrawings.find(x=>x.id===_liteSelectedId):null;
+  const d=_liteGetSelectedShape();
   if(!d){DOM.liteShapeBar.classList.remove('on');return;}
   const anchor=_liteShapeAnchor(d);
   if(!anchor){DOM.liteShapeBar.classList.remove('on');return;}
@@ -3352,11 +3365,11 @@ async function copyLiteChartImage(btn){
 }
 function bindLiteDrawToolbar(){
   resizeLiteDrawCanvas();
-  try{_liteDrawColor=localStorage.getItem(LITE_DRAW_COLOR_KEY)||'#1a56db';}catch(e){}
+  _liteDrawColor=_liteLSGet(LITE_DRAW_COLOR_KEY,'#1a56db');
   if(DOM.liteDrawColor)DOM.liteDrawColor.value=_liteDrawColor;
-  try{_liteTextSize=parseInt(localStorage.getItem(LITE_TEXT_SIZE_KEY),10)||13;}catch(e){}
-  try{_liteTextFont=localStorage.getItem(LITE_TEXT_FONT_KEY)||'mono';}catch(e){}
-  try{_liteTextBg=localStorage.getItem(LITE_TEXT_BG_KEY)||'';}catch(e){}
+  _liteTextSize=parseInt(_liteLSGet(LITE_TEXT_SIZE_KEY,'13'),10)||13;
+  _liteTextFont=_liteLSGet(LITE_TEXT_FONT_KEY,'mono');
+  _liteTextBg=_liteLSGet(LITE_TEXT_BG_KEY,'');
   DOM.liteDrawToolbar?.addEventListener('click',e=>{
     const btn=e.target.closest('.lite-draw-btn');if(!btn)return;
     if(btn===DOM.liteDrawUndo){_liteDrawings.pop();_liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();return;}
@@ -3365,31 +3378,29 @@ function bindLiteDrawToolbar(){
   });
   DOM.liteDrawColor?.addEventListener('input',()=>{
     _liteDrawColor=DOM.liteDrawColor.value;
-    try{localStorage.setItem(LITE_DRAW_COLOR_KEY,_liteDrawColor);}catch(e){}
-    if(_liteSelectedId!=null){
-      const sel=_liteDrawings.find(d=>d.id===_liteSelectedId);
-      if(sel&&sel.type!=='position'){sel.color=_liteDrawColor;saveLiteDrawings();redrawLiteDrawings();}
-    }
+    _liteLSSet(LITE_DRAW_COLOR_KEY,_liteDrawColor);
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type!=='position'){sel.color=_liteDrawColor;saveLiteDrawings();redrawLiteDrawings();}
   });
   DOM.liteShapeColor?.addEventListener('input',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type!=='position'){
       sel.color=DOM.liteShapeColor.value;
       _liteDrawColor=DOM.liteShapeColor.value;
       if(DOM.liteDrawColor)DOM.liteDrawColor.value=_liteDrawColor;
-      try{localStorage.setItem(LITE_DRAW_COLOR_KEY,_liteDrawColor);}catch(e){}
+      _liteLSSet(LITE_DRAW_COLOR_KEY,_liteDrawColor);
       saveLiteDrawings();redrawLiteDrawings();
     }
   });
   DOM.liteShapeTargetColor?.addEventListener('input',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='position'){
       sel.targetColor=DOM.liteShapeTargetColor.value;
       saveLiteDrawings();redrawLiteDrawings();
     }
   });
   DOM.liteShapeTarget2?.addEventListener('click',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(!sel||sel.type!=='position')return;
     if(Number.isFinite(sel.target2P)){
       // Đang bật → tắt: đường Target (đang là Target 1) biến mất, đường Target 2 (giá đã vẽ/kéo ban đầu)
@@ -3408,32 +3419,32 @@ function bindLiteDrawToolbar(){
   DOM.liteShapeFontSize?.addEventListener('change',()=>{
     const size=parseInt(DOM.liteShapeFontSize.value,10)||13;
     _liteTextSize=size;
-    try{localStorage.setItem(LITE_TEXT_SIZE_KEY,String(size));}catch(e){}
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    _liteLSSet(LITE_TEXT_SIZE_KEY,String(size));
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='text'){sel.fontSize=size;saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();}
   });
   DOM.liteShapeFontFamily?.addEventListener('change',()=>{
     const fam=DOM.liteShapeFontFamily.value||'mono';
     _liteTextFont=fam;
-    try{localStorage.setItem(LITE_TEXT_FONT_KEY,fam);}catch(e){}
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    _liteLSSet(LITE_TEXT_FONT_KEY,fam);
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='text'){sel.fontFamily=fam;saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();}
   });
   DOM.liteShapeBgColor?.addEventListener('input',()=>{
     const bg=DOM.liteShapeBgColor.value;
     _liteTextBg=bg;
-    try{localStorage.setItem(LITE_TEXT_BG_KEY,bg);}catch(e){}
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    _liteLSSet(LITE_TEXT_BG_KEY,bg);
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='text'){sel.bg=bg;saveLiteDrawings();redrawLiteDrawings();}
   });
   DOM.liteShapeBgClear?.addEventListener('click',()=>{
     _liteTextBg='';
-    try{localStorage.setItem(LITE_TEXT_BG_KEY,'');}catch(e){}
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    _liteLSSet(LITE_TEXT_BG_KEY,'');
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='text'){sel.bg=null;saveLiteDrawings();redrawLiteDrawings();}
   });
   DOM.liteShapeEdit?.addEventListener('click',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='text'){setLiteDrawTool('text');_liteOpenTextInput(sel.points[0],null,sel);}
   });
   DOM.liteDrawCopy?.addEventListener('click',()=>copyLiteChartImage(DOM.liteDrawCopy));
@@ -3463,28 +3474,28 @@ function bindLiteDrawToolbar(){
     });
   }
   DOM.liteShapeDash?.addEventListener('click',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(sel&&(sel.type==='trendline'||sel.type==='hline'||sel.type==='vline')){
       sel.dash=!sel.dash;
       saveLiteDrawings();redrawLiteDrawings();
     }
   });
   DOM.liteShapeArrowStyle?.addEventListener('click',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='arrow'){
       sel.wide=!sel.wide;
       saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
     }
   });
   DOM.liteShapeArrowWidth?.addEventListener('change',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='arrow'){
       sel.arrowW=parseFloat(DOM.liteShapeArrowWidth.value)||2;
       saveLiteDrawings();redrawLiteDrawings();
     }
   });
   DOM.liteShapeZigzagFill?.addEventListener('click',()=>{
-    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='zigzag'){
       sel.noFill=!sel.noFill;
       saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
