@@ -2283,7 +2283,7 @@ let _liteMainWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillD
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
 let _liteMacdValueByTime=new Map();
-const LITE_BARS_VISIBLE=400,LITE_RIGHT_OFFSET=40,LITE_HIST_SCALE=2.1;
+const LITE_BARS_VISIBLE=380,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
