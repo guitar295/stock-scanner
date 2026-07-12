@@ -1320,17 +1320,22 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-draw-color::-webkit-color-swatch{border:none;border-radius:4px}
 .lite-draw-canvas{position:absolute;top:0;left:0;z-index:2;pointer-events:none}
 .lite-draw-canvas.drawing{pointer-events:auto;cursor:crosshair}
-.lite-shape-bar{position:absolute;z-index:7;display:none;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px 4px;box-shadow:0 2px 8px rgba(17,24,39,.14);transform:translate(-50%,-100%);margin-top:-6px}
+.lite-shape-bar{position:absolute;z-index:7;display:none;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px 5px;box-shadow:0 2px 8px rgba(17,24,39,.14);transform:translate(-50%,-100%);margin-top:-10px}
 .lite-shape-bar.on{display:flex}
-.lite-text-input{position:absolute;z-index:8;display:none;min-width:14px;max-width:360px;padding:1px 3px;font:11px "IBM Plex Mono",monospace;line-height:1.3;color:#111827;background:rgba(255,255,255,.94);border:1px dashed #1a56db;border-radius:3px;outline:none;white-space:pre;overflow:hidden;cursor:text}
+.lite-text-input{position:absolute;z-index:8;display:none;min-width:16px;max-width:360px;min-height:18px;padding:2px 4px;font:12px "IBM Plex Mono",monospace;line-height:1.35;color:#111827;background:rgba(255,255,255,.96);border:1px dashed #1a56db;border-radius:3px;outline:none;white-space:pre-wrap;overflow:hidden;resize:none;cursor:text}
 .lite-text-input.on{display:inline-block}
 .lite-shape-color{width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:5px;background:none;cursor:pointer}
 .lite-shape-color::-webkit-color-swatch-wrapper{padding:2px}
 .lite-shape-color::-webkit-color-swatch{border:none;border-radius:4px}
+.lite-shape-select{height:22px;padding:0 2px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#374151;font-size:11px;cursor:pointer}
 .lite-shape-del{width:20px;height:20px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#ef4444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 #lite-shape-delete:hover{background:#fef2f2}
 .lite-shape-del.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 #lite-shape-dash:hover{background:#f1f5f9}
+#lite-shape-edit{color:#374151}
+#lite-shape-edit:hover{background:#f1f5f9}
+#lite-shape-bg-clear{color:#374151}
+#lite-shape-bg-clear:hover{background:#f1f5f9}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -1795,9 +1800,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="lite-draw-btn" data-tool="hline" title="Đường kẻ ngang">─</button>
           <button class="lite-draw-btn" data-tool="vline" title="Đường kẻ dọc">❘</button>
           <button class="lite-draw-btn" data-tool="rect" title="Hình chữ nhật">▭</button>
-          <button class="lite-draw-btn" data-tool="channel" title="Kênh giá: click-click chọn 2 điểm, rồi rê chuột lên/xuống để tạo kênh, click để chốt">⫽</button>
+          <button class="lite-draw-btn" data-tool="channel" title="Kênh giá: click-click chọn 2 điểm, rồi rê chuột lên/xuống để tạo kênh, click để chốt"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="14" x2="9" y2="2"/><line x1="7" y1="14" x2="13" y2="2"/></svg></button>
           <button class="lite-draw-btn" data-tool="arrow" title="Mũi tên: click-click chọn điểm đầu và điểm cuối">↗</button>
-          <button class="lite-draw-btn" data-tool="zigzag" title="Zigzag: click nối tiếp từng điểm, double-click để kết thúc">⚡</button>
+          <button class="lite-draw-btn" data-tool="zigzag" title="Zigzag: click nối tiếp từng điểm, double-click để kết thúc"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,13 5,4 8,11 11,3 15,8"/></svg></button>
           <button class="lite-draw-btn" data-tool="arc" title="Đường cong bán nguyệt: click-click chọn 2 điểm như đường thẳng, rồi rê chuột lên/xuống để uốn cong, click để chốt">◠</button>
           <button class="lite-draw-btn" data-tool="position" title="Entry/Target/Stoploss">🎯</button>
           <button class="lite-draw-btn" data-tool="text" title="Text">Aa</button>
@@ -1805,7 +1810,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <input type="color" id="lite-draw-color" class="lite-draw-color" value="#1a56db" title="Màu công cụ vẽ">
           <div class="lite-draw-sep"></div>
           <button class="lite-draw-btn" id="lite-draw-undo" title="Xóa nét vừa vẽ">↩</button>
-          <button class="lite-draw-btn" id="lite-draw-delete" title="Xóa hình đang chọn">✕</button>
           <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
           <div class="lite-draw-sep"></div>
           <button class="lite-draw-btn" id="lite-draw-copy" title="Copy hình chart (cả MACD)">📋</button>
@@ -1817,10 +1821,31 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
       <div class="lite-shape-bar" id="lite-shape-bar">
         <input type="color" id="lite-shape-color" class="lite-shape-color" title="Đổi màu hình vẽ">
+        <input type="color" id="lite-shape-target-color" class="lite-shape-color" title="Đổi màu Target">
+        <select id="lite-shape-font-size" class="lite-shape-select" title="Cỡ chữ">
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+          <option value="13">13</option>
+          <option value="14">14</option>
+          <option value="16">16</option>
+          <option value="18">18</option>
+          <option value="20">20</option>
+          <option value="24">24</option>
+          <option value="28">28</option>
+        </select>
+        <select id="lite-shape-font-family" class="lite-shape-select" title="Font chữ">
+          <option value="mono">Mono</option>
+          <option value="sans">Sans</option>
+          <option value="serif">Serif</option>
+        </select>
+        <input type="color" id="lite-shape-bg-color" class="lite-shape-color" title="Màu nền chữ">
+        <button id="lite-shape-bg-clear" class="lite-shape-del" title="Bỏ màu nền">⊘</button>
+        <button id="lite-shape-edit" class="lite-shape-del" title="Sửa nội dung">✎</button>
         <button id="lite-shape-dash" class="lite-shape-del" title="Chuyển nét liền / nét đứt">┈</button>
         <button id="lite-shape-delete" class="lite-shape-del" title="Xóa hình này">✕</button>
       </div>
-      <div class="lite-text-input" id="lite-text-input" contenteditable="true" spellcheck="false"></div>
+      <textarea class="lite-text-input" id="lite-text-input" spellcheck="false" rows="1"></textarea>
       <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off" lang="en" autocapitalize="characters" autocorrect="off" inputmode="text" translate="no">
       <div id="lite-chart"></div>
       <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
@@ -1981,8 +2006,11 @@ const DOM={
   liteChartStatus:$('lite-chart-status'),
   liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
   liteDrawUndo:$('lite-draw-undo'),liteDrawClear:$('lite-draw-clear'),
-  liteDrawColor:$('lite-draw-color'),liteDrawDelete:$('lite-draw-delete'),
+  liteDrawColor:$('lite-draw-color'),
   liteShapeBar:$('lite-shape-bar'),liteShapeColor:$('lite-shape-color'),liteShapeDelete:$('lite-shape-delete'),
+  liteShapeTargetColor:$('lite-shape-target-color'),liteShapeFontSize:$('lite-shape-font-size'),
+  liteShapeFontFamily:$('lite-shape-font-family'),liteShapeBgColor:$('lite-shape-bg-color'),
+  liteShapeBgClear:$('lite-shape-bg-clear'),liteShapeEdit:$('lite-shape-edit'),
   liteTextInput:$('lite-text-input'),
   liteShapeDash:$('lite-shape-dash'),liteDrawCopy:$('lite-draw-copy'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
@@ -2372,10 +2400,30 @@ function applyLitePaneLayout(){
 // đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định), kênh giá vẽ 2 bước.
 const LITE_DRAW_KEY='dashboard_lite_drawings';
 const LITE_DRAW_COLOR_KEY='dashboard_lite_draw_color';
+const LITE_TEXT_SIZE_KEY='dashboard_lite_text_size';
+const LITE_TEXT_FONT_KEY='dashboard_lite_text_font';
+const LITE_TEXT_BG_KEY='dashboard_lite_text_bg';
 const LITE_HIT_TOL=7;
+const LITE_TEXT_FONT_CSS={mono:'"IBM Plex Mono",monospace',sans:'"Inter",Arial,sans-serif',serif:'Georgia,"Times New Roman",serif'};
 let _liteDrawTool='cursor',_liteDrawings=[],_liteDrawActive=null,_liteDrawCtx=null,_liteDrawSeq=1;
 let _liteDrawColor='#1a56db',_liteSelectedId=null,_liteDragInfo=null,_liteChannelPending=null,_liteLinePending=null;
-let _liteArcPending=null,_liteZigzagPending=null,_liteTextEditPos=null;
+let _liteArcPending=null,_liteZigzagPending=null,_liteTextEditPos=null,_liteTextEditId=null;
+let _liteTextSize=13,_liteTextFont='mono',_liteTextBg='';
+function _liteTextFontCSS(sizePx,familyKey){return sizePx+'px '+(LITE_TEXT_FONT_CSS[familyKey]||LITE_TEXT_FONT_CSS.mono);}
+function _liteTextLineHeight(sizePx){return Math.round(sizePx*1.35);}
+// Đo kích thước khối chữ (nhiều dòng) trên canvas để tính vùng bắt-trúng (hit-test) và vị trí neo cho thanh điều chỉnh.
+function _liteTextBoxMetrics(d){
+  if(!_liteDrawCtx)return null;
+  const size=d.fontSize||13,family=d.fontFamily||'mono',pad=4;
+  const lines=(d.text||'').split('\n');
+  const lh=_liteTextLineHeight(size);
+  _liteDrawCtx.save();
+  _liteDrawCtx.font=_liteTextFontCSS(size,family);
+  let maxW=0;
+  for(const line of lines)maxW=Math.max(maxW,_liteDrawCtx.measureText(line||' ').width);
+  _liteDrawCtx.restore();
+  return{pad,lh,size,family,lines,width:maxW+pad*2,height:lines.length*lh+pad*2};
+}
 function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
 function loadLiteDrawings(){
   try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
@@ -2462,8 +2510,18 @@ function _liteDrawShapeToCanvas(ctx,d){
   if(d.type==='text'){
     const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
     if(x===null||y===null)return;
-    ctx.save();ctx.font='11px "IBM Plex Mono",monospace';ctx.fillStyle=d.color||'#111827';
-    ctx.fillText(d.text||'',x+3,y-3);ctx.restore();
+    const m=_liteTextBoxMetrics(d);if(!m)return;
+    ctx.save();
+    if(d.bg){ctx.fillStyle=d.bg;ctx.fillRect(x,y,m.width,m.height);}
+    ctx.font=_liteTextFontCSS(m.size,m.family);
+    ctx.textBaseline='top';
+    ctx.fillStyle=d.color||'#111827';
+    for(let i=0;i<m.lines.length;i++)ctx.fillText(m.lines[i],x+m.pad,y+m.pad+i*m.lh);
+    if(selected){
+      ctx.strokeStyle='#1a56db';ctx.setLineDash([3,3]);ctx.lineWidth=1;
+      ctx.strokeRect(x+.5,y+.5,m.width,m.height);
+    }
+    ctx.restore();
     if(selected)_liteDrawHandle(ctx,x,y);
     return;
   }
@@ -2611,18 +2669,19 @@ function _liteDrawShapeToCanvas(ctx,d){
     const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
     const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
+    const targetColor=d.targetColor||'#26a69a';
     ctx.save();
-    ctx.fillStyle='rgba(38,166,154,.16)';ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
+    ctx.fillStyle=_liteHexAlpha(targetColor,.16);ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
     if(stopY!==null)ctx.fillStyle='rgba(239,83,80,.16)',ctx.fillRect(rx,Math.min(entryY,stopY),rw,Math.abs(entryY-stopY));
     ctx.lineWidth=selected?2:1.4;
     _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
-    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,'#26a69a');
+    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor);
     if(stopY!==null)_liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
     ctx.font='10px "IBM Plex Mono",monospace';
     ctx.fillStyle='#111827';ctx.fillText('Entry '+fmtLiteNum(entryP),rx+4,entryY-3);
     const pctT=entryP?((targetP-entryP)/entryP*100):0;
     const pctS=entryP?((stopP-entryP)/entryP*100):0;
-    ctx.fillStyle='#26a69a';ctx.fillText(`Target ${fmtLiteNum(targetP)} (${pctT>=0?'+':''}${pctT.toFixed(2)}%)`,rx+4,targetY-3);
+    ctx.fillStyle=targetColor;ctx.fillText(`Target ${fmtLiteNum(targetP)} (${pctT>=0?'+':''}${pctT.toFixed(2)}%)`,rx+4,targetY-3);
     if(stopY!==null){ctx.fillStyle='#ef5350';ctx.fillText(`Stop ${fmtLiteNum(stopP)} (${pctS>=0?'+':''}${pctS.toFixed(2)}%)`,rx+4,stopY+11);}
     ctx.restore();
     if(selected){
@@ -2691,37 +2750,72 @@ function _liteFinishZigzag(){
   }
   return true;
 }
-// Công cụ Text: click lên chart mở 1 ô contenteditable ngay tại vị trí click để gõ chữ trực tiếp,
-// thay vì hộp thoại prompt(). Enter (không giữ Shift) hoặc rời focus (blur) sẽ chốt chữ; Escape huỷ.
-function _liteOpenTextInput(p0,ev){
+// Công cụ Text: click lên chart mở 1 ô <textarea> ngay tại vị trí click để gõ chữ trực tiếp (hỗ trợ nhiều dòng
+// tự nhiên nhờ textarea), thay vì hộp thoại prompt(). Enter xuống dòng bình thường; rời focus (blur) sẽ chốt
+// chữ; Escape huỷ. Có thể gọi lại hàm này với 1 hình text có sẵn (editingShape) để SỬA nội dung đã viết.
+function _liteApplyTextInputStyle(){
+  if(!DOM.liteTextInput)return;
+  DOM.liteTextInput.style.color=_liteDrawColor;
+  DOM.liteTextInput.style.fontSize=_liteTextSize+'px';
+  DOM.liteTextInput.style.fontFamily=LITE_TEXT_FONT_CSS[_liteTextFont]||LITE_TEXT_FONT_CSS.mono;
+  DOM.liteTextInput.style.background=_liteTextBg||'rgba(255,255,255,.96)';
+}
+function _liteOpenTextInput(p0,ev,editingShape){
   if(!DOM.liteTextInput)return;
   // Chặn hành vi mặc định của trình duyệt khi click chuột trái lên 1 phần tử không focus-able (canvas):
   // mặc định trình duyệt sẽ tự dời focus sang phần tử focus-able gần nhất (khung chart), "cướp" mất focus
   // trước khi kịp focus ô chữ bên dưới → gõ chữ bị lọt ra ngoài (thành phím tắt / tìm mã). preventDefault()
   // trên pointerdown/mousedown ngăn được việc dời focus mặc định này.
   if(ev&&ev.preventDefault)ev.preventDefault();
-  const{x,y}=_liteXYFromEvent(ev);
+  let x,y;
+  if(ev){({x,y}=_liteXYFromEvent(ev));}
+  else{x=_liteLogicalToX(p0.l);y=_litePriceToY(p0.p);}
+  if(x===null||x===undefined||y===null||y===undefined)return;
   _liteTextEditPos=p0;
-  DOM.liteTextInput.textContent='';
+  _liteTextEditId=editingShape?editingShape.id:null;
+  if(editingShape){
+    _liteDrawColor=editingShape.color||_liteDrawColor;
+    _liteTextSize=editingShape.fontSize||13;
+    _liteTextFont=editingShape.fontFamily||'mono';
+    _liteTextBg=editingShape.bg||'';
+    DOM.liteTextInput.value=editingShape.text||'';
+  }else{
+    DOM.liteTextInput.value='';
+  }
   DOM.liteTextInput.style.left=x+'px';
-  DOM.liteTextInput.style.top=Math.max(0,y-13)+'px';
-  DOM.liteTextInput.style.color=_liteDrawColor;
+  DOM.liteTextInput.style.top=Math.max(0,y)+'px';
+  _liteApplyTextInputStyle();
   DOM.liteTextInput.classList.add('on');
   // Focus ngay lập tức (đa số trường hợp đã đủ), rồi focus lại 1 lần nữa ở animation frame kế tiếp để
   // phòng trường hợp trình duyệt chưa kịp layout xong phần tử vừa chuyển từ display:none sang hiện ra.
   DOM.liteTextInput.focus();
+  if(editingShape){const v=DOM.liteTextInput.value;DOM.liteTextInput.setSelectionRange(v.length,v.length);}
   requestAnimationFrame(()=>DOM.liteTextInput.focus());
 }
 function _liteCommitTextInput(){
   if(!DOM.liteTextInput||!_liteTextEditPos)return null;
-  const text=(DOM.liteTextInput.textContent||'').trim();
+  const text=(DOM.liteTextInput.value||'').replace(/\s+$/,'');
   const p0=_liteTextEditPos;
+  const editId=_liteTextEditId;
   DOM.liteTextInput.classList.remove('on');
-  DOM.liteTextInput.textContent='';
+  DOM.liteTextInput.value='';
   _liteTextEditPos=null;
-  if(!text)return null;
+  _liteTextEditId=null;
+  if(!text){
+    if(editId!=null){_liteDrawings=_liteDrawings.filter(d=>d.id!==editId);saveLiteDrawings();redrawLiteDrawings();}
+    return null;
+  }
+  if(editId!=null){
+    const d=_liteDrawings.find(x=>x.id===editId);
+    if(d){
+      d.text=text;d.color=_liteDrawColor;d.fontSize=_liteTextSize;d.fontFamily=_liteTextFont;d.bg=_liteTextBg||null;
+      saveLiteDrawings();
+      _liteSelectShape(editId);
+      return editId;
+    }
+  }
   const id=_liteDrawSeq++;
-  _liteDrawings.push({id,type:'text',points:[p0],text,color:_liteDrawColor});
+  _liteDrawings.push({id,type:'text',points:[p0],text,color:_liteDrawColor,fontSize:_liteTextSize,fontFamily:_liteTextFont,bg:_liteTextBg||null});
   saveLiteDrawings();
   _liteSelectShape(id);
   return id;
@@ -2729,8 +2823,9 @@ function _liteCommitTextInput(){
 function _liteCloseTextInput(){
   if(!DOM.liteTextInput)return;
   DOM.liteTextInput.classList.remove('on');
-  DOM.liteTextInput.textContent='';
+  DOM.liteTextInput.value='';
   _liteTextEditPos=null;
+  _liteTextEditId=null;
 }
 function setLiteDrawTool(tool){
   const prevTool=_liteDrawTool,hadZigzag=_liteZigzagPending;
@@ -2752,7 +2847,10 @@ function _liteShapeAnchor(d){
   if(!pts||!pts.length)return null;
   if(d.type==='text'){
     const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
-    return(x===null||y===null)?null:{x,y};
+    if(x===null||y===null)return null;
+    const m=_liteTextBoxMetrics(d);
+    const w=m?m.width:0;
+    return{x:x+w/2,y:y-6};
   }
   if(pts.length<2)return null;
   const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
@@ -2803,15 +2901,34 @@ function _liteUpdateFloatingBar(){
   DOM.liteShapeBar.classList.add('on');
   DOM.liteShapeBar.style.left=Math.max(30,Math.min((DOM.liteChart?.clientWidth||600)-30,anchor.x))+'px';
   DOM.liteShapeBar.style.top=Math.max(24,anchor.y)+'px';
+  const isText=d.type==='text',isPosition=d.type==='position';
   if(DOM.liteShapeColor){
-    DOM.liteShapeColor.style.display=d.type==='position'?'none':'';
+    DOM.liteShapeColor.style.display=isPosition?'none':'';
     if(d.color)DOM.liteShapeColor.value=d.color;
+  }
+  if(DOM.liteShapeTargetColor){
+    DOM.liteShapeTargetColor.style.display=isPosition?'':'none';
+    DOM.liteShapeTargetColor.value=d.targetColor||'#26a69a';
   }
   if(DOM.liteShapeDash){
     const supportsDash=d.type==='trendline'||d.type==='hline'||d.type==='vline';
     DOM.liteShapeDash.style.display=supportsDash?'':'none';
     DOM.liteShapeDash.classList.toggle('on',!!d.dash);
   }
+  if(DOM.liteShapeFontSize){
+    DOM.liteShapeFontSize.style.display=isText?'':'none';
+    if(isText)DOM.liteShapeFontSize.value=String(d.fontSize||13);
+  }
+  if(DOM.liteShapeFontFamily){
+    DOM.liteShapeFontFamily.style.display=isText?'':'none';
+    if(isText)DOM.liteShapeFontFamily.value=d.fontFamily||'mono';
+  }
+  if(DOM.liteShapeBgColor){
+    DOM.liteShapeBgColor.style.display=isText?'':'none';
+    if(isText)DOM.liteShapeBgColor.value=d.bg||'#ffffff';
+  }
+  if(DOM.liteShapeBgClear)DOM.liteShapeBgClear.style.display=isText?'':'none';
+  if(DOM.liteShapeEdit)DOM.liteShapeEdit.style.display=isText?'':'none';
 }
 function _liteSelectShape(id){
   _liteSelectedId=id;
@@ -2832,7 +2949,10 @@ function _liteHitTestShape(d,x,y){
   if(d.type==='text'){
     const px=_liteLogicalToX(pts[0].l),py=_litePriceToY(pts[0].p);
     if(px===null||py===null)return null;
-    return Math.hypot(x-px,y-py)<=12?{part:'p0'}:null;
+    const m=_liteTextBoxMetrics(d);
+    const w=m?m.width:20,h=m?m.height:16;
+    if(x>=px-LITE_HIT_TOL&&x<=px+w+LITE_HIT_TOL&&y>=py-LITE_HIT_TOL&&y<=py+h+LITE_HIT_TOL)return{part:'p0'};
+    return null;
   }
   if(pts.length<2)return null;
   const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
@@ -3028,13 +3148,12 @@ function bindLiteDrawToolbar(){
   resizeLiteDrawCanvas();
   try{_liteDrawColor=localStorage.getItem(LITE_DRAW_COLOR_KEY)||'#1a56db';}catch(e){}
   if(DOM.liteDrawColor)DOM.liteDrawColor.value=_liteDrawColor;
+  try{_liteTextSize=parseInt(localStorage.getItem(LITE_TEXT_SIZE_KEY),10)||13;}catch(e){}
+  try{_liteTextFont=localStorage.getItem(LITE_TEXT_FONT_KEY)||'mono';}catch(e){}
+  try{_liteTextBg=localStorage.getItem(LITE_TEXT_BG_KEY)||'';}catch(e){}
   DOM.liteDrawToolbar?.addEventListener('click',e=>{
     const btn=e.target.closest('.lite-draw-btn');if(!btn)return;
     if(btn===DOM.liteDrawUndo){_liteDrawings.pop();_liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();return;}
-    if(btn===DOM.liteDrawDelete){
-      if(_liteSelectedId!=null){_liteDrawings=_liteDrawings.filter(d=>d.id!==_liteSelectedId);_liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();}
-      return;
-    }
     if(btn===DOM.liteDrawClear){if(_liteDrawings.length&&confirm('Xóa tất cả hình vẽ trên chart này?')){_liteDrawings=[];_liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();}return;}
     const tool=btn.dataset.tool;if(tool)setLiteDrawTool(tool);
   });
@@ -3056,13 +3175,52 @@ function bindLiteDrawToolbar(){
       saveLiteDrawings();redrawLiteDrawings();
     }
   });
+  DOM.liteShapeTargetColor?.addEventListener('input',()=>{
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type==='position'){
+      sel.targetColor=DOM.liteShapeTargetColor.value;
+      saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
+  DOM.liteShapeFontSize?.addEventListener('change',()=>{
+    const size=parseInt(DOM.liteShapeFontSize.value,10)||13;
+    _liteTextSize=size;
+    try{localStorage.setItem(LITE_TEXT_SIZE_KEY,String(size));}catch(e){}
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type==='text'){sel.fontSize=size;saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();}
+  });
+  DOM.liteShapeFontFamily?.addEventListener('change',()=>{
+    const fam=DOM.liteShapeFontFamily.value||'mono';
+    _liteTextFont=fam;
+    try{localStorage.setItem(LITE_TEXT_FONT_KEY,fam);}catch(e){}
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type==='text'){sel.fontFamily=fam;saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();}
+  });
+  DOM.liteShapeBgColor?.addEventListener('input',()=>{
+    const bg=DOM.liteShapeBgColor.value;
+    _liteTextBg=bg;
+    try{localStorage.setItem(LITE_TEXT_BG_KEY,bg);}catch(e){}
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type==='text'){sel.bg=bg;saveLiteDrawings();redrawLiteDrawings();}
+  });
+  DOM.liteShapeBgClear?.addEventListener('click',()=>{
+    _liteTextBg='';
+    try{localStorage.setItem(LITE_TEXT_BG_KEY,'');}catch(e){}
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type==='text'){sel.bg=null;saveLiteDrawings();redrawLiteDrawings();}
+  });
+  DOM.liteShapeEdit?.addEventListener('click',()=>{
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(sel&&sel.type==='text'){setLiteDrawTool('text');_liteOpenTextInput(sel.points[0],null,sel);}
+  });
   DOM.liteDrawCopy?.addEventListener('click',()=>copyLiteChartImage(DOM.liteDrawCopy));
   if(DOM.liteTextInput){
     DOM.liteTextInput.addEventListener('keydown',e=>{
       // Chặn nổi bọt lên #lite-chart-frame để không kích hoạt phím tắt khác (mở ô tìm mã, xoá hình...)
-      // trong lúc đang gõ chữ.
+      // trong lúc đang gõ chữ. Enter giờ xuống dòng bình thường (mặc định của textarea) thay vì chốt chữ;
+      // Ctrl/Cmd+Enter chốt nhanh; Escape huỷ.
       e.stopPropagation();
-      if(e.key==='Enter'&&!e.shiftKey){
+      if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){
         e.preventDefault();
         _liteCommitTextInput();
         setLiteDrawTool('cursor');
@@ -3071,6 +3229,10 @@ function bindLiteDrawToolbar(){
         _liteCloseTextInput();
         setLiteDrawTool('cursor');
       }
+    });
+    DOM.liteTextInput.addEventListener('input',()=>{
+      DOM.liteTextInput.style.height='auto';
+      DOM.liteTextInput.style.height=DOM.liteTextInput.scrollHeight+'px';
     });
     DOM.liteTextInput.addEventListener('pointerdown',e=>e.stopPropagation());
     DOM.liteTextInput.addEventListener('blur',()=>{
@@ -3106,6 +3268,16 @@ function bindLiteDrawToolbar(){
       if(_liteDrawTool!=='cursor'||_liteDragInfo)return;
       const{x,y}=_liteXYFromEvent(e);
       DOM.liteChart.style.cursor=_liteHitTest(x,y)?'move':'';
+    });
+    DOM.liteChart.addEventListener('dblclick',e=>{
+      if(_liteDrawTool!=='cursor')return;
+      const{x,y}=_liteXYFromEvent(e);
+      const hit=_liteHitTest(x,y);
+      if(hit&&hit.shape.type==='text'){
+        e.preventDefault();e.stopPropagation();
+        setLiteDrawTool('text');
+        _liteOpenTextInput(hit.shape.points[0],null,hit.shape);
+      }
     });
   }
   if(!DOM.liteDrawCanvas)return;
