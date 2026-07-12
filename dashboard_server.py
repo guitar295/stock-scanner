@@ -1822,7 +1822,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
               <label><input type="checkbox" value="ema200"><span class="lite-ind-label" data-ind="ema200" title="Bấm để đổi màu">EMA200</span><input type="color" class="lite-ind-color" data-ind="ema200" value="#78350f"></label>
             </div>
           </div>
-          <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <div class="lite-ind-group" data-group="trend">
             <input type="checkbox" value="trend">
             <button type="button" class="lite-ind-group-btn" data-group-btn="trend">Trend<span class="lite-ind-caret">▾</span></button>
@@ -1837,6 +1836,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
               </div>
             </div>
           </div>
+          <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
