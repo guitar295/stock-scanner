@@ -1822,6 +1822,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             </div>
           </div>
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
+          <label class="lite-ind-simple"><input type="checkbox" value="trend" title="Trailing Stop/Reverse (xanh=tăng, đỏ=giảm)">Trend</label>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
@@ -2517,6 +2518,56 @@ function _macd(data){
     return{...x,color};
   });
   return{macd,signal,hist};
+}
+// ═══ TREND (Trailing Stop/Reverse kiểu NRTR) ═══
+// mult = hệ số nhân biên độ đảo chiều, period = chu kỳ WMA biên độ H-L.
+// Không vẽ kênh hồi quy — chỉ vẽ đường trailing-stop đổi màu theo xu hướng.
+const LITE_TREND_MULT=1.75, LITE_TREND_PERIOD=10;
+function _wma(values,n){
+  // values: mảng số thô (không phải {time,value}) đã align 1-1 theo index với dữ liệu nến.
+  const out=new Array(values.length).fill(null);
+  const denom=n*(n+1)/2;
+  for(let i=n-1;i<values.length;i++){
+    let sum=0;
+    for(let k=0;k<n;k++)sum+=values[i-k]*(n-k);
+    out[i]=sum/denom;
+  }
+  return out;
+}
+function _trendNRTR(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT){
+  const n=data.length;
+  const hl=data.map(b=>b.high-b.low);
+  const wma=_wma(hl,period);
+  const trend=new Array(n).fill(1);
+  const nw=new Array(n).fill(null);
+  let started=false;
+  for(let i=0;i<n;i++){
+    if(wma[i]==null)continue;
+    const rev=mult*wma[i];
+    const j=data[i].close;
+    if(!started){
+      trend[i]=1;nw[i]=j-rev;started=true;continue;
+    }
+    const prevTrend=trend[i-1],prevNw=nw[i-1]!=null?nw[i-1]:(j-rev);
+    if(prevTrend===1){
+      if(j<prevNw){trend[i]=-1;nw[i]=j+rev;}
+      else{trend[i]=1;nw[i]=Math.max(j-rev,prevNw);}
+    }else{
+      if(j>prevNw){trend[i]=1;nw[i]=j-rev;}
+      else{trend[i]=-1;nw[i]=Math.min(j+rev,prevNw);}
+    }
+  }
+  return data.map((b,i)=>({time:b.time,value:nw[i],trend:trend[i]}));
+}
+function _trendSeries(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT){
+  const t=_trendNRTR(data,period,mult);
+  const up=[],down=[];
+  for(const p of t){
+    if(p.value==null)continue;
+    if(p.trend===1)up.push({time:p.time,value:p.value});
+    else down.push({time:p.time,value:p.value});
+  }
+  return{up,down};
 }
 function alignLiteSeries(points){
   const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
@@ -3736,6 +3787,7 @@ function renderLiteIndicators(){
   const maOn=LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p));
   const emaOn=LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p));
   const bbOn=_liteChecked('bb');
+  const trendOn=_liteChecked('trend');
   applyLitePaneLayout();
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
   // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
@@ -3763,6 +3815,15 @@ function renderLiteIndicators(){
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
   }
+  if(trendOn){
+    // Đường trailing-stop/reverse: xanh khi đang tăng, đỏ khi đang giảm — không có kênh hồi quy.
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'trend-up',series:_liteChart.addLineSeries({
+      color:'#16a34a',lineWidth:2,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    })});
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'trend-down',series:_liteChart.addLineSeries({
+      color:'#ef4444',lineWidth:2,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    })});
+  }
   _liteIndicatorSeries.forEach(s=>{
     if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
     else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
@@ -3775,6 +3836,11 @@ function renderLiteIndicators(){
     _liteBBFillData={upper:bb.upper,lower:bb.lower,color:_liteIndColors.bb};
   }else{
     _liteBBFillData=null;
+  }
+  if(trendOn){
+    const tr=_trendSeries(_liteData);
+    _liteIndicatorSeries.find(s=>s.kind==='trend-up').series.setData(tr.up);
+    _liteIndicatorSeries.find(s=>s.kind==='trend-down').series.setData(tr.down);
   }
   if(showMacd){
     const m=_macd(_liteData);
