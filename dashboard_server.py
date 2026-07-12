@@ -2433,13 +2433,19 @@ function _liteChannelOffset(d){
   return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
 }
 // Đường cong bán nguyệt (arc): pts[2] lưu trực tiếp toạ độ (logical,price) nơi người dùng rê chuột tới —
-// tức là điểm "đáy" (đỉnh cong) mà đường cong PHẢI đi qua. Từ đó suy ra control-point của quadratic bezier
-// bằng công thức bù trừ (vì bezier bậc 2 không đi qua control point): C = 2*target - trungĐiểmDâyCung.
-function _liteArcControlLP(d){
-  const pts=d.points;
-  if(!pts[2]||!Number.isFinite(pts[2].l)||!Number.isFinite(pts[2].p))return null;
-  const midL=(pts[0].l+pts[1].l)/2,midP=(pts[0].p+pts[1].p)/2;
-  return{l:2*pts[2].l-midL,p:2*pts[2].p-midP};
+// tức là điểm "đáy" (đỉnh cong) mà đường cong PHẢI đi qua.
+//
+// LƯU Ý QUAN TRỌNG: control-point của quadratic bezier PHẢI được tính trong không gian PIXEL (x,y trên canvas),
+// KHÔNG được tính trong không gian logical/price rồi mới quy đổi sang pixel. Lý do: công thức bù trừ
+// C = 2*target - trungĐiểm chỉ cho ra đường cong đi đúng qua "target" khi phép quy đổi (logical→x, price→y)
+// là TUYẾN TÍNH. Trục giá của chart có thể ở chế độ log/percentage (không tuyến tính) — khi đó nếu tính C theo
+// logical/price rồi quy đổi, điểm đáy hiển thị trên màn hình sẽ LỆCH khỏi đúng vị trí chuột (lệch càng nhiều khi
+// biên độ giá càng lớn), gây hiện tượng "đáy nhảy chéo xa chuột". Tính thẳng trong pixel-space thì luôn đúng,
+// bất kể trục giá tuyến tính hay không.
+function _liteArcControlXY(x1,y1,x2,y2,tx,ty){
+  if(!Number.isFinite(tx)||!Number.isFinite(ty))return null;
+  const midX=(x1+x2)/2,midY=(y1+y2)/2;
+  return{cx:2*tx-midX,cy:2*ty-midY};
 }
 function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
   let min=Infinity;
@@ -2465,13 +2471,29 @@ function _liteDrawShapeToCanvas(ctx,d){
     // Nhiều điểm (click nối tiếp), có thể mới có 1 điểm khi đang vẽ dở → xử lý riêng, không cần đủ 2 điểm.
     const color=d.color||_liteDrawColor;
     if(pts.length){
+      // Quy đổi trước toàn bộ điểm sang toạ độ pixel (bỏ điểm không hợp lệ) để dùng chung cho cả tô nền lẫn vẽ nét.
+      const scr=[];
+      for(const pt of pts){
+        const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
+        if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
+      }
+      // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng,
+      // giống kiểu dải màu của Kênh giá / Bán nguyệt, để thấy rõ "vùng" mà ZigZag bao lấy.
+      if(scr.length>=3){
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(scr[0].x,scr[0].y);
+        for(let i=1;i<scr.length;i++)ctx.lineTo(scr[i].x,scr[i].y);
+        ctx.closePath();
+        ctx.fillStyle=_liteHexAlpha(color,.12);
+        ctx.fill();
+        ctx.restore();
+      }
       ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?2:1.4;ctx.lineJoin='round';
       ctx.beginPath();
       let started=false;
-      for(const pt of pts){
-        const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
-        if(xx===null||yy===null)continue;
-        if(!started){ctx.moveTo(xx,yy);started=true;}else ctx.lineTo(xx,yy);
+      for(const p of scr){
+        if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);
       }
       if(started)ctx.stroke();
       ctx.restore();
@@ -2550,9 +2572,12 @@ function _liteDrawShapeToCanvas(ctx,d){
     // Đường cong bán nguyệt: 2 điểm đầu-cuối như đường thẳng, bước 2 rê chuột tự do (cả trái/phải lẫn
     // lên/xuống) để chọn vị trí "đáy" (đỉnh cong) — đường cong luôn đi qua đúng vị trí chuột, không bị
     // ép về giữa 2 điểm đầu-cuối.
-    const ctrlLP=_liteArcControlLP(d);
-    if(ctrlLP){
-      const cx=_liteLogicalToX(ctrlLP.l),cy=_litePriceToY(ctrlLP.p);
+    // Quy đổi điểm "đáy" sang pixel TRƯỚC, rồi mới tính control-point trong pixel-space (xem ghi chú tại
+    // _liteArcControlXY) → đường cong luôn đi qua đúng vị trí chuột dù trục giá tuyến tính hay log/percentage.
+    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
+    if(ctrl){
+      const cx=ctrl.cx,cy=ctrl.cy;
       // Tô màu phần diện tích giữa dây cung (đường thẳng nối 2 điểm đầu-cuối) và đường cong, giống kiểu
       // dải màu của công cụ Kênh giá, để dễ nhìn thấy "vùng" mà bán nguyệt bao lấy.
       if(cx!==null&&cy!==null){
@@ -2836,12 +2861,11 @@ function _liteHitTestShape(d,x,y){
   if(d.type==='arc'){
     if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
     if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
-    const ctrlLP=_liteArcControlLP(d);
-    if(ctrlLP){
-      const cx=_liteLogicalToX(ctrlLP.l),cy=_litePriceToY(ctrlLP.p);
-      const tx=_liteLogicalToX(pts[2].l),ty=_litePriceToY(pts[2].p);
+    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
+    if(ctrl){
       if(tx!==null&&ty!==null&&Math.hypot(x-tx,y-ty)<=9)return{part:'offset'};
-      if(cx!==null&&cy!==null&&_liteQuadDist(x,y,x1,y1,cx,cy,x2,y2)<=LITE_HIT_TOL)return{part:'offset'};
+      if(_liteQuadDist(x,y,x1,y1,ctrl.cx,ctrl.cy,x2,y2)<=LITE_HIT_TOL)return{part:'offset'};
     }
     if(_liteSegDist(x,y,x1,y1,x2,y2)<=LITE_HIT_TOL)return{part:'line'};
     return null;
