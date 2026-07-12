@@ -1312,6 +1312,18 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-ind-label:hover{color:var(--accent)}
 .lite-ind-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
 .lite-indicators input{width:12px;height:12px;margin:0}
+.lite-ind-group{position:relative}
+.lite-ind-group-btn{display:flex;align-items:center;gap:3px;height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
+.lite-ind-group-btn:hover{color:var(--accent);border-color:var(--accent)}
+.lite-ind-group.open .lite-ind-group-btn{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+.lite-ind-caret{font-size:8px;transition:transform .15s}
+.lite-ind-group.open .lite-ind-caret{transform:rotate(180deg)}
+.lite-ind-count{display:none;min-width:13px;height:13px;padding:0 3px;border-radius:7px;background:var(--accent);color:#fff;font-size:8px;font-weight:700;align-items:center;justify-content:center;line-height:13px}
+.lite-ind-count.on{display:inline-flex}
+.lite-ind-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:20;flex-direction:column;gap:5px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 10px;box-shadow:0 8px 24px rgba(17,24,39,.12);min-width:100px}
+.lite-ind-group.open .lite-ind-dropdown{display:flex}
+.lite-ind-dropdown label{font-size:10px}
+.lite-ind-simple{display:flex}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
 .lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
 .lite-chart-signal.on{display:flex}
@@ -1787,12 +1799,30 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="lite-tf-btn" data-tf="1W">W</button>
         </div>
         <div class="lite-indicators" id="lite-indicators">
-          <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#ff0000"></label>
-          <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#008000"></label>
-          <label><input type="checkbox" value="ema50"><span class="lite-ind-label" data-ind="ema50" title="Bấm để đổi màu">EMA50</span><input type="color" class="lite-ind-color" data-ind="ema50" value="#800080"></label>
-          <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
-          <label><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
-          <label><input type="checkbox" value="macd">MACD</label>
+          <div class="lite-ind-group" data-group="ma">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="ma">MA<span class="lite-ind-count" data-count="ma"></span><span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="ma">
+              <label><input type="checkbox" value="ma10"><span class="lite-ind-label" data-ind="ma10" title="Bấm để đổi màu">MA10</span><input type="color" class="lite-ind-color" data-ind="ma10" value="#ff0000"></label>
+              <label><input type="checkbox" value="ma20"><span class="lite-ind-label" data-ind="ma20" title="Bấm để đổi màu">MA20</span><input type="color" class="lite-ind-color" data-ind="ma20" value="#008000"></label>
+              <label><input type="checkbox" value="ma30"><span class="lite-ind-label" data-ind="ma30" title="Bấm để đổi màu">MA30</span><input type="color" class="lite-ind-color" data-ind="ma30" value="#1a56db"></label>
+              <label><input type="checkbox" value="ma50"><span class="lite-ind-label" data-ind="ma50" title="Bấm để đổi màu">MA50</span><input type="color" class="lite-ind-color" data-ind="ma50" value="#800080"></label>
+              <label><input type="checkbox" value="ma100"><span class="lite-ind-label" data-ind="ma100" title="Bấm để đổi màu">MA100</span><input type="color" class="lite-ind-color" data-ind="ma100" value="#d97706"></label>
+              <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
+            </div>
+          </div>
+          <div class="lite-ind-group" data-group="ema">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="ema">EMA<span class="lite-ind-count" data-count="ema"></span><span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="ema">
+              <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#f97316"></label>
+              <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#16a34a"></label>
+              <label><input type="checkbox" value="ema30"><span class="lite-ind-label" data-ind="ema30" title="Bấm để đổi màu">EMA30</span><input type="color" class="lite-ind-color" data-ind="ema30" value="#0ea5e9"></label>
+              <label><input type="checkbox" value="ema50"><span class="lite-ind-label" data-ind="ema50" title="Bấm để đổi màu">EMA50</span><input type="color" class="lite-ind-color" data-ind="ema50" value="#c026d3"></label>
+              <label><input type="checkbox" value="ema100"><span class="lite-ind-label" data-ind="ema100" title="Bấm để đổi màu">EMA100</span><input type="color" class="lite-ind-color" data-ind="ema100" value="#eab308"></label>
+              <label><input type="checkbox" value="ema200"><span class="lite-ind-label" data-ind="ema200" title="Bấm để đổi màu">EMA200</span><input type="color" class="lite-ind-color" data-ind="ema200" value="#78350f"></label>
+            </div>
+          </div>
+          <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
+          <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
           <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
@@ -2129,7 +2159,13 @@ const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
-const LITE_IND_DEFAULT_COLORS={ema10:'#ff0000',ema20:'#008000',ema50:'#800080',ma200:'#8b4513',bb:'#9333ea'};
+const LITE_MA_PERIODS=[10,20,30,50,100,200];
+const LITE_EMA_PERIODS=[10,20,30,50,100,200];
+const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
+const LITE_EMA_DEFAULT_COLORS=['#f97316','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
+const LITE_IND_DEFAULT_COLORS={bb:'#9333ea'};
+LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
+LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
 let _liteIndColors={...LITE_IND_DEFAULT_COLORS};
 function loadLiteIndColors(){
   let stored={};
@@ -2157,6 +2193,36 @@ function bindLiteIndColorPickers(){
       renderLiteIndicators();
     });
   });
+}
+function updateLiteIndGroupCounts(){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-group').forEach(grp=>{
+    const key=grp.dataset.group;
+    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked').length;
+    const badge=grp.querySelector(`.lite-ind-count[data-count="${key}"]`);
+    if(badge){badge.textContent=n||'';badge.classList.toggle('on',n>0);}
+  });
+}
+function closeAllLiteIndDropdowns(except){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-group.open').forEach(g=>{
+    if(g!==except)g.classList.remove('open');
+  });
+}
+function bindLiteIndGroupDropdowns(){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-group-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();
+      const grp=btn.closest('.lite-ind-group');
+      if(!grp)return;
+      const willOpen=!grp.classList.contains('open');
+      closeAllLiteIndDropdowns();
+      grp.classList.toggle('open',willOpen);
+    });
+  });
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-dropdown').forEach(dd=>{
+    dd.addEventListener('click',e=>e.stopPropagation());
+  });
+  document.addEventListener('click',()=>closeAllLiteIndDropdowns());
+  updateLiteIndGroupCounts();
 }
 function _liteHexToRgba(hex,alpha){
   const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'');
@@ -2525,8 +2591,8 @@ function _litePtFromEvent(ev){
   if(l===null||p===null)return null;
   return{l,p};
 }
-function _liteDrawLine(ctx,x1,y1,x2,y2,color,dash){
-  ctx.save();ctx.strokeStyle=color;ctx.lineWidth=1.4;if(dash)ctx.setLineDash(dash);
+function _liteDrawLine(ctx,x1,y1,x2,y2,color,dash,width){
+  ctx.save();ctx.strokeStyle=color;ctx.lineWidth=width||1.4;if(dash)ctx.setLineDash(dash);
   ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.restore();
 }
 function _liteDrawHandle(ctx,x,y){
@@ -2736,7 +2802,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     if(target2Y!==null)ctx.fillStyle=_liteHexAlpha(targetColor,.16),ctx.fillRect(rx,Math.min(targetY,target2Y),rw,Math.abs(targetY-target2Y));
     ctx.lineWidth=selected?2:1.4;
     _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
-    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor,hasT2?[5,4]:null);
+    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor,null,hasT2?0.9:1.4);
     if(stopY!==null)_liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
     if(target2Y!==null)_liteDrawLine(ctx,rx,target2Y,rx+rw,target2Y,targetColor);
     ctx.font='10px "IBM Plex Mono",monospace';
@@ -3577,42 +3643,45 @@ function renderLiteIndicators(){
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showMacd=_liteChecked('macd');
-  const on={ema10:_liteChecked('ema10'),ema20:_liteChecked('ema20'),ema50:_liteChecked('ema50'),ma200:_liteChecked('ma200'),bb:_liteChecked('bb')};
+  const maOn=LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p));
+  const emaOn=LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p));
+  const bbOn=_liteChecked('bb');
   applyLitePaneLayout();
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
   // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
-  if(on.ema10)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema10,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(on.ema20)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema20,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(on.ema50)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ema50,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(on.ma200)_liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({color:_liteIndColors.ma200,lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
-  if(on.bb){
+  maOn.forEach(p=>{
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'ma',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ma'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  });
+  emaOn.forEach(p=>{
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'ema',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ema'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  });
+  if(bbOn){
     // Chỉ vẽ 3 đường (upper/mid/lower) bằng series thật của thư viện.
     // Phần TÔ MÀU giữa 2 đường band được vẽ riêng bằng canvas (xem _liteDrawBBBand)
     // để clip chính xác trong dải, không đụng gì tới phần dưới đường band dưới.
     const bbCol=_liteIndColors.bb;
-    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-upper',series:_liteChart.addLineSeries({
       color:_liteHexToRgba(bbCol,.85),lineWidth:1,
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
-    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-mid',series:_liteChart.addLineSeries({
       color:_liteHexToRgba(bbCol,.4),lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
-    _liteIndicatorSeries.push({chart:_liteChart,series:_liteChart.addLineSeries({
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-lower',series:_liteChart.addLineSeries({
       color:_liteHexToRgba(bbCol,.85),lineWidth:1,
       title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     })});
   }
-  let i=0;
-  if(on.ema10)_liteIndicatorSeries[i++].series.setData(_ema(_liteData,10));
-  if(on.ema20)_liteIndicatorSeries[i++].series.setData(_ema(_liteData,20));
-  if(on.ema50)_liteIndicatorSeries[i++].series.setData(_ema(_liteData,50));
-  if(on.ma200)_liteIndicatorSeries[i++].series.setData(_sma(_liteData,200));
-  if(on.bb){
+  _liteIndicatorSeries.forEach(s=>{
+    if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
+    else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
+  });
+  if(bbOn){
     const bb=_bbands(_liteData,20,2);
-    _liteIndicatorSeries[i++].series.setData(bb.upper);
-    _liteIndicatorSeries[i++].series.setData(bb.mid);
-    _liteIndicatorSeries[i++].series.setData(bb.lower);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-upper').series.setData(bb.upper);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-mid').series.setData(bb.mid);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-lower').series.setData(bb.lower);
     _liteBBFillData={upper:bb.upper,lower:bb.lower,color:_liteIndColors.bb};
   }else{
     _liteBBFillData=null;
@@ -3705,6 +3774,7 @@ async function loadLiteChart(sym='FPT',retry=1){
 function bindLiteChartControls(){
   loadLiteIndicatorPrefs();
   bindLiteIndColorPickers();
+  bindLiteIndGroupDropdowns();
   bindLiteDrawToolbar();
   if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('input',e=>{
     const raw=_liteCleanSym(e.target.value);
@@ -3719,7 +3789,7 @@ function bindLiteChartControls(){
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
-  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();renderLiteIndicators();setLiteRightOffset();});
+  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();updateLiteIndGroupCounts();renderLiteIndicators();setLiteRightOffset();});
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
     // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
