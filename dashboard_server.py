@@ -1322,6 +1322,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-draw-canvas.drawing{pointer-events:auto;cursor:crosshair}
 .lite-shape-bar{position:absolute;z-index:7;display:none;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px 4px;box-shadow:0 2px 8px rgba(17,24,39,.14);transform:translate(-50%,-100%);margin-top:-6px}
 .lite-shape-bar.on{display:flex}
+.lite-text-input{position:absolute;z-index:8;display:none;min-width:14px;max-width:360px;padding:1px 3px;font:11px "IBM Plex Mono",monospace;line-height:1.3;color:#111827;background:rgba(255,255,255,.94);border:1px dashed #1a56db;border-radius:3px;outline:none;white-space:pre;overflow:hidden;cursor:text}
+.lite-text-input.on{display:inline-block}
 .lite-shape-color{width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:5px;background:none;cursor:pointer}
 .lite-shape-color::-webkit-color-swatch-wrapper{padding:2px}
 .lite-shape-color::-webkit-color-swatch{border:none;border-radius:4px}
@@ -1818,6 +1820,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button id="lite-shape-dash" class="lite-shape-del" title="Chuyển nét liền / nét đứt">┈</button>
         <button id="lite-shape-delete" class="lite-shape-del" title="Xóa hình này">✕</button>
       </div>
+      <div class="lite-text-input" id="lite-text-input" contenteditable="true" spellcheck="false"></div>
       <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off" lang="en" autocapitalize="characters" autocorrect="off" inputmode="text" translate="no">
       <div id="lite-chart"></div>
       <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
@@ -1980,6 +1983,7 @@ const DOM={
   liteDrawUndo:$('lite-draw-undo'),liteDrawClear:$('lite-draw-clear'),
   liteDrawColor:$('lite-draw-color'),liteDrawDelete:$('lite-draw-delete'),
   liteShapeBar:$('lite-shape-bar'),liteShapeColor:$('lite-shape-color'),liteShapeDelete:$('lite-shape-delete'),
+  liteTextInput:$('lite-text-input'),
   liteShapeDash:$('lite-shape-dash'),liteDrawCopy:$('lite-draw-copy'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
@@ -2164,11 +2168,15 @@ function initLiteChart(){
       _liteMacdChart.applyOptions({crosshair:{horzLine:{visible:false,labelVisible:false}}});
     }
     _liteCrosshairSyncing=true;
-    if(param.time&&_liteMacdCrosshairSeries){
+    // QUAN TRỌNG: dùng series whitespace ẩn (_liteMacdWhite) để đặt vị trí crosshair bên MACD, KHÔNG
+    // dùng _liteMacdCrosshairSeries vì series đó chỉ tồn tại khi người dùng bật checkbox MACD (và bị
+    // set về null mỗi lần đổi mã/tải lại indicator) — dẫn đến mất đường dọc bên panel MACD. Whitespace
+    // series luôn tồn tại xuyên suốt vòng đời chart nên đồng bộ ổn định kể cả khi trỏ vào vùng trống.
+    if(param.time&&_liteMacdWhite){
       // Dùng giá trị MACD thực tại mốc thời gian này (không hard-code 0) để nếu marker/label
       // có bật lên thì vẫn đúng vị trí, thay vì luôn dính cứng ở mức 0.
       const mv=_liteMacdValueByTime.get(key);
-      _liteMacdChart.setCrosshairPosition(Number.isFinite(mv)?mv:0,param.time,_liteMacdCrosshairSeries);
+      _liteMacdChart.setCrosshairPosition(Number.isFinite(mv)?mv:0,param.time,_liteMacdWhite);
     }
     _liteCrosshairSyncing=false;
   });
@@ -2186,10 +2194,13 @@ function initLiteChart(){
       _liteChart.applyOptions({crosshair:{horzLine:{visible:false,labelVisible:false}}});
     }
     _liteCrosshairSyncing=true;
-    if(param.time){
+    // Tương tự chiều trên: dùng _liteMainWhite (luôn tồn tại, kể cả vùng thời gian tương lai chưa có
+    // nến) thay vì _liteCandle (không có dữ liệu ở vùng trống bên phải) để đường dọc bên panel chart
+    // luôn hiện, không bị "rớt" mỗi khi trỏ vào vùng chưa có nến hoặc vừa đổi mã/tải lại.
+    if(param.time&&_liteMainWhite){
       const key=liteTimeKey(param.time);
       const bar=_liteDataByTime.get(key);
-      _liteChart.setCrosshairPosition(bar&&Number.isFinite(bar.close)?bar.close:0,param.time,_liteCandle);
+      _liteChart.setCrosshairPosition(bar&&Number.isFinite(bar.close)?bar.close:0,param.time,_liteMainWhite);
     }
     _liteCrosshairSyncing=false;
   });
@@ -2364,7 +2375,7 @@ const LITE_DRAW_COLOR_KEY='dashboard_lite_draw_color';
 const LITE_HIT_TOL=7;
 let _liteDrawTool='cursor',_liteDrawings=[],_liteDrawActive=null,_liteDrawCtx=null,_liteDrawSeq=1;
 let _liteDrawColor='#1a56db',_liteSelectedId=null,_liteDragInfo=null,_liteChannelPending=null,_liteLinePending=null;
-let _liteArcPending=null,_liteZigzagPending=null;
+let _liteArcPending=null,_liteZigzagPending=null,_liteTextEditPos=null;
 function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
 function loadLiteDrawings(){
   try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
@@ -2420,6 +2431,25 @@ function _liteDrawHandle(ctx,x,y){
 function _liteChannelOffset(d){
   const pts=d.points;
   return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
+}
+// Đường cong bán nguyệt (arc): pts[2] lưu trực tiếp toạ độ (logical,price) nơi người dùng rê chuột tới —
+// tức là điểm "đáy" (đỉnh cong) mà đường cong PHẢI đi qua. Từ đó suy ra control-point của quadratic bezier
+// bằng công thức bù trừ (vì bezier bậc 2 không đi qua control point): C = 2*target - trungĐiểmDâyCung.
+function _liteArcControlLP(d){
+  const pts=d.points;
+  if(!pts[2]||!Number.isFinite(pts[2].l)||!Number.isFinite(pts[2].p))return null;
+  const midL=(pts[0].l+pts[1].l)/2,midP=(pts[0].p+pts[1].p)/2;
+  return{l:2*pts[2].l-midL,p:2*pts[2].p-midP};
+}
+function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
+  let min=Infinity;
+  for(let i=0;i<=20;i++){
+    const t=i/20,mt=1-t;
+    const bx=mt*mt*x1+2*mt*t*cx+t*t*x2,by=mt*mt*y1+2*mt*t*cy+t*t*y2;
+    const dist=Math.hypot(px-bx,py-by);
+    if(dist<min)min=dist;
+  }
+  return min;
 }
 function _liteDrawShapeToCanvas(ctx,d){
   const pts=d.points,selected=(d.id===_liteSelectedId);
@@ -2517,17 +2547,23 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.restore();
     if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
   }else if(d.type==='arc'){
-    // Đường cong bán nguyệt: 2 điểm đầu-cuối như đường thẳng, bước 2 rê lên/xuống để uốn cong.
-    if(pts[2]&&Number.isFinite(pts[2].offsetPrice)){
-      const offPrice=pts[2].offsetPrice;
-      const midP=(pts[0].p+pts[1].p)/2,midL=(pts[0].l+pts[1].l)/2;
-      const cx=_liteLogicalToX(midL),cy=_litePriceToY(midP+offPrice*2);
+    // Đường cong bán nguyệt: 2 điểm đầu-cuối như đường thẳng, bước 2 rê chuột tự do (cả trái/phải lẫn
+    // lên/xuống) để chọn vị trí "đáy" (đỉnh cong) — đường cong luôn đi qua đúng vị trí chuột, không bị
+    // ép về giữa 2 điểm đầu-cuối.
+    const ctrlLP=_liteArcControlLP(d);
+    if(ctrlLP){
+      const cx=_liteLogicalToX(ctrlLP.l),cy=_litePriceToY(ctrlLP.p);
       ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?2.4:1.8;ctx.lineCap='round';
       if(d.dash)ctx.setLineDash([5,4]);
       ctx.beginPath();ctx.moveTo(x1,y1);
       if(cx!==null&&cy!==null)ctx.quadraticCurveTo(cx,cy,x2,y2);else ctx.lineTo(x2,y2);
       ctx.stroke();ctx.restore();
-      if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);if(cx!==null&&cy!==null)_liteDrawHandle(ctx,cx,cy);}
+      if(selected){
+        _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
+        // Handle hiển thị đúng tại điểm đáy (nơi chuột đã rê tới), trực quan hơn control-point toán học.
+        const tx=_liteLogicalToX(pts[2].l),ty=_litePriceToY(pts[2].p);
+        if(tx!==null&&ty!==null)_liteDrawHandle(ctx,tx,ty);
+      }
     }else{
       _liteDrawLine(ctx,x1,y1,x2,y2,color,[5,4]);
       if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
@@ -2600,11 +2636,64 @@ function redrawLiteDrawings(){
   if(_liteLinePending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteLinePending);
   _liteUpdateFloatingBar();
 }
+// Kết thúc (chốt) zigzag đang vẽ dở: nếu đã có >=2 điểm thì lưu thành hình vẽ hoàn chỉnh,
+// nếu mới có 1 điểm (chưa đủ để thành hình) thì huỷ. Dùng chung cho double-click, phím
+// Enter/Space/Escape, và khi chuyển sang công cụ khác (đặc biệt là con trỏ chuột).
+function _liteFinishZigzag(){
+  if(!_liteZigzagPending)return false;
+  const pend=_liteZigzagPending;
+  pend._hover=null;
+  _liteZigzagPending=null;
+  if(pend.points.length>=2){
+    _liteDrawings.push(pend);
+    saveLiteDrawings();
+    _liteSelectShape(pend.id);
+  }else{
+    redrawLiteDrawings();
+  }
+  return true;
+}
+// Công cụ Text: click lên chart mở 1 ô contenteditable ngay tại vị trí click để gõ chữ trực tiếp,
+// thay vì hộp thoại prompt(). Enter (không giữ Shift) hoặc rời focus (blur) sẽ chốt chữ; Escape huỷ.
+function _liteOpenTextInput(p0,ev){
+  if(!DOM.liteTextInput)return;
+  const{x,y}=_liteXYFromEvent(ev);
+  _liteTextEditPos=p0;
+  DOM.liteTextInput.textContent='';
+  DOM.liteTextInput.style.left=x+'px';
+  DOM.liteTextInput.style.top=Math.max(0,y-13)+'px';
+  DOM.liteTextInput.style.color=_liteDrawColor;
+  DOM.liteTextInput.classList.add('on');
+  requestAnimationFrame(()=>DOM.liteTextInput.focus());
+}
+function _liteCommitTextInput(){
+  if(!DOM.liteTextInput||!_liteTextEditPos)return null;
+  const text=(DOM.liteTextInput.textContent||'').trim();
+  const p0=_liteTextEditPos;
+  DOM.liteTextInput.classList.remove('on');
+  DOM.liteTextInput.textContent='';
+  _liteTextEditPos=null;
+  if(!text)return null;
+  const id=_liteDrawSeq++;
+  _liteDrawings.push({id,type:'text',points:[p0],text,color:_liteDrawColor});
+  saveLiteDrawings();
+  _liteSelectShape(id);
+  return id;
+}
+function _liteCloseTextInput(){
+  if(!DOM.liteTextInput)return;
+  DOM.liteTextInput.classList.remove('on');
+  DOM.liteTextInput.textContent='';
+  _liteTextEditPos=null;
+}
 function setLiteDrawTool(tool){
+  const prevTool=_liteDrawTool,hadZigzag=_liteZigzagPending;
   _liteDrawTool=tool||'cursor';
   if(_liteDrawTool!=='channel')_liteChannelPending=null;
   if(_liteDrawTool!=='arc')_liteArcPending=null;
-  if(_liteDrawTool!=='zigzag')_liteZigzagPending=null;
+  if(_liteDrawTool!=='zigzag'&&prevTool==='zigzag'&&hadZigzag)_liteFinishZigzag();
+  else if(_liteDrawTool!=='zigzag')_liteZigzagPending=null;
+  if(_liteDrawTool!=='text'&&_liteTextEditPos)_liteCommitTextInput();
   if(_liteDrawTool!=='trendline'&&_liteDrawTool!=='rect'&&_liteDrawTool!=='channel'&&_liteDrawTool!=='arc'&&_liteDrawTool!=='arrow')_liteLinePending=null;
   if(_liteDrawTool!=='cursor')_liteSelectedId=null;
   DOM.liteDrawToolbar?.querySelectorAll('.lite-draw-btn[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===_liteDrawTool));
@@ -2632,10 +2721,14 @@ function _liteShapeAnchor(d){
     const ys=[y1,y2,stopY!==null?stopY:y1];
     return{x:(x1+x2)/2,y:Math.min(...ys)};
   }
-  if(d.type==='channel'||d.type==='arc'){
+  if(d.type==='channel'){
     const offPrice=_liteChannelOffset(d);
     const y1b=_litePriceToY(pts[0].p+offPrice);
     return{x:(x1+x2)/2,y:Math.min(y1,y1b!==null?y1b:y1,y2)};
+  }
+  if(d.type==='arc'){
+    const ty=(pts[2]&&Number.isFinite(pts[2].p))?_litePriceToY(pts[2].p):null;
+    return{x:(x1+x2)/2,y:Math.min(y1,y2,ty!==null?ty:Math.min(y1,y2))};
   }
   if(d.type==='zigzag'){
     let minY=Infinity,sumX=0,n=0;
@@ -2718,13 +2811,26 @@ function _liteHitTestShape(d,x,y){
     if(x>=rx-LITE_HIT_TOL&&x<=rx+rw+LITE_HIT_TOL&&y>=ry-LITE_HIT_TOL&&y<=ry+rh+LITE_HIT_TOL)return{part:'line'};
     return null;
   }
-  if(d.type==='channel'||d.type==='arc'){
+  if(d.type==='channel'){
     const offPrice=_liteChannelOffset(d);
     const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
     if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
     if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
     if(_liteSegDist(x,y,x1,y1,x2,y2)<=LITE_HIT_TOL)return{part:'line'};
     if(y1b!==null&&y2b!==null&&_liteSegDist(x,y,x1,y1b,x2,y2b)<=LITE_HIT_TOL)return{part:'offset'};
+    return null;
+  }
+  if(d.type==='arc'){
+    if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
+    if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
+    const ctrlLP=_liteArcControlLP(d);
+    if(ctrlLP){
+      const cx=_liteLogicalToX(ctrlLP.l),cy=_litePriceToY(ctrlLP.p);
+      const tx=_liteLogicalToX(pts[2].l),ty=_litePriceToY(pts[2].p);
+      if(tx!==null&&ty!==null&&Math.hypot(x-tx,y-ty)<=9)return{part:'offset'};
+      if(cx!==null&&cy!==null&&_liteQuadDist(x,y,x1,y1,cx,cy,x2,y2)<=LITE_HIT_TOL)return{part:'offset'};
+    }
+    if(_liteSegDist(x,y,x1,y1,x2,y2)<=LITE_HIT_TOL)return{part:'line'};
     return null;
   }
   if(d.type==='position'){
@@ -2756,14 +2862,23 @@ function _liteApplyDrag(d,info,cur){
   const key=d.type+':'+info.part;
   if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
   else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
-  else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'||key==='arc:line'){
+  else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'){
     d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+  }else if(key==='arc:line'){
+    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+    if(op[2]&&Number.isFinite(op[2].l)&&Number.isFinite(op[2].p))d.points[2]={l:op[2].l+dl,p:op[2].p+dp};
   }else if(key==='hline:line'){
     d.points[0]={...op[0],p:op[0].p+dp};d.points[1]={...op[1],p:op[1].p+dp};
   }else if(key==='vline:line'){
     d.points[0]={...op[0],l:op[0].l+dl};d.points[1]={...op[1],l:op[1].l+dl};
-  }else if(key==='channel:offset'||key==='arc:offset'){
+  }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
+  }else if(key==='arc:offset'){
+    // pts[2] của arc là toạ độ (logical,price) của điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu
+    // theo cả 2 chiều (trái/phải lẫn lên/xuống), không chỉ riêng chiều dọc như channel.
+    const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
+    const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
+    d.points[2]={l:baseL+dl,p:baseP+dp};
   }else if(d.type==='zigzag'&&info.part==='line'){
     d.points=op.map(pt=>({l:pt.l+dl,p:pt.p+dp}));
   }else if(d.type==='zigzag'&&info.part[0]==='v'){
@@ -2890,6 +3005,26 @@ function bindLiteDrawToolbar(){
     }
   });
   DOM.liteDrawCopy?.addEventListener('click',()=>copyLiteChartImage(DOM.liteDrawCopy));
+  if(DOM.liteTextInput){
+    DOM.liteTextInput.addEventListener('keydown',e=>{
+      // Chặn nổi bọt lên #lite-chart-frame để không kích hoạt phím tắt khác (mở ô tìm mã, xoá hình...)
+      // trong lúc đang gõ chữ.
+      e.stopPropagation();
+      if(e.key==='Enter'&&!e.shiftKey){
+        e.preventDefault();
+        _liteCommitTextInput();
+        setLiteDrawTool('cursor');
+      }else if(e.key==='Escape'){
+        e.preventDefault();
+        _liteCloseTextInput();
+        setLiteDrawTool('cursor');
+      }
+    });
+    DOM.liteTextInput.addEventListener('pointerdown',e=>e.stopPropagation());
+    DOM.liteTextInput.addEventListener('blur',()=>{
+      if(_liteTextEditPos){_liteCommitTextInput();setLiteDrawTool('cursor');}
+    });
+  }
   DOM.liteShapeDash?.addEventListener('click',()=>{
     const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
     if(sel&&(sel.type==='trendline'||sel.type==='hline'||sel.type==='vline')){
@@ -2938,7 +3073,8 @@ function bindLiteDrawToolbar(){
     }
     if(_liteArcPending){
       const p=_litePtFromEvent(e);if(!p)return;
-      _liteArcPending.points[2]={offsetPrice:_liteOffsetFromChord(_liteArcPending,p)};
+      // Lưu thẳng vị trí chuột làm điểm "đáy" — đáy đi tự do theo chuột cả 2 chiều, không ép về giữa.
+      _liteArcPending.points[2]=p;
       redrawLiteDrawings();
       return;
     }
@@ -2959,18 +3095,11 @@ function bindLiteDrawToolbar(){
     // Kết thúc Zigzag bằng double-click: bỏ điểm cuối trùng do click thứ 2 của thao tác double-click sinh ra
     if(_liteDrawTool==='zigzag'&&_liteZigzagPending){
       e.preventDefault();
-      const pend=_liteZigzagPending;
-      if(pend.points.length>1)pend.points.pop();
-      pend._hover=null;
-      if(pend.points.length>=2){
-        _liteDrawings.push(pend);
-        _liteZigzagPending=null;
-        saveLiteDrawings();
-        setLiteDrawTool('cursor');_liteSelectShape(pend.id);
-      }else{
-        _liteZigzagPending=null;
-        redrawLiteDrawings();
-      }
+      // Double-click sinh ra 2 lần click liên tiếp ở cùng 1 vị trí → click thứ 2 đã bị pointerdown
+      // phía dưới nối thêm thành điểm trùng, cần bỏ điểm cuối trùng đó trước khi chốt hình.
+      if(_liteZigzagPending.points.length>1)_liteZigzagPending.points.pop();
+      _liteFinishZigzag();
+      setLiteDrawTool('cursor');
     }
   });
   DOM.liteDrawCanvas.addEventListener('pointerdown',e=>{
@@ -2988,7 +3117,7 @@ function bindLiteDrawToolbar(){
     // Bước 2 của Đường cong bán nguyệt: đã có đường chéo (bước 1) → click để chốt độ cong
     if(_liteDrawTool==='arc'&&_liteArcPending){
       const pend=_liteArcPending;
-      pend.points[2]={offsetPrice:_liteOffsetFromChord(pend,p0)};
+      pend.points[2]=p0;
       _liteDrawings.push(pend);_liteArcPending=null;
       saveLiteDrawings();
       setLiteDrawTool('cursor');_liteSelectShape(pend.id);
@@ -3006,13 +3135,10 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='text'){
-      const text=prompt('Nhập text:','');
-      if(text){
-        const id=_liteDrawSeq++;
-        _liteDrawings.push({id,type:'text',points:[p0],text,color:_liteDrawColor});
-        saveLiteDrawings();
-        setLiteDrawTool('cursor');_liteSelectShape(id);
-      }
+      // Click thẳng lên chart để gõ chữ tại đúng vị trí click, không dùng hộp thoại prompt() nữa.
+      // Nếu đang gõ dở 1 ô chữ khác (chưa blur) thì chốt nó lại trước khi mở ô mới.
+      if(_liteTextEditPos)_liteCommitTextInput();
+      _liteOpenTextInput(p0,e);
       return;
     }
     if(_liteDrawTool==='hline'){
@@ -3272,6 +3398,13 @@ function bindLiteChartControls(){
       e.preventDefault();
       _liteDrawings=_liteDrawings.filter(d=>d.id!==_liteSelectedId);
       _liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();
+      return;
+    }
+    // Enter / Space / Escape khi đang vẽ dở Zigzag → KẾT THÚC (chốt) nét vẽ, không phải huỷ.
+    if((e.key==='Enter'||e.key===' '||e.key==='Escape')&&_liteZigzagPending){
+      e.preventDefault();
+      _liteFinishZigzag();
+      setLiteDrawTool('cursor');
       return;
     }
     if(e.key==='Escape'){
