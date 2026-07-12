@@ -1346,6 +1346,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-shape-del{width:20px;height:20px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#ef4444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 #lite-shape-delete:hover{background:#fef2f2}
 .lite-shape-del.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+#lite-shape-target2{font-size:9px;font-weight:700;color:#374151}
+#lite-shape-target2:hover{background:#f1f5f9}
 #lite-shape-dash:hover{background:#f1f5f9}
 #lite-shape-edit{color:#374151}
 #lite-shape-edit:hover{background:#f1f5f9}
@@ -1822,6 +1824,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <div class="lite-shape-bar" id="lite-shape-bar">
         <input type="color" id="lite-shape-color" class="lite-shape-color" title="Đổi màu hình vẽ">
         <input type="color" id="lite-shape-target-color" class="lite-shape-color" title="Đổi màu Target">
+        <button id="lite-shape-target2" class="lite-shape-del" title="Bật/tắt Target 2">T2</button>
         <select id="lite-shape-font-size" class="lite-shape-select" title="Cỡ chữ">
           <option value="10">10</option>
           <option value="11">11</option>
@@ -2033,6 +2036,7 @@ const DOM={
   liteDrawColor:$('lite-draw-color'),
   liteShapeBar:$('lite-shape-bar'),liteShapeColor:$('lite-shape-color'),liteShapeDelete:$('lite-shape-delete'),
   liteShapeTargetColor:$('lite-shape-target-color'),liteShapeFontSize:$('lite-shape-font-size'),
+  liteShapeTarget2:$('lite-shape-target2'),
   liteShapeFontFamily:$('lite-shape-font-family'),liteShapeBgColor:$('lite-shape-bg-color'),
   liteShapeBgClear:$('lite-shape-bg-clear'),liteShapeEdit:$('lite-shape-edit'),
   liteTextInput:$('lite-text-input'),
@@ -2721,26 +2725,35 @@ function _liteDrawShapeToCanvas(ctx,d){
   }else if(d.type==='position'){
     const entryP=pts[0].p,targetP=pts[1].p;
     const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
+    const hasT2=Number.isFinite(d.target2P);
     const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
+    const target2Y=hasT2?_litePriceToY(d.target2P):null;
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
     const targetColor=d.targetColor||'#26a69a';
     ctx.save();
     ctx.fillStyle=_liteHexAlpha(targetColor,.16);ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
     if(stopY!==null)ctx.fillStyle='rgba(239,83,80,.16)',ctx.fillRect(rx,Math.min(entryY,stopY),rw,Math.abs(entryY-stopY));
+    if(target2Y!==null)ctx.fillStyle=_liteHexAlpha(targetColor,.09),ctx.fillRect(rx,Math.min(targetY,target2Y),rw,Math.abs(targetY-target2Y));
     ctx.lineWidth=selected?2:1.4;
     _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
     _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor);
     if(stopY!==null)_liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
+    if(target2Y!==null)_liteDrawLine(ctx,rx,target2Y,rx+rw,target2Y,targetColor,[5,4]);
     ctx.font='10px "IBM Plex Mono",monospace';
     ctx.fillStyle='#111827';ctx.fillText('Entry '+fmtLiteNum(entryP),rx+4,entryY-3);
     const pctT=entryP?((targetP-entryP)/entryP*100):0;
     const pctS=entryP?((stopP-entryP)/entryP*100):0;
-    ctx.fillStyle=targetColor;ctx.fillText(`Target ${fmtLiteNum(targetP)} (${pctT>=0?'+':''}${pctT.toFixed(2)}%)`,rx+4,targetY-3);
+    ctx.fillStyle=targetColor;ctx.fillText(`${hasT2?'Target 1':'Target'} ${fmtLiteNum(targetP)} (${pctT>=0?'+':''}${pctT.toFixed(2)}%)`,rx+4,targetY-3);
     if(stopY!==null){ctx.fillStyle='#ef5350';ctx.fillText(`Stop ${fmtLiteNum(stopP)} (${pctS>=0?'+':''}${pctS.toFixed(2)}%)`,rx+4,stopY+11);}
+    if(target2Y!==null){
+      const pctT2=entryP?((d.target2P-entryP)/entryP*100):0;
+      ctx.fillStyle=targetColor;ctx.fillText(`Target 2 ${fmtLiteNum(d.target2P)} (${pctT2>=0?'+':''}${pctT2.toFixed(2)}%)`,rx+4,target2Y-3);
+    }
     ctx.restore();
     if(selected){
       _liteDrawHandle(ctx,rx,entryY);_liteDrawHandle(ctx,rx+rw,entryY);
       _liteDrawHandle(ctx,rx,targetY);_liteDrawHandle(ctx,rx,(stopY!==null?stopY:entryY));
+      if(target2Y!==null)_liteDrawHandle(ctx,rx,target2Y);
     }
   }
 }
@@ -2917,6 +2930,10 @@ function _liteShapeAnchor(d){
     const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
     const stopY=_litePriceToY(stopP);
     const ys=[y1,y2,stopY!==null?stopY:y1];
+    if(Number.isFinite(d.target2P)){
+      const t2y=_litePriceToY(d.target2P);
+      if(t2y!==null)ys.push(t2y);
+    }
     return{x:(x1+x2)/2,y:Math.min(...ys)};
   }
   if(d.type==='channel'){
@@ -2963,6 +2980,10 @@ function _liteUpdateFloatingBar(){
   if(DOM.liteShapeTargetColor){
     DOM.liteShapeTargetColor.style.display=isPosition?'':'none';
     DOM.liteShapeTargetColor.value=d.targetColor||'#26a69a';
+  }
+  if(DOM.liteShapeTarget2){
+    DOM.liteShapeTarget2.style.display=isPosition?'':'none';
+    DOM.liteShapeTarget2.classList.toggle('on',isPosition&&Number.isFinite(d.target2P));
   }
   if(DOM.liteShapeDash){
     const supportsDash=d.type==='trendline'||d.type==='hline'||d.type==='vline';
@@ -3063,13 +3084,16 @@ function _liteHitTestShape(d,x,y){
     const entryP=pts[0].p,targetP=pts[1].p;
     const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
     const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
+    const target2Y=Number.isFinite(d.target2P)?_litePriceToY(d.target2P):null;
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
     if(x<rx-LITE_HIT_TOL||x>rx+rw+LITE_HIT_TOL)return null;
     if(Math.abs(x-rx)<=LITE_HIT_TOL)return{part:'edgeL'};
     if(Math.abs(x-(rx+rw))<=LITE_HIT_TOL)return{part:'edgeR'};
     if(Math.abs(y-targetY)<=LITE_HIT_TOL)return{part:'target'};
+    if(target2Y!==null&&Math.abs(y-target2Y)<=LITE_HIT_TOL)return{part:'target2'};
     if(stopY!==null&&Math.abs(y-stopY)<=LITE_HIT_TOL)return{part:'stop'};
     const ys=[entryY,targetY,stopY!==null?stopY:entryY];
+    if(target2Y!==null)ys.push(target2Y);
     const top=Math.min(...ys),bottom=Math.max(...ys);
     if(y>=top-LITE_HIT_TOL&&y<=bottom+LITE_HIT_TOL)return{part:'body'};
     return null;
@@ -3114,8 +3138,11 @@ function _liteApplyDrag(d,info,cur){
     d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
     d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
+    if(Number.isFinite(info.origTarget2P))d.target2P=info.origTarget2P+dp;
   }else if(key==='position:target'){
     d.points[1]={...op[1],p:op[1].p+dp};
+  }else if(key==='position:target2'){
+    d.target2P=(info.origTarget2P??d.target2P)+dp;
   }else if(key==='position:stop'){
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
   }else if(key==='position:edgeL'){
@@ -3134,6 +3161,7 @@ function _liteStartShapeDrag(hit,ev){
     part:hit.part,
     origPoints:JSON.parse(JSON.stringify(d.points||[])),
     origStopP:d.stopP,
+    origTarget2P:d.target2P,
     origOffsetPrice:d.points&&d.points[2]&&d.points[2].offsetPrice,
     startL:startPt.l,startP:startPt.p
   };
@@ -3235,6 +3263,20 @@ function bindLiteDrawToolbar(){
       sel.targetColor=DOM.liteShapeTargetColor.value;
       saveLiteDrawings();redrawLiteDrawings();
     }
+  });
+  DOM.liteShapeTarget2?.addEventListener('click',()=>{
+    const sel=_liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+    if(!sel||sel.type!=='position')return;
+    if(Number.isFinite(sel.target2P)){
+      // Đang bật → tắt: xoá hẳn giá Target 2, quay về mặc định chỉ 1 target.
+      delete sel.target2P;
+    }else{
+      // Đang tắt → bật: đặt giá Target 2 mặc định, kéo dài thêm nửa khoảng cách Entry→Target 1
+      // theo đúng hướng lệnh (mua/bán), rồi người dùng có thể kéo lại theo ý muốn.
+      const entryP=sel.points[0].p,targetP=sel.points[1].p;
+      sel.target2P=targetP+(targetP-entryP)*0.5;
+    }
+    saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
   });
   DOM.liteShapeFontSize?.addEventListener('change',()=>{
     const size=parseInt(DOM.liteShapeFontSize.value,10)||13;
