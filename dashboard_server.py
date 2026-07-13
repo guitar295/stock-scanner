@@ -2234,7 +2234,6 @@ const LITE_EMA_DEFAULT_COLORS=['#ff0000','#16a34a','#0ea5e9','#c026d3','#eab308'
 const LITE_RSI_PERIOD=14;
 const LITE_RSI_DEFAULT_COLOR='#7c6ee6';
 const LITE_CANDLE_UP_COLOR='#26a69a', LITE_CANDLE_DOWN_COLOR='#ef5350';
-const LITE_VOLUME_UP_COLOR='rgba(38,166,154,.62)', LITE_VOLUME_DOWN_COLOR='rgba(239,83,80,.62)';
 const LITE_IND_DEFAULT_COLORS={bb:'#9333ea',rsi:LITE_RSI_DEFAULT_COLOR,'trend-up':'#64fa96','trend-down':'#fa9696'};
 LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
 LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
@@ -2337,6 +2336,7 @@ function _liteSyncVisibleRangeFrom(source,range){
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
+let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
 const LITE_BARS_VISIBLE=300,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
 function initLiteChart(){
@@ -2501,6 +2501,27 @@ function fmtLiteDate(t){
   const p=String(t||'').split('-');
   return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(t||'--');
 }
+function _liteTitleSegments(bar){
+  if(!bar)return [];
+  const tf=_liteTf==='1W'?'W':'D';
+  const pct=Number.isFinite(bar.pct)?bar.pct:0;
+  const sign=pct>0?'+':'';
+  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
+  const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
+  return [
+    {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:`,color:'#111827'},
+    {text:fmtLiteNum(bar.open),color:col},
+    {text:' H:',color:'#111827'},
+    {text:fmtLiteNum(bar.high),color:col},
+    {text:' L:',color:'#111827'},
+    {text:fmtLiteNum(bar.low),color:col},
+    {text:' C:',color:'#111827'},
+    {text:fmtLiteNum(bar.close),color:col},
+    {text:' (',color:'#111827'},
+    {text:`${sign}${pct.toFixed(2)}%`,color:col},
+    {text:')',color:'#111827'}
+  ];
+}
 function _liteCleanSym(v){
   // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
   // ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
@@ -2537,13 +2558,9 @@ function liteTimeKey(t){
 }
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
-  const tf=_liteTf==='1W'?'W':'D';
-  const pct=Number.isFinite(bar.pct)?bar.pct:0;
-  const sign=pct>0?'+':'';
-  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
-  const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
-  const v=n=>`<span style="color:${col}">${fmtLiteNum(n)}</span>`;
-  DOM.liteChartTitle.innerHTML=`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:${v(bar.open)} H:${v(bar.high)} L:${v(bar.low)} C:${v(bar.close)} (<span style="color:${col}">${sign}${pct.toFixed(2)}%</span>)`;
+  DOM.liteChartTitle.innerHTML=_liteTitleSegments(bar).map(seg=>
+    seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
+  ).join('');
 }
 // Gắn mũi tên điểm mua lên nến cuối cùng (= nến giao dịch gần nhất, kể cả khi hôm nay không phải
 // ngày giao dịch) cho mã đang xem, dựa HOÀN TOÀN vào _sigTodayMap đã cache sẵn từ fetchSigs() —
@@ -2615,7 +2632,7 @@ function _bbands(data,n=20,mult=2){
   return{upper,mid,lower};
 }
 function _liteVolumeColorForBar(bar){
-  return bar&&Number(bar.close)>=Number(bar.open)?LITE_VOLUME_UP_COLOR:LITE_VOLUME_DOWN_COLOR;
+  return bar&&Number(bar.close)>=Number(bar.open)?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
 }
 function _liteNormalizeVolumeData(volume,data){
   return (volume||[]).map((v,idx)=>{
@@ -2744,7 +2761,7 @@ function applyLitePaneLayout(){
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
-  const macdH=showMacd?(bothPanes?compactPaneH:Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176))):0;
+  const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
   const mainH=showRsi||showMacd?Math.max(300,totalH-lowerH):totalH;
@@ -3609,6 +3626,13 @@ function _liteStartShapeDrag(hit,ev){
   window.addEventListener('pointermove',move);
   window.addEventListener('pointerup',up);
 }
+function _liteDrawTitleSegments(ctx,segments,x,y){
+  for(const seg of segments){
+    ctx.fillStyle=seg.color;
+    ctx.fillText(seg.text,x,y);
+    x+=ctx.measureText(seg.text).width;
+  }
+}
 async function copyLiteChartImage(btn){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   try{
@@ -3619,20 +3643,18 @@ async function copyLiteChartImage(btn){
     if(_liteChecked('macd')&&DOM.liteMacdChart.style.display!=='none'){
       panes.push({kind:'macd',canvas:_liteMacdChart.takeScreenshot()});
     }
-    // Lấy title dạng plain-text (bỏ các thẻ màu O/H/L/C) để in lên đầu ảnh bitmap.
-    const titleText=(DOM.liteChartTitle?.textContent||DOM.liteChartTitle?.innerText||'').trim();
+    const titleSegments=_liteTitleSegments(_liteData[_liteData.length-1]);
     const dpr=window.devicePixelRatio||1;
-    const titleH=titleText?Math.round(30*dpr):0;
+    const titleH=titleSegments.length?Math.round(30*dpr):0;
     const out=document.createElement('canvas');
     out.width=Math.max(...panes.map(p=>p.canvas.width));
     out.height=titleH+panes.reduce((sum,p)=>sum+p.canvas.height,0);
     const ctx=out.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,out.width,out.height);
-    if(titleText){
-      ctx.fillStyle='#111827';
-      ctx.font=`600 ${Math.round(13*dpr)}px "IBM Plex Mono",monospace`;
+    if(titleSegments.length){
+      ctx.font=`400 ${Math.round(11*dpr)}px "IBM Plex Mono",monospace`;
       ctx.textBaseline='middle';
-      ctx.fillText(titleText,10*dpr,titleH/2);
+      _liteDrawTitleSegments(ctx,titleSegments,10*dpr,titleH/2);
     }
     let y=titleH;
     panes.forEach(p=>{
@@ -4296,7 +4318,7 @@ function bindLiteChartControls(){
   });
   if(DOM.liteMacdResizer)DOM.liteMacdResizer.addEventListener('pointerdown',e=>{
     e.preventDefault();
-    const startY=e.clientY,startH=DOM.liteMacdChart.clientHeight||176;
+    const startY=e.clientY,startH=_liteMacdSoloHeight||DOM.liteMacdChart.clientHeight||176;
     // Gộp các sự kiện pointermove (bắn nhiều hơn tốc độ khung hình màn hình) thành đúng 1 lần
     // cập nhật layout/chart mỗi khung hình bằng rAF — applyLitePaneLayout() gọi applyOptions() trên
     // cả 2 chart nên là thao tác nặng, gọi trực tiếp theo từng pointermove sẽ gây giật khi kéo.
@@ -4312,6 +4334,7 @@ function bindLiteChartControls(){
     };
     const move=ev=>{
       pendingH=Math.max(120,Math.min(340,startH-(ev.clientY-startY)));
+      _liteMacdSoloHeight=pendingH;
       if(rafId===null)rafId=requestAnimationFrame(flush);
     };
     const up=()=>{
