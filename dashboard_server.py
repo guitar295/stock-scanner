@@ -3985,13 +3985,12 @@ function renderLiteIndicators(){
     _liteMacdValueByTime=new Map(macdAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }else if(showRsi){
-    // RSI(14) kiểu Wilder. Đúng cơ chế PlotOHLC(r,r,50,r,...,styleCloud|styleClipMinMax,30,60):
-    // - Đường RSI THẬT vẽ liên tục, không giới hạn, màu đỏ cố định (giống ParamColor mặc định colorRed).
-    // - Dải TÔ MÀU chỉ trải từ mốc 50 tới giá trị RSI đã bị "kẹp cứng" trong khoảng [30,60] — nên khi RSI
-    //   vọt lên >60, phần tô bị kẹp phẳng ở mức 60 (tạo hình chóp nhọn, đường thật thò ra khỏi phần tô);
-    //   khi RSI tụt <30, phần tô kẹp phẳng ở mức 30 (tạo khối đặc). Màu xanh/đỏ vẫn theo r>50 hay r<=50.
-    const rsiRaw=_rsi(_liteData,14);
-    const rsiAligned=alignLiteSeries(rsiRaw);
+    // RSI(14) kiểu Wilder. Đường RSI vẽ liên tục, màu đỏ cố định.
+    // Mây XANH: chỉ xuất hiện khi RSI>60, tô từ mốc 60 tới đường RSI (baseline tại 60, chỉ đưa dữ liệu
+    // những điểm RSI>60, còn lại bỏ trống — không nối liền nên không tô lan sang vùng khác).
+    // Mây ĐỎ: chỉ xuất hiện khi RSI<30, tô từ mốc 30 tới đường RSI (baseline tại 30, chỉ đưa dữ liệu
+    // những điểm RSI<30). Khoảng 30–60 hoàn toàn không tô, để lộ màu nền.
+    const rsiAligned=alignLiteSeries(_rsi(_liteData,14));
     const upCol=_liteIndColors['rsi-up']||'#64fa96',downCol=_liteIndColors['rsi-down']||'#fa9696';
     const rsiLine=_liteMacdChart.addLineSeries({
       color:'#dc2626',lineWidth:1,priceScaleId:'right',title:'',
@@ -3999,20 +3998,26 @@ function renderLiteIndicators(){
       autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})
     });
     rsiLine.setData(rsiAligned);
-    const clipped=rsiAligned.map(x=>Number.isFinite(x.value)?{time:x.time,value:Math.max(30,Math.min(60,x.value))}:x);
-    const cloudSeries=_liteMacdChart.addBaselineSeries({
-      baseValue:{type:'price',price:50},
+    const upZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value>60);
+    const upSeries=_liteMacdChart.addBaselineSeries({
+      baseValue:{type:'price',price:60},
       topLineColor:'rgba(0,0,0,0)',topFillColor1:_liteHexToRgba(upCol,.55),topFillColor2:_liteHexToRgba(upCol,.35),
+      bottomLineColor:'rgba(0,0,0,0)',bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',
+      lineWidth:1,priceScaleId:'right',title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    });
+    upSeries.setData(upZone);
+    const downZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value<30);
+    const downSeries=_liteMacdChart.addBaselineSeries({
+      baseValue:{type:'price',price:30},
+      topLineColor:'rgba(0,0,0,0)',topFillColor1:'rgba(0,0,0,0)',topFillColor2:'rgba(0,0,0,0)',
       bottomLineColor:'rgba(0,0,0,0)',bottomFillColor1:_liteHexToRgba(downCol,.35),bottomFillColor2:_liteHexToRgba(downCol,.55),
       lineWidth:1,priceScaleId:'right',title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     });
-    cloudSeries.setData(clipped);
-    rsiLine.createPriceLine({price:70,color:'#9ca3af',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
-    rsiLine.createPriceLine({price:30,color:'#9ca3af',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
+    downSeries.setData(downZone);
     rsiLine.createPriceLine({price:85,color:'#e02424',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:false});
     _liteMacdCrosshairSeries=rsiLine;
     _liteMacdValueByTime=new Map(rsiAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
-    _liteIndicatorSeries.push({chart:_liteMacdChart,series:cloudSeries},{chart:_liteMacdChart,series:rsiLine});
+    _liteIndicatorSeries.push({chart:_liteMacdChart,series:upSeries},{chart:_liteMacdChart,series:downSeries},{chart:_liteMacdChart,series:rsiLine});
   }else{
     _liteMacdValueByTime=new Map();
   }
