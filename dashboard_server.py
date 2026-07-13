@@ -3998,7 +3998,7 @@ function renderLiteIndicators(){
       autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})
     });
     rsiLine.setData(rsiAligned);
-    const upZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value>60);
+    const upZone=rsiAligned.map(x=>(Number.isFinite(x.value)&&x.value>60)?{time:x.time,value:x.value}:{time:x.time});
     const upSeries=_liteMacdChart.addBaselineSeries({
       baseValue:{type:'price',price:60},
       topLineColor:'rgba(0,0,0,0)',topFillColor1:_liteHexToRgba(upCol,.55),topFillColor2:_liteHexToRgba(upCol,.35),
@@ -4006,7 +4006,7 @@ function renderLiteIndicators(){
       lineWidth:1,priceScaleId:'right',title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     });
     upSeries.setData(upZone);
-    const downZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value<30);
+    const downZone=rsiAligned.map(x=>(Number.isFinite(x.value)&&x.value<30)?{time:x.time,value:x.value}:{time:x.time});
     const downSeries=_liteMacdChart.addBaselineSeries({
       baseValue:{type:'price',price:30},
       topLineColor:'rgba(0,0,0,0)',topFillColor1:'rgba(0,0,0,0)',topFillColor2:'rgba(0,0,0,0)',
