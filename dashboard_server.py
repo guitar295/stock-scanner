@@ -1292,7 +1292,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-frame{width:100%;height:710px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
 #lite-chart{width:100%;height:540px}
-#lite-rsi-chart{width:100%;height:148px;border-top:1px solid var(--border);display:none}
+#lite-rsi-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
 #lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
 #lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
 .lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
@@ -1829,7 +1829,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
               <label><input type="checkbox" value="ma100"><span class="lite-ind-label" data-ind="ma100" title="Bấm để đổi màu">MA100</span><input type="color" class="lite-ind-color" data-ind="ma100" value="#d97706"></label>
               <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
               <div class="lite-ind-dropdown-sub-title">EMA</div>
-              <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#f97316"></label>
+              <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#ff0000"></label>
               <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#16a34a"></label>
               <label><input type="checkbox" value="ema30"><span class="lite-ind-label" data-ind="ema30" title="Bấm để đổi màu">EMA30</span><input type="color" class="lite-ind-color" data-ind="ema30" value="#0ea5e9"></label>
               <label><input type="checkbox" value="ema50"><span class="lite-ind-label" data-ind="ema50" title="Bấm để đổi màu">EMA50</span><input type="color" class="lite-ind-color" data-ind="ema50" value="#c026d3"></label>
@@ -2228,7 +2228,7 @@ function _liteLSSet(key,val){
 const LITE_MA_PERIODS=[10,20,30,50,100,200];
 const LITE_EMA_PERIODS=[10,20,30,50,100,200];
 const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
-const LITE_EMA_DEFAULT_COLORS=['#f97316','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
+const LITE_EMA_DEFAULT_COLORS=['#ff0000','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
 const LITE_RSI_PERIOD=14;
 const LITE_RSI_DEFAULT_COLOR='#7c6ee6';
 const LITE_IND_DEFAULT_COLORS={bb:'#9333ea',rsi:LITE_RSI_DEFAULT_COLOR,'trend-up':'#64fa96','trend-down':'#fa9696'};
@@ -2298,15 +2298,18 @@ function _liteHexToRgba(hex,alpha){
   const r=parseInt(m[1],16),g=parseInt(m[2],16),b=parseInt(m[3],16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
+function _litePaneIsActive(chart){
+  if(chart===_liteChart)return true;
+  if(chart===_liteRsiChart)return _liteChecked('rsi')&&DOM.liteRsiChart?.style.display!=='none';
+  if(chart===_liteMacdChart)return _liteChecked('macd')&&DOM.liteMacdChart?.style.display!=='none';
+  return false;
+}
 function _liteSubpaneCharts(){
-  return [_liteChart,_liteRsiChart,_liteMacdChart].filter(Boolean);
+  return [_liteChart,_liteRsiChart,_liteMacdChart].filter(chart=>chart&&_litePaneIsActive(chart));
 }
 function _liteGetVisibleLogicalRange(){
-  for(const chart of [_liteMacdChart,_liteRsiChart,_liteChart]){
-    const range=chart&&chart.timeScale&&chart.timeScale().getVisibleLogicalRange();
-    if(range&&Number.isFinite(range.from)&&Number.isFinite(range.to))return range;
-  }
-  return null;
+  const range=_liteChart&&_liteChart.timeScale&&_liteChart.timeScale().getVisibleLogicalRange();
+  return range&&Number.isFinite(range.from)&&Number.isFinite(range.to)?range:null;
 }
 function _liteApplyVisibleLogicalRange(range){
   if(!range||!Number.isFinite(range.from)||!Number.isFinite(range.to))return false;
@@ -2318,7 +2321,7 @@ function _liteApplyVisibleLogicalRange(range){
   return true;
 }
 function _liteSyncVisibleRangeFrom(source,range){
-  if(_liteSyncing||!range)return;
+  if(_liteSyncing||!range||!_litePaneIsActive(source))return;
   _liteSyncing=true;
   _liteSubpaneCharts().forEach(chart=>{
     if(chart!==source){
@@ -2329,7 +2332,7 @@ function _liteSyncVisibleRangeFrom(source,range){
 }
 function _liteRsiBackgroundCss(){
   const fill=_liteHexToRgba(_liteIndColors.rsi||LITE_RSI_DEFAULT_COLOR,.12);
-  return `linear-gradient(to bottom,#ffffff 0%,#ffffff 30%,${fill} 30%,${fill} 70%,#ffffff 70%,#ffffff 100%)`;
+  return `linear-gradient(to bottom,#ffffff 0%,#ffffff 32%,${fill} 32%,${fill} 64%,#ffffff 64%,#ffffff 100%)`;
 }
 function _liteApplyRsiBackground(){
   if(!DOM.liteRsiChart)return;
@@ -2736,7 +2739,7 @@ function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
   const totalH=710;
-  const rsiH=showRsi?148:0;
+  const rsiH=showRsi?176:0;
   const macdH=showMacd?Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176)):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
@@ -2744,27 +2747,33 @@ function applyLitePaneLayout(){
   const showMainTimeScale=!showRsi&&!showMacd;
   const showRsiTimeScale=showRsi&&!showMacd;
   const showMacdTimeScale=showMacd;
-  DOM.liteRsiChart.style.display=showRsi?'block':'none';
-  DOM.liteMacdChart.style.display=showMacd?'block':'none';
-  DOM.liteMacdResizer.classList.toggle('on',showMacd);
-  DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
-  DOM.liteChart.style.height=`${mainH}px`;
-  if(showRsi)DOM.liteRsiChart.style.height=`${rsiH}px`;
-  _liteChart.applyOptions({
-    width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.16,bottom:.24}}
-  });
-  if(_liteRsiChart)_liteRsiChart.applyOptions({
-    width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
-    timeScale:{visible:showRsiTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.08,bottom:.12}}
-  });
-  if(_liteMacdChart)_liteMacdChart.applyOptions({
-    width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
-    timeScale:{visible:showMacdTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}
-  });
+  const prevSyncing=_liteSyncing;
+  _liteSyncing=true;
+  try{
+    DOM.liteRsiChart.style.display=showRsi?'block':'none';
+    DOM.liteMacdChart.style.display=showMacd?'block':'none';
+    DOM.liteMacdResizer.classList.toggle('on',showMacd);
+    DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
+    DOM.liteChart.style.height=`${mainH}px`;
+    if(showRsi)DOM.liteRsiChart.style.height=`${rsiH}px`;
+    _liteChart.applyOptions({
+      width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
+      timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.16,bottom:.24}}
+    });
+    if(_liteRsiChart)_liteRsiChart.applyOptions({
+      width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
+      timeScale:{visible:showRsiTimeScale,rightOffset:LITE_RIGHT_OFFSET},
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.08,bottom:.12}}
+    });
+    if(_liteMacdChart)_liteMacdChart.applyOptions({
+      width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
+      timeScale:{visible:showMacdTimeScale,rightOffset:LITE_RIGHT_OFFSET},
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}
+    });
+  }finally{
+    _liteSyncing=prevSyncing;
+  }
   _liteApplyRsiBackground();
   resizeLiteDrawCanvas();redrawLiteDrawings();
 }
@@ -3607,7 +3616,7 @@ async function copyLiteChartImage(btn){
     panes.forEach(p=>{
       if(p.kind==='rsi'){
         ctx.fillStyle=_liteHexToRgba(_liteIndColors.rsi||LITE_RSI_DEFAULT_COLOR,.12);
-        ctx.fillRect(0,y+Math.round(p.canvas.height*.3),p.canvas.width,Math.round(p.canvas.height*.4));
+        ctx.fillRect(0,y+Math.round(p.canvas.height*.32),p.canvas.width,Math.round(p.canvas.height*.32));
       }
       ctx.drawImage(p.canvas,0,y);
       y+=p.canvas.height;
@@ -4064,15 +4073,17 @@ function renderLiteIndicators(){
   }
   if(showRsi){
     const rsiCol=_liteIndColors.rsi||LITE_RSI_DEFAULT_COLOR;
+    const rsiAutoscale=()=>({priceRange:{minValue:0,maxValue:100}});
     const rsiSeries=_liteRsiChart.addLineSeries({
       priceScaleId:'right',color:_liteHexToRgba(rsiCol,.88),lineWidth:1,
-      title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false
+      title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false,
+      autoscaleInfoProvider:rsiAutoscale
     });
-    const bounds0=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
-    const bounds100=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
-    const level70=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    const level50=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.45)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    const level30=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    const bounds0=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
+    const bounds100=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
+    const level70=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
+    const level50=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.45)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
+    const level30=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
     const rsiAligned=alignLiteSeries(_rsi(_liteData,LITE_RSI_PERIOD));
     const constLine=value=>_liteData.map(bar=>({time:bar.time,value}));
     rsiSeries.setData(rsiAligned);
@@ -4273,8 +4284,10 @@ function bindLiteChartControls(){
     const flush=()=>{
       rafId=null;
       if(pendingH===null)return;
+      const prevRange=_liteGetVisibleLogicalRange();
       DOM.liteMacdChart.style.height=pendingH+'px';
-      applyLitePaneLayout();setLiteRightOffset();
+      applyLitePaneLayout();
+      _liteApplyVisibleLogicalRange(prevRange);
       pendingH=null;
     };
     const move=ev=>{
@@ -4619,6 +4632,7 @@ DOM.liteChartToggle.addEventListener('click',e=>{
     // đã được tính với width=0 lúc panel còn ẩn.
     requestAnimationFrame(()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+      if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
       if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
       if(_liteData.length)setLiteRightOffset();
       resizeLiteDrawCanvas();redrawLiteDrawings();
