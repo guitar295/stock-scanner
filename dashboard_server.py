@@ -1513,7 +1513,21 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   }
   .market-frame{height:70vh}
   #market-panel{display:none !important;}
-  #lite-chart-panel{display:none !important;}
+
+  /* Thẻ CHART: trước đây ẩn hẳn trên mobile (display:none), giờ hiển thị với
+     kích thước co giãn theo viewport thay vì các giá trị cố định của desktop. */
+  .lite-chart-panel .lite-chart-toolbar{gap:6px}
+  .lite-chart-input{width:64px}
+  .lite-chart-input:focus{width:84px}
+  .lite-draw-toolbar{
+    width:100%;order:99;margin-top:4px;padding-left:0;border-left:none;
+    padding-top:4px;border-top:1px solid var(--border);
+    overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .lite-draw-toolbar::-webkit-scrollbar{display:none}
+  .lite-draw-btn{flex-shrink:0}
+  .lite-chart-frame{height:60vh}
+  #lite-chart{height:46vh}
 }
 
 /* ═══════════════════════════════════════════
@@ -3949,7 +3963,6 @@ function _liteRefreshVolumeTop(){
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
   _liteVolume.setData(_liteVolumeData);
 }
-let _liteStatusPending=null;
 function showLiteChartStatus(status){
   if(!DOM.liteChartStatus)return;
   if(!status){DOM.liteChartStatus.classList.remove('on');return;}
@@ -3973,16 +3986,18 @@ async function loadLiteChart(sym='FPT',retry=1){
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),1200);
     return;
   }
-  try{
-    const st=await fetch('/api/lightweight_chart_status/'+encodeURIComponent(s)).then(x=>x.json()).catch(()=>null);
-    _liteStatusPending=st;
-    DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
-  }catch(e){}
+  // Gọi song song: status chỉ để hiển thị placeholder text, không cần chờ nó xong
+  // mới bắt đầu fetch data thật — gộp lại giúp giảm ~1 round-trip độ trễ tải chart.
+  const statusPromise=fetch('/api/lightweight_chart_status/'+encodeURIComponent(s))
+    .then(x=>x.json()).catch(()=>null);
+  statusPromise.then(st=>{
+    if(DOM.liteChartEmpty.style.display!=='none')
+      DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
+  });
   try{
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf));
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
-    initLiteChart();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteData=(j.candles||[]).map((bar,idx,arr)=>{
       const prev=idx>0?arr[idx-1].close:null;
@@ -4001,7 +4016,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
-    showLiteChartStatus(_liteStatusPending);
+    showLiteChartStatus(await statusPromise);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
