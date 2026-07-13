@@ -5,6 +5,7 @@ DASHBOARD SERVER
 from flask import Flask, jsonify, Response, request, session, send_from_directory
 from functools import wraps
 from pathlib import Path
+import base64
 import hmac
 import json
 import math
@@ -27,6 +28,9 @@ _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
 _fetch_chart_fn = None
+_fetch_chart_15m_fn = None
+_ensure_chart_symbol_fn = None
+_chart_symbol_status_fn = None
 _signal_emoji = {}
 _signal_rank = {}
 
@@ -37,7 +41,7 @@ SIGNAL_TTL_SEC = 10
 
 _chart_cache: dict = {}
 _chart_lock = threading.Lock()
-CHART_TTL_SEC = 0
+CHART_TTL_SEC = 120
 
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
@@ -163,6 +167,33 @@ def _uploaded_ext(filename):
 # =============================================================================
 # API
 # =============================================================================
+def _serve_chart_images(symbol, fetch_fn, cache_key, label):
+    symbol = symbol.upper().strip()
+    now = time.time()
+    with _chart_lock:
+        cached = _chart_cache.get(cache_key)
+        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
+            return jsonify({"symbol": symbol, "images": cached["images"],
+                            "labels": cached["labels"], "cached": True})
+    if not fetch_fn:
+        return jsonify({"error": f"{label}_fn_not_registered"}), 503
+    try:
+        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [Dashboard] 📊 Tạo {label} {symbol}...")
+        png_list, labels = fetch_fn(symbol)
+        if not png_list:
+            return jsonify({"error": "no_data"}), 404
+        b64_list = [base64.b64encode(b).decode() for b in png_list]
+        with _chart_lock:
+            _chart_cache[cache_key] = {"images": b64_list, "labels": labels,
+                                       "updated_at": time.time()}
+        print(f"  [Dashboard] ✅ {label} {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
+        return jsonify({"symbol": symbol, "images": b64_list,
+                        "labels": labels, "cached": False})
+    except Exception as e:
+        print(f"  [Dashboard] ❌ {label} {symbol} lỗi: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
@@ -216,33 +247,88 @@ def api_heatmap():
 
 @app.route("/api/chart_images/<symbol>")
 def api_chart_images(symbol):
-    import base64
     symbol = symbol.upper().strip()
-    now = time.time()
-    with _chart_lock:
-        cached = _chart_cache.get(symbol)
-        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
-            return jsonify({"symbol": symbol, "images": cached["images"],
-                            "labels": cached["labels"], "cached": True})
-    if not _fetch_chart_fn:
-        return jsonify({"error": "chart_fn_not_registered"}), 503
+    return _serve_chart_images(symbol, _fetch_chart_fn, symbol, "chart")
+
+@app.route("/api/chart_image_15m/<symbol>")
+def api_chart_image_15m(symbol):
+    symbol = symbol.upper().strip()
+    return _serve_chart_images(symbol, _fetch_chart_15m_fn, f"{symbol}:15m", "chart_15m")
+
+@app.route("/api/lightweight_chart_status/<symbol>")
+def api_lightweight_chart_status(symbol):
+    """Kiểm tra nhanh, không gọi mạng: chart sẽ phục vụ từ cache hay cần
+    update (vnstock) — dùng để hiển thị trạng thái trước khi tải dữ liệu."""
+    symbol = symbol.upper().strip()
+    if _chart_symbol_status_fn:
+        try:
+            return jsonify(_chart_symbol_status_fn(symbol))
+        except Exception as exc:
+            return jsonify({"symbol": symbol, "cached": False, "need_fetch": True,
+                            "reason": "status_error", "detail": str(exc)})
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not _cache_lock:
+        return jsonify({"symbol": symbol, "cached": False, "need_fetch": True, "reason": "unknown"})
+    with _cache_lock:
+        df = cache.get(symbol)
+        has_cache = df is not None and len(df) >= 60
+    return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
+                    "reason": "fallback_check"})
+
+@app.route("/api/lightweight_chart/<symbol>")
+def api_lightweight_chart(symbol):
+    symbol = symbol.upper().strip()
+    tf = (request.args.get("tf") or "1D").upper()
     try:
-        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [Dashboard] 📊 Tạo chart {symbol}...")
-        png_list, labels = _fetch_chart_fn(symbol)
-        if not png_list:
-            return jsonify({"error": "no_data"}), 404
-        b64_list = [base64.b64encode(b).decode() for b in png_list]
-        fetch_time = time.time()
-        with _chart_lock:
-            _chart_cache[symbol] = {"images": b64_list, "labels": labels,
-                                    "updated_at": fetch_time}
-        print(f"  [Dashboard] ✅ Chart {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
-        return jsonify({"symbol": symbol, "images": b64_list,
-                        "labels": labels, "cached": False})
-    except Exception as e:
-        print(f"  [Dashboard] ❌ Chart {symbol} lỗi: {e}")
-        return jsonify({"error": str(e)}), 500
+        limit = int(request.args.get("limit", 320) or 320)
+    except (TypeError, ValueError):
+        limit = 320
+    limit = max(50, min(1000, limit))
+    if _ensure_chart_symbol_fn:
+        try:
+            _ensure_chart_symbol_fn(symbol)
+        except Exception as exc:
+            print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not _cache_lock:
+        return jsonify({"error": "cache_not_ready"}), 503
+    with _cache_lock:
+        df = cache.get(symbol)
+        df = df.copy() if df is not None and len(df) else None
+    if df is None or df.empty:
+        return jsonify({"error": "no_cache", "symbol": symbol}), 404
+    if tf in ("1W", "W", "WEEK", "WEEKLY"):
+        try:
+            df = df.resample("W-FRI").agg({
+                "open": "first", "high": "max", "low": "min",
+                "close": "last", "volume": "sum"
+            }).dropna(subset=["open", "high", "low", "close"])
+            tf = "1W"
+        except Exception as exc:
+            return jsonify({"error": "weekly_resample_failed", "detail": str(exc)}), 500
+    else:
+        tf = "1D"
+    df = df.tail(limit)
+    candles, volume = [], []
+    for idx, row in df.iterrows():
+        try:
+            o = float(row.get("open", 0) or 0)
+            h = float(row.get("high", 0) or 0)
+            l = float(row.get("low", 0) or 0)
+            c = float(row.get("close", 0) or 0)
+            v = float(row.get("volume", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
+            continue
+        day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+        candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
+        volume.append({"time": day, "value": max(0, v),
+                       "color": "#26a69a" if c >= o else "#ef5350"})
+    if not candles:
+        return jsonify({"error": "no_data", "symbol": symbol}), 404
+    return jsonify({"symbol": symbol, "timeframe": tf, "candles": candles, "volume": volume,
+                    "last_date": candles[-1]["time"]})
 
 @app.route("/api/cache_info")
 def api_cache_info():
@@ -266,8 +352,9 @@ def api_status():
 def api_chart_cache_clear(symbol):
     symbol = symbol.upper().strip()
     with _chart_lock:
-        removed = symbol in _chart_cache
+        removed = symbol in _chart_cache or f"{symbol}:15m" in _chart_cache
         _chart_cache.pop(symbol, None)
+        _chart_cache.pop(f"{symbol}:15m", None)
     return jsonify({"symbol": symbol, "cleared": removed})
 
 @app.route("/api/config")
@@ -500,15 +587,21 @@ def index():
 # =============================================================================
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
-                    fetch_chart_fn=None, momentum_today_ref=None, port=8888):
+                    fetch_chart_fn=None, fetch_chart_15m_fn=None,
+                    ensure_chart_symbol_fn=None,
+                    chart_symbol_status_fn=None,
+                    momentum_today_ref=None, port=8888):
     global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_chart_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_chart_fn    = fetch_chart_fn
+    _fetch_chart_15m_fn = fetch_chart_15m_fn
+    _ensure_chart_symbol_fn = ensure_chart_symbol_fn
+    _chart_symbol_status_fn = chart_symbol_status_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
 
@@ -711,6 +804,14 @@ function _showAlbum(images){
   _updateAlbumNav();
   DOM.outer.style.display='flex';DOM.loading.style.display='none';
 }
+function _appendAlbumImages(images){
+  if(!images.length)return;
+  const start=_albumImages.length;
+  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
+  DOM.slides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`;}).join(''));
+  DOM.dots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
+  _updateAlbumNav();
+}
 DOM.dots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
 DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
 DOM.btnNext.addEventListener('click',()=>albumNav(1));
@@ -740,11 +841,30 @@ async function loadScannerChart(sym){
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
     const j=await r.json();
     if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
+    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    if(j.cached){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
+    const h=DOM.outer.querySelector('.album-hint');
+    if(h)h.textContent='Đang tải 15m...';
+    loadScannerChart15m(sym);
   }catch(e){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+  }
+}
+async function loadScannerChart15m(sym){
+  const s=(sym||'').toUpperCase().trim();
+  try{
+    const r=await fetch('/api/chart_image_15m/'+s);
+    if(!r.ok){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='';return;}
+    const j=await r.json();
+    if((_sym||'').toUpperCase().trim()!==s)return;
+    if(!j.images?.length)return;
+    const labels=j.labels||['⚡ 15 phút [15m]'];
+    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
+    const h=DOM.outer.querySelector('.album-hint');
+    if(h)h.textContent='';
+  }catch(e){
+    const h=DOM.outer.querySelector('.album-hint');
+    if(h)h.textContent='';
   }
 }
 document.addEventListener('keydown',e=>{
@@ -1050,7 +1170,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-si
 header{
   display:flex;align-items:center;justify-content:space-between;
   padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);
-  position:sticky;top:0;z-index:100;box-shadow:0 1px 6px var(--shadow);
+  position:static;z-index:100;box-shadow:0 1px 6px var(--shadow);
   flex-wrap:wrap;gap:6px;
 }
 header h1{
@@ -1160,7 +1280,94 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
 .sankey-panel.collapsed .sankey-wrap{display:none}
 .sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
+.lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
+.lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
+.lite-chart-panel.collapsed .lite-chart-search-wrap,
+.lite-chart-panel.collapsed .lite-tf-tabs,
+.lite-chart-panel.collapsed .lite-indicators,
+.lite-chart-panel.collapsed .lite-draw-toolbar,
+.lite-chart-panel.collapsed .lite-chart-frame{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
+.lite-chart-frame{width:100%;height:710px;background:#fff;position:relative}
+.lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
+#lite-chart{width:100%;height:540px}
+#lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
+#lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
+.lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
+.lite-macd-resizer.on{display:block}
+.lite-macd-resizer:hover{background:rgba(26,86,219,.12)}
+.lite-chart-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lite-chart-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none;transition:border-color .15s,width .2s}
+.lite-chart-input::placeholder{color:var(--muted);text-transform:none}
+.lite-chart-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
+.lite-chart-search-wrap{position:relative;display:flex;align-items:center}
+.lite-chart-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
+.lite-tf-tabs{display:flex;align-items:center;gap:3px}
+.lite-tf-btn{height:24px;min-width:28px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
+.lite-tf-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+.lite-indicators{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.lite-indicators label{display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--muted);cursor:pointer;position:relative}
+.lite-ind-label{cursor:pointer}
+.lite-ind-label:hover{color:var(--accent)}
+.lite-ind-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
+.lite-indicators input{width:12px;height:12px;margin:0}
+.lite-ind-group{position:relative;display:flex;align-items:center;gap:4px}
+.lite-ind-color-visible{position:static!important;width:14px!important;height:14px!important;opacity:1!important;pointer-events:auto!important;border:1px solid var(--border);border-radius:3px;padding:0;cursor:pointer}
+.lite-ind-dropdown-sub-title{font-size:9px;font-weight:700;color:var(--muted);margin:4px 0 1px;letter-spacing:.03em}
+.lite-ind-dropdown-master{padding-bottom:6px;margin-bottom:2px;border-bottom:1px solid var(--border);font-weight:700}
+.lite-ind-group-btn{display:flex;align-items:center;gap:3px;height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
+.lite-ind-group-btn:hover{color:var(--accent);border-color:var(--accent)}
+.lite-ind-group.open .lite-ind-group-btn{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+.lite-ind-caret{font-size:8px;transition:transform .15s}
+.lite-ind-group.open .lite-ind-caret{transform:rotate(180deg)}
+.lite-ind-count{display:none;min-width:13px;height:13px;padding:0 3px;border-radius:7px;background:var(--accent);color:#fff;font-size:8px;font-weight:700;align-items:center;justify-content:center;line-height:13px}
+.lite-ind-count.on{display:inline-flex}
+.lite-ind-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:20;flex-direction:column;gap:5px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 10px;box-shadow:0 8px 24px rgba(17,24,39,.12);min-width:100px}
+.lite-ind-group.open .lite-ind-dropdown{display:flex}
+.lite-ind-dropdown label{font-size:10px}
+.lite-ind-simple{display:flex}
+.lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
+.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
+.lite-chart-signal.on{display:flex}
+.lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
+.lite-chart-search.on{display:block}
+.lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
+.lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
+.lite-chart-status.on{opacity:1}
+.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
+.lite-xhair-v{position:absolute;top:0;bottom:0;left:0;width:0;border-left:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
+.lite-xhair-h{position:absolute;left:0;right:0;top:0;height:0;border-top:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
+.lite-xhair-price{position:absolute;right:1px;top:0;transform:translateY(-50%);min-width:54px;padding:2px 6px;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;text-align:center;white-space:nowrap}
+.lite-xhair-time{position:absolute;left:0;bottom:2px;transform:translateX(-50%);padding:2px 6px;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;white-space:nowrap}
+.lite-draw-toolbar{display:flex;align-items:center;gap:3px;flex-wrap:wrap;padding-left:6px;border-left:1px solid var(--border)}
+.lite-draw-btn{width:24px;height:24px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lite-draw-btn:hover{background:#f1f5f9}
+.lite-draw-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+.lite-draw-sep{width:1px;height:16px;background:var(--border);margin:0 2px}
+.lite-draw-color{width:24px;height:20px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
+.lite-draw-color::-webkit-color-swatch-wrapper{padding:2px}
+.lite-draw-color::-webkit-color-swatch{border:none;border-radius:4px}
+.lite-draw-canvas{position:absolute;top:0;left:0;z-index:2;pointer-events:none}
+.lite-draw-canvas.drawing{pointer-events:auto;cursor:crosshair}
+.lite-shape-bar{position:absolute;z-index:7;display:none;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px 5px;box-shadow:0 2px 8px rgba(17,24,39,.14);transform:translate(-50%,-100%);margin-top:-10px}
+.lite-shape-bar.on{display:flex}
+.lite-text-input{position:absolute;z-index:8;display:none;min-width:16px;max-width:360px;min-height:18px;padding:2px 4px;font:12px "IBM Plex Mono",monospace;line-height:1.35;color:#111827;background:rgba(255,255,255,.96);border:1px dashed #1a56db;border-radius:3px;outline:none;white-space:pre-wrap;overflow:hidden;resize:none;cursor:text}
+.lite-text-input.on{display:inline-block}
+.lite-shape-color{width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:5px;background:none;cursor:pointer}
+.lite-shape-color::-webkit-color-swatch-wrapper{padding:2px}
+.lite-shape-color::-webkit-color-swatch{border:none;border-radius:4px}
+.lite-shape-select{height:22px;padding:0 2px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#374151;font-size:11px;cursor:pointer}
+.lite-shape-del{width:20px;height:20px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#ef4444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+#lite-shape-delete:hover{background:#fef2f2}
+.lite-shape-del.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+#lite-shape-target2{font-size:9px;font-weight:700;color:#374151}
+#lite-shape-target2:hover{background:#f1f5f9}
+#lite-shape-dash:hover{background:#f1f5f9}
+#lite-shape-edit{color:#374151}
+#lite-shape-edit:hover{background:#f1f5f9}
+#lite-shape-bg-clear{color:#374151}
+#lite-shape-bg-clear:hover{background:#f1f5f9}
 
 /* ═══════════════════════════════════════════
    POPUP — desktop
@@ -1306,6 +1513,21 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   }
   .market-frame{height:70vh}
   #market-panel{display:none !important;}
+
+  /* Thẻ CHART: trước đây ẩn hẳn trên mobile (display:none), giờ hiển thị với
+     kích thước co giãn theo viewport thay vì các giá trị cố định của desktop. */
+  .lite-chart-panel .lite-chart-toolbar{gap:6px}
+  .lite-chart-input{width:64px}
+  .lite-chart-input:focus{width:84px}
+  .lite-draw-toolbar{
+    width:100%;order:99;margin-top:4px;padding-left:0;border-left:none;
+    padding-top:4px;border-top:1px solid var(--border);
+    overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .lite-draw-toolbar::-webkit-scrollbar{display:none}
+  .lite-draw-btn{flex-shrink:0}
+  .lite-chart-frame{height:60vh}
+  #lite-chart{height:46vh}
 }
 
 /* ═══════════════════════════════════════════
@@ -1580,13 +1802,132 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
   </div>
 
-  <!-- SANKEY -->
-  <div class="panel sankey-panel collapsed" id="sankey-panel">
-    <div class="panel-hdr" id="sankey-toggle">
-      <span class="panel-title">Sankey</span>
-      <span class="sankey-toggle">▶</span>
+  <!-- LIGHTWEIGHT CHART -->
+  <div class="panel lite-chart-panel collapsed" id="lite-chart-panel">
+    <div class="panel-hdr" id="lite-chart-toggle">
+      <div class="lite-chart-toolbar">
+        <span class="panel-title">CHART</span>
+        <div class="lite-chart-search-wrap">
+          <span class="s-icon">🔍</span>
+          <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
+        </div>
+        <div class="lite-tf-tabs" id="lite-chart-tf">
+          <button class="lite-tf-btn on" data-tf="1D">D</button>
+          <button class="lite-tf-btn" data-tf="1W">W</button>
+        </div>
+        <div class="lite-indicators" id="lite-indicators">
+          <div class="lite-ind-group" data-group="maema">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="maema">MA/EMA<span class="lite-ind-count" data-count="maema"></span><span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="maema" style="min-width:120px">
+              <label class="lite-ind-dropdown-master"><input type="checkbox" class="lite-ind-master" value="maema_on"><span>Bật MA/EMA</span></label>
+              <div class="lite-ind-dropdown-sub-title">MA</div>
+              <label><input type="checkbox" value="ma10"><span class="lite-ind-label" data-ind="ma10" title="Bấm để đổi màu">MA10</span><input type="color" class="lite-ind-color" data-ind="ma10" value="#ff0000"></label>
+              <label><input type="checkbox" value="ma20"><span class="lite-ind-label" data-ind="ma20" title="Bấm để đổi màu">MA20</span><input type="color" class="lite-ind-color" data-ind="ma20" value="#008000"></label>
+              <label><input type="checkbox" value="ma30"><span class="lite-ind-label" data-ind="ma30" title="Bấm để đổi màu">MA30</span><input type="color" class="lite-ind-color" data-ind="ma30" value="#1a56db"></label>
+              <label><input type="checkbox" value="ma50"><span class="lite-ind-label" data-ind="ma50" title="Bấm để đổi màu">MA50</span><input type="color" class="lite-ind-color" data-ind="ma50" value="#800080"></label>
+              <label><input type="checkbox" value="ma100"><span class="lite-ind-label" data-ind="ma100" title="Bấm để đổi màu">MA100</span><input type="color" class="lite-ind-color" data-ind="ma100" value="#d97706"></label>
+              <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
+              <div class="lite-ind-dropdown-sub-title">EMA</div>
+              <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#f97316"></label>
+              <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#16a34a"></label>
+              <label><input type="checkbox" value="ema30"><span class="lite-ind-label" data-ind="ema30" title="Bấm để đổi màu">EMA30</span><input type="color" class="lite-ind-color" data-ind="ema30" value="#0ea5e9"></label>
+              <label><input type="checkbox" value="ema50"><span class="lite-ind-label" data-ind="ema50" title="Bấm để đổi màu">EMA50</span><input type="color" class="lite-ind-color" data-ind="ema50" value="#c026d3"></label>
+              <label><input type="checkbox" value="ema100"><span class="lite-ind-label" data-ind="ema100" title="Bấm để đổi màu">EMA100</span><input type="color" class="lite-ind-color" data-ind="ema100" value="#eab308"></label>
+              <label><input type="checkbox" value="ema200"><span class="lite-ind-label" data-ind="ema200" title="Bấm để đổi màu">EMA200</span><input type="color" class="lite-ind-color" data-ind="ema200" value="#78350f"></label>
+            </div>
+          </div>
+          <div class="lite-ind-group" data-group="trend">
+            <input type="checkbox" value="trend">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="trend">Trend<span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="trend">
+              <div style="display:flex;gap:10px">
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="radio" name="trend-mode" value="regular" checked>Regular</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="radio" name="trend-mode" value="smoothed">Smoothed</label>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Tăng<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-up" value="#64fa96"></label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Giảm<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="trend-down" value="#fa9696"></label>
+              </div>
+            </div>
+          </div>
+          <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
+          <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
+        </div>
+        <div class="lite-draw-toolbar" id="lite-draw-toolbar">
+          <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
+          <button class="lite-draw-btn" data-tool="trendline" title="Đường kẻ chéo">╱</button>
+          <button class="lite-draw-btn" data-tool="hline" title="Đường kẻ ngang">─</button>
+          <button class="lite-draw-btn" data-tool="vline" title="Đường kẻ dọc">❘</button>
+          <button class="lite-draw-btn" data-tool="rect" title="Hình chữ nhật">▭</button>
+          <button class="lite-draw-btn" data-tool="channel" title="Kênh giá: click-click chọn 2 điểm, rồi rê chuột lên/xuống để tạo kênh, click để chốt"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="14" x2="9" y2="2"/><line x1="7" y1="14" x2="13" y2="2"/></svg></button>
+          <button class="lite-draw-btn" data-tool="arrow" title="Mũi tên: click-click chọn điểm đầu và điểm cuối">↗</button>
+          <button class="lite-draw-btn" data-tool="zigzag" title="Zigzag: click nối tiếp từng điểm, double-click để kết thúc"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,13 5,4 8,11 11,3 15,8"/></svg></button>
+          <button class="lite-draw-btn" data-tool="arc" title="Đường cong bán nguyệt: click-click chọn 2 điểm như đường thẳng, rồi rê chuột lên/xuống để uốn cong, click để chốt">◠</button>
+          <button class="lite-draw-btn" data-tool="position" title="Entry/Target/Stoploss">🎯</button>
+          <button class="lite-draw-btn" data-tool="text" title="Text">Aa</button>
+          <div class="lite-draw-sep"></div>
+          <input type="color" id="lite-draw-color" class="lite-draw-color" value="#1a56db" title="Màu công cụ vẽ">
+          <div class="lite-draw-sep"></div>
+          <button class="lite-draw-btn" id="lite-draw-undo" title="Xóa nét vừa vẽ">↩</button>
+          <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
+          <div class="lite-draw-sep"></div>
+          <button class="lite-draw-btn" id="lite-draw-copy" title="Copy hình chart (cả MACD)">📋</button>
+        </div>
+      </div>
+      <span class="lite-chart-toggle-icon">▶</span>
     </div>
-    <div class="sankey-wrap" id="sankey-wrap" hidden><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+    <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
+      <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
+      <span class="lite-chart-signal" id="lite-chart-signal"></span>
+      <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
+      <div class="lite-shape-bar" id="lite-shape-bar">
+        <input type="color" id="lite-shape-color" class="lite-shape-color" title="Đổi màu hình vẽ">
+        <input type="color" id="lite-shape-target-color" class="lite-shape-color" title="Đổi màu Target">
+        <button id="lite-shape-target2" class="lite-shape-del" title="Bật/tắt Target 2">T2</button>
+        <select id="lite-shape-font-size" class="lite-shape-select" title="Cỡ chữ">
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+          <option value="13">13</option>
+          <option value="14">14</option>
+          <option value="16">16</option>
+          <option value="18">18</option>
+          <option value="20">20</option>
+          <option value="24">24</option>
+          <option value="28">28</option>
+        </select>
+        <select id="lite-shape-font-family" class="lite-shape-select" title="Font chữ">
+          <option value="mono">Mono</option>
+          <option value="sans">Sans</option>
+          <option value="serif">Serif</option>
+        </select>
+        <input type="color" id="lite-shape-bg-color" class="lite-shape-color" title="Màu nền chữ">
+        <button id="lite-shape-bg-clear" class="lite-shape-del" title="Bỏ màu nền">⊘</button>
+        <button id="lite-shape-edit" class="lite-shape-del" title="Sửa nội dung">✎</button>
+        <button id="lite-shape-dash" class="lite-shape-del" title="Chuyển nét liền / nét đứt">┈</button>
+        <select id="lite-shape-arrow-width" class="lite-shape-select" title="Độ dày mũi tên">
+          <option value="1">Mỏng</option>
+          <option value="2">Vừa</option>
+          <option value="3">Đậm</option>
+          <option value="4">Rất đậm</option>
+          <option value="6">Siêu đậm</option>
+        </select>
+        <button id="lite-shape-arrow-style" class="lite-shape-del" title="Chuyển mũi tên thường / mũi tên vệt (đuôi nhọn, thân phình to, đầu nhọn)">◭</button>
+        <button id="lite-shape-zigzag-fill" class="lite-shape-del" title="Bật/tắt dải màu tô nền ZigZag (tắt = chỉ còn đường lên xuống)">▥</button>
+        <button id="lite-shape-delete" class="lite-shape-del" title="Xóa hình này">✕</button>
+      </div>
+      <textarea class="lite-text-input" id="lite-text-input" spellcheck="false" rows="1"></textarea>
+      <input class="lite-chart-search" id="lite-chart-search" maxlength="10" spellcheck="false" autocomplete="off" lang="en" autocapitalize="characters" autocorrect="off" inputmode="text" translate="no">
+      <div id="lite-chart"></div>
+      <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
+      <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
+      <div id="lite-macd-chart"></div>
+      <div class="lite-xhair-v" id="lite-xhair-v"></div>
+      <div class="lite-xhair-h" id="lite-xhair-h"></div>
+      <div class="lite-xhair-price" id="lite-xhair-price"></div>
+      <div class="lite-xhair-time" id="lite-xhair-time"></div>
+      <div class="lite-chart-empty" id="lite-chart-empty">Đang tải chart...</div>
+    </div>
   </div>
 
   <!-- MARKET -->
@@ -1595,6 +1936,15 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
       <span class="panel-title">MARKET</span>
     </div>
     <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
+  </div>
+
+  <!-- SANKEY -->
+  <div class="panel sankey-panel collapsed" id="sankey-panel">
+    <div class="panel-hdr" id="sankey-toggle">
+      <span class="panel-title">Sankey</span>
+      <span class="sankey-toggle">▶</span>
+    </div>
+    <div class="sankey-wrap" id="sankey-wrap" hidden><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 </div>
 
@@ -1727,6 +2077,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 </div>
 <div id="edge-swipe-zone"></div>
 
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -1738,7 +2089,28 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
+  liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
+  liteChart:$('lite-chart'),
+  liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
+  liteMacdChart:$('lite-macd-chart'),liteMacdResizer:$('lite-macd-resizer'),liteChartInput:$('lite-chart-input'),
+  liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
+  liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
+  liteChartSignal:$('lite-chart-signal'),
+  liteChartStatus:$('lite-chart-status'),
+  liteXhairV:$('lite-xhair-v'),liteXhairH:$('lite-xhair-h'),liteXhairPrice:$('lite-xhair-price'),liteXhairTime:$('lite-xhair-time'),
+  liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
+  liteDrawUndo:$('lite-draw-undo'),liteDrawClear:$('lite-draw-clear'),
+  liteDrawColor:$('lite-draw-color'),
+  liteShapeBar:$('lite-shape-bar'),liteShapeColor:$('lite-shape-color'),liteShapeDelete:$('lite-shape-delete'),
+  liteShapeTargetColor:$('lite-shape-target-color'),liteShapeFontSize:$('lite-shape-font-size'),
+  liteShapeTarget2:$('lite-shape-target2'),
+  liteShapeFontFamily:$('lite-shape-font-family'),liteShapeBgColor:$('lite-shape-bg-color'),
+  liteShapeBgClear:$('lite-shape-bg-clear'),liteShapeEdit:$('lite-shape-edit'),
+  liteTextInput:$('lite-text-input'),
+  liteShapeDash:$('lite-shape-dash'),liteDrawCopy:$('lite-draw-copy'),
+  liteShapeArrowStyle:$('lite-shape-arrow-style'),liteShapeZigzagFill:$('lite-shape-zigzag-fill'),
+  liteShapeArrowWidth:$('lite-shape-arrow-width'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -1786,6 +2158,9 @@ const SIGNAL_LABEL_MAP={
   'POCKET PIVOT':'POCKET'
 };
 const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
+// Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
+// SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
+let _sigTodayMap=new Map();
 let SIG_TTL=30,HMAP_TTL=120;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -1817,10 +2192,1947 @@ let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
+let _isChartPanelOpen=false;
 let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
+const LITE_IND_KEY='dashboard_lite_indicators';
+const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
+const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
+function loadLiteTrendMode(){
+  let mode='regular';
+  try{mode=localStorage.getItem(LITE_TREND_MODE_KEY)||'regular';}catch(e){}
+  DOM.liteIndicators?.querySelectorAll('input[name="trend-mode"]').forEach(r=>{r.checked=(r.value===mode);});
+}
+function saveLiteTrendMode(){
+  const mode=_liteTrendMode();
+  try{localStorage.setItem(LITE_TREND_MODE_KEY,mode);}catch(e){}
+}
+function _liteTrendMode(){
+  const el=DOM.liteIndicators?.querySelector('input[name="trend-mode"]:checked');
+  return el?el.value:'regular';
+}
+// Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch
+// lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
+function _liteLSGet(key,fallback){
+  try{return localStorage.getItem(key)||fallback;}catch(e){return fallback;}
+}
+function _liteLSSet(key,val){
+  try{localStorage.setItem(key,val);}catch(e){}
+}
+const LITE_MA_PERIODS=[10,20,30,50,100,200];
+const LITE_EMA_PERIODS=[10,20,30,50,100,200];
+const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
+const LITE_EMA_DEFAULT_COLORS=['#f97316','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
+const LITE_IND_DEFAULT_COLORS={bb:'#9333ea','trend-up':'#64fa96','trend-down':'#fa9696'};
+LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
+LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
+let _liteIndColors={...LITE_IND_DEFAULT_COLORS};
+function loadLiteIndColors(){
+  let stored={};
+  try{stored=JSON.parse(localStorage.getItem(LITE_IND_COLOR_KEY)||'{}')||{};}catch(e){stored={};}
+  _liteIndColors={...LITE_IND_DEFAULT_COLORS,...stored};
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-color').forEach(inp=>{
+    if(_liteIndColors[inp.dataset.ind])inp.value=_liteIndColors[inp.dataset.ind];
+  });
+}
+function saveLiteIndColors(){
+  _liteLSSet(LITE_IND_COLOR_KEY,JSON.stringify(_liteIndColors));
+}
+function bindLiteIndColorPickers(){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-label').forEach(span=>{
+    span.addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();
+      const inp=DOM.liteIndicators.querySelector(`.lite-ind-color[data-ind="${span.dataset.ind}"]`);
+      if(inp)inp.click();
+    });
+  });
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-color').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      _liteIndColors[inp.dataset.ind]=inp.value;
+      saveLiteIndColors();
+      renderLiteIndicators();
+    });
+  });
+}
+function updateLiteIndGroupCounts(){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-group').forEach(grp=>{
+    const key=grp.dataset.group;
+    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked:not(.lite-ind-master)').length;
+    const badge=grp.querySelector(`.lite-ind-count[data-count="${key}"]`);
+    if(badge){badge.textContent=n||'';badge.classList.toggle('on',n>0);}
+  });
+}
+function closeAllLiteIndDropdowns(except){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-group.open').forEach(g=>{
+    if(g!==except)g.classList.remove('open');
+  });
+}
+function bindLiteIndGroupDropdowns(){
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-group-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();
+      const grp=btn.closest('.lite-ind-group');
+      if(!grp)return;
+      const willOpen=!grp.classList.contains('open');
+      closeAllLiteIndDropdowns();
+      grp.classList.toggle('open',willOpen);
+    });
+  });
+  DOM.liteIndicators?.querySelectorAll('.lite-ind-dropdown').forEach(dd=>{
+    dd.addEventListener('click',e=>e.stopPropagation());
+  });
+  document.addEventListener('click',()=>closeAllLiteIndDropdowns());
+  updateLiteIndGroupCounts();
+}
+function _liteHexToRgba(hex,alpha){
+  const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'');
+  if(!m)return `rgba(147,51,234,${alpha})`;
+  const r=parseInt(m[1],16),g=parseInt(m[2],16),b=parseInt(m[3],16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+let _liteChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
+let _liteMainWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
+let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
+let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
+let _liteMacdValueByTime=new Map();
+const LITE_BARS_VISIBLE=300,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
+function initLiteChart(){
+  if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
+  // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
+  // Lý do: cách cũ dùng applyOptions() để bật/tắt horzLine mỗi khi đổi panel — applyOptions là thao tác
+  // nặng (buộc chart vẽ lại toàn bộ), gọi liên tục theo mousemove nên gây giật/nháy và có lúc lộ ra
+  // đồng thời 2 đường ngang (do độ trễ giữa 2 lệnh applyOptions ở 2 chart). Từ nay chỉ vẽ 1 crosshair
+  // DUY NHẤT bằng overlay DOM riêng (xem _liteMoveXhair/_liteHideXhair) — mượt tuyệt đối vì chỉ set
+  // style.left/top, không đụng tới engine vẽ của lightweight-charts.
+  const chartOpts={
+    layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
+    grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
+    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET},
+    crosshair:{
+      mode:LightweightCharts.CrosshairMode.Normal,
+      vertLine:{visible:false,labelVisible:false},
+      horzLine:{visible:false,labelVisible:false}
+    }
+  };
+  _liteChart=LightweightCharts.createChart(DOM.liteChart,{
+    ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.16,bottom:.28}},
+    handleScale:{axisPressedMouseMove:{time:true,price:true}}
+  });
+  _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
+    ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
+    handleScale:{axisPressedMouseMove:{time:false,price:true}}
+  });  _liteCandle=_liteChart.addCandlestickSeries({
+    upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
+    borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'
+  });
+  _liteVolume=_liteChart.addHistogramSeries({
+    priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
+  });
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
+  // Series "whitespace" vô hình: chỉ chứa các mốc thời gian tương lai (vùng trống bên phải nến cuối),
+  // giúp time-scale nhận biết vùng này nên subscribeCrosshairMove vẫn trả về param.time hợp lệ khi
+  // trỏ vào vùng trống đó (để overlay crosshair + nhãn ngày vẫn hoạt động, không bị "rớt").
+  _liteMainWhite=_liteChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
+  _liteMacdWhite=_liteMacdChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
+  _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+    redrawLiteDrawings();
+    if(_liteSyncing||!range||!_liteMacdChart)return;
+    _liteSyncing=true;_liteMacdChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
+  });
+  _liteMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+    if(_liteSyncing||!range||!_liteChart)return;
+    _liteSyncing=true;_liteChart.timeScale().setVisibleLogicalRange(range);_liteSyncing=false;
+  });
+  // ─── Crosshair hợp nhất (1 đường dọc + 1 đường ngang) cho cả 2 panel ───────────────────────────
+  // Nguyên lý: KHÔNG dùng crosshair gốc của lightweight-charts nữa (đã tắt hẳn ở chartOpts phía trên).
+  // Mỗi panel tự báo toạ độ con trỏ (x,y cục bộ) qua subscribeCrosshairMove, ta cộng thêm offsetTop
+  // của panel đó so với khung frame để ra toạ độ TUYỆT ĐỐI trong #lite-chart-frame, rồi set thẳng
+  // style.left/top cho 4 phần tử overlay (vạch dọc xuyên suốt cả khung, vạch ngang, nhãn giá, nhãn ngày).
+  // Vì #lite-chart và #lite-macd-chart có cùng chiều rộng & cùng gốc trái (0), toạ độ x của 2 panel
+  // khớp tuyệt đối nhau nên vạch dọc luôn thẳng hàng liền mạch qua cả 2 panel — không lệch, không giật,
+  // vì mỗi lần di chuột chỉ là một phép gán style (rẻ), hoàn toàn không gọi applyOptions/setCrosshairPosition.
+  function _liteHideXhair(){
+    if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
+    if(DOM.liteXhairH)DOM.liteXhairH.style.display='none';
+    if(DOM.liteXhairPrice)DOM.liteXhairPrice.style.display='none';
+    if(DOM.liteXhairTime)DOM.liteXhairTime.style.display='none';
+  }
+  function _liteMoveXhair(x,y,priceTxt,timeTxt){
+    if(DOM.liteXhairV){DOM.liteXhairV.style.left=x+'px';DOM.liteXhairV.style.display='block';}
+    if(DOM.liteXhairH){DOM.liteXhairH.style.top=y+'px';DOM.liteXhairH.style.display='block';}
+    if(DOM.liteXhairPrice){
+      DOM.liteXhairPrice.style.top=y+'px';
+      DOM.liteXhairPrice.textContent=priceTxt;
+      DOM.liteXhairPrice.style.display=priceTxt?'block':'none';
+    }
+    if(DOM.liteXhairTime){
+      DOM.liteXhairTime.style.left=x+'px';
+      DOM.liteXhairTime.textContent=timeTxt;
+      DOM.liteXhairTime.style.display=timeTxt?'block':'none';
+    }
+  }
+  _liteChart.subscribeCrosshairMove(param=>{
+    const key=param&&param.time?liteTimeKey(param.time):'';
+    const bar=key?_liteDataByTime.get(key):null;
+    if(bar)updateLiteTitle(bar);else updateLiteTitle(_liteData[_liteData.length-1]);
+    if(!param||!param.point){_liteHideXhair();return;}
+    const x=param.point.x,y=(DOM.liteChart.offsetTop||0)+param.point.y;
+    const priceTxt=bar&&Number.isFinite(bar.close)?fmtLiteNum(bar.close):'';
+    const timeTxt=key?fmtLiteDate(key):'';
+    _liteMoveXhair(x,y,priceTxt,timeTxt);
+  });
+  _liteMacdChart.subscribeCrosshairMove(param=>{
+    if(!param||!param.point){_liteHideXhair();return;}
+    const key=param.time?liteTimeKey(param.time):'';
+    const bar=key?_liteDataByTime.get(key):null;
+    if(bar)updateLiteTitle(bar);
+    const x=param.point.x,y=(DOM.liteMacdChart.offsetTop||0)+param.point.y;
+    const mv=key?_liteMacdValueByTime.get(key):undefined;
+    const priceTxt=Number.isFinite(mv)?fmtLiteNum(mv):'';
+    const timeTxt=key?fmtLiteDate(key):'';
+    _liteMoveXhair(x,y,priceTxt,timeTxt);
+  });
+  if(!_liteResizeBound){
+    _liteResizeBound=true;
+    window.addEventListener('resize',()=>{
+      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+      resizeLiteDrawCanvas();redrawLiteDrawings();
+    });
+    // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục);
+    // chỉ thực sự vẽ khi panel Chart đang hiển thị (offsetParent!==null) để không tốn CPU vô ích
+    // lúc người dùng đang ở tab khác của dashboard.
+    const _liteDrawLoop=()=>{
+      if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData))redrawLiteDrawings();
+      requestAnimationFrame(_liteDrawLoop);
+    };
+    requestAnimationFrame(_liteDrawLoop);
+  }
+}
+function _liteChecked(name){
+  return !!DOM.liteIndicators?.querySelector(`input[value="${name}"]:checked`);
+}
+function loadLiteIndicatorPrefs(){
+  let prefs={};
+  try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
+  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    // maema_on là checkbox mới thêm — mặc định BẬT để không làm ẩn mất các đường MA/EMA
+    // người dùng đã bật từ trước (localStorage cũ chưa có key này). Các checkbox khác giữ quy ước cũ.
+    cb.checked=cb.value==='maema_on'?(prefs[cb.value]!==false):(prefs[cb.value]===true);
+  });
+  loadLiteIndColors();
+}
+function saveLiteIndicatorPrefs(){
+  const prefs={};
+  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{prefs[cb.value]=cb.checked;});
+  localStorage.setItem(LITE_IND_KEY,JSON.stringify(prefs));
+}
+function fmtLiteNum(v){
+  return Number.isFinite(v)?Number(v).toFixed(2):'--';
+}
+function fmtLiteDate(t){
+  const p=String(t||'').split('-');
+  return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(t||'--');
+}
+function _liteCleanSym(v){
+  // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
+  // ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
+  return String(v||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[đĐ]/g,'d')
+    .toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+function _liteFutureTimes(lastTimeStr,n,tf){
+  const out=[];
+  let d=new Date(lastTimeStr+'T00:00:00Z'),added=0,guard=0;
+  while(added<n&&guard<n*4){
+    guard++;
+    d=new Date(d.getTime()+(tf==='1W'?7:1)*86400000);
+    if(tf!=='1W'){const wd=d.getUTCDay();if(wd===0||wd===6)continue;}
+    out.push(d.toISOString().slice(0,10));added++;
+  }
+  return out;
+}
+function _liteUpdateWhitespace(){
+  if(!_liteData.length)return;
+  const lastT=liteTimeKey(_liteData[_liteData.length-1].time);
+  const future=_liteFutureTimes(lastT,LITE_RIGHT_OFFSET+10,_liteTf).map(t=>({time:t}));
+  if(_liteMainWhite)_liteMainWhite.setData(future);
+  if(_liteMacdWhite)_liteMacdWhite.setData(future);
+}
+function liteTimeKey(t){
+  if(typeof t==='string')return t;
+  if(t&&typeof t==='object'&&'year'in t&&'month'in t&&'day'in t){
+    return `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
+  }
+  return String(t||'');
+}
+function updateLiteTitle(bar){
+  if(!DOM.liteChartTitle||!bar)return;
+  const tf=_liteTf==='1W'?'W':'D';
+  const pct=Number.isFinite(bar.pct)?bar.pct:0;
+  const sign=pct>0?'+':'';
+  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
+  const col=up?'#26a69a':'#ef5350';
+  const v=n=>`<span style="color:${col}">${fmtLiteNum(n)}</span>`;
+  DOM.liteChartTitle.innerHTML=`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:${v(bar.open)} H:${v(bar.high)} L:${v(bar.low)} C:${v(bar.close)} (<span style="color:${col}">${sign}${pct.toFixed(2)}%</span>)`;
+}
+// Gắn mũi tên điểm mua lên nến cuối cùng (= nến giao dịch gần nhất, kể cả khi hôm nay không phải
+// ngày giao dịch) cho mã đang xem, dựa HOÀN TOÀN vào _sigTodayMap đã cache sẵn từ fetchSigs() —
+// không gọi thêm API nào, không tính toán chỉ báo riêng, nên gần như không tốn thêm chi phí.
+function _liteApplyBuySignal(){
+  if(!_liteCandle||!_liteData.length)return;
+  const sig=_sigTodayMap.get(_liteSymbol);
+  if(sig){
+    _liteCandle.setMarkers([{
+      time:_liteData[_liteData.length-1].time,position:'belowBar',color:'#9333ea',shape:'arrowUp',size:2,
+      text:(sig.emoji||'📌')+' '+signalLabel(sig.signal)
+    }]);
+    if(DOM.liteChartSignal){
+      DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
+      DOM.liteChartSignal.classList.add('on');
+    }
+  }else{
+    _liteCandle.setMarkers([]);
+    if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
+  }
+}
+function setLiteRightOffset(){
+  if(!_liteData.length||!_liteChart)return;
+  const last=_liteData.length-1,to=last+LITE_RIGHT_OFFSET,from=Math.max(0,to-LITE_BARS_VISIBLE);
+  _liteChart.timeScale().setVisibleLogicalRange({from,to});
+  if(_liteMacdChart)_liteMacdChart.timeScale().setVisibleLogicalRange({from,to});
+}
+function setLiteTf(tf){
+  _liteTf=tf==='1W'?'1W':'1D';
+  DOM.liteChartTf?.querySelectorAll('.lite-tf-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.tf===_liteTf));
+}
+function _clearLiteIndicators(){
+  for(const s of _liteIndicatorSeries){
+    try{s.chart.removeSeries(s.series);}catch(e){}
+  }
+  _liteIndicatorSeries=[];
+  _liteMacdCrosshairSeries=null;
+  _liteMacdValueByTime=new Map();
+  _liteBBFillData=null;
+  _liteTrendFillData=null;
+}
+function _sma(data,n){
+  const out=[];let sum=0;
+  for(let i=0;i<data.length;i++){
+    sum+=data[i].close;if(i>=n)sum-=data[i-n].close;
+    if(i>=n-1)out.push({time:data[i].time,value:sum/n});
+  }
+  return out;
+}
+function _ema(data,n){
+  const out=[];let e=null,k=2/(n+1);
+  for(let i=0;i<data.length;i++){
+    const c=data[i].close;e=e===null?c:c*k+e*(1-k);
+    if(i>=n-1)out.push({time:data[i].time,value:e});
+  }
+  return out;
+}
+function _bbands(data,n=20,mult=2){
+  const mid=_sma(data,n),midByTime=new Map(mid.map(x=>[liteTimeKey(x.time),x.value]));
+  const upper=[],lower=[];
+  for(let i=n-1;i<data.length;i++){
+    const slice=data.slice(i-n+1,i+1);
+    const m=midByTime.get(liteTimeKey(data[i].time));
+    if(m===undefined)continue;
+    let sq=0;for(const b of slice)sq+=(b.close-m)*(b.close-m);
+    const sd=Math.sqrt(sq/n);
+    upper.push({time:data[i].time,value:m+mult*sd});
+    lower.push({time:data[i].time,value:m-mult*sd});
+  }
+  return{upper,mid,lower};
+}
+function _macd(data){
+  const e12=_ema(data,12),e26=_ema(data,26),byTime=new Map(e12.map(x=>[x.time,x.value]));
+  const macd=e26.map(x=>({time:x.time,value:(byTime.get(x.time)||0)-x.value}));
+  const signal=_ema(macd.map(x=>({time:x.time,close:x.value})),9);
+  const sigMap=new Map(signal.map(x=>[x.time,x.value]));
+  const histRaw=macd.filter(x=>sigMap.has(x.time)).map(x=>({time:x.time,value:x.value-sigMap.get(x.time)}));
+  const hist=histRaw.map((x,i)=>{
+    const prev=i>0?histRaw[i-1].value:x.value;
+    const color=x.value>=0?(x.value>=prev?'#26a69a':'#b2dfdb'):(x.value<=prev?'#ef5350':'#ffcdd2');
+    return{...x,color};
+  });
+  return{macd,signal,hist};
+}
+// ═══ TREND (Trailing Stop/Reverse kiểu NRTR) ═══
+// mult = hệ số nhân biên độ đảo chiều, period = chu kỳ WMA biên độ H-L.
+// mode: 'regular' dùng H-L/Close thường; 'smoothed' dùng nến Heikin Ashi (đúng công thức AFL gốc).
+// Không vẽ kênh hồi quy — chỉ tô vùng trailing-stop đổi màu theo xu hướng.
+const LITE_TREND_MULT=1.75, LITE_TREND_PERIOD=10;
+function _wma(values,n){
+  // values: mảng số thô (không phải {time,value}) đã align 1-1 theo index với dữ liệu nến.
+  const out=new Array(values.length).fill(null);
+  const denom=n*(n+1)/2;
+  for(let i=n-1;i<values.length;i++){
+    let sum=0;
+    for(let k=0;k<n;k++)sum+=values[i-k]*(n-k);
+    out[i]=sum/denom;
+  }
+  return out;
+}
+function _heikinAshi(data){
+  // HaOpen[i] = AMA(Ref(HaClose,-1), 0.5) = (HaOpen[i-1]+HaClose[i-1])/2 — đúng công thức trong AFL gốc.
+  const out=[];
+  let prevHaOpen=null,prevHaClose=null;
+  for(let i=0;i<data.length;i++){
+    const o=data[i].open,h=data[i].high,l=data[i].low,c=data[i].close;
+    const haClose=(o+h+l+c)/4;
+    const haOpen=(prevHaOpen==null)?(o+c)/2:(prevHaOpen+prevHaClose)/2;
+    const haHigh=Math.max(h,haOpen,haClose);
+    const haLow=Math.min(l,haOpen,haClose);
+    out.push({haOpen,haHigh,haLow,haClose});
+    prevHaOpen=haOpen;prevHaClose=haClose;
+  }
+  return out;
+}
+function _trendNRTR(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT,mode='regular'){
+  const n=data.length;
+  let nm,j;
+  if(mode==='smoothed'){
+    const ha=_heikinAshi(data);
+    nm=ha.map(b=>b.haHigh-b.haLow);
+    j=ha.map(b=>(b.haOpen+b.haHigh+b.haLow+b.haClose)/4);
+  }else{
+    nm=data.map(b=>b.high-b.low);
+    j=data.map(b=>b.close);
+  }
+  const wma=_wma(nm,period);
+  const trend=new Array(n).fill(1);
+  const nw=new Array(n).fill(null);
+  let started=false;
+  for(let i=0;i<n;i++){
+    if(wma[i]==null)continue;
+    const rev=mult*wma[i];
+    const jj=j[i];
+    if(!started){
+      trend[i]=1;nw[i]=jj-rev;started=true;continue;
+    }
+    const prevTrend=trend[i-1],prevNw=nw[i-1]!=null?nw[i-1]:(jj-rev);
+    if(prevTrend===1){
+      if(jj<prevNw){trend[i]=-1;nw[i]=jj+rev;}
+      else{trend[i]=1;nw[i]=Math.max(jj-rev,prevNw);}
+    }else{
+      if(jj>prevNw){trend[i]=1;nw[i]=jj-rev;}
+      else{trend[i]=-1;nw[i]=Math.min(jj+rev,prevNw);}
+    }
+  }
+  return data.map((b,i)=>({time:b.time,value:nw[i],trend:trend[i]}));
+}
+function _trendCloudData(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT,mode='regular'){
+  // Vùng tô nằm giữa đường trailing-stop (NW) và giá đóng cửa thực: xanh khi đang tăng, hồng khi đang giảm.
+  const t=_trendNRTR(data,period,mult,mode);
+  const out=[];
+  for(let i=0;i<t.length;i++){
+    if(t[i].value==null)continue;
+    const close=data[i].close;
+    out.push({time:t[i].time,top:Math.max(t[i].value,close),bottom:Math.min(t[i].value,close),trend:t[i].trend});
+  }
+  return out;
+}
+function alignLiteSeries(points){
+  const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
+  return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
+}
+function applyLitePaneLayout(){
+  const showMacd=_liteChecked('macd');
+  const totalH=710;
+  const macdH=showMacd?Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176)):0;
+  DOM.liteMacdChart.style.display=showMacd?'block':'none';
+  DOM.liteMacdResizer.classList.toggle('on',showMacd);
+  DOM.liteChart.classList.toggle('hide-tv-logo',showMacd);
+  DOM.liteChart.style.height=showMacd?`${Math.max(360,totalH-macdH-4)}px`:`${totalH}px`;
+  _liteChart.applyOptions({
+    width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
+    timeScale:{visible:!showMacd,rightOffset:LITE_RIGHT_OFFSET},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.16,bottom:.24}}
+  });
+  if(_liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,timeScale:{visible:true,rightOffset:LITE_RIGHT_OFFSET},rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}});
+  resizeLiteDrawCanvas();redrawLiteDrawings();
+}
+// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══
+// Lấy cảm hứng thao tác kiểu TradingView: mọi hình vẽ xong đều chọn được, kéo-di-chuyển được,
+// đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định), kênh giá vẽ 2 bước.
+const LITE_DRAW_KEY='dashboard_lite_drawings';
+const LITE_DRAW_COLOR_KEY='dashboard_lite_draw_color';
+const LITE_TEXT_SIZE_KEY='dashboard_lite_text_size';
+const LITE_TEXT_FONT_KEY='dashboard_lite_text_font';
+const LITE_TEXT_BG_KEY='dashboard_lite_text_bg';
+const LITE_HIT_TOL=7;
+const LITE_TEXT_FONT_CSS={mono:'"IBM Plex Mono",monospace',sans:'"Inter",Arial,sans-serif',serif:'Georgia,"Times New Roman",serif'};
+let _liteDrawTool='cursor',_liteDrawings=[],_liteDrawActive=null,_liteDrawCtx=null,_liteDrawSeq=1;
+let _liteDrawColor='#1a56db',_liteSelectedId=null,_liteDragInfo=null,_liteChannelPending=null,_liteLinePending=null;
+let _liteArcPending=null,_liteZigzagPending=null,_liteTextEditPos=null,_liteTextEditId=null;
+let _liteTextSize=13,_liteTextFont='mono',_liteTextBg='';
+function _liteTextFontCSS(sizePx,familyKey){return sizePx+'px '+(LITE_TEXT_FONT_CSS[familyKey]||LITE_TEXT_FONT_CSS.mono);}
+function _liteTextLineHeight(sizePx){return Math.round(sizePx*1.35);}
+// Đo kích thước khối chữ (nhiều dòng) trên canvas để tính vùng bắt-trúng (hit-test) và vị trí neo cho thanh điều chỉnh.
+function _liteTextBoxMetrics(d){
+  if(!_liteDrawCtx)return null;
+  const size=d.fontSize||13,family=d.fontFamily||'mono',pad=4;
+  const lines=(d.text||'').split('\n');
+  const lh=_liteTextLineHeight(size);
+  _liteDrawCtx.save();
+  _liteDrawCtx.font=_liteTextFontCSS(size,family);
+  let maxW=0;
+  for(const line of lines)maxW=Math.max(maxW,_liteDrawCtx.measureText(line||' ').width);
+  _liteDrawCtx.restore();
+  return{pad,lh,size,family,lines,width:maxW+pad*2,height:lines.length*lh+pad*2};
+}
+function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
+function loadLiteDrawings(){
+  try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
+  catch(e){_liteDrawings=[];}
+  _liteSelectedId=null;_liteChannelPending=null;_liteArcPending=null;_liteZigzagPending=null;_liteLinePending=null;_liteDrawActive=null;
+}
+function saveLiteDrawings(){
+  _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
+}
+function resizeLiteDrawCanvas(){
+  if(!DOM.liteDrawCanvas||!DOM.liteChart)return;
+  const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight,dpr=window.devicePixelRatio||1;
+  DOM.liteDrawCanvas.style.width=w+'px';DOM.liteDrawCanvas.style.height=h+'px';
+  DOM.liteDrawCanvas.width=Math.max(1,Math.round(w*dpr));DOM.liteDrawCanvas.height=Math.max(1,Math.round(h*dpr));
+  _liteDrawCtx=DOM.liteDrawCanvas.getContext('2d');
+  _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+function _liteLogicalToX(l){
+  const c=_liteChart&&_liteChart.timeScale().logicalToCoordinate(l);
+  return Number.isFinite(c)?c:null;
+}
+function _liteXToLogical(x){
+  const l=_liteChart&&_liteChart.timeScale().coordinateToLogical(x);
+  return Number.isFinite(l)?l:null;
+}
+function _litePriceToY(p){
+  const c=_liteCandle&&_liteCandle.priceToCoordinate(p);
+  return Number.isFinite(c)?c:null;
+}
+function _liteYToPrice(y){
+  const p=_liteCandle&&_liteCandle.coordinateToPrice(y);
+  return Number.isFinite(p)?p:null;
+}
+function _liteXYFromEvent(ev){
+  const rect=DOM.liteDrawCanvas.getBoundingClientRect();
+  return{x:ev.clientX-rect.left,y:ev.clientY-rect.top};
+}
+function _litePtFromEvent(ev){
+  const{x,y}=_liteXYFromEvent(ev);
+  const l=_liteXToLogical(x),p=_liteYToPrice(y);
+  if(l===null||p===null)return null;
+  return{l,p};
+}
+function _liteDrawLine(ctx,x1,y1,x2,y2,color,dash,width){
+  ctx.save();ctx.strokeStyle=color;ctx.lineWidth=width||1.4;if(dash)ctx.setLineDash(dash);
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.restore();
+}
+function _liteDrawHandle(ctx,x,y){
+  if(x===null||y===null)return;
+  ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#1a56db';ctx.lineWidth=1.3;
+  ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
+}
+function _liteChannelOffset(d){
+  const pts=d.points;
+  return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
+}
+// Đường cong bán nguyệt (arc): pts[2] lưu trực tiếp toạ độ (logical,price) nơi người dùng rê chuột tới —
+// tức là điểm "đáy" (đỉnh cong) mà đường cong PHẢI đi qua.
+//
+// LƯU Ý QUAN TRỌNG: control-point của quadratic bezier PHẢI được tính trong không gian PIXEL (x,y trên canvas),
+// KHÔNG được tính trong không gian logical/price rồi mới quy đổi sang pixel. Lý do: công thức bù trừ
+// C = 2*target - trungĐiểm chỉ cho ra đường cong đi đúng qua "target" khi phép quy đổi (logical→x, price→y)
+// là TUYẾN TÍNH. Trục giá của chart có thể ở chế độ log/percentage (không tuyến tính) — khi đó nếu tính C theo
+// logical/price rồi quy đổi, điểm đáy hiển thị trên màn hình sẽ LỆCH khỏi đúng vị trí chuột (lệch càng nhiều khi
+// biên độ giá càng lớn), gây hiện tượng "đáy nhảy chéo xa chuột". Tính thẳng trong pixel-space thì luôn đúng,
+// bất kể trục giá tuyến tính hay không.
+function _liteArcControlXY(x1,y1,x2,y2,tx,ty){
+  if(!Number.isFinite(tx)||!Number.isFinite(ty))return null;
+  const midX=(x1+x2)/2,midY=(y1+y2)/2;
+  return{cx:2*tx-midX,cy:2*ty-midY};
+}
+function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
+  let min=Infinity;
+  for(let i=0;i<=20;i++){
+    const t=i/20,mt=1-t;
+    const bx=mt*mt*x1+2*mt*t*cx+t*t*x2,by=mt*mt*y1+2*mt*t*cy+t*t*y2;
+    const dist=Math.hypot(px-bx,py-by);
+    if(dist<min)min=dist;
+  }
+  return min;
+}
+// Mũi tên "vệt" (extended/spike arrow): thân thon dần từ đuôi nhọn, rồi xòe rộng hẳn ra thành đầu mũi tên
+// tam giác rõ nét ở phía ngọn — khác mũi tên thân thẳng + đầu tam giác nhỏ thông thường.
+// widthScale: hệ số độ dày do người dùng chọn trên thanh điều chỉnh (mặc định 2 = "Vừa").
+function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,widthScale){
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
+  if(len<1e-3)return;
+  const ws=Number.isFinite(widthScale)?widthScale/2:1; // chuẩn hoá quanh mức "Vừa" (=2) → hệ số 1
+  const ux=dx/len,uy=dy/len,px=-uy,py=ux; // vector đơn vị: dọc thân & vuông góc thân
+  const headLen=Math.max(10,Math.min(len*.42,32)); // chiều dài phần đầu mũi tên (tam giác xòe rộng)
+  const shaftW=Math.max(2,Math.min(len*.09,7))*ws; // độ rộng thân (thon, hẹp hơn hẳn đầu mũi tên)
+  const headW=Math.max(10,Math.min(len*.34,26))*ws; // độ rộng đáy đầu mũi tên (xòe rộng)
+  const baseT=Math.max(0,len-headLen); // vị trí bắt đầu xòe đầu mũi tên, tính từ đuôi
+  const bx=x1+ux*baseT,by=y1+uy*baseT;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x1,y1); // đuôi — điểm nhọn
+  ctx.lineTo(bx+px*shaftW/2,by+py*shaftW/2); // mép thân trái, thon dần tới đáy đầu mũi tên
+  ctx.lineTo(bx+px*headW/2,by+py*headW/2); // xòe rộng ra đáy đầu mũi tên bên trái
+  ctx.lineTo(x2,y2); // đỉnh mũi tên
+  ctx.lineTo(bx-px*headW/2,by-py*headW/2); // đáy đầu mũi tên bên phải
+  ctx.lineTo(bx-px*shaftW/2,by-py*shaftW/2); // mép thân phải
+  ctx.closePath();
+  ctx.fillStyle=color;
+  ctx.fill();
+  ctx.restore();
+}
+function _liteDrawShapeToCanvas(ctx,d){
+  const pts=d.points,selected=(d.id===_liteSelectedId);
+  if(d.type==='text'){
+    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    if(x===null||y===null)return;
+    const m=_liteTextBoxMetrics(d);if(!m)return;
+    ctx.save();
+    if(d.bg){ctx.fillStyle=d.bg;ctx.fillRect(x,y,m.width,m.height);}
+    ctx.font=_liteTextFontCSS(m.size,m.family);
+    ctx.textBaseline='top';
+    ctx.fillStyle=d.color||'#111827';
+    for(let i=0;i<m.lines.length;i++)ctx.fillText(m.lines[i],x+m.pad,y+m.pad+i*m.lh);
+    if(selected){
+      ctx.strokeStyle='#1a56db';ctx.setLineDash([3,3]);ctx.lineWidth=1;
+      ctx.strokeRect(x+.5,y+.5,m.width,m.height);
+    }
+    ctx.restore();
+    if(selected)_liteDrawHandle(ctx,x,y);
+    return;
+  }
+  if(d.type==='zigzag'){
+    // Nhiều điểm (click nối tiếp), có thể mới có 1 điểm khi đang vẽ dở → xử lý riêng, không cần đủ 2 điểm.
+    const color=d.color||_liteDrawColor;
+    if(pts.length){
+      // Quy đổi trước toàn bộ điểm sang toạ độ pixel (bỏ điểm không hợp lệ) để dùng chung cho cả tô nền lẫn vẽ nét.
+      const scr=[];
+      for(const pt of pts){
+        const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
+        if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
+      }
+      // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng,
+      // giống kiểu dải màu của Kênh giá / Bán nguyệt, để thấy rõ "vùng" mà ZigZag bao lấy.
+      if(scr.length>=3&&!d.noFill){
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(scr[0].x,scr[0].y);
+        for(let i=1;i<scr.length;i++)ctx.lineTo(scr[i].x,scr[i].y);
+        ctx.closePath();
+        ctx.fillStyle=_liteHexAlpha(color,.12);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?2:1.4;ctx.lineJoin='round';
+      ctx.beginPath();
+      let started=false;
+      for(const p of scr){
+        if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);
+      }
+      if(started)ctx.stroke();
+      ctx.restore();
+      if(d._hover&&pts.length){
+        const last=pts[pts.length-1];
+        const lx=_liteLogicalToX(last.l),ly=_litePriceToY(last.p);
+        const hx=_liteLogicalToX(d._hover.l),hy=_litePriceToY(d._hover.p);
+        if(lx!==null&&ly!==null&&hx!==null&&hy!==null)_liteDrawLine(ctx,lx,ly,hx,hy,_liteHexAlpha(color,.5),[4,3]);
+      }
+      if(selected)for(const pt of pts){const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);if(xx!==null&&yy!==null)_liteDrawHandle(ctx,xx,yy);}
+    }
+    return;
+  }
+  if(pts.length<2)return;
+  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  if(x1===null||y1===null||x2===null||y2===null)return;
+  const color=d.color||_liteDrawColor;
+  if(d.type==='trendline'){
+    _liteDrawLine(ctx,x1,y1,x2,y2,color,d.dash?[5,4]:null);
+    if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
+  }else if(d.type==='hline'){
+    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?1.8:1.2;if(d.dash)ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.moveTo(0,y1);ctx.lineTo(DOM.liteChart.clientWidth,y1);ctx.stroke();ctx.restore();
+    if(selected)_liteDrawHandle(ctx,DOM.liteChart.clientWidth/2,y1);
+  }else if(d.type==='vline'){
+    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?1.8:1.2;if(d.dash)ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.moveTo(x1,0);ctx.lineTo(x1,DOM.liteChart.clientHeight);ctx.stroke();ctx.restore();
+    if(selected)_liteDrawHandle(ctx,x1,DOM.liteChart.clientHeight/2);
+  }else if(d.type==='rect'){
+    ctx.save();ctx.strokeStyle=color;ctx.fillStyle=_liteHexAlpha(color,.10);
+    ctx.lineWidth=selected?1.8:1.2;const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
+    ctx.fillRect(rx,ry,rw,rh);ctx.strokeRect(rx,ry,rw,rh);ctx.restore();
+    if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
+  }else if(d.type==='channel'){
+    // CHỈ hiện kênh (2 cạnh + tô nền) khi đã có điểm thứ 3 (độ rộng kênh) thật sự được xác lập
+    // ở bước 2 (rê chuột lên/xuống). Trong lúc bước 1 (mới chọn 2 điểm đầu-cuối, chưa rê) chỉ hiện
+    // 1 đường chéo xem trước — không hiện kênh sớm.
+    if(pts[2]&&Number.isFinite(pts[2].offsetPrice)){
+      const offPrice=pts[2].offsetPrice;
+      const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
+      if(y1b!==null&&y2b!==null){
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.lineTo(x2,y2b);ctx.lineTo(x1,y1b);ctx.closePath();
+        ctx.fillStyle=_liteHexAlpha(color,.12);ctx.fill();
+        ctx.restore();
+        // đường giữa: nét đứt, mờ, chia đôi kênh
+        _liteDrawLine(ctx,x1,(y1+y1b)/2,x2,(y2+y2b)/2,_liteHexAlpha(color,.5),[4,3]);
+      }
+      // 2 cạnh biên kênh: nét liền, đậm
+      ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?2.6:2.1;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+      if(y1b!==null&&y2b!==null){ctx.beginPath();ctx.moveTo(x1,y1b);ctx.lineTo(x2,y2b);ctx.stroke();}
+      ctx.restore();
+      if(selected){
+        _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
+        if(y1b!==null&&y2b!==null){_liteDrawHandle(ctx,x1,y1b);_liteDrawHandle(ctx,x2,y2b);}
+      }
+    }else{
+      _liteDrawLine(ctx,x1,y1,x2,y2,color,[5,4]);
+      if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
+    }
+  }else if(d.type==='arrow'){
+    const aw=Number.isFinite(d.arrowW)?d.arrowW:2;
+    if(d.wide){
+      _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,aw);
+    }else{
+      _liteDrawLine(ctx,x1,y1,x2,y2,color,d.dash?[5,4]:null,aw);
+      const ang=Math.atan2(y2-y1,x2-x1),headLen=8+aw*3;
+      ctx.save();ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=aw;
+      ctx.beginPath();
+      ctx.moveTo(x2,y2);
+      ctx.lineTo(x2-headLen*Math.cos(ang-Math.PI/7),y2-headLen*Math.sin(ang-Math.PI/7));
+      ctx.lineTo(x2-headLen*Math.cos(ang+Math.PI/7),y2-headLen*Math.sin(ang+Math.PI/7));
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+    if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
+  }else if(d.type==='arc'){
+    // Đường cong bán nguyệt: 2 điểm đầu-cuối như đường thẳng, bước 2 rê chuột tự do (cả trái/phải lẫn
+    // lên/xuống) để chọn vị trí "đáy" (đỉnh cong) — đường cong luôn đi qua đúng vị trí chuột, không bị
+    // ép về giữa 2 điểm đầu-cuối.
+    // Quy đổi điểm "đáy" sang pixel TRƯỚC, rồi mới tính control-point trong pixel-space (xem ghi chú tại
+    // _liteArcControlXY) → đường cong luôn đi qua đúng vị trí chuột dù trục giá tuyến tính hay log/percentage.
+    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
+    if(ctrl){
+      const cx=ctrl.cx,cy=ctrl.cy;
+      // Tô màu phần diện tích giữa dây cung (đường thẳng nối 2 điểm đầu-cuối) và đường cong, giống kiểu
+      // dải màu của công cụ Kênh giá, để dễ nhìn thấy "vùng" mà bán nguyệt bao lấy.
+      if(cx!==null&&cy!==null){
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.quadraticCurveTo(cx,cy,x2,y2);
+        ctx.lineTo(x1,y1);
+        ctx.closePath();
+        ctx.fillStyle=_liteHexAlpha(color,.12);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?2.4:1.8;ctx.lineCap='round';
+      if(d.dash)ctx.setLineDash([5,4]);
+      ctx.beginPath();ctx.moveTo(x1,y1);
+      if(cx!==null&&cy!==null)ctx.quadraticCurveTo(cx,cy,x2,y2);else ctx.lineTo(x2,y2);
+      ctx.stroke();ctx.restore();
+      if(selected){
+        _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
+        // Handle hiển thị đúng tại điểm đáy (nơi chuột đã rê tới), trực quan hơn control-point toán học.
+        const tx=_liteLogicalToX(pts[2].l),ty=_litePriceToY(pts[2].p);
+        if(tx!==null&&ty!==null)_liteDrawHandle(ctx,tx,ty);
+      }
+    }else{
+      _liteDrawLine(ctx,x1,y1,x2,y2,color,[5,4]);
+      if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
+    }
+  }else if(d.type==='position'){
+    const entryP=pts[0].p,targetP=pts[1].p;
+    const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
+    const hasT2=Number.isFinite(d.target2P);
+    const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
+    const target2Y=hasT2?_litePriceToY(d.target2P):null;
+    const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
+    const targetColor=d.targetColor||'#26a69a';
+    ctx.save();
+    ctx.fillStyle=_liteHexAlpha(targetColor,hasT2?.09:.16);ctx.fillRect(rx,Math.min(entryY,targetY),rw,Math.abs(entryY-targetY));
+    if(stopY!==null)ctx.fillStyle='rgba(239,83,80,.16)',ctx.fillRect(rx,Math.min(entryY,stopY),rw,Math.abs(entryY-stopY));
+    if(target2Y!==null)ctx.fillStyle=_liteHexAlpha(targetColor,.16),ctx.fillRect(rx,Math.min(targetY,target2Y),rw,Math.abs(targetY-target2Y));
+    ctx.lineWidth=selected?2:1.4;
+    _liteDrawLine(ctx,rx,entryY,rx+rw,entryY,'#c1c7d0');
+    _liteDrawLine(ctx,rx,targetY,rx+rw,targetY,targetColor,null,hasT2?0.6:1.4);
+    if(stopY!==null)_liteDrawLine(ctx,rx,stopY,rx+rw,stopY,'#ef5350');
+    if(target2Y!==null)_liteDrawLine(ctx,rx,target2Y,rx+rw,target2Y,targetColor);
+    ctx.font='10px "IBM Plex Mono",monospace';
+    ctx.fillStyle='#111827';ctx.fillText('Entry '+fmtLiteNum(entryP),rx+4,entryY-3);
+    const pctT=entryP?((targetP-entryP)/entryP*100):0;
+    const pctS=entryP?((stopP-entryP)/entryP*100):0;
+    ctx.fillStyle=targetColor;ctx.fillText(`${hasT2?'Target 1':'Target'} ${fmtLiteNum(targetP)} (${pctT>=0?'+':''}${pctT.toFixed(2)}%)`,rx+4,targetY-3);
+    if(stopY!==null){ctx.fillStyle='#ef5350';ctx.fillText(`Stop ${fmtLiteNum(stopP)} (${pctS>=0?'+':''}${pctS.toFixed(2)}%)`,rx+4,stopY+11);}
+    if(target2Y!==null){
+      const pctT2=entryP?((d.target2P-entryP)/entryP*100):0;
+      ctx.fillStyle=targetColor;ctx.fillText(`Target 2 ${fmtLiteNum(d.target2P)} (${pctT2>=0?'+':''}${pctT2.toFixed(2)}%)`,rx+4,target2Y-3);
+    }
+    ctx.restore();
+    if(selected){
+      _liteDrawHandle(ctx,rx,entryY);_liteDrawHandle(ctx,rx+rw,entryY);
+      _liteDrawHandle(ctx,rx,targetY);_liteDrawHandle(ctx,rx,(stopY!==null?stopY:entryY));
+      if(target2Y!==null)_liteDrawHandle(ctx,rx,target2Y);
+    }
+  }
+}
+function _liteHexAlpha(hex,a){
+  const m=/^#?([0-9a-f]{6})$/i.exec(hex||'');
+  if(!m)return `rgba(26,86,219,${a})`;
+  const n=parseInt(m[1],16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+function _liteTimeToX(t){
+  const c=_liteChart&&_liteChart.timeScale().timeToCoordinate(t);
+  return Number.isFinite(c)?c:null;
+}
+function _liteDrawBBBand(ctx){
+  if(!_liteBBFillData||!_liteChart)return;
+  const{upper,lower,color}=_liteBBFillData;
+  if(!upper||!lower||!upper.length||!lower.length)return;
+  ctx.save();
+  ctx.beginPath();
+  let started=false;
+  for(let i=0;i<upper.length;i++){
+    const x=_liteTimeToX(upper[i].time),y=_litePriceToY(upper[i].value);
+    if(x===null||y===null)continue;
+    if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+  }
+  for(let i=lower.length-1;i>=0;i--){
+    const x=_liteTimeToX(lower[i].time),y=_litePriceToY(lower[i].value);
+    if(x===null||y===null)continue;
+    ctx.lineTo(x,y);
+  }
+  if(started){ctx.closePath();ctx.fillStyle=_liteHexAlpha(color,.12);ctx.fill();}
+  ctx.restore();
+}
+function _liteDrawTrendCloud(ctx){
+  if(!_liteTrendFillData||!_liteChart||!_liteTrendFillData.length)return;
+  const pts=_liteTrendFillData;
+  ctx.save();
+  let i=0;
+  while(i<pts.length){
+    const trend=pts[i].trend;
+    let j=i+1;
+    while(j<pts.length&&pts[j].trend===trend)j++;
+    const seg=pts.slice(i,j);
+    ctx.beginPath();
+    let started=false;
+    for(let k=0;k<seg.length;k++){
+      const x=_liteTimeToX(seg[k].time),y=_litePriceToY(seg[k].top);
+      if(x===null||y===null)continue;
+      if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+    }
+    for(let k=seg.length-1;k>=0;k--){
+      const x=_liteTimeToX(seg[k].time),y=_litePriceToY(seg[k].bottom);
+      if(x===null||y===null)continue;
+      ctx.lineTo(x,y);
+    }
+    if(started){
+      const col=trend===1?(_liteIndColors['trend-up']||'#64fa96'):(_liteIndColors['trend-down']||'#fa9696');
+      ctx.fillStyle=_liteHexAlpha(col,trend===1?.28:.24);
+      ctx.fill();
+    }
+    i=j;
+  }
+  ctx.restore();
+}
+function redrawLiteDrawings(){
+  if(!_liteDrawCtx||!DOM.liteDrawCanvas)return;
+  const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight;
+  _liteDrawCtx.clearRect(0,0,w,h);
+  _liteDrawTrendCloud(_liteDrawCtx);
+  _liteDrawBBBand(_liteDrawCtx);
+  for(const d of _liteDrawings)_liteDrawShapeToCanvas(_liteDrawCtx,d);
+  if(_liteDrawActive)_liteDrawShapeToCanvas(_liteDrawCtx,_liteDrawActive);
+  if(_liteChannelPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteChannelPending);
+  if(_liteArcPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteArcPending);
+  if(_liteZigzagPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteZigzagPending);
+  if(_liteLinePending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteLinePending);
+  _liteUpdateFloatingBar();
+}
+// Kết thúc (chốt) zigzag đang vẽ dở: nếu đã có >=2 điểm thì lưu thành hình vẽ hoàn chỉnh,
+// nếu mới có 1 điểm (chưa đủ để thành hình) thì huỷ. Dùng chung cho double-click, phím
+// Enter/Space/Escape, và khi chuyển sang công cụ khác (đặc biệt là con trỏ chuột).
+function _liteFinishZigzag(){
+  if(!_liteZigzagPending)return false;
+  const pend=_liteZigzagPending;
+  pend._hover=null;
+  _liteZigzagPending=null;
+  if(pend.points.length>=2){
+    _liteDrawings.push(pend);
+    saveLiteDrawings();
+    _liteSelectShape(pend.id);
+  }else{
+    redrawLiteDrawings();
+  }
+  return true;
+}
+// Công cụ Text: click lên chart mở 1 ô <textarea> ngay tại vị trí click để gõ chữ trực tiếp (hỗ trợ nhiều dòng
+// tự nhiên nhờ textarea), thay vì hộp thoại prompt(). Enter xuống dòng bình thường; rời focus (blur) sẽ chốt
+// chữ; Escape huỷ. Có thể gọi lại hàm này với 1 hình text có sẵn (editingShape) để SỬA nội dung đã viết.
+function _liteApplyTextInputStyle(){
+  if(!DOM.liteTextInput)return;
+  DOM.liteTextInput.style.color=_liteDrawColor;
+  DOM.liteTextInput.style.fontSize=_liteTextSize+'px';
+  DOM.liteTextInput.style.fontFamily=LITE_TEXT_FONT_CSS[_liteTextFont]||LITE_TEXT_FONT_CSS.mono;
+  DOM.liteTextInput.style.background=_liteTextBg||'rgba(255,255,255,.96)';
+}
+function _liteOpenTextInput(p0,ev,editingShape){
+  if(!DOM.liteTextInput)return;
+  // Chặn hành vi mặc định của trình duyệt khi click chuột trái lên 1 phần tử không focus-able (canvas):
+  // mặc định trình duyệt sẽ tự dời focus sang phần tử focus-able gần nhất (khung chart), "cướp" mất focus
+  // trước khi kịp focus ô chữ bên dưới → gõ chữ bị lọt ra ngoài (thành phím tắt / tìm mã). preventDefault()
+  // trên pointerdown/mousedown ngăn được việc dời focus mặc định này.
+  if(ev&&ev.preventDefault)ev.preventDefault();
+  let x,y;
+  if(ev){({x,y}=_liteXYFromEvent(ev));}
+  else{x=_liteLogicalToX(p0.l);y=_litePriceToY(p0.p);}
+  if(x===null||x===undefined||y===null||y===undefined)return;
+  _liteTextEditPos=p0;
+  _liteTextEditId=editingShape?editingShape.id:null;
+  if(editingShape){
+    _liteDrawColor=editingShape.color||_liteDrawColor;
+    _liteTextSize=editingShape.fontSize||13;
+    _liteTextFont=editingShape.fontFamily||'mono';
+    _liteTextBg=editingShape.bg||'';
+    DOM.liteTextInput.value=editingShape.text||'';
+  }else{
+    DOM.liteTextInput.value='';
+  }
+  DOM.liteTextInput.style.left=x+'px';
+  DOM.liteTextInput.style.top=Math.max(0,y)+'px';
+  _liteApplyTextInputStyle();
+  DOM.liteTextInput.classList.add('on');
+  // Focus ngay lập tức (đa số trường hợp đã đủ), rồi focus lại 1 lần nữa ở animation frame kế tiếp để
+  // phòng trường hợp trình duyệt chưa kịp layout xong phần tử vừa chuyển từ display:none sang hiện ra.
+  DOM.liteTextInput.focus();
+  if(editingShape){const v=DOM.liteTextInput.value;DOM.liteTextInput.setSelectionRange(v.length,v.length);}
+  requestAnimationFrame(()=>DOM.liteTextInput.focus());
+}
+function _liteCommitTextInput(){
+  if(!DOM.liteTextInput||!_liteTextEditPos)return null;
+  const text=(DOM.liteTextInput.value||'').replace(/\s+$/,'');
+  const p0=_liteTextEditPos;
+  const editId=_liteTextEditId;
+  DOM.liteTextInput.classList.remove('on');
+  DOM.liteTextInput.value='';
+  _liteTextEditPos=null;
+  _liteTextEditId=null;
+  if(!text){
+    if(editId!=null){_liteDrawings=_liteDrawings.filter(d=>d.id!==editId);saveLiteDrawings();redrawLiteDrawings();}
+    return null;
+  }
+  if(editId!=null){
+    const d=_liteDrawings.find(x=>x.id===editId);
+    if(d){
+      d.text=text;d.color=_liteDrawColor;d.fontSize=_liteTextSize;d.fontFamily=_liteTextFont;d.bg=_liteTextBg||null;
+      saveLiteDrawings();
+      _liteSelectShape(editId);
+      return editId;
+    }
+  }
+  const id=_liteDrawSeq++;
+  _liteDrawings.push({id,type:'text',points:[p0],text,color:_liteDrawColor,fontSize:_liteTextSize,fontFamily:_liteTextFont,bg:_liteTextBg||null});
+  saveLiteDrawings();
+  _liteSelectShape(id);
+  return id;
+}
+function _liteCloseTextInput(){
+  if(!DOM.liteTextInput)return;
+  DOM.liteTextInput.classList.remove('on');
+  DOM.liteTextInput.value='';
+  _liteTextEditPos=null;
+  _liteTextEditId=null;
+}
+function setLiteDrawTool(tool){
+  const prevTool=_liteDrawTool,hadZigzag=_liteZigzagPending;
+  _liteDrawTool=tool||'cursor';
+  if(_liteDrawTool!=='channel')_liteChannelPending=null;
+  if(_liteDrawTool!=='arc')_liteArcPending=null;
+  if(_liteDrawTool!=='zigzag'&&prevTool==='zigzag'&&hadZigzag)_liteFinishZigzag();
+  else if(_liteDrawTool!=='zigzag')_liteZigzagPending=null;
+  if(_liteDrawTool!=='text'&&_liteTextEditPos)_liteCommitTextInput();
+  if(_liteDrawTool!=='trendline'&&_liteDrawTool!=='rect'&&_liteDrawTool!=='channel'&&_liteDrawTool!=='arc'&&_liteDrawTool!=='arrow')_liteLinePending=null;
+  if(_liteDrawTool!=='cursor')_liteSelectedId=null;
+  DOM.liteDrawToolbar?.querySelectorAll('.lite-draw-btn[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===_liteDrawTool));
+  if(DOM.liteDrawCanvas)DOM.liteDrawCanvas.classList.toggle('drawing',_liteDrawTool!=='cursor');
+  if(DOM.liteChart)DOM.liteChart.style.cursor='';
+  redrawLiteDrawings();
+}
+function _liteShapeAnchor(d){
+  const pts=d.points;
+  if(!pts||!pts.length)return null;
+  if(d.type==='text'){
+    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    if(x===null||y===null)return null;
+    const m=_liteTextBoxMetrics(d);
+    const w=m?m.width:0;
+    return{x:x+w/2,y:y-6};
+  }
+  if(pts.length<2)return null;
+  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  if(x1===null||y1===null||x2===null||y2===null)return null;
+  if(d.type==='hline')return{x:DOM.liteChart.clientWidth/2,y:y1};
+  if(d.type==='vline')return{x:x1,y:12};
+  if(d.type==='position'){
+    const entryP=pts[0].p,targetP=pts[1].p;
+    const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
+    const stopY=_litePriceToY(stopP);
+    const ys=[y1,y2,stopY!==null?stopY:y1];
+    if(Number.isFinite(d.target2P)){
+      const t2y=_litePriceToY(d.target2P);
+      if(t2y!==null)ys.push(t2y);
+    }
+    return{x:(x1+x2)/2,y:Math.min(...ys)};
+  }
+  if(d.type==='channel'){
+    // Lấy điểm cao nhất (y nhỏ nhất) trong CẢ 4 góc của kênh (2 góc cạnh gốc + 2 góc cạnh đã dịch offset).
+    // Trước đây chỉ xét y1b (góc dịch của điểm đầu) nên khi đường chéo kênh bị nghiêng, góc dịch của điểm
+    // cuối (y2b) có thể cao hơn mà không được tính tới → thanh điều chỉnh bị đặt thấp hơn đỉnh kênh thật,
+    // khiến nó nằm lọt vào trong kênh thay vì nằm hẳn phía trên.
+    const offPrice=_liteChannelOffset(d);
+    const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
+    const ys=[y1,y2];
+    if(y1b!==null)ys.push(y1b);
+    if(y2b!==null)ys.push(y2b);
+    return{x:(x1+x2)/2,y:Math.min(...ys)};
+  }
+  if(d.type==='arc'){
+    const ty=(pts[2]&&Number.isFinite(pts[2].p))?_litePriceToY(pts[2].p):null;
+    return{x:(x1+x2)/2,y:Math.min(y1,y2,ty!==null?ty:Math.min(y1,y2))};
+  }
+  if(d.type==='zigzag'){
+    let minY=Infinity,sumX=0,n=0;
+    for(const pt of pts){
+      const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
+      if(xx===null||yy===null)continue;
+      minY=Math.min(minY,yy);sumX+=xx;n++;
+    }
+    return n?{x:sumX/n,y:minY}:null;
+  }
+  return{x:(x1+x2)/2,y:Math.min(y1,y2)};
+}
+// Lấy hình đang được chọn (theo _liteSelectedId) — gộp lại 1 chỗ duy nhất thay vì lặp lại
+// cùng 1 biểu thức tra cứu ở rất nhiều handler bên dưới.
+function _liteGetSelectedShape(){
+  return _liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
+}
+function _liteUpdateFloatingBar(){
+  if(!DOM.liteShapeBar)return;
+  const d=_liteGetSelectedShape();
+  if(!d){DOM.liteShapeBar.classList.remove('on');return;}
+  const anchor=_liteShapeAnchor(d);
+  if(!anchor){DOM.liteShapeBar.classList.remove('on');return;}
+  DOM.liteShapeBar.classList.add('on');
+  DOM.liteShapeBar.style.left=Math.max(30,Math.min((DOM.liteChart?.clientWidth||600)-30,anchor.x))+'px';
+  DOM.liteShapeBar.style.top=Math.max(24,anchor.y)+'px';
+  const isText=d.type==='text',isPosition=d.type==='position';
+  if(DOM.liteShapeColor){
+    DOM.liteShapeColor.style.display=isPosition?'none':'';
+    if(d.color)DOM.liteShapeColor.value=d.color;
+  }
+  if(DOM.liteShapeTargetColor){
+    DOM.liteShapeTargetColor.style.display=isPosition?'':'none';
+    DOM.liteShapeTargetColor.value=d.targetColor||'#26a69a';
+  }
+  if(DOM.liteShapeTarget2){
+    DOM.liteShapeTarget2.style.display=isPosition?'':'none';
+    DOM.liteShapeTarget2.classList.toggle('on',isPosition&&Number.isFinite(d.target2P));
+  }
+  if(DOM.liteShapeDash){
+    const supportsDash=d.type==='trendline'||d.type==='hline'||d.type==='vline';
+    DOM.liteShapeDash.style.display=supportsDash?'':'none';
+    DOM.liteShapeDash.classList.toggle('on',!!d.dash);
+  }
+  if(DOM.liteShapeArrowStyle){
+    const isArrow=d.type==='arrow';
+    DOM.liteShapeArrowStyle.style.display=isArrow?'':'none';
+    DOM.liteShapeArrowStyle.classList.toggle('on',isArrow&&!!d.wide);
+  }
+  if(DOM.liteShapeArrowWidth){
+    const isArrow=d.type==='arrow';
+    DOM.liteShapeArrowWidth.style.display=isArrow?'':'none';
+    if(isArrow)DOM.liteShapeArrowWidth.value=String(d.arrowW||2);
+  }
+  if(DOM.liteShapeZigzagFill){
+    const isZZ=d.type==='zigzag';
+    DOM.liteShapeZigzagFill.style.display=isZZ?'':'none';
+    // "on" = đang ở trạng thái tắt dải màu (chỉ còn đường zigzag)
+    DOM.liteShapeZigzagFill.classList.toggle('on',isZZ&&!!d.noFill);
+  }
+  if(DOM.liteShapeFontSize){
+    DOM.liteShapeFontSize.style.display=isText?'':'none';
+    if(isText)DOM.liteShapeFontSize.value=String(d.fontSize||13);
+  }
+  if(DOM.liteShapeFontFamily){
+    DOM.liteShapeFontFamily.style.display=isText?'':'none';
+    if(isText)DOM.liteShapeFontFamily.value=d.fontFamily||'mono';
+  }
+  if(DOM.liteShapeBgColor){
+    DOM.liteShapeBgColor.style.display=isText?'':'none';
+    if(isText)DOM.liteShapeBgColor.value=d.bg||'#ffffff';
+  }
+  if(DOM.liteShapeBgClear)DOM.liteShapeBgClear.style.display=isText?'':'none';
+  if(DOM.liteShapeEdit)DOM.liteShapeEdit.style.display=isText?'':'none';
+}
+function _liteSelectShape(id){
+  _liteSelectedId=id;
+  const d=_liteDrawings.find(x=>x.id===id);
+  if(d&&d.type!=='position'&&d.color&&DOM.liteDrawColor)DOM.liteDrawColor.value=d.color;
+  redrawLiteDrawings();
+  _liteUpdateFloatingBar();
+}
+// ─── Hit-testing (để chọn / kéo hình đã vẽ khi ở chế độ con trỏ) ───
+function _liteSegDist(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,len2=dx*dx+dy*dy;
+  if(len2<1e-6)return Math.hypot(px-x1,py-y1);
+  let t=((px-x1)*dx+(py-y1)*dy)/len2;t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
+}
+function _liteHitTestShape(d,x,y){
+  const pts=d.points;
+  if(d.type==='text'){
+    const px=_liteLogicalToX(pts[0].l),py=_litePriceToY(pts[0].p);
+    if(px===null||py===null)return null;
+    const m=_liteTextBoxMetrics(d);
+    const w=m?m.width:20,h=m?m.height:16;
+    if(x>=px-LITE_HIT_TOL&&x<=px+w+LITE_HIT_TOL&&y>=py-LITE_HIT_TOL&&y<=py+h+LITE_HIT_TOL)return{part:'p0'};
+    return null;
+  }
+  if(pts.length<2)return null;
+  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  if(x1===null||y1===null||x2===null||y2===null)return null;
+  if(d.type==='hline')return Math.abs(y-y1)<=LITE_HIT_TOL?{part:'line'}:null;
+  if(d.type==='vline')return Math.abs(x-x1)<=LITE_HIT_TOL?{part:'line'}:null;
+  if(d.type==='trendline'||d.type==='arrow'){
+    if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
+    if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
+    return _liteSegDist(x,y,x1,y1,x2,y2)<=LITE_HIT_TOL?{part:'line'}:null;
+  }
+  if(d.type==='zigzag'){
+    for(let i=0;i<pts.length;i++){
+      const px=_liteLogicalToX(pts[i].l),py=_litePriceToY(pts[i].p);
+      if(px!==null&&py!==null&&Math.hypot(x-px,y-py)<=9)return{part:'v'+i};
+    }
+    for(let i=0;i<pts.length-1;i++){
+      const ax=_liteLogicalToX(pts[i].l),ay=_litePriceToY(pts[i].p);
+      const bx=_liteLogicalToX(pts[i+1].l),by=_litePriceToY(pts[i+1].p);
+      if(ax!==null&&ay!==null&&bx!==null&&by!==null&&_liteSegDist(x,y,ax,ay,bx,by)<=LITE_HIT_TOL)return{part:'line'};
+    }
+    return null;
+  }
+  if(d.type==='rect'){
+    if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
+    if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
+    const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
+    if(x>=rx-LITE_HIT_TOL&&x<=rx+rw+LITE_HIT_TOL&&y>=ry-LITE_HIT_TOL&&y<=ry+rh+LITE_HIT_TOL)return{part:'line'};
+    return null;
+  }
+  if(d.type==='channel'){
+    const offPrice=_liteChannelOffset(d);
+    const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
+    if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
+    if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
+    if(_liteSegDist(x,y,x1,y1,x2,y2)<=LITE_HIT_TOL)return{part:'line'};
+    if(y1b!==null&&y2b!==null&&_liteSegDist(x,y,x1,y1b,x2,y2b)<=LITE_HIT_TOL)return{part:'offset'};
+    return null;
+  }
+  if(d.type==='arc'){
+    if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
+    if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
+    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
+    if(ctrl){
+      if(tx!==null&&ty!==null&&Math.hypot(x-tx,y-ty)<=9)return{part:'offset'};
+      if(_liteQuadDist(x,y,x1,y1,ctrl.cx,ctrl.cy,x2,y2)<=LITE_HIT_TOL)return{part:'offset'};
+    }
+    if(_liteSegDist(x,y,x1,y1,x2,y2)<=LITE_HIT_TOL)return{part:'line'};
+    return null;
+  }
+  if(d.type==='position'){
+    const entryP=pts[0].p,targetP=pts[1].p;
+    const stopP=Number.isFinite(d.stopP)?d.stopP:(2*entryP-targetP);
+    const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
+    const target2Y=Number.isFinite(d.target2P)?_litePriceToY(d.target2P):null;
+    const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
+    if(x<rx-LITE_HIT_TOL||x>rx+rw+LITE_HIT_TOL)return null;
+    if(Math.abs(x-rx)<=LITE_HIT_TOL)return{part:'edgeL'};
+    if(Math.abs(x-(rx+rw))<=LITE_HIT_TOL)return{part:'edgeR'};
+    if(Math.abs(y-targetY)<=LITE_HIT_TOL)return{part:'target'};
+    if(target2Y!==null&&Math.abs(y-target2Y)<=LITE_HIT_TOL)return{part:'target2'};
+    if(stopY!==null&&Math.abs(y-stopY)<=LITE_HIT_TOL)return{part:'stop'};
+    const ys=[entryY,targetY,stopY!==null?stopY:entryY];
+    if(target2Y!==null)ys.push(target2Y);
+    const top=Math.min(...ys),bottom=Math.max(...ys);
+    if(y>=top-LITE_HIT_TOL&&y<=bottom+LITE_HIT_TOL)return{part:'body'};
+    return null;
+  }
+  return null;
+}
+function _liteHitTest(x,y){
+  for(let i=_liteDrawings.length-1;i>=0;i--){
+    const hit=_liteHitTestShape(_liteDrawings[i],x,y);
+    if(hit)return{id:_liteDrawings[i].id,shape:_liteDrawings[i],part:hit.part};
+  }
+  return null;
+}
+function _liteApplyDrag(d,info,cur){
+  const dl=cur.l-info.startL,dp=cur.p-info.startP,op=info.origPoints;
+  const key=d.type+':'+info.part;
+  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
+  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+  else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'){
+    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+  }else if(key==='arc:line'){
+    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+    if(op[2]&&Number.isFinite(op[2].l)&&Number.isFinite(op[2].p))d.points[2]={l:op[2].l+dl,p:op[2].p+dp};
+  }else if(key==='hline:line'){
+    d.points[0]={...op[0],p:op[0].p+dp};d.points[1]={...op[1],p:op[1].p+dp};
+  }else if(key==='vline:line'){
+    d.points[0]={...op[0],l:op[0].l+dl};d.points[1]={...op[1],l:op[1].l+dl};
+  }else if(key==='channel:offset'){
+    d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
+  }else if(key==='arc:offset'){
+    // pts[2] của arc là toạ độ (logical,price) của điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu
+    // theo cả 2 chiều (trái/phải lẫn lên/xuống), không chỉ riêng chiều dọc như channel.
+    const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
+    const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
+    d.points[2]={l:baseL+dl,p:baseP+dp};
+  }else if(d.type==='zigzag'&&info.part==='line'){
+    d.points=op.map(pt=>({l:pt.l+dl,p:pt.p+dp}));
+  }else if(d.type==='zigzag'&&info.part[0]==='v'){
+    const idx=parseInt(info.part.slice(1),10);
+    if(op[idx])d.points[idx]={l:op[idx].l+dl,p:op[idx].p+dp};
+  }else if(key==='position:body'){
+    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
+    d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+    d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
+    if(Number.isFinite(info.origTarget2P))d.target2P=info.origTarget2P+dp;
+  }else if(key==='position:target'){
+    d.points[1]={...op[1],p:op[1].p+dp};
+  }else if(key==='position:target2'){
+    d.target2P=(info.origTarget2P??d.target2P)+dp;
+  }else if(key==='position:stop'){
+    d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
+  }else if(key==='position:edgeL'){
+    d.points[0]={...op[0],l:op[0].l+dl};
+  }else if(key==='position:edgeR'){
+    d.points[1]={...op[1],l:op[1].l+dl};
+  }else if(key==='text:p0'){
+    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
+  }
+}
+function _liteStartShapeDrag(hit,ev){
+  const d=hit.shape;
+  _liteSelectShape(d.id);
+  const startPt=_litePtFromEvent(ev);if(!startPt)return;
+  _liteDragInfo={
+    part:hit.part,
+    origPoints:JSON.parse(JSON.stringify(d.points||[])),
+    origStopP:d.stopP,
+    origTarget2P:d.target2P,
+    origOffsetPrice:d.points&&d.points[2]&&d.points[2].offsetPrice,
+    startL:startPt.l,startP:startPt.p
+  };
+  const move=ev2=>{
+    const cur=_litePtFromEvent(ev2);if(!cur||!_liteDragInfo)return;
+    _liteApplyDrag(d,_liteDragInfo,cur);
+    redrawLiteDrawings();
+  };
+  const up=()=>{
+    window.removeEventListener('pointermove',move);
+    window.removeEventListener('pointerup',up);
+    _liteDragInfo=null;
+    saveLiteDrawings();
+  };
+  window.addEventListener('pointermove',move);
+  window.addEventListener('pointerup',up);
+}
+async function copyLiteChartImage(btn){
+  if(!_liteChart||!_liteMacdChart)return;
+  try{
+    const c1=_liteChart.takeScreenshot();
+    const c2=_liteMacdChart.takeScreenshot();
+    // Lấy title dạng plain-text (bỏ các thẻ màu O/H/L/C) để in lên đầu ảnh bitmap.
+    const titleText=(DOM.liteChartTitle?.textContent||DOM.liteChartTitle?.innerText||'').trim();
+    const dpr=window.devicePixelRatio||1;
+    const titleH=titleText?Math.round(30*dpr):0;
+    const out=document.createElement('canvas');
+    out.width=Math.max(c1.width,c2.width);
+    out.height=titleH+c1.height+c2.height;
+    const ctx=out.getContext('2d');
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,out.width,out.height);
+    if(titleText){
+      ctx.fillStyle='#111827';
+      ctx.font=`600 ${Math.round(13*dpr)}px "IBM Plex Mono",monospace`;
+      ctx.textBaseline='middle';
+      ctx.fillText(titleText,10*dpr,titleH/2);
+    }
+    ctx.drawImage(c1,0,titleH);
+    ctx.drawImage(c2,0,titleH+c1.height);
+    if(DOM.liteDrawCanvas){
+      ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH,c1.width,c1.height);
+    }
+    const toBlobPromise=()=>new Promise(resolve=>out.toBlob(resolve,'image/png'));
+    // Copy as Bitmap: truyền thẳng Promise<Blob> vào ClipboardItem (không await trước) để trình duyệt
+    // vẫn coi đây là hành động clipboard gắn liền với cú click của người dùng (user-gesture), tránh bị
+    // rớt xuống nhánh tải file mỗi lần do lỡ "mất" quyền clipboard khi await xong mới gọi write().
+    if(navigator.clipboard&&window.ClipboardItem){
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png':toBlobPromise()})]);
+        if(btn){const old=btn.textContent;btn.textContent='✅';setTimeout(()=>{btn.textContent=old;},1200);}
+        return;
+      }catch(e){
+        console.warn('Copy bitmap vào clipboard lỗi, chuyển sang tải file:',e);
+      }
+    }
+    // Phương án dự phòng khi trình duyệt không hỗ trợ Clipboard API ảnh (vd Firefox cũ / http không an toàn)
+    const blob=await toBlobPromise();
+    if(!blob)return;
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=`chart_${_liteSymbol}_${_liteTf}.png`;a.click();
+    URL.revokeObjectURL(url);
+    if(btn){const old=btn.textContent;btn.textContent='⬇️';setTimeout(()=>{btn.textContent=old;},1200);}
+  }catch(e){console.error('copyLiteChartImage lỗi:',e);}
+}
+function bindLiteDrawToolbar(){
+  resizeLiteDrawCanvas();
+  _liteDrawColor=_liteLSGet(LITE_DRAW_COLOR_KEY,'#1a56db');
+  if(DOM.liteDrawColor)DOM.liteDrawColor.value=_liteDrawColor;
+  _liteTextSize=parseInt(_liteLSGet(LITE_TEXT_SIZE_KEY,'13'),10)||13;
+  _liteTextFont=_liteLSGet(LITE_TEXT_FONT_KEY,'mono');
+  _liteTextBg=_liteLSGet(LITE_TEXT_BG_KEY,'');
+  DOM.liteDrawToolbar?.addEventListener('click',e=>{
+    const btn=e.target.closest('.lite-draw-btn');if(!btn)return;
+    if(btn===DOM.liteDrawUndo){_liteDrawings.pop();_liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();return;}
+    if(btn===DOM.liteDrawClear){if(_liteDrawings.length&&confirm('Xóa tất cả hình vẽ trên chart này?')){_liteDrawings=[];_liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();}return;}
+    const tool=btn.dataset.tool;if(tool)setLiteDrawTool(tool);
+  });
+  DOM.liteDrawColor?.addEventListener('input',()=>{
+    _liteDrawColor=DOM.liteDrawColor.value;
+    _liteLSSet(LITE_DRAW_COLOR_KEY,_liteDrawColor);
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type!=='position'){sel.color=_liteDrawColor;saveLiteDrawings();redrawLiteDrawings();}
+  });
+  DOM.liteShapeColor?.addEventListener('input',()=>{
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type!=='position'){
+      sel.color=DOM.liteShapeColor.value;
+      _liteDrawColor=DOM.liteShapeColor.value;
+      if(DOM.liteDrawColor)DOM.liteDrawColor.value=_liteDrawColor;
+      _liteLSSet(LITE_DRAW_COLOR_KEY,_liteDrawColor);
+      saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
+  DOM.liteShapeTargetColor?.addEventListener('input',()=>{
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='position'){
+      sel.targetColor=DOM.liteShapeTargetColor.value;
+      saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
+  DOM.liteShapeTarget2?.addEventListener('click',()=>{
+    const sel=_liteGetSelectedShape();
+    if(!sel||sel.type!=='position')return;
+    if(Number.isFinite(sel.target2P)){
+      // Đang bật → tắt: đường Target (đang là Target 1) biến mất, đường Target 2 (giá đã vẽ/kéo ban đầu)
+      // trở lại thành đường Target duy nhất — quay về đúng mặc định chỉ 1 target.
+      sel.points[1]={...sel.points[1],p:sel.target2P};
+      delete sel.target2P;
+    }else{
+      // Đang tắt → bật: đường Target hiện có (đã vẽ) đổi thành Target 2 — giữ nguyên đúng giá đó.
+      // Đường Target mới (Target 1) được chèn vào giữa Entry và Target 2, nằm ở nửa khoảng cách.
+      const entryP=sel.points[0].p,oldTargetP=sel.points[1].p;
+      sel.target2P=oldTargetP;
+      sel.points[1]={...sel.points[1],p:entryP+(oldTargetP-entryP)*0.5};
+    }
+    saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
+  });
+  DOM.liteShapeFontSize?.addEventListener('change',()=>{
+    const size=parseInt(DOM.liteShapeFontSize.value,10)||13;
+    _liteTextSize=size;
+    _liteLSSet(LITE_TEXT_SIZE_KEY,String(size));
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='text'){sel.fontSize=size;saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();}
+  });
+  DOM.liteShapeFontFamily?.addEventListener('change',()=>{
+    const fam=DOM.liteShapeFontFamily.value||'mono';
+    _liteTextFont=fam;
+    _liteLSSet(LITE_TEXT_FONT_KEY,fam);
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='text'){sel.fontFamily=fam;saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();}
+  });
+  DOM.liteShapeBgColor?.addEventListener('input',()=>{
+    const bg=DOM.liteShapeBgColor.value;
+    _liteTextBg=bg;
+    _liteLSSet(LITE_TEXT_BG_KEY,bg);
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='text'){sel.bg=bg;saveLiteDrawings();redrawLiteDrawings();}
+  });
+  DOM.liteShapeBgClear?.addEventListener('click',()=>{
+    _liteTextBg='';
+    _liteLSSet(LITE_TEXT_BG_KEY,'');
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='text'){sel.bg=null;saveLiteDrawings();redrawLiteDrawings();}
+  });
+  DOM.liteShapeEdit?.addEventListener('click',()=>{
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='text'){setLiteDrawTool('text');_liteOpenTextInput(sel.points[0],null,sel);}
+  });
+  DOM.liteDrawCopy?.addEventListener('click',()=>copyLiteChartImage(DOM.liteDrawCopy));
+  if(DOM.liteTextInput){
+    DOM.liteTextInput.addEventListener('keydown',e=>{
+      // Chặn nổi bọt lên #lite-chart-frame để không kích hoạt phím tắt khác (mở ô tìm mã, xoá hình...)
+      // trong lúc đang gõ chữ. Enter giờ xuống dòng bình thường (mặc định của textarea) thay vì chốt chữ;
+      // Ctrl/Cmd+Enter chốt nhanh; Escape huỷ.
+      e.stopPropagation();
+      if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){
+        e.preventDefault();
+        _liteCommitTextInput();
+        setLiteDrawTool('cursor');
+      }else if(e.key==='Escape'){
+        e.preventDefault();
+        _liteCloseTextInput();
+        setLiteDrawTool('cursor');
+      }
+    });
+    DOM.liteTextInput.addEventListener('input',()=>{
+      DOM.liteTextInput.style.height='auto';
+      DOM.liteTextInput.style.height=DOM.liteTextInput.scrollHeight+'px';
+    });
+    DOM.liteTextInput.addEventListener('pointerdown',e=>e.stopPropagation());
+    DOM.liteTextInput.addEventListener('blur',()=>{
+      if(_liteTextEditPos){_liteCommitTextInput();setLiteDrawTool('cursor');}
+    });
+  }
+  DOM.liteShapeDash?.addEventListener('click',()=>{
+    const sel=_liteGetSelectedShape();
+    if(sel&&(sel.type==='trendline'||sel.type==='hline'||sel.type==='vline')){
+      sel.dash=!sel.dash;
+      saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
+  DOM.liteShapeArrowStyle?.addEventListener('click',()=>{
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='arrow'){
+      sel.wide=!sel.wide;
+      saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
+    }
+  });
+  DOM.liteShapeArrowWidth?.addEventListener('change',()=>{
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='arrow'){
+      sel.arrowW=parseFloat(DOM.liteShapeArrowWidth.value)||2;
+      saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
+  DOM.liteShapeZigzagFill?.addEventListener('click',()=>{
+    const sel=_liteGetSelectedShape();
+    if(sel&&sel.type==='zigzag'){
+      sel.noFill=!sel.noFill;
+      saveLiteDrawings();redrawLiteDrawings();_liteUpdateFloatingBar();
+    }
+  });
+  DOM.liteShapeDelete?.addEventListener('click',()=>{
+    if(_liteSelectedId!=null){
+      _liteDrawings=_liteDrawings.filter(d=>d.id!==_liteSelectedId);
+      _liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();
+    }
+  });
+  // ── Kéo / chọn / di chuyển hình đã vẽ (chế độ con trỏ) ──
+  // Bắt ở pha capture trên container chart để chặn thao tác pan/zoom mặc định của
+  // Lightweight Charts ĐÚNG lúc người dùng nhắm trúng 1 hình đã vẽ.
+  if(DOM.liteChart){
+    DOM.liteChart.addEventListener('pointerdown',e=>{
+      if(_liteDrawTool!=='cursor'||!DOM.liteDrawCanvas)return;
+      const{x,y}=_liteXYFromEvent(e);
+      const hit=_liteHitTest(x,y);
+      if(!hit){if(_liteSelectedId!=null){_liteSelectedId=null;redrawLiteDrawings();}return;}
+      e.preventDefault();e.stopPropagation();
+      _liteStartShapeDrag(hit,e);
+    },{capture:true});
+    DOM.liteChart.addEventListener('pointermove',e=>{
+      if(_liteDrawTool!=='cursor'||_liteDragInfo)return;
+      const{x,y}=_liteXYFromEvent(e);
+      DOM.liteChart.style.cursor=_liteHitTest(x,y)?'move':'';
+    });
+    DOM.liteChart.addEventListener('dblclick',e=>{
+      if(_liteDrawTool!=='cursor')return;
+      const{x,y}=_liteXYFromEvent(e);
+      const hit=_liteHitTest(x,y);
+      if(hit&&hit.shape.type==='text'){
+        e.preventDefault();e.stopPropagation();
+        setLiteDrawTool('text');
+        _liteOpenTextInput(hit.shape.points[0],null,hit.shape);
+      }
+    });
+  }
+  if(!DOM.liteDrawCanvas)return;
+  // Tính offset (theo giá) của điểm chuột hiện tại so với đường chéo gốc — dùng chung cho bước 2
+  // của cả công cụ Kênh giá (channel) và Đường cong bán nguyệt (arc).
+  function _liteOffsetFromChord(pend,p){
+    const denom=(pend.points[1].l-pend.points[0].l)||1e-6;
+    const lineP=pend.points[0].p+(pend.points[1].p-pend.points[0].p)*(p.l-pend.points[0].l)/denom;
+    return p.p-lineP;
+  }
+  DOM.liteDrawCanvas.addEventListener('pointermove',e=>{
+    if(_liteChannelPending){
+      const p=_litePtFromEvent(e);if(!p)return;
+      _liteChannelPending.points[2]={offsetPrice:_liteOffsetFromChord(_liteChannelPending,p)};
+      redrawLiteDrawings();
+      return;
+    }
+    if(_liteArcPending){
+      const p=_litePtFromEvent(e);if(!p)return;
+      // Lưu thẳng vị trí chuột làm điểm "đáy" — đáy đi tự do theo chuột cả 2 chiều, không ép về giữa.
+      _liteArcPending.points[2]=p;
+      redrawLiteDrawings();
+      return;
+    }
+    if(_liteZigzagPending){
+      const p=_litePtFromEvent(e);if(!p)return;
+      _liteZigzagPending._hover=p;
+      redrawLiteDrawings();
+      return;
+    }
+    if(_liteLinePending){
+      const p=_litePtFromEvent(e);if(!p)return;
+      _liteLinePending.points[1]=p;
+      redrawLiteDrawings();
+      return;
+    }
+  });
+  DOM.liteDrawCanvas.addEventListener('dblclick',e=>{
+    // Kết thúc Zigzag bằng double-click: bỏ điểm cuối trùng do click thứ 2 của thao tác double-click sinh ra
+    if(_liteDrawTool==='zigzag'&&_liteZigzagPending){
+      e.preventDefault();
+      // Double-click sinh ra 2 lần click liên tiếp ở cùng 1 vị trí → click thứ 2 đã bị pointerdown
+      // phía dưới nối thêm thành điểm trùng, cần bỏ điểm cuối trùng đó trước khi chốt hình.
+      if(_liteZigzagPending.points.length>1)_liteZigzagPending.points.pop();
+      _liteFinishZigzag();
+      setLiteDrawTool('cursor');
+    }
+  });
+  DOM.liteDrawCanvas.addEventListener('pointerdown',e=>{
+    if(_liteDrawTool==='cursor')return;
+    const p0=_litePtFromEvent(e);if(!p0)return;
+    // Bước 2 của Kênh giá: đã có đường chéo (bước 1) → click để chốt độ rộng kênh
+    if(_liteDrawTool==='channel'&&_liteChannelPending){
+      const pend=_liteChannelPending;
+      pend.points[2]={offsetPrice:_liteOffsetFromChord(pend,p0)};
+      _liteDrawings.push(pend);_liteChannelPending=null;
+      saveLiteDrawings();
+      setLiteDrawTool('cursor');_liteSelectShape(pend.id);
+      return;
+    }
+    // Bước 2 của Đường cong bán nguyệt: đã có đường chéo (bước 1) → click để chốt độ cong
+    if(_liteDrawTool==='arc'&&_liteArcPending){
+      const pend=_liteArcPending;
+      pend.points[2]=p0;
+      _liteDrawings.push(pend);_liteArcPending=null;
+      saveLiteDrawings();
+      setLiteDrawTool('cursor');_liteSelectShape(pend.id);
+      return;
+    }
+    // Zigzag: mỗi click nối thêm 1 điểm; double-click (xử lý riêng ở trên) để kết thúc
+    if(_liteDrawTool==='zigzag'){
+      if(_liteZigzagPending){
+        _liteZigzagPending.points.push(p0);
+        redrawLiteDrawings();
+      }else{
+        _liteZigzagPending={id:_liteDrawSeq++,type:'zigzag',points:[p0],color:_liteDrawColor};
+        redrawLiteDrawings();
+      }
+      return;
+    }
+    if(_liteDrawTool==='text'){
+      // Đang soạn dở 1 ô chữ (chưa blur): click ra ngoài phạm vi ô chữ chỉ để KẾT THÚC soạn (chốt chữ),
+      // không mở thêm khung chữ mới tại vị trí vừa click. Muốn viết chữ tiếp, người dùng phải bấm lại
+      // công cụ Text rồi click vị trí mới.
+      if(_liteTextEditPos){
+        _liteCommitTextInput();
+        setLiteDrawTool('cursor');
+        return;
+      }
+      // Chưa soạn gì (mới bật công cụ Text): click thẳng lên chart để gõ chữ tại đúng vị trí click,
+      // không dùng hộp thoại prompt() nữa.
+      _liteOpenTextInput(p0,e);
+      return;
+    }
+    if(_liteDrawTool==='hline'){
+      const id=_liteDrawSeq++;
+      _liteDrawings.push({id,type:'hline',points:[p0,p0],color:_liteDrawColor});
+      saveLiteDrawings();
+      setLiteDrawTool('cursor');_liteSelectShape(id);
+      return;
+    }
+    if(_liteDrawTool==='vline'){
+      const id=_liteDrawSeq++;
+      _liteDrawings.push({id,type:'vline',points:[p0,p0],color:_liteDrawColor});
+      saveLiteDrawings();
+      setLiteDrawTool('cursor');_liteSelectShape(id);
+      return;
+    }
+    if(_liteDrawTool==='trendline'||_liteDrawTool==='rect'||_liteDrawTool==='arrow'||_liteDrawTool==='channel'||_liteDrawTool==='arc'){
+      // Vẽ kiểu click-click: click điểm đầu, di chuột xem trước, click điểm cuối để chốt (không cần kéo giữ chuột).
+      // Với channel/arc, điểm cuối này CHƯA phải là chốt hình — chỉ xác định xong 2 điểm đầu-cuối (đường chéo),
+      // sau đó chuyển sang bước 2 (rê chuột lên/xuống để tạo kênh / uốn cong).
+      if(_liteLinePending&&_liteLinePending.type===_liteDrawTool){
+        _liteLinePending.points[1]=p0;
+        const moved=Math.abs(p0.l-_liteLinePending.points[0].l)>0.4||Math.abs(p0.p-_liteLinePending.points[0].p)>1e-9;
+        if(moved){
+          if(_liteDrawTool==='channel'){
+            _liteChannelPending=_liteLinePending;_liteLinePending=null;
+            redrawLiteDrawings();
+          }else if(_liteDrawTool==='arc'){
+            _liteArcPending=_liteLinePending;_liteLinePending=null;
+            redrawLiteDrawings();
+          }else{
+            _liteDrawings.push(_liteLinePending);
+            const newId=_liteLinePending.id;
+            _liteLinePending=null;
+            saveLiteDrawings();
+            setLiteDrawTool('cursor');_liteSelectShape(newId);
+          }
+        }else{
+          _liteLinePending=null;
+          redrawLiteDrawings();
+        }
+        return;
+      }
+      _liteLinePending={id:_liteDrawSeq++,type:_liteDrawTool,points:[p0,p0],color:_liteDrawColor};
+      redrawLiteDrawings();
+      return;
+    }
+    _liteDrawActive={id:_liteDrawSeq++,type:_liteDrawTool,points:[p0,p0],color:_liteDrawTool==='position'?'#111827':_liteDrawColor};
+    const move=ev=>{
+      const p1=_litePtFromEvent(ev);if(!p1||!_liteDrawActive)return;
+      _liteDrawActive.points[1]=p1;
+      if(_liteDrawActive.type==='position'){
+        const entryP=_liteDrawActive.points[0].p,targetP=p1.p;
+        const dir=targetP>=entryP?1:-1;
+        _liteDrawActive.stopP=entryP-dir*entryP*0.07;
+      }
+      redrawLiteDrawings();
+    };
+    const up=ev=>{
+      window.removeEventListener('pointermove',move);
+      window.removeEventListener('pointerup',up);
+      const p1=_litePtFromEvent(ev)||_liteDrawActive.points[1];
+      _liteDrawActive.points[1]=p1;
+      const moved=Math.abs(p1.l-_liteDrawActive.points[0].l)>0.4||Math.abs(p1.p-_liteDrawActive.points[0].p)>1e-9;
+      if(_liteDrawActive.type==='channel'){
+        // Bước 1 (đường chéo) vừa xong → CHƯA push, chuyển sang chờ bước 2 (rê chuột + click để chốt độ rộng)
+        if(moved)_liteChannelPending=_liteDrawActive;
+        _liteDrawActive=null;
+        redrawLiteDrawings();
+        return;
+      }
+      if(_liteDrawActive.type==='position'){
+        const entryP=_liteDrawActive.points[0].p,targetP=_liteDrawActive.points[1].p;
+        const dir=targetP>=entryP?1:-1;
+        _liteDrawActive.stopP=entryP-dir*entryP*0.07;
+      }
+      if(moved){
+        _liteDrawings.push(_liteDrawActive);
+        const newId=_liteDrawActive.id;
+        _liteDrawActive=null;
+        saveLiteDrawings();
+        setLiteDrawTool('cursor');_liteSelectShape(newId);
+      }else{
+        _liteDrawActive=null;
+        redrawLiteDrawings();
+      }
+    };
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
+  });
+}
+function resizeLiteSearchInput(){
+  if(!DOM.liteChartSearch)return;
+  const n=Math.max(1,DOM.liteChartSearch.value.length);
+  DOM.liteChartSearch.style.width=`${Math.min(120,Math.max(42,26+n*16))}px`;
+}
+function openLiteSearchWithChar(ch){
+  const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
+  DOM.liteChartSearch.value=(cur+String(ch||'').toUpperCase()).slice(0,10);
+  resizeLiteSearchInput();
+  DOM.liteChartSearch.classList.add('on');
+  DOM.liteChartSearch.focus();
+}
+function renderLiteIndicators(){
+  if(!_liteChart||!_liteMacdChart)return;
+  _clearLiteIndicators();
+  // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
+  const showMacd=_liteChecked('macd');
+  const maEmaOn=_liteChecked('maema_on');
+  const maOn=maEmaOn?LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p)):[];
+  const emaOn=maEmaOn?LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p)):[];
+  const bbOn=_liteChecked('bb');
+  const trendOn=_liteChecked('trend');
+  applyLitePaneLayout();
+  // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
+  // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
+  maOn.forEach(p=>{
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'ma',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ma'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  });
+  emaOn.forEach(p=>{
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'ema',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ema'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
+  });
+  if(bbOn){
+    // Chỉ vẽ 3 đường (upper/mid/lower) bằng series thật của thư viện.
+    // Phần TÔ MÀU giữa 2 đường band được vẽ riêng bằng canvas (xem _liteDrawBBBand)
+    // để clip chính xác trong dải, không đụng gì tới phần dưới đường band dưới.
+    const bbCol=_liteIndColors.bb;
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-upper',series:_liteChart.addLineSeries({
+      color:_liteHexToRgba(bbCol,.85),lineWidth:1,
+      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    })});
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-mid',series:_liteChart.addLineSeries({
+      color:_liteHexToRgba(bbCol,.4),lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
+      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    })});
+    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-lower',series:_liteChart.addLineSeries({
+      color:_liteHexToRgba(bbCol,.85),lineWidth:1,
+      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    })});
+  }
+  _liteIndicatorSeries.forEach(s=>{
+    if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
+    else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
+  });
+  if(bbOn){
+    const bb=_bbands(_liteData,20,2);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-upper').series.setData(bb.upper);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-mid').series.setData(bb.mid);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-lower').series.setData(bb.lower);
+    _liteBBFillData={upper:bb.upper,lower:bb.lower,color:_liteIndColors.bb};
+  }else{
+    _liteBBFillData=null;
+  }
+  if(trendOn){
+    // Không dùng series đường kẻ — tô vùng (cloud) bám theo giá bằng canvas, xem _liteDrawTrendCloud.
+    _liteTrendFillData=_trendCloudData(_liteData,LITE_TREND_PERIOD,LITE_TREND_MULT,_liteTrendMode());
+  }else{
+    _liteTrendFillData=null;
+  }
+  if(showMacd){
+    const m=_macd(_liteData);
+    const hist=_liteMacdChart.addHistogramSeries({priceFormat:{type:'price',precision:2,minMove:.01},priceScaleId:'right',base:0,lastValueVisible:false,priceLineVisible:false});
+    const macdLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'rgba(59,130,246,.6)',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    const sigLine=_liteMacdChart.addLineSeries({priceScaleId:'right',color:'orange',lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
+    const macdAligned=alignLiteSeries(m.macd);
+    hist.setData(histScaled);macdLine.setData(macdAligned);sigLine.setData(alignLiteSeries(m.signal));
+    hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
+    _liteMacdCrosshairSeries=macdLine;
+    _liteMacdValueByTime=new Map(macdAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
+    _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
+  }else{
+    _liteMacdValueByTime=new Map();
+  }
+  _liteRefreshVolumeTop();
+  redrawLiteDrawings();
+}
+function _liteRefreshVolumeTop(){
+  // Vẽ lại volume sau cùng để nó luôn nổi trên phần fill/nền trắng của BB, không bị che.
+  if(!_liteChart||!_liteVolume)return;
+  try{_liteChart.removeSeries(_liteVolume);}catch(e){}
+  _liteVolume=_liteChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
+  _liteVolume.setData(_liteVolumeData);
+}
+function showLiteChartStatus(status){
+  if(!DOM.liteChartStatus)return;
+  if(!status){DOM.liteChartStatus.classList.remove('on');return;}
+  const fetching=!!status.need_fetch;
+  DOM.liteChartStatus.title=fetching?'Đang update chart (vnstock)':'Đã tải từ cache';
+  DOM.liteChartStatus.classList.toggle('fetching',fetching);
+  DOM.liteChartStatus.classList.add('on');
+  clearTimeout(DOM.liteChartStatus._hideTimer);
+  DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
+}
+async function loadLiteChart(sym='FPT',retry=1){
+  const s=(sym||'FPT').toUpperCase().trim();
+  if(!DOM.liteChart)return;
+  initLiteChart();
+  if(DOM.liteChartInput)DOM.liteChartInput.value='';
+  if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
+  DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
+  DOM.liteChartEmpty.style.display='flex';
+  showLiteChartStatus(null);
+  if(!window.LightweightCharts){
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),1200);
+    return;
+  }
+  // Gọi song song: status chỉ để hiển thị placeholder text, không cần chờ nó xong
+  // mới bắt đầu fetch data thật — gộp lại giúp giảm ~1 round-trip độ trễ tải chart.
+  const statusPromise=fetch('/api/lightweight_chart_status/'+encodeURIComponent(s))
+    .then(x=>x.json()).catch(()=>null);
+  statusPromise.then(st=>{
+    if(DOM.liteChartEmpty.style.display!=='none')
+      DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
+  });
+  try{
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=1000');
+    if(!r.ok)throw new Error('no_cache');
+    const j=await r.json();
+    _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
+      const prev=idx>0?arr[idx-1].close:null;
+      const pct=prev?((bar.close-prev)/prev*100):0;
+      return{...bar,pct};
+    });
+    _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
+    _liteVolumeData=j.volume||[];
+    _liteCandle.setData(_liteData);
+    _liteVolume.setData(_liteVolumeData);
+    _liteUpdateWhitespace();
+    renderLiteIndicators();
+    setLiteRightOffset();
+    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.16,bottom:.24}});
+    DOM.liteChartEmpty.style.display='none';
+    updateLiteTitle(_liteData[_liteData.length-1]);
+    _liteApplyBuySignal();
+    loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
+    showLiteChartStatus(await statusPromise);
+  }catch(e){
+    if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
+    DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),5000);
+  }
+}
+function bindLiteChartControls(){
+  loadLiteIndicatorPrefs();
+  loadLiteTrendMode();
+  bindLiteIndColorPickers();
+  bindLiteIndGroupDropdowns();
+  bindLiteDrawToolbar();
+  if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('input',e=>{
+    const raw=_liteCleanSym(e.target.value);
+    e.target.value=raw;
+    if(_liteInputTimer)clearTimeout(_liteInputTimer);
+    if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
+  });
+  if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('keydown',e=>{
+    if(e.key==='Enter')loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
+  });
+  if(DOM.liteChartTf)DOM.liteChartTf.addEventListener('click',e=>{
+    const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
+    setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
+  });
+  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();setLiteRightOffset();});
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>{
+    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
+    // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
+    if(_liteTextEditPos)return;
+    DOM.liteChartFrame.focus();
+  });
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseenter',()=>{
+    _litePointerInside=true;
+    if(_liteTextEditPos)return;
+    const tag=(document.activeElement?.tagName||'').toLowerCase();
+    if(tag!=='input'&&tag!=='textarea')DOM.liteChartFrame.focus();
+  });
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseleave',()=>{_litePointerInside=false;});
+  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('keydown',e=>{
+    // Đang gõ chữ (công cụ Text) → không xử lý phím tắt của khung chart (xoá hình, mở tìm mã...) ở đây.
+    // Bản thân ô chữ (#lite-text-input) đã tự xử lý Enter/Escape và stopPropagation() cho các phím khác,
+    // đây chỉ là lớp bảo vệ thêm phòng khi ô chữ chưa kịp nhận focus.
+    if(_liteTextEditPos)return;
+    if((e.key==='Delete'||e.key==='Backspace')&&_liteSelectedId!=null){
+      e.preventDefault();
+      _liteDrawings=_liteDrawings.filter(d=>d.id!==_liteSelectedId);
+      _liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();
+      return;
+    }
+    // Enter / Space / Escape khi đang vẽ dở Zigzag → KẾT THÚC (chốt) nét vẽ, không phải huỷ.
+    if((e.key==='Enter'||e.key===' '||e.key==='Escape')&&_liteZigzagPending){
+      e.preventDefault();
+      _liteFinishZigzag();
+      setLiteDrawTool('cursor');
+      return;
+    }
+    if(e.key==='Escape'){
+      if(_liteChannelPending||_liteArcPending||_liteZigzagPending||_liteLinePending||_liteSelectedId!=null){
+        _liteChannelPending=null;_liteArcPending=null;_liteZigzagPending=null;_liteLinePending=null;_liteSelectedId=null;redrawLiteDrawings();
+      }
+      return;
+    }
+    if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
+    e.preventDefault();
+    openLiteSearchWithChar(e.key);
+  });
+  document.addEventListener('keydown',e=>{
+    if(!_litePointerInside||e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
+    // Bỏ qua khi đang gõ vào ô chữ của công cụ Text (#lite-text-input là div contenteditable, không phải
+    // input/textarea/select nên check tag ở dưới không bắt được) — trước đây bug này khiến gõ chữ chú thích
+    // bị "cướp" thành gõ tìm mã cổ phiếu.
+    if(_liteTextEditPos||document.activeElement?.isContentEditable)return;
+    const tag=(document.activeElement?.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='textarea'||tag==='select')return;
+    e.preventDefault();
+    openLiteSearchWithChar(e.key);
+  });
+  if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('input',e=>{
+    const raw=_liteCleanSym(e.target.value);
+    e.target.value=raw;
+    resizeLiteSearchInput();
+    if(_liteInputTimer)clearTimeout(_liteInputTimer);
+    if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
+  });
+  if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){DOM.liteChartSearch.classList.remove('on');DOM.liteChartFrame.focus();}
+    if(e.key==='Enter'&&DOM.liteChartSearch.value){DOM.liteChartSearch.classList.remove('on');loadLiteChart(DOM.liteChartSearch.value,0);}
+  });
+  if(DOM.liteMacdResizer)DOM.liteMacdResizer.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    const startY=e.clientY,startH=DOM.liteMacdChart.clientHeight||176;
+    // Gộp các sự kiện pointermove (bắn nhiều hơn tốc độ khung hình màn hình) thành đúng 1 lần
+    // cập nhật layout/chart mỗi khung hình bằng rAF — applyLitePaneLayout() gọi applyOptions() trên
+    // cả 2 chart nên là thao tác nặng, gọi trực tiếp theo từng pointermove sẽ gây giật khi kéo.
+    let pendingH=null,rafId=null;
+    const flush=()=>{
+      rafId=null;
+      if(pendingH===null)return;
+      DOM.liteMacdChart.style.height=pendingH+'px';
+      applyLitePaneLayout();setLiteRightOffset();
+      pendingH=null;
+    };
+    const move=ev=>{
+      pendingH=Math.max(120,Math.min(340,startH-(ev.clientY-startY)));
+      if(rafId===null)rafId=requestAnimationFrame(flush);
+    };
+    const up=()=>{
+      window.removeEventListener('pointermove',move);
+      window.removeEventListener('pointerup',up);
+      if(rafId!==null){cancelAnimationFrame(rafId);flush();}
+    };
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
+  });
+}
 function _getPopupViewport(){
   const left=Number.isFinite(window.screen.availLeft)?window.screen.availLeft:0;
   const top=Number.isFinite(window.screen.availTop)?window.screen.availTop:0;
@@ -1952,6 +4264,7 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   _syncHoverPreview(cell.dataset.sym);
   updatePopout(cell.dataset.sym);
   updateSimplize(cell.dataset.sym);
+  loadLiteChart(cell.dataset.sym,0);
   openChart(cell.dataset.sym);
 });
 let _hmapClickTimer=null;
@@ -1961,7 +4274,9 @@ function _hmapDesktopClick(sym){
     _syncHoverPreview(sym);
     updatePopout(sym);
     updateSimplize(sym);
+    loadLiteChart(sym,0);
     if(_isPopoutMode)return;
+    if(_isChartPanelOpen)return;
     if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
   },220);
@@ -1977,6 +4292,7 @@ DOM.sigList.addEventListener('dblclick',e=>{
   _syncHoverPreview(row.dataset.sym);
   updatePopout(row.dataset.sym);
   updateSimplize(row.dataset.sym);
+  loadLiteChart(row.dataset.sym,0);
   openChart(row.dataset.sym);
 });
 DOM.momentumList.addEventListener('click',e=>{
@@ -2130,6 +4446,28 @@ DOM.sankeyToggle.addEventListener('click',()=>{
   const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
   DOM.sankeyWrap.hidden=collapsed;
 });
+DOM.liteChartToggle.addEventListener('click',e=>{
+  // Khi thẻ đang mở, các control bên trong thanh công cụ (tìm mã, D/W, chỉ báo, vẽ...)
+  // vẫn phải bấm được bình thường — chỉ coi là "bấm vào thẻ để thu/mở" khi không bấm
+  // trúng các vùng control đó. Khi thẻ đang thu gọn thì các vùng đó đã ẩn (display:none)
+  // nên toàn bộ header luôn hoạt động như nút mở ra, giống hệt SANKEY.
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar'))return;
+  const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
+  _isChartPanelOpen=!collapsed;
+  if(_isChartPanelOpen){
+    // Panel vừa được mở lại sau khi bị ẩn (display:none) — canvas của lightweight-charts
+    // có thể đang mang kích thước 0 nên cần ép resize lại đúng như handler window 'resize',
+    // đồng thời set lại visible logical range (số bar hiển thị + khoảng trống lề phải) như
+    // mặc định ban đầu, tránh trường hợp nến bị dồn cụm vào một góc do resize sau khi range
+    // đã được tính với width=0 lúc panel còn ẩn.
+    requestAnimationFrame(()=>{
+      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+      if(_liteData.length)setLiteRightOffset();
+      resizeLiteDrawCanvas();redrawLiteDrawings();
+    });
+  }
+});
 // ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
 // ═══════════════════════════════════════════════════════
@@ -2149,6 +4487,10 @@ async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
     DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
+    // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung
+    // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
+    _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
+    _liteApplyBuySignal();
     const momentum=j.momentum||[];
     if(!momentum.length){
       DOM.momentumList.innerHTML='';
@@ -2237,6 +4579,14 @@ function _showAlbum(images){
   _updateAlbumNav();
   DOM.albumOuter.style.display='flex';DOM.loading.style.display='none';
 }
+function _appendAlbumImages(images){
+  if(!images.length)return;
+  const mob=IS_MOBILE(),start=_albumImages.length;
+  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
+  DOM.albumSlides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}></div>`;}).join(''));
+  DOM.albumDots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
+  _updateAlbumNav();
+}
 DOM.albumDots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
 DOM.albumSlides.addEventListener('click',e=>{
   const img=e.target.closest('img');
@@ -2270,17 +4620,36 @@ DOM.btnRef.addEventListener('click',async()=>{
 });
 async function loadScannerChart(sym){
   DOM.albumOuter.style.display='none';DOM.loading.style.display='flex';
-  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>… (5–10 giây)</span>`;
+  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
   try{
     const r=await fetch('/api/chart_images/'+sym);
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
     const j=await r.json();
     if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]','⚡ 15m'];
+    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
     _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    if(j.cached){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='♻️ Dùng cache';}
+    const h=DOM.albumOuter.querySelector('.album-hint');
+    if(h)h.textContent='Đang tải 15m...';
+    loadScannerChart15m(sym);
   }catch(e){
     DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+  }
+}
+async function loadScannerChart15m(sym){
+  const s=(sym||'').toUpperCase().trim();
+  try{
+    const r=await fetch('/api/chart_image_15m/'+s);
+    if(!r.ok){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='';return;}
+    const j=await r.json();
+    if((_sym||'').toUpperCase().trim()!==s)return;
+    if(!j.images?.length)return;
+    const labels=j.labels||['⚡ 15 phút [15m]'];
+    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
+    const h=DOM.albumOuter.querySelector('.album-hint');
+    if(h)h.textContent='';
+  }catch(e){
+    const h=DOM.albumOuter.querySelector('.album-hint');
+    if(h)h.textContent='';
   }
 }
 // ═══════════════════════════════════════════════════════
@@ -2918,8 +5287,10 @@ window.addEventListener('message',e=>{
 async function init(){
   await loadConfig();
   _refreshChartModeUI();
+  bindLiteChartControls();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
+  loadLiteChart(_liteSymbol);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
 }
