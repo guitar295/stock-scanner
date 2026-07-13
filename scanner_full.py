@@ -51,6 +51,7 @@ MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
 DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
+CACHE_CHECK_INTERVAL_SEC = 1800   # nhịp tự dò/sửa history_cache NGOÀI giờ giao dịch — độc lập với SCAN_INTERVAL_SEC
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
 register_user(VNSTOCK_API)
@@ -574,7 +575,6 @@ def compute_indicators(df):
 # BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
 history_cache: dict = {}
-cache_date          = None
 cache_lock          = threading.Lock()
 last_bar_update: dict = {}   # {symbol: timestamp} - dùng chung cho CẢ scan cycle lẫn chart on-demand
 BAR_UPDATE_TTL_SEC = 60
@@ -595,7 +595,6 @@ def load_history_for_symbol(symbol: str, current_date: date):
     return None
 
 def build_history_cache(symbols: list, current_date: date):
-    global cache_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã...")
     new_history = {}
@@ -610,7 +609,6 @@ def build_history_cache(symbols: list, current_date: date):
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
-        cache_date = current_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
 
@@ -619,8 +617,36 @@ def build_history_cache(symbols: list, current_date: date):
 # =============================================================================
 CACHE_CHECK_SYMBOL = 'HPG'
 
+def _expected_last_session(current_date: date, now_time: int) -> date:
+    """
+    Ngày nến cuối cùng mà cache/lịch sử BẮT BUỘC phải có tính tới thời điểm hiện tại.
+    Dùng chung cho mọi nơi cần biết "cache đã đủ mới chưa" (build cache theo ngày,
+    ensure-on-demand cho lite chart, chart on-demand cho Telegram/scanner).
+    - Ngày thường, trước 15:00 (chưa chốt phiên) → kỳ vọng = phiên liền trước.
+    - Ngày thường, từ 15:00 (đã chốt phiên) → kỳ vọng = chính hôm nay.
+    """
+    expected = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
+    if current_date.weekday() < 5 and now_time >= 150000:
+        expected = current_date
+    return expected
+
+def _cache_is_fresh(df_hist, current_date: date, now_time: int) -> bool:
+    """True nếu nến cuối của df_hist đã đạt tới _expected_last_session()."""
+    if df_hist is None or len(df_hist) == 0:
+        return False
+    return df_hist.index[-1].date() >= _expected_last_session(current_date, now_time)
+
 def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
-    ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+    """
+    Kiểm tra 1 mã mẫu đại diện cho cả `history_cache`; nếu lệch phiên kỳ vọng thì
+    rebuild lại toàn bộ. Hàm này KHÔNG tự giới hạn tần suất gọi — việc gọi hàm này
+    cách nhau bao lâu (30 phút, ngoài giờ giao dịch) do nơi gọi (vòng lặp chính,
+    qua CACHE_CHECK_INTERVAL_SEC) quyết định, để tách bạch rõ "khi nào kiểm tra"
+    khỏi "kiểm tra làm gì".
+    """
+    now_obj  = datetime.now(TZ_VN)
+    ts       = now_obj.strftime('%H:%M:%S')
+    now_time = int(now_obj.strftime("%H%M%S"))
 
     with cache_lock:
         check_sym = CACHE_CHECK_SYMBOL if CACHE_CHECK_SYMBOL in history_cache else (
@@ -628,29 +654,21 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         )
         sample_df = history_cache.get(check_sym) if check_sym else None
 
-    if sample_df is None:
-        print(f"  [{ts}] 🔍 Cache check: không có dữ liệu → rebuild")
-        build_history_cache(symbols, current_date)
-        return False
-
-    cache_last = sample_df.index[-1].date()
-    prev_bday  = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
-
-    print(f"  [{ts}] 🔍 Cache check [{check_sym}]: nến cuối = {cache_last} | kỳ vọng ≥ {prev_bday}")
-
-    if cache_last < prev_bday:
-        print(f"  [{ts}] ⚠️  Cache STALE ({cache_last} < {prev_bday}) → Rebuild ngay...")
-        build_history_cache(symbols, current_date)
-        with cache_lock:
-            sample_df2 = history_cache.get(check_sym)
-        if sample_df2 is not None:
-            new_last = sample_df2.index[-1].date()
-            ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
-            print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
-        return False
-    else:
-        print(f"  [{ts}] ✅ Cache OK ({cache_last} ≥ {prev_bday})")
+    expected = _expected_last_session(current_date, now_time)
+    if _cache_is_fresh(sample_df, current_date, now_time):
+        print(f"  [{ts}] ✅ Cache OK [{check_sym}] ({sample_df.index[-1].date()} ≥ {expected})")
         return True
+
+    reason = "không có dữ liệu" if sample_df is None else f"nến cuối = {sample_df.index[-1].date()}"
+    print(f"  [{ts}] ⚠️  Cache STALE ({reason}, kỳ vọng ≥ {expected}) → Rebuild ngay...")
+    build_history_cache(symbols, current_date)
+    with cache_lock:
+        sample_df2 = history_cache.get(check_sym) if check_sym else None
+    if sample_df2 is not None:
+        new_last = sample_df2.index[-1].date()
+        ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
+    return False
 
 def fetch_today_bar(symbol: str, current_date: date):
     for attempt in range(3):
@@ -739,6 +757,9 @@ def chart_symbol_status(symbol: str) -> dict:
     if not has_cache:
         return {"symbol": symbol, "cached": False, "need_fetch": True, "reason": "no_cache"}
 
+    if not _cache_is_fresh(df_hist, current_date, now_time):
+        return {"symbol": symbol, "cached": True, "need_fetch": True, "reason": "stale_session"}
+
     if current_date.weekday() >= 5 or now_time < 90000:
         return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "outside_session"}
 
@@ -764,6 +785,19 @@ def ensure_symbol_live_in_cache(symbol: str) -> bool:
             return False
         with cache_lock:
             history_cache[symbol] = df_hist
+        return True
+
+    # Cache đã có nhưng lệch hơn 1 phiên so với kỳ vọng (ví dụ bị bỏ lỡ phiên gần nhất
+    # do không ai xem chart lúc phiên đó diễn ra) → nạp lại toàn bộ và ghi đè cache dùng
+    # chung, thay vì chỉ cố vá đúng bar "hôm nay" như nhánh live-update bên dưới.
+    if not _cache_is_fresh(df_hist, current_date, now_time):
+        fresh = load_history_for_symbol(symbol, current_date)
+        if fresh is not None and len(fresh) >= 60:
+            with cache_lock:
+                history_cache[symbol] = fresh
+            last_bar_update[symbol] = time.time()
+            return True
+        # Fetch fresh lỗi → rơi xuống logic live-update bên dưới để vẫn thử vá tạm
 
     if current_date.weekday() >= 5 or now_time < 90000:
         return True
@@ -1477,7 +1511,9 @@ def _filter_symbols(raw_list: list):
 # =============================================================================
 def _get_chart_context(symbol: str):
     symbol = symbol.upper().strip()
-    current_date = datetime.now(TZ_VN).date()
+    now_obj      = datetime.now(TZ_VN)
+    current_date = now_obj.date()
+    now_time     = int(now_obj.strftime("%H%M%S"))
     is_index = symbol in INDEX_SYMBOLS
     source = "index"
 
@@ -1488,25 +1524,26 @@ def _get_chart_context(symbol: str):
             cached = history_cache.get(symbol)
             df_raw = cached.copy() if cached is not None and len(cached) >= 10 else None
         if df_raw is not None:
-            expected_last = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
-            if current_date.weekday() < 5 and int(datetime.now(TZ_VN).strftime("%H%M%S")) >= 150000:
-                expected_last = current_date
-            cache_last = df_raw.index[-1].date()
-            if cache_last < expected_last:
-                print(f"  [ChartCore] {symbol}: cache stale ({cache_last} < {expected_last}) → fresh")
-                df_raw = None
-            else:
+            if _cache_is_fresh(df_raw, current_date, now_time):
                 source = "history_cache"
+            else:
+                print(f"  [ChartCore] {symbol}: cache stale ({df_raw.index[-1].date()} < "
+                      f"{_expected_last_session(current_date, now_time)}) → fresh")
+                df_raw = None
         if df_raw is None:
             source = "fresh"
             df_raw = fetch_fresh_for_chart(symbol, current_date)
+            # Ghi ngược vào history_cache dùng chung để các nơi khác (thẻ CHART, quét tín
+            # hiệu) không phải tự fetch lại từ đầu ở lần gọi kế tiếp.
+            if df_raw is not None and len(df_raw) >= 60:
+                with cache_lock:
+                    history_cache[symbol] = df_raw.copy()
 
     if df_raw is None or len(df_raw) < 10:
         return None
 
     df_calc = compute_indicators(df_raw)
     today = df_calc.iloc[-1]
-    now_time = int(datetime.now(TZ_VN).strftime("%H%M%S"))
     signal_type = "INDEX" if is_index else (detect_signal(df_raw, now_time) or "ON-DEMAND")
     return {
         "symbol": symbol,
@@ -1939,6 +1976,7 @@ except NameError:
 alerted_today = {}
 momentum_today = {}
 last_run_date = datetime.now(TZ_VN).date()
+_last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
 
 _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
@@ -2013,10 +2051,13 @@ while True:
         is_afternoon = 130000 <= now_time <= 150000
 
         if not (is_morning or is_afternoon):
-            with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
-            if not cache_ok:
-                print(f"[{ts}] Cache chưa có — tải lịch sử trước giờ giao dịch...")
-                build_history_cache(symbols_to_cache, current_date)
+            # Tự dò + tự sửa cache lệch phiên — CHỈ chạy ngoài giờ giao dịch, với nhịp
+            # riêng CACHE_CHECK_INTERVAL_SEC (30 phút), hoàn toàn tách khỏi SCAN_INTERVAL_SEC
+            # (nhịp quét tín hiệu). Vòng lặp vẫn "thức" mỗi SCAN_INTERVAL_SEC để không lỡ
+            # thời điểm mở cửa, nhưng chỉ THỰC SỰ gọi kiểm tra cache mỗi 30 phút 1 lần.
+            if time.time() - _last_cache_check_ts >= CACHE_CHECK_INTERVAL_SEC:
+                _last_cache_check_ts = time.time()
+                check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
 
             if   now_time < 85000:  next_open = "09:00"
             elif now_time < 130000: next_open = "13:00"
@@ -2025,12 +2066,17 @@ while True:
             time.sleep(SCAN_INTERVAL_SEC)
             continue
 
-        with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
-        if not cache_ok:
-            print(f"[{ts}] ⚠️  Cache chưa sẵn sàng — đang load...")
+        # Trong giờ giao dịch: KHÔNG chạy check_and_rebuild_cache_if_stale ở đây nữa
+        # (rebuild toàn bộ có thể tốn 45s-vài phút, làm chậm/nghẽn chu kỳ quét tín hiệu).
+        # Việc tự dò + tự sửa cache lệch phiên chỉ chạy ở nhánh ngoài giờ giao dịch phía
+        # trên (trước 09:00, nghỉ trưa 11:30-13:00, sau 15:00). Ở đây chỉ giữ lại 1 lớp
+        # bảo hiểm rẻ: nếu cache trống hoàn toàn (sự cố nghiêm trọng, gần như không xảy ra
+        # trong vận hành bình thường) thì vẫn bắt buộc load để tránh quét trên cache rỗng.
+        with cache_lock:
+            cache_empty = len(history_cache) == 0
+        if cache_empty:
+            print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
             build_history_cache(symbols_to_cache, current_date)
-
-        check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
 
         print(f"\n{'='*60}")
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
