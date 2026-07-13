@@ -1294,7 +1294,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #lite-chart{width:100%;height:540px}
 #lite-rsi-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
 #lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
-#lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"]{display:none!important}
+#lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"],
+#lite-rsi-chart.hide-tv-logo a[href*="tradingview"],#lite-rsi-chart.hide-tv-logo [class*="logo"],#lite-rsi-chart.hide-tv-logo [class*="attribution"],
+#lite-macd-chart.hide-tv-logo a[href*="tradingview"],#lite-macd-chart.hide-tv-logo [class*="logo"],#lite-macd-chart.hide-tv-logo [class*="attribution"]{display:none!important}
 .lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
 .lite-macd-resizer.on{display:block}
 .lite-macd-resizer:hover{background:rgba(26,86,219,.12)}
@@ -2331,14 +2333,13 @@ function _liteSyncVisibleRangeFrom(source,range){
   _liteSyncing=false;
 }
 function _liteRsiBackgroundCss(){
-  const fill=_liteHexToRgba(_liteIndColors.rsi||LITE_RSI_DEFAULT_COLOR,.12);
-  return `linear-gradient(to bottom,#ffffff 0%,#ffffff 32%,${fill} 32%,${fill} 64%,#ffffff 64%,#ffffff 100%)`;
+  return '#fff';
 }
 function _liteApplyRsiBackground(){
   if(!DOM.liteRsiChart)return;
   DOM.liteRsiChart.style.background=_liteChecked('rsi')?_liteRsiBackgroundCss():'#fff';
 }
-let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
+let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
@@ -2371,8 +2372,8 @@ function initLiteChart(){
   _liteRsiChart=LightweightCharts.createChart(DOM.liteRsiChart,{
     ...chartOpts,width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
     layout:{background:{type:'solid',color:'rgba(255,255,255,0)'},textColor:'#111827'},
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
-    handleScale:{axisPressedMouseMove:{time:false,price:false}}
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.04,bottom:.06}},
+    handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
@@ -2430,13 +2431,17 @@ function initLiteChart(){
       DOM.liteXhairTime.style.display=timeTxt?'block':'none';
     }
   }
+  function _liteCrosshairPriceTxt(series,localY){
+    const price=series&&series.coordinateToPrice&&series.coordinateToPrice(localY);
+    return Number.isFinite(price)?fmtLiteNum(price):'';
+  }
   _liteChart.subscribeCrosshairMove(param=>{
     const key=param&&param.time?liteTimeKey(param.time):'';
     const bar=key?_liteDataByTime.get(key):null;
     if(bar)updateLiteTitle(bar);else updateLiteTitle(_liteData[_liteData.length-1]);
     if(!param||!param.point){_liteHideXhair();return;}
     const x=param.point.x,y=(DOM.liteChart.offsetTop||0)+param.point.y;
-    const priceTxt=bar&&Number.isFinite(bar.close)?fmtLiteNum(bar.close):'';
+    const priceTxt=_liteCrosshairPriceTxt(_liteCandle,param.point.y);
     const timeTxt=key?fmtLiteDate(key):'';
     _liteMoveXhair(x,y,priceTxt,timeTxt);
   });
@@ -2446,8 +2451,7 @@ function initLiteChart(){
     const bar=key?_liteDataByTime.get(key):null;
     if(bar)updateLiteTitle(bar);
     const x=param.point.x,y=(DOM.liteMacdChart.offsetTop||0)+param.point.y;
-    const mv=key?_liteMacdValueByTime.get(key):undefined;
-    const priceTxt=Number.isFinite(mv)?fmtLiteNum(mv):'';
+    const priceTxt=_liteCrosshairPriceTxt(_liteMacdCrosshairSeries,param.point.y);
     const timeTxt=key?fmtLiteDate(key):'';
     _liteMoveXhair(x,y,priceTxt,timeTxt);
   });
@@ -2457,8 +2461,7 @@ function initLiteChart(){
     const bar=key?_liteDataByTime.get(key):null;
     if(bar)updateLiteTitle(bar);
     const x=param.point.x,y=(DOM.liteRsiChart.offsetTop||0)+param.point.y;
-    const rv=key?_liteRsiValueByTime.get(key):undefined;
-    const priceTxt=Number.isFinite(rv)?fmtLiteNum(rv):'';
+    const priceTxt=_liteCrosshairPriceTxt(_liteRsiCrosshairSeries,param.point.y);
     const timeTxt=key?fmtLiteDate(key):'';
     _liteMoveXhair(x,y,priceTxt,timeTxt);
   });
@@ -2585,6 +2588,7 @@ function _clearLiteIndicators(){
     try{s.chart.removeSeries(s.series);}catch(e){}
   }
   _liteIndicatorSeries=[];
+  _liteRsiCrosshairSeries=null;
   _liteMacdCrosshairSeries=null;
   _liteRsiValueByTime=new Map();
   _liteMacdValueByTime=new Map();
@@ -2739,8 +2743,10 @@ function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
   const totalH=710;
-  const rsiH=showRsi?176:0;
-  const macdH=showMacd?Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176)):0;
+  const bothPanes=showRsi&&showMacd;
+  const compactPaneH=132;
+  const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
+  const macdH=showMacd?(bothPanes?compactPaneH:Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176))):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
   const mainH=showRsi||showMacd?Math.max(300,totalH-lowerH):totalH;
@@ -2752,10 +2758,13 @@ function applyLitePaneLayout(){
   try{
     DOM.liteRsiChart.style.display=showRsi?'block':'none';
     DOM.liteMacdChart.style.display=showMacd?'block':'none';
-    DOM.liteMacdResizer.classList.toggle('on',showMacd);
+    DOM.liteMacdResizer.classList.toggle('on',showMacd&&!showRsi);
     DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
+    DOM.liteRsiChart.classList.toggle('hide-tv-logo',showRsi&&showMacd);
+    DOM.liteMacdChart.classList.remove('hide-tv-logo');
     DOM.liteChart.style.height=`${mainH}px`;
     if(showRsi)DOM.liteRsiChart.style.height=`${rsiH}px`;
+    if(showMacd)DOM.liteMacdChart.style.height=`${macdH}px`;
     _liteChart.applyOptions({
       width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
       timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
@@ -2764,7 +2773,7 @@ function applyLitePaneLayout(){
     if(_liteRsiChart)_liteRsiChart.applyOptions({
       width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
       timeScale:{visible:showRsiTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.08,bottom:.12}}
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.04,bottom:.06}}
     });
     if(_liteMacdChart)_liteMacdChart.applyOptions({
       width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
@@ -3614,10 +3623,6 @@ async function copyLiteChartImage(btn){
     }
     let y=titleH;
     panes.forEach(p=>{
-      if(p.kind==='rsi'){
-        ctx.fillStyle=_liteHexToRgba(_liteIndColors.rsi||LITE_RSI_DEFAULT_COLOR,.12);
-        ctx.fillRect(0,y+Math.round(p.canvas.height*.32),p.canvas.width,Math.round(p.canvas.height*.32));
-      }
       ctx.drawImage(p.canvas,0,y);
       y+=p.canvas.height;
     });
@@ -4073,29 +4078,36 @@ function renderLiteIndicators(){
   }
   if(showRsi){
     const rsiCol=_liteIndColors.rsi||LITE_RSI_DEFAULT_COLOR;
-    const rsiAutoscale=()=>({priceRange:{minValue:0,maxValue:100}});
+    const rsiFill=_liteHexToRgba(rsiCol,.12);
+    const rsiBand=_liteRsiChart.addAreaSeries({
+      priceScaleId:'right',baseValue:{type:'price',price:30},
+      topColor:rsiFill,bottomColor:rsiFill,lineColor:'rgba(0,0,0,0)',lineWidth:1,
+      lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false
+    });
     const rsiSeries=_liteRsiChart.addLineSeries({
       priceScaleId:'right',color:_liteHexToRgba(rsiCol,.88),lineWidth:1,
-      title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false,
-      autoscaleInfoProvider:rsiAutoscale
+      title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false
     });
-    const bounds0=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
-    const bounds100=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
-    const level70=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
-    const level50=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.45)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
-    const level30=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:rsiAutoscale});
+    const bounds20=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
+    const bounds80=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(0,0,0,0)',lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
+    const level70=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    const level50=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.45)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    const level30=_liteRsiChart.addLineSeries({priceScaleId:'right',color:'rgba(107,114,128,.55)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
     const rsiAligned=alignLiteSeries(_rsi(_liteData,LITE_RSI_PERIOD));
     const constLine=value=>_liteData.map(bar=>({time:bar.time,value}));
+    rsiBand.setData(constLine(70));
     rsiSeries.setData(rsiAligned);
-    bounds0.setData(constLine(0));
-    bounds100.setData(constLine(100));
+    bounds20.setData(constLine(20));
+    bounds80.setData(constLine(80));
     level70.setData(constLine(70));
     level50.setData(constLine(50));
     level30.setData(constLine(30));
+    _liteRsiCrosshairSeries=rsiSeries;
     _liteRsiValueByTime=new Map(rsiAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
     _liteIndicatorSeries.push(
-      {chart:_liteRsiChart,series:bounds0},
-      {chart:_liteRsiChart,series:bounds100},
+      {chart:_liteRsiChart,series:rsiBand},
+      {chart:_liteRsiChart,series:bounds20},
+      {chart:_liteRsiChart,series:bounds80},
       {chart:_liteRsiChart,series:level70},
       {chart:_liteRsiChart,series:level50},
       {chart:_liteRsiChart,series:level30},
