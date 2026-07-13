@@ -3985,39 +3985,34 @@ function renderLiteIndicators(){
     _liteMacdValueByTime=new Map(macdAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }else if(showRsi){
-    // RSI(14) kiểu Wilder. Đường RSI nền vẽ liên tục màu trung tính (giống Plot(RSI...) gốc).
-    // Tô cloud CHỈ khi vượt ngưỡng: xanh khi RSI>60 (baseline tại 60), đỏ khi RSI<30 (baseline tại 30) —
-    // đúng công thức IIf(r>60,colorGreen,IIf(r>30,colorWhite,colorRed)) trong code AmiBroker gốc.
-    const rsiAligned=alignLiteSeries(_rsi(_liteData,14));
+    // RSI(14) kiểu Wilder. Đúng cơ chế PlotOHLC(r,r,50,r,...,styleCloud|styleClipMinMax,30,60):
+    // - Đường RSI THẬT vẽ liên tục, không giới hạn, màu đỏ cố định (giống ParamColor mặc định colorRed).
+    // - Dải TÔ MÀU chỉ trải từ mốc 50 tới giá trị RSI đã bị "kẹp cứng" trong khoảng [30,60] — nên khi RSI
+    //   vọt lên >60, phần tô bị kẹp phẳng ở mức 60 (tạo hình chóp nhọn, đường thật thò ra khỏi phần tô);
+    //   khi RSI tụt <30, phần tô kẹp phẳng ở mức 30 (tạo khối đặc). Màu xanh/đỏ vẫn theo r>50 hay r<=50.
+    const rsiRaw=_rsi(_liteData,14);
+    const rsiAligned=alignLiteSeries(rsiRaw);
     const upCol=_liteIndColors['rsi-up']||'#64fa96',downCol=_liteIndColors['rsi-down']||'#fa9696';
     const rsiLine=_liteMacdChart.addLineSeries({
-      color:'#6b7280',lineWidth:1,priceScaleId:'right',title:'',
+      color:'#dc2626',lineWidth:1,priceScaleId:'right',title:'',
       priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false,
       autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})
     });
     rsiLine.setData(rsiAligned);
-    const upZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value>=60);
-    const upSeries=_liteMacdChart.addBaselineSeries({
-      baseValue:{type:'price',price:60},
-      topLineColor:upCol,topFillColor1:_liteHexToRgba(upCol,.32),topFillColor2:_liteHexToRgba(upCol,.05),
-      bottomLineColor:'rgba(0,0,0,0)',bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',
+    const clipped=rsiAligned.map(x=>Number.isFinite(x.value)?{time:x.time,value:Math.max(30,Math.min(60,x.value))}:x);
+    const cloudSeries=_liteMacdChart.addBaselineSeries({
+      baseValue:{type:'price',price:50},
+      topLineColor:'rgba(0,0,0,0)',topFillColor1:_liteHexToRgba(upCol,.55),topFillColor2:_liteHexToRgba(upCol,.35),
+      bottomLineColor:'rgba(0,0,0,0)',bottomFillColor1:_liteHexToRgba(downCol,.35),bottomFillColor2:_liteHexToRgba(downCol,.55),
       lineWidth:1,priceScaleId:'right',title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
     });
-    upSeries.setData(upZone);
-    const downZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value<=30);
-    const downSeries=_liteMacdChart.addBaselineSeries({
-      baseValue:{type:'price',price:30},
-      topLineColor:'rgba(0,0,0,0)',topFillColor1:'rgba(0,0,0,0)',topFillColor2:'rgba(0,0,0,0)',
-      bottomLineColor:downCol,bottomFillColor1:_liteHexToRgba(downCol,.05),bottomFillColor2:_liteHexToRgba(downCol,.32),
-      lineWidth:1,priceScaleId:'right',title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
-    });
-    downSeries.setData(downZone);
-    rsiLine.createPriceLine({price:60,color:upCol,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
-    rsiLine.createPriceLine({price:30,color:downCol,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
+    cloudSeries.setData(clipped);
+    rsiLine.createPriceLine({price:70,color:'#9ca3af',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
+    rsiLine.createPriceLine({price:30,color:'#9ca3af',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
     rsiLine.createPriceLine({price:85,color:'#e02424',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:false});
     _liteMacdCrosshairSeries=rsiLine;
     _liteMacdValueByTime=new Map(rsiAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
-    _liteIndicatorSeries.push({chart:_liteMacdChart,series:rsiLine},{chart:_liteMacdChart,series:upSeries},{chart:_liteMacdChart,series:downSeries});
+    _liteIndicatorSeries.push({chart:_liteMacdChart,series:cloudSeries},{chart:_liteMacdChart,series:rsiLine});
   }else{
     _liteMacdValueByTime=new Map();
   }
