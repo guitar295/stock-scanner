@@ -2233,6 +2233,8 @@ const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706',
 const LITE_EMA_DEFAULT_COLORS=['#ff0000','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
 const LITE_RSI_PERIOD=14;
 const LITE_RSI_DEFAULT_COLOR='#7c6ee6';
+const LITE_CANDLE_UP_COLOR='#26a69a', LITE_CANDLE_DOWN_COLOR='#ef5350';
+const LITE_VOLUME_UP_COLOR='rgba(38,166,154,.62)', LITE_VOLUME_DOWN_COLOR='rgba(239,83,80,.62)';
 const LITE_IND_DEFAULT_COLORS={bb:'#9333ea',rsi:LITE_RSI_DEFAULT_COLOR,'trend-up':'#64fa96','trend-down':'#fa9696'};
 LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
 LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
@@ -2371,8 +2373,8 @@ function initLiteChart(){
     rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });  _liteCandle=_liteChart.addCandlestickSeries({
-    upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',
-    borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'
+    upColor:LITE_CANDLE_UP_COLOR,downColor:LITE_CANDLE_DOWN_COLOR,borderUpColor:LITE_CANDLE_UP_COLOR,
+    borderDownColor:LITE_CANDLE_DOWN_COLOR,wickUpColor:LITE_CANDLE_UP_COLOR,wickDownColor:LITE_CANDLE_DOWN_COLOR
   });
   _liteVolume=_liteChart.addHistogramSeries({
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
@@ -2539,7 +2541,7 @@ function updateLiteTitle(bar){
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
-  const col=up?'#26a69a':'#ef5350';
+  const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const v=n=>`<span style="color:${col}">${fmtLiteNum(n)}</span>`;
   DOM.liteChartTitle.innerHTML=`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:${v(bar.open)} H:${v(bar.high)} L:${v(bar.low)} C:${v(bar.close)} (<span style="color:${col}">${sign}${pct.toFixed(2)}%</span>)`;
 }
@@ -2611,6 +2613,15 @@ function _bbands(data,n=20,mult=2){
     lower.push({time:data[i].time,value:m-mult*sd});
   }
   return{upper,mid,lower};
+}
+function _liteVolumeColorForBar(bar){
+  return bar&&Number(bar.close)>=Number(bar.open)?LITE_VOLUME_UP_COLOR:LITE_VOLUME_DOWN_COLOR;
+}
+function _liteNormalizeVolumeData(volume,data){
+  return (volume||[]).map((v,idx)=>{
+    const bar=data[idx];
+    return {...v,color:_liteVolumeColorForBar(bar)};
+  });
 }
 function _rsi(data,n=LITE_RSI_PERIOD){
   if(!data||data.length<=n)return [];
@@ -4182,7 +4193,7 @@ async function loadLiteChart(sym='FPT',retry=1){
       return{...bar,pct};
     });
     _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
-    _liteVolumeData=j.volume||[];
+    _liteVolumeData=_liteNormalizeVolumeData(j.volume,_liteData);
     _liteCandle.setData(_liteData);
     _liteVolume.setData(_liteVolumeData);
     _liteUpdateWhitespace();
