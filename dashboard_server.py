@@ -1851,6 +1851,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
             </div>
           </div>
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
+          <div class="lite-ind-group" data-group="rsi">
+            <input type="checkbox" value="rsi">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="rsi">RSI<span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="rsi">
+              <div style="display:flex;gap:10px">
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Mua<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="rsi-up" value="#64fa96"></label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:10px">Bán<input type="color" class="lite-ind-color lite-ind-color-visible" data-ind="rsi-down" value="#fa9696"></label>
+              </div>
+            </div>
+          </div>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
@@ -2225,7 +2235,7 @@ const LITE_MA_PERIODS=[10,20,30,50,100,200];
 const LITE_EMA_PERIODS=[10,20,30,50,100,200];
 const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
 const LITE_EMA_DEFAULT_COLORS=['#f97316','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
-const LITE_IND_DEFAULT_COLORS={bb:'#9333ea','trend-up':'#64fa96','trend-down':'#fa9696'};
+const LITE_IND_DEFAULT_COLORS={bb:'#9333ea','trend-up':'#64fa96','trend-down':'#fa9696','rsi-up':'#64fa96','rsi-down':'#fa9696'};
 LITE_MA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ma'+p]=LITE_MA_DEFAULT_COLORS[idx];});
 LITE_EMA_PERIODS.forEach((p,idx)=>{LITE_IND_DEFAULT_COLORS['ema'+p]=LITE_EMA_DEFAULT_COLORS[idx];});
 let _liteIndColors={...LITE_IND_DEFAULT_COLORS};
@@ -2551,6 +2561,30 @@ function _bbands(data,n=20,mult=2){
   }
   return{upper,mid,lower};
 }
+function _rsi(data,n=14){
+  // RSI kiểu Wilder (RMA) — đúng chuẩn hàm RSI() của AmiBroker: seed = trung bình cộng (gain/loss)
+  // của n phiên đầu, sau đó làm mượt dần bằng công thức avg=(avg*(n-1)+x)/n.
+  const out=[];let avgGain=null,avgLoss=null;
+  for(let i=1;i<data.length;i++){
+    const diff=data[i].close-data[i-1].close;
+    const gain=diff>0?diff:0,loss=diff<0?-diff:0;
+    if(avgGain===null){
+      if(i<n)continue;
+      let sg=0,sl=0;
+      for(let k=i-n+1;k<=i;k++){
+        const d=data[k].close-data[k-1].close;
+        sg+=d>0?d:0;sl+=d<0?-d:0;
+      }
+      avgGain=sg/n;avgLoss=sl/n;
+    }else{
+      avgGain=(avgGain*(n-1)+gain)/n;
+      avgLoss=(avgLoss*(n-1)+loss)/n;
+    }
+    const rsiVal=avgLoss===0?100:100-(100/(1+avgGain/avgLoss));
+    out.push({time:data[i].time,value:rsiVal});
+  }
+  return out;
+}
 function _macd(data){
   const e12=_ema(data,12),e26=_ema(data,26),byTime=new Map(e12.map(x=>[x.time,x.value]));
   const macd=e26.map(x=>({time:x.time,value:(byTime.get(x.time)||0)-x.value}));
@@ -2644,7 +2678,7 @@ function alignLiteSeries(points){
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
 function applyLitePaneLayout(){
-  const showMacd=_liteChecked('macd');
+  const showMacd=_liteChecked('macd')||_liteChecked('rsi');
   const totalH=710;
   const macdH=showMacd?Math.max(120,Math.min(340,DOM.liteMacdChart.clientHeight||176)):0;
   DOM.liteMacdChart.style.display=showMacd?'block':'none';
@@ -3021,7 +3055,7 @@ function _liteDrawBBBand(ctx){
     if(x===null||y===null)continue;
     ctx.lineTo(x,y);
   }
-  if(started){ctx.closePath();ctx.fillStyle=_liteHexAlpha(color,.12);ctx.fill();}
+  if(started){ctx.closePath();ctx.fillStyle=_liteHexAlpha(color,.07);ctx.fill();}
   ctx.restore();
 }
 function _liteDrawTrendCloud(ctx){
@@ -3886,6 +3920,7 @@ function renderLiteIndicators(){
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showMacd=_liteChecked('macd');
+  const showRsi=!showMacd&&_liteChecked('rsi'); // MACD và RSI dùng chung panel, MACD ưu tiên nếu cả 2 lỡ cùng bật
   const maEmaOn=_liteChecked('maema_on');
   const maOn=maEmaOn?LITE_MA_PERIODS.filter(p=>_liteChecked('ma'+p)):[];
   const emaOn=maEmaOn?LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p)):[];
@@ -3949,6 +3984,40 @@ function renderLiteIndicators(){
     _liteMacdCrosshairSeries=macdLine;
     _liteMacdValueByTime=new Map(macdAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
+  }else if(showRsi){
+    // RSI(14) kiểu Wilder. Đường RSI nền vẽ liên tục màu trung tính (giống Plot(RSI...) gốc).
+    // Tô cloud CHỈ khi vượt ngưỡng: xanh khi RSI>60 (baseline tại 60), đỏ khi RSI<30 (baseline tại 30) —
+    // đúng công thức IIf(r>60,colorGreen,IIf(r>30,colorWhite,colorRed)) trong code AmiBroker gốc.
+    const rsiAligned=alignLiteSeries(_rsi(_liteData,14));
+    const upCol=_liteIndColors['rsi-up']||'#64fa96',downCol=_liteIndColors['rsi-down']||'#fa9696';
+    const rsiLine=_liteMacdChart.addLineSeries({
+      color:'#6b7280',lineWidth:1,priceScaleId:'right',title:'',
+      priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false,
+      autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})
+    });
+    rsiLine.setData(rsiAligned);
+    const upZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value>=60);
+    const upSeries=_liteMacdChart.addBaselineSeries({
+      baseValue:{type:'price',price:60},
+      topLineColor:upCol,topFillColor1:_liteHexToRgba(upCol,.32),topFillColor2:_liteHexToRgba(upCol,.05),
+      bottomLineColor:'rgba(0,0,0,0)',bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',
+      lineWidth:1,priceScaleId:'right',title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    });
+    upSeries.setData(upZone);
+    const downZone=rsiAligned.filter(x=>Number.isFinite(x.value)&&x.value<=30);
+    const downSeries=_liteMacdChart.addBaselineSeries({
+      baseValue:{type:'price',price:30},
+      topLineColor:'rgba(0,0,0,0)',topFillColor1:'rgba(0,0,0,0)',topFillColor2:'rgba(0,0,0,0)',
+      bottomLineColor:downCol,bottomFillColor1:_liteHexToRgba(downCol,.05),bottomFillColor2:_liteHexToRgba(downCol,.32),
+      lineWidth:1,priceScaleId:'right',title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
+    });
+    downSeries.setData(downZone);
+    rsiLine.createPriceLine({price:60,color:upCol,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
+    rsiLine.createPriceLine({price:30,color:downCol,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:false});
+    rsiLine.createPriceLine({price:85,color:'#e02424',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:false});
+    _liteMacdCrosshairSeries=rsiLine;
+    _liteMacdValueByTime=new Map(rsiAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
+    _liteIndicatorSeries.push({chart:_liteMacdChart,series:rsiLine},{chart:_liteMacdChart,series:upSeries},{chart:_liteMacdChart,series:downSeries});
   }else{
     _liteMacdValueByTime=new Map();
   }
@@ -4042,7 +4111,15 @@ function bindLiteChartControls(){
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
-  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();setLiteRightOffset();});
+  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',e=>{
+    // MACD và RSI dùng chung 1 panel dưới nên loại trừ lẫn nhau: bật cái này thì tự tắt cái kia.
+    const t=e.target;
+    if(t&&t.type==='checkbox'&&t.checked){
+      if(t.value==='rsi')DOM.liteIndicators.querySelectorAll('input[value="macd"]').forEach(cb=>{cb.checked=false;});
+      else if(t.value==='macd')DOM.liteIndicators.querySelectorAll('input[value="rsi"]').forEach(cb=>{cb.checked=false;});
+    }
+    saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();setLiteRightOffset();
+  });
   if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
     // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
