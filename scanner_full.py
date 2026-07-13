@@ -1539,16 +1539,17 @@ def _get_chart_context(symbol: str):
     if is_index:
         df_raw = fetch_index_history(symbol)
     else:
+        # Dùng chung cơ chế "vá nến hôm nay nếu quá BAR_UPDATE_TTL_SEC" với thẻ CHART
+        # (ensure_symbol_live_in_cache), thay vì chỉ kiểm tra tươi theo NGÀY như trước.
+        # Nhờ vậy mã NGOÀI danh sách quét (không được run_scan_cycle() chạm tới) khi
+        # xem qua scanner chart / Telegram cũng được vá giá/khối lượng mới nhất trong
+        # phiên, không còn bị coi là "fresh" chỉ vì nến cuối cùng ngày với hôm nay.
+        ensure_symbol_live_in_cache(symbol)
         with cache_lock:
             cached = history_cache.get(symbol)
             df_raw = cached.copy() if cached is not None and len(cached) >= 10 else None
         if df_raw is not None:
-            if _cache_is_fresh(df_raw, current_date, now_time):
-                source = "history_cache"
-            else:
-                print(f"  [ChartCore] {symbol}: cache stale ({df_raw.index[-1].date()} < "
-                      f"{_expected_last_session(current_date, now_time)}) → fresh")
-                df_raw = None
+            source = "history_cache"
         if df_raw is None:
             source = "fresh"
             df_raw = fetch_fresh_for_chart(symbol, current_date)
