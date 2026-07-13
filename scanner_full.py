@@ -616,6 +616,25 @@ def build_history_cache(symbols: list, current_date: date):
 # BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
 # =============================================================================
 CACHE_CHECK_SYMBOL = 'HPG'
+SESSION_MORNING_START = 85500
+SESSION_MORNING_END = 113000
+SESSION_AFTERNOON_START = 130000
+SESSION_AFTERNOON_END = 150000
+
+def _is_trading_session_time(current_date: date, now_time: int) -> bool:
+    if current_date.weekday() >= 5:
+        return False
+    return (
+        SESSION_MORNING_START <= now_time <= SESSION_MORNING_END or
+        SESSION_AFTERNOON_START <= now_time <= SESSION_AFTERNOON_END
+    )
+
+def _next_trading_session_label(now_time: int) -> str:
+    if now_time < SESSION_MORNING_START:
+        return "08:55"
+    if now_time < SESSION_AFTERNOON_START:
+        return "13:00"
+    return "08:55 ngày mai"
 
 def _expected_last_session(current_date: date, now_time: int) -> date:
     """
@@ -760,7 +779,7 @@ def chart_symbol_status(symbol: str) -> dict:
     if not _cache_is_fresh(df_hist, current_date, now_time):
         return {"symbol": symbol, "cached": True, "need_fetch": True, "reason": "stale_session"}
 
-    if current_date.weekday() >= 5 or now_time < 90000:
+    if not _is_trading_session_time(current_date, now_time):
         return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "outside_session"}
 
     last_touch = last_bar_update.get(symbol, 0)
@@ -799,7 +818,7 @@ def ensure_symbol_live_in_cache(symbol: str) -> bool:
             return True
         # Fetch fresh lỗi → rơi xuống logic live-update bên dưới để vẫn thử vá tạm
 
-    if current_date.weekday() >= 5 or now_time < 90000:
+    if not _is_trading_session_time(current_date, now_time):
         return True
 
     last_touch = last_bar_update.get(symbol, 0)
@@ -2047,10 +2066,7 @@ while True:
             print("🔧 Reload cache lịch sử cho ngày mới...")
             build_history_cache(symbols_to_cache, current_date)
 
-        is_morning   =  85500 <= now_time <= 113000
-        is_afternoon = 130000 <= now_time <= 150000
-
-        if not (is_morning or is_afternoon):
+        if not _is_trading_session_time(current_date, now_time):
             # Tự dò + tự sửa cache lệch phiên — CHỈ chạy ngoài giờ giao dịch, với nhịp
             # riêng CACHE_CHECK_INTERVAL_SEC (30 phút), hoàn toàn tách khỏi SCAN_INTERVAL_SEC
             # (nhịp quét tín hiệu). Vòng lặp vẫn "thức" mỗi SCAN_INTERVAL_SEC để không lỡ
@@ -2059,9 +2075,7 @@ while True:
                 _last_cache_check_ts = time.time()
                 check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
 
-            if   now_time < 85000:  next_open = "09:00"
-            elif now_time < 130000: next_open = "13:00"
-            else:                   next_open = "09:00 ngày mai"
+            next_open = _next_trading_session_label(now_time)
             print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
             time.sleep(SCAN_INTERVAL_SEC)
             continue
