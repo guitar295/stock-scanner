@@ -2332,19 +2332,10 @@ function _liteSyncVisibleRangeFrom(source,range){
   });
   _liteSyncing=false;
 }
-function _liteRsiBackgroundCss(){
-  return '#fff';
-}
-function _liteApplyRsiBackground(){
-  if(!DOM.liteRsiChart)return;
-  DOM.liteRsiChart.style.background=_liteChecked('rsi')?_liteRsiBackgroundCss():'#fff';
-}
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-let _liteRsiValueByTime=new Map();
-let _liteMacdValueByTime=new Map();
 const LITE_BARS_VISIBLE=300,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
@@ -2471,7 +2462,6 @@ function initLiteChart(){
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
       if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
       if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-      _liteApplyRsiBackground();
       resizeLiteDrawCanvas();redrawLiteDrawings();
     });
     // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục);
@@ -2483,7 +2473,6 @@ function initLiteChart(){
     };
     requestAnimationFrame(_liteDrawLoop);
   }
-  _liteApplyRsiBackground();
 }
 function _liteChecked(name){
   return !!DOM.liteIndicators?.querySelector(`input[value="${name}"]:checked`);
@@ -2590,8 +2579,6 @@ function _clearLiteIndicators(){
   _liteIndicatorSeries=[];
   _liteRsiCrosshairSeries=null;
   _liteMacdCrosshairSeries=null;
-  _liteRsiValueByTime=new Map();
-  _liteMacdValueByTime=new Map();
   _liteBBFillData=null;
   _liteTrendFillData=null;
 }
@@ -2783,7 +2770,6 @@ function applyLitePaneLayout(){
   }finally{
     _liteSyncing=prevSyncing;
   }
-  _liteApplyRsiBackground();
   resizeLiteDrawCanvas();redrawLiteDrawings();
 }
 // ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══
@@ -3131,11 +3117,26 @@ function _liteTimeToX(t){
   const c=_liteChart&&_liteChart.timeScale().timeToCoordinate(t);
   return Number.isFinite(c)?c:null;
 }
+function _liteMainPlotWidth(){
+  const w=DOM.liteChart?.clientWidth||0;
+  let axisW=64;
+  try{
+    const psW=_liteChart&&_liteChart.priceScale('right')&&_liteChart.priceScale('right').width();
+    if(Number.isFinite(psW)&&psW>0)axisW=psW;
+  }catch(e){}
+  return Math.max(0,w-axisW);
+}
+function _liteClipMainPlot(ctx){
+  ctx.beginPath();
+  ctx.rect(0,0,_liteMainPlotWidth(),DOM.liteChart.clientHeight||0);
+  ctx.clip();
+}
 function _liteDrawBBBand(ctx){
   if(!_liteBBFillData||!_liteChart)return;
   const{upper,lower,color}=_liteBBFillData;
   if(!upper||!lower||!upper.length||!lower.length)return;
   ctx.save();
+  _liteClipMainPlot(ctx);
   ctx.beginPath();
   let started=false;
   for(let i=0;i<upper.length;i++){
@@ -3148,13 +3149,14 @@ function _liteDrawBBBand(ctx){
     if(x===null||y===null)continue;
     ctx.lineTo(x,y);
   }
-  if(started){ctx.closePath();ctx.fillStyle=_liteHexAlpha(color,.12);ctx.fill();}
+  if(started){ctx.closePath();ctx.fillStyle=_liteHexAlpha(color,.075);ctx.fill();}
   ctx.restore();
 }
 function _liteDrawTrendCloud(ctx){
   if(!_liteTrendFillData||!_liteChart||!_liteTrendFillData.length)return;
   const pts=_liteTrendFillData;
   ctx.save();
+  _liteClipMainPlot(ctx);
   let i=0;
   while(i<pts.length){
     const trend=pts[i].trend;
@@ -4030,7 +4032,6 @@ function renderLiteIndicators(){
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   applyLitePaneLayout();
-  _liteApplyRsiBackground();
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
   // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
   maOn.forEach(p=>{
@@ -4079,9 +4080,11 @@ function renderLiteIndicators(){
   if(showRsi){
     const rsiCol=_liteIndColors.rsi||LITE_RSI_DEFAULT_COLOR;
     const rsiFill=_liteHexToRgba(rsiCol,.12);
-    const rsiBand=_liteRsiChart.addAreaSeries({
+    const rsiBand=_liteRsiChart.addBaselineSeries({
       priceScaleId:'right',baseValue:{type:'price',price:30},
-      topColor:rsiFill,bottomColor:rsiFill,lineColor:'rgba(0,0,0,0)',lineWidth:1,
+      topFillColor1:rsiFill,topFillColor2:rsiFill,
+      bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',
+      topLineColor:'rgba(0,0,0,0)',bottomLineColor:'rgba(0,0,0,0)',lineWidth:1,
       lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false
     });
     const rsiSeries=_liteRsiChart.addLineSeries({
@@ -4103,7 +4106,6 @@ function renderLiteIndicators(){
     level50.setData(constLine(50));
     level30.setData(constLine(30));
     _liteRsiCrosshairSeries=rsiSeries;
-    _liteRsiValueByTime=new Map(rsiAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
     _liteIndicatorSeries.push(
       {chart:_liteRsiChart,series:rsiBand},
       {chart:_liteRsiChart,series:bounds20},
@@ -4113,8 +4115,6 @@ function renderLiteIndicators(){
       {chart:_liteRsiChart,series:level30},
       {chart:_liteRsiChart,series:rsiSeries}
     );
-  }else{
-    _liteRsiValueByTime=new Map();
   }
   if(showMacd){
     const m=_macd(_liteData);
@@ -4126,10 +4126,7 @@ function renderLiteIndicators(){
     hist.setData(histScaled);macdLine.setData(macdAligned);sigLine.setData(alignLiteSeries(m.signal));
     hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
     _liteMacdCrosshairSeries=macdLine;
-    _liteMacdValueByTime=new Map(macdAligned.filter(x=>x&&Number.isFinite(x.value)).map(x=>[liteTimeKey(x.time),x.value]));
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
-  }else{
-    _liteMacdValueByTime=new Map();
   }
   _liteRefreshVolumeTop();
   if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
