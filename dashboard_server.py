@@ -1289,7 +1289,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel.collapsed .lite-draw-toolbar,
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
-.lite-chart-frame{width:100%;height:710px;background:#fff;position:relative}
+.lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
 #lite-chart{width:100%;height:540px}
 #lite-rsi-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
@@ -2750,7 +2750,7 @@ function alignLiteSeries(points){
 function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  const totalH=710;
+  const totalH=720;
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
