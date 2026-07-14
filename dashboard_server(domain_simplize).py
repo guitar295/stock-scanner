@@ -1318,7 +1318,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-ind-group{position:relative;display:flex;align-items:center;gap:4px}
 .lite-ind-color-visible{position:static!important;width:14px!important;height:14px!important;opacity:1!important;pointer-events:auto!important;border:1px solid var(--border);border-radius:3px;padding:0;cursor:pointer}
 .lite-ind-dropdown-sub-title{font-size:9px;font-weight:700;color:var(--muted);margin:4px 0 1px;letter-spacing:.03em}
-.lite-ind-dropdown-master{padding-bottom:6px;margin-bottom:2px;border-bottom:1px solid var(--border);font-weight:700}
 .lite-ind-group-btn{display:flex;align-items:center;gap:3px;height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
 .lite-ind-group-btn:hover{color:var(--accent);border-color:var(--accent)}
 .lite-ind-group.open .lite-ind-group-btn{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
@@ -1807,9 +1806,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
         <div class="lite-indicators" id="lite-indicators">
           <div class="lite-ind-group" data-group="maema">
+            <input type="checkbox" class="lite-ind-master" value="maema_on">
             <button type="button" class="lite-ind-group-btn" data-group-btn="maema">MA/EMA<span class="lite-ind-count" data-count="maema"></span><span class="lite-ind-caret">▾</span></button>
             <div class="lite-ind-dropdown" data-dropdown="maema" style="min-width:120px">
-              <label class="lite-ind-dropdown-master"><input type="checkbox" class="lite-ind-master" value="maema_on"><span>Bật MA/EMA</span></label>
               <div class="lite-ind-dropdown-sub-title">MA</div>
               <label><input type="checkbox" value="ma10"><span class="lite-ind-label" data-ind="ma10" title="Bấm để đổi màu">MA10</span><input type="color" class="lite-ind-color" data-ind="ma10" value="#ff0000"></label>
               <label><input type="checkbox" value="ma20"><span class="lite-ind-label" data-ind="ma20" title="Bấm để đổi màu">MA20</span><input type="color" class="lite-ind-color" data-ind="ma20" value="#008000"></label>
@@ -2255,7 +2254,7 @@ function bindLiteIndColorPickers(){
 function updateLiteIndGroupCounts(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group').forEach(grp=>{
     const key=grp.dataset.group;
-    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked:not(.lite-ind-master)').length;
+    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked').length;
     const badge=grp.querySelector(`.lite-ind-count[data-count="${key}"]`);
     if(badge){badge.textContent=n||'';badge.classList.toggle('on',n>0);}
   });
