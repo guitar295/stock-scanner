@@ -2346,7 +2346,7 @@ function initLiteChart(){
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.16,bottom:.28}},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.14,bottom:.25}},
     handleScale:{axisPressedMouseMove:{time:true,price:true}}
   });
   _liteRsiChart=LightweightCharts.createChart(DOM.liteRsiChart,{
@@ -2357,7 +2357,7 @@ function initLiteChart(){
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.07,bottom:.10}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });  _liteCandle=_liteChart.addCandlestickSeries({
     upColor:LITE_CANDLE_UP_COLOR,downColor:LITE_CANDLE_DOWN_COLOR,borderUpColor:LITE_CANDLE_UP_COLOR,
@@ -2776,7 +2776,7 @@ function applyLitePaneLayout(){
     _liteChart.applyOptions({
       width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
       timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.16,bottom:.24}}
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.14,bottom:.21}}
     });
     if(_liteRsiChart)_liteRsiChart.applyOptions({
       width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
@@ -2786,7 +2786,7 @@ function applyLitePaneLayout(){
     if(_liteMacdChart)_liteMacdChart.applyOptions({
       width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
       timeScale:{visible:showMacdTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.07,bottom:.10}}
     });
   }finally{
     _liteSyncing=prevSyncing;
@@ -4183,7 +4183,7 @@ function renderLiteIndicators(){
     const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
     const macdAligned=alignLiteSeries(m.macd);
     hist.setData(histScaled);macdLine.setData(macdAligned);sigLine.setData(alignLiteSeries(m.signal));
-    hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
+    hist.priceScale().applyOptions({scaleMargins:{top:.07,bottom:.10}});
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
@@ -4247,7 +4247,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
-    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.16,bottom:.24}});
+    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.14,bottom:.21}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteApplyBuySignal();
