@@ -2560,10 +2560,10 @@ function _liteApplyBuySignal(){
     if(DOM.liteChartSignal){
       DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
       DOM.liteChartSignal.classList.add('on');
-      // Lấy đúng màu chữ của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — không khai báo
+      // Lấy đúng màu viền của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — không khai báo
       // lại bảng màu riêng, mũi tên luôn đồng bộ màu với badge kể cả khi CSS đổi màu sau này.
       const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
-      if(badgeEl)arrowColor=getComputedStyle(badgeEl).color||arrowColor;
+      if(badgeEl)arrowColor=getComputedStyle(badgeEl).borderColor||arrowColor;
     }
     // Mũi tên báo mua: thu nhỏ còn một nửa (size:1 thay vì 2), không set text để không hiện badge
     // tên tín hiệu ngay dưới mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
