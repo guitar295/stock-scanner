@@ -26,9 +26,11 @@ import requests
 import time
 import mplfinance as mpf
 import matplotlib.pyplot as plt
+import logging
 import os
 import re
 import tempfile
+from io import BytesIO
 from datetime import datetime, date
 import pytz
 import json
@@ -36,6 +38,8 @@ import threading
 import math
 from PIL import Image, ImageDraw, ImageFont
 from dashboard_server import start_dashboard
+
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
 # =============================================================================
 # BƯỚC 2: CẤU HÌNH
@@ -47,6 +51,7 @@ MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
 DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
+CACHE_CHECK_INTERVAL_SEC = 1800   # nhịp tự dò/sửa history_cache NGOÀI giờ giao dịch — độc lập với SCAN_INTERVAL_SEC
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
 register_user(VNSTOCK_API)
@@ -513,8 +518,17 @@ vn30_symbols = [
     'TIG','TNG','TPB','VCB','VCI','VGT','VHC','VHM','VIB','VIC','VJC','VNM','VPB','VRE',
     'MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF'
 ]
+heatmap_symbols = {
+    s
+    for col in HEATMAP_COLUMNS
+    for group in col["groups"]
+    for s in group["symbols"]
+}
+cache_symbol_set = set(vn30_symbols) | set(TRADING_STOCKS_POOL) | heatmap_symbols
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
+symbols_to_cache = [s for s in all_symbols if s in cache_symbol_set]
 print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to_scan)}")
+print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã")
 
 # =============================================================================
 # BƯỚC 5: HÀM TÍNH CHỈ BÁO
@@ -561,8 +575,9 @@ def compute_indicators(df):
 # BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
 history_cache: dict = {}
-cache_date          = None
 cache_lock          = threading.Lock()
+last_bar_update: dict = {}   # {symbol: timestamp} - dùng chung cho CẢ scan cycle lẫn chart on-demand
+BAR_UPDATE_TTL_SEC = 60
 
 def load_history_for_symbol(symbol: str, current_date: date):
     for attempt in range(3):
@@ -573,7 +588,6 @@ def load_history_for_symbol(symbol: str, current_date: date):
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
-            df_raw = df_raw[df_raw.index.date < current_date]
             return df_raw[['open','high','low','close','volume']].copy()
         except Exception as e:
             if attempt < 2: time.sleep(2)
@@ -581,30 +595,77 @@ def load_history_for_symbol(symbol: str, current_date: date):
     return None
 
 def build_history_cache(symbols: list, current_date: date):
-    global cache_date
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã...")
-    loaded = 0
+    new_history = {}
     for i, symbol in enumerate(symbols, 1):
         df = load_history_for_symbol(symbol, current_date)
         if df is not None and len(df) >= 60:
-            with cache_lock: history_cache[symbol] = df
-            loaded += 1
+            new_history[symbol] = df
         if i % 20 == 0:
             ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
             print(f"  [{ts2}] Đã load {i}/{len(symbols)} mã...")
         time.sleep(0.3)
-    with cache_lock: cache_date = current_date
+    with cache_lock:
+        history_cache.clear()
+        history_cache.update(new_history)
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"✅ [{ts}] Cache hoàn tất: {loaded}/{len(symbols)} mã có dữ liệu.")
+    print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
 
 # =============================================================================
 # BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
 # =============================================================================
 CACHE_CHECK_SYMBOL = 'HPG'
+SESSION_MORNING_START = 85500
+SESSION_MORNING_END = 113000
+SESSION_AFTERNOON_START = 130000
+SESSION_AFTERNOON_END = 150000
+
+def _is_trading_session_time(current_date: date, now_time: int) -> bool:
+    if current_date.weekday() >= 5:
+        return False
+    return (
+        SESSION_MORNING_START <= now_time <= SESSION_MORNING_END or
+        SESSION_AFTERNOON_START <= now_time <= SESSION_AFTERNOON_END
+    )
+
+def _next_trading_session_label(now_time: int) -> str:
+    if now_time < SESSION_MORNING_START:
+        return "08:55"
+    if now_time < SESSION_AFTERNOON_START:
+        return "13:00"
+    return "08:55 ngày mai"
+
+def _expected_last_session(current_date: date, now_time: int) -> date:
+    """
+    Ngày nến cuối cùng mà cache/lịch sử BẮT BUỘC phải có tính tới thời điểm hiện tại.
+    Dùng chung cho mọi nơi cần biết "cache đã đủ mới chưa" (build cache theo ngày,
+    ensure-on-demand cho lite chart, chart on-demand cho Telegram/scanner).
+    - Ngày thường, trước 15:00 (chưa chốt phiên) → kỳ vọng = phiên liền trước.
+    - Ngày thường, từ 15:00 (đã chốt phiên) → kỳ vọng = chính hôm nay.
+    """
+    expected = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
+    if current_date.weekday() < 5 and now_time >= 150000:
+        expected = current_date
+    return expected
+
+def _cache_is_fresh(df_hist, current_date: date, now_time: int) -> bool:
+    """True nếu nến cuối của df_hist đã đạt tới _expected_last_session()."""
+    if df_hist is None or len(df_hist) == 0:
+        return False
+    return df_hist.index[-1].date() >= _expected_last_session(current_date, now_time)
 
 def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
-    ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+    """
+    Kiểm tra 1 mã mẫu đại diện cho cả `history_cache`; nếu lệch phiên kỳ vọng thì
+    rebuild lại toàn bộ. Hàm này KHÔNG tự giới hạn tần suất gọi — việc gọi hàm này
+    cách nhau bao lâu (30 phút, ngoài giờ giao dịch) do nơi gọi (vòng lặp chính,
+    qua CACHE_CHECK_INTERVAL_SEC) quyết định, để tách bạch rõ "khi nào kiểm tra"
+    khỏi "kiểm tra làm gì".
+    """
+    now_obj  = datetime.now(TZ_VN)
+    ts       = now_obj.strftime('%H:%M:%S')
+    now_time = int(now_obj.strftime("%H%M%S"))
 
     with cache_lock:
         check_sym = CACHE_CHECK_SYMBOL if CACHE_CHECK_SYMBOL in history_cache else (
@@ -612,29 +673,21 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         )
         sample_df = history_cache.get(check_sym) if check_sym else None
 
-    if sample_df is None:
-        print(f"  [{ts}] 🔍 Cache check: không có dữ liệu → rebuild")
-        build_history_cache(symbols, current_date)
-        return False
-
-    cache_last = sample_df.index[-1].date()
-    prev_bday  = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
-
-    print(f"  [{ts}] 🔍 Cache check [{check_sym}]: nến cuối = {cache_last} | kỳ vọng ≥ {prev_bday}")
-
-    if cache_last < prev_bday:
-        print(f"  [{ts}] ⚠️  Cache STALE ({cache_last} < {prev_bday}) → Rebuild ngay...")
-        build_history_cache(symbols, current_date)
-        with cache_lock:
-            sample_df2 = history_cache.get(check_sym)
-        if sample_df2 is not None:
-            new_last = sample_df2.index[-1].date()
-            ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
-            print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
-        return False
-    else:
-        print(f"  [{ts}] ✅ Cache OK ({cache_last} ≥ {prev_bday})")
+    expected = _expected_last_session(current_date, now_time)
+    if _cache_is_fresh(sample_df, current_date, now_time):
+        print(f"  [{ts}] ✅ Cache OK [{check_sym}] ({sample_df.index[-1].date()} ≥ {expected})")
         return True
+
+    reason = "không có dữ liệu" if sample_df is None else f"nến cuối = {sample_df.index[-1].date()}"
+    print(f"  [{ts}] ⚠️  Cache STALE ({reason}, kỳ vọng ≥ {expected}) → Rebuild ngay...")
+    build_history_cache(symbols, current_date)
+    with cache_lock:
+        sample_df2 = history_cache.get(check_sym) if check_sym else None
+    if sample_df2 is not None:
+        new_last = sample_df2.index[-1].date()
+        ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
+        print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
+    return False
 
 def fetch_today_bar(symbol: str, current_date: date):
     for attempt in range(3):
@@ -697,11 +750,100 @@ def fetch_today_bar(symbol: str, current_date: date):
             else: print(f"    ❌ fetch_today_bar {symbol}: {e}")
     return None
 
-def merge_today_bar(df_hist, today_bar, current_date: date):
-    today_ts = pd.Timestamp(current_date)
-    new_row  = pd.DataFrame([today_bar], index=[today_ts])
-    df_hist  = df_hist[df_hist.index.date < current_date]
-    return pd.concat([df_hist, new_row])
+def upsert_today_bar(df_hist, today_bar):
+    bar_date = pd.Timestamp(today_bar.name).date()
+    new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
+    df_hist = df_hist[df_hist.index.date != bar_date]
+    return pd.concat([df_hist, new_row]).sort_index()
+
+def chart_symbol_status(symbol: str) -> dict:
+    """
+    Kiểm tra nhanh (KHÔNG gọi mạng/vnstock) xem việc tải chart cho `symbol`
+    sẽ được phục vụ từ cache có sẵn hay sẽ cần ensure_symbol_live_in_cache()
+    thực hiện một lượt gọi mạng (tải mới toàn bộ lịch sử, hoặc cập nhật nến
+    hôm nay từ vnstock). Dùng để hiển thị trạng thái "Đang tải cache" /
+    "Đang update chart" ở giao diện TRƯỚC khi gọi endpoint tải dữ liệu thật.
+    """
+    symbol = symbol.upper().strip()
+    now = datetime.now(TZ_VN)
+    current_date = now.date()
+    now_time = int(now.strftime("%H%M%S"))
+
+    with cache_lock:
+        df_hist = history_cache.get(symbol)
+    has_cache = df_hist is not None and len(df_hist) >= 60
+
+    if not has_cache:
+        return {"symbol": symbol, "cached": False, "need_fetch": True, "reason": "no_cache"}
+
+    if not _cache_is_fresh(df_hist, current_date, now_time):
+        return {"symbol": symbol, "cached": True, "need_fetch": True, "reason": "stale_session"}
+
+    if not _is_trading_session_time(current_date, now_time):
+        return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "outside_session"}
+
+    last_touch = last_bar_update.get(symbol, 0)
+    if time.time() - last_touch < BAR_UPDATE_TTL_SEC:
+        return {"symbol": symbol, "cached": True, "need_fetch": False, "reason": "recently_updated"}
+
+    return {"symbol": symbol, "cached": True, "need_fetch": True, "reason": "live_update_due"}
+
+
+def _append_chart_action(current: str, action: str) -> str:
+    return action if current == "skip" else f"{current}+{action}"
+
+
+def ensure_symbol_live_in_cache(symbol: str) -> dict:
+    symbol = symbol.upper().strip()
+    now = datetime.now(TZ_VN)
+    current_date = now.date()
+    now_time = int(now.strftime("%H%M%S"))
+    result = {"vnstock_action": "skip"}
+
+    with cache_lock:
+        df_hist = history_cache.get(symbol)
+
+    if df_hist is None or len(df_hist) < 60:
+        result["vnstock_action"] = "fetch_full_history"
+        df_hist = load_history_for_symbol(symbol, current_date)
+        if df_hist is None or len(df_hist) < 60:
+            return result
+        with cache_lock:
+            history_cache[symbol] = df_hist
+        return result
+
+    # Cache đã có nhưng lệch hơn 1 phiên so với kỳ vọng (ví dụ bị bỏ lỡ phiên gần nhất
+    # do không ai xem chart lúc phiên đó diễn ra) → nạp lại toàn bộ và ghi đè cache dùng
+    # chung, thay vì chỉ cố vá đúng bar "hôm nay" như nhánh live-update bên dưới.
+    if not _cache_is_fresh(df_hist, current_date, now_time):
+        result["vnstock_action"] = "fetch_full_history"
+        fresh = load_history_for_symbol(symbol, current_date)
+        if fresh is not None and len(fresh) >= 60:
+            with cache_lock:
+                history_cache[symbol] = fresh
+            last_bar_update[symbol] = time.time()
+            return result
+        # Fetch fresh lỗi → rơi xuống logic live-update bên dưới để vẫn thử vá tạm
+
+    if not _is_trading_session_time(current_date, now_time):
+        return result
+
+    last_touch = last_bar_update.get(symbol, 0)
+    if time.time() - last_touch < BAR_UPDATE_TTL_SEC:
+        return result
+
+    result["vnstock_action"] = _append_chart_action(result["vnstock_action"], "fetch_today_bar")
+    today_bar = fetch_today_bar(symbol, current_date)
+    last_bar_update[symbol] = time.time()
+    if today_bar is None:
+        return result
+
+    with cache_lock:
+        latest_hist = history_cache.get(symbol)
+        if latest_hist is None or len(latest_hist) < 60:
+            latest_hist = df_hist
+        history_cache[symbol] = upsert_today_bar(latest_hist, today_bar)
+    return result
 
 # =============================================================================
 # BƯỚC 5C: HÀM TIỆN ÍCH
@@ -1111,7 +1253,7 @@ def detect_signal(df, now_time):
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
-def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None):
+def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None, as_bytes=False):
     is_daily  = (timeframe == 'Daily')
     is_weekly = (timeframe == 'Weekly')
     is_15m    = (timeframe == '15m')
@@ -1150,12 +1292,14 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     mc           = mpf.make_marketcolors(up='#26A69A',down='#EF5350',edge='inherit',wick='inherit',alpha=1.0)
     custom_style = mpf.make_mpf_style(base_mpf_style='charles',marketcolors=mc,gridstyle='',facecolor='white')
 
-    fd, img_name = tempfile.mkstemp(suffix=f'_{symbol}_{timeframe.lower()}.png')
-    os.close(fd)
+    img_name = None
+    if not as_bytes:
+        fd, img_name = tempfile.mkstemp(suffix=f'_{symbol}_{timeframe.lower()}.png')
+        os.close(fd)
 
     fig, axlist = mpf.plot(
         df_plot, type='candle', volume=False, addplot=apds,
-        style=custom_style, savefig=dict(fname=img_name, dpi=150),
+        style=custom_style,
         figratio=(16,9), returnfig=True, show_nontrading=False, tight_layout=True
     )
     ax_price = axlist[0]
@@ -1216,18 +1360,26 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
 
     xlim = ax_price.get_xlim()
     ax_price.set_xlim(xlim[0], xlim[1]+20)
+    if as_bytes:
+        buf = BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.15, dpi=150)
+        png_bytes = buf.getvalue()
+        buf.close()
+        plt.close('all')
+        return png_bytes
     fig.savefig(img_name, bbox_inches='tight', pad_inches=0.15, dpi=150)
     plt.close('all')
     return img_name
 
 
-def _build_15m_chart(symbol: str, signal_type: str) -> str | None:
+def _build_15m_chart(symbol: str, signal_type: str, via: str = "telegram_15m") -> str | None:
     df_15m = fetch_intraday_15m(symbol)
     if df_15m is None or len(df_15m) < 2:
         print(f"  ⚠️  {symbol}: không có dữ liệu 15m")
         return None
     today_15m    = df_15m.iloc[-1]
     date_str_15m = _date_str_from_df(df_15m)
+    print(f"  [Chart] {symbol} | cache_state=intraday_15m | action=fetch_intraday_15m | source=vnstock_15m | last_bar={df_15m.index[-1]} | via={via}")
     return draw_chart(
         df_15m.tail(200).copy(), symbol, signal_type, today_15m,
         timeframe='15m', add_arrow=False, date_str=date_str_15m
@@ -1268,7 +1420,11 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             today_bar = fetch_today_bar(symbol, current_date)
             if today_bar is None: continue
 
-            df_merged   = merge_today_bar(df_hist, today_bar, current_date)
+            with cache_lock:
+                latest = upsert_today_bar(history_cache[symbol], today_bar)
+                history_cache[symbol] = latest
+                df_merged = latest.copy()
+            last_bar_update[symbol] = time.time()
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
@@ -1328,7 +1484,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             date_str_w = _date_str_from_df(df_merged)
             img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                     timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-            img_15m    = _build_15m_chart(symbol, signal_type)
+            img_15m    = _build_15m_chart(symbol, signal_type, via="scanner_signal_15m")
 
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
@@ -1379,96 +1535,204 @@ def _filter_symbols(raw_list: list):
     return result if result else None
 
 # =============================================================================
-# BƯỚC 8C: HÀM GỬI CHART ON-DEMAND — FETCH FRESH, KHÔNG DÙNG CACHE
+# BƯỚC 8C: PIPELINE CHART DÙNG CHUNG — DASHBOARD + TELEGRAM
 # =============================================================================
+def _get_chart_context(symbol: str):
+    symbol = symbol.upper().strip()
+    now_obj      = datetime.now(TZ_VN)
+    current_date = now_obj.date()
+    now_time     = int(now_obj.strftime("%H%M%S"))
+    is_index = symbol in INDEX_SYMBOLS
+    trace = {
+        "cache_state": "index" if is_index else "unknown",
+        "vnstock_action": "fetch_index_history" if is_index else "skip",
+        "source": "index_api" if is_index else "unknown",
+    }
+
+    if is_index:
+        df_raw = fetch_index_history(symbol)
+    else:
+        pre_status = chart_symbol_status(symbol)
+        trace["cache_state"] = pre_status.get("reason", "unknown")
+        # Dùng chung cơ chế "vá nến hôm nay nếu quá BAR_UPDATE_TTL_SEC" với thẻ CHART
+        # (ensure_symbol_live_in_cache), thay vì chỉ kiểm tra tươi theo NGÀY như trước.
+        # Nhờ vậy mã NGOÀI danh sách quét (không được run_scan_cycle() chạm tới) khi
+        # xem qua scanner chart / Telegram cũng được vá giá/khối lượng mới nhất trong
+        # phiên, không còn bị coi là "fresh" chỉ vì nến cuối cùng ngày với hôm nay.
+        ensure_result = ensure_symbol_live_in_cache(symbol)
+        trace["vnstock_action"] = ensure_result.get("vnstock_action", "skip")
+        with cache_lock:
+            cached = history_cache.get(symbol)
+            df_raw = cached.copy() if cached is not None and len(cached) >= 10 else None
+        if df_raw is not None:
+            trace["source"] = "history_cache"
+        if df_raw is None:
+            trace["vnstock_action"] = _append_chart_action(trace["vnstock_action"], "fetch_fresh_fallback")
+            trace["source"] = "fresh_fetch"
+            df_raw = fetch_fresh_for_chart(symbol, current_date)
+            # Ghi ngược vào history_cache dùng chung để các nơi khác (thẻ CHART, quét tín
+            # hiệu) không phải tự fetch lại từ đầu ở lần gọi kế tiếp.
+            if df_raw is not None and len(df_raw) >= 60:
+                with cache_lock:
+                    history_cache[symbol] = df_raw.copy()
+
+    if df_raw is None or len(df_raw) < 10:
+        return None
+
+    df_calc = compute_indicators(df_raw)
+    today = df_calc.iloc[-1]
+    signal_type = "INDEX" if is_index else (detect_signal(df_raw, now_time) or "ON-DEMAND")
+    return {
+        "symbol": symbol,
+        "is_index": is_index,
+        "source": trace["source"],
+        "cache_state": trace["cache_state"],
+        "vnstock_action": trace["vnstock_action"],
+        "df_raw": df_raw,
+        "df_calc": df_calc,
+        "today": today,
+        "signal_type": signal_type,
+        "date_str": _date_str_from_df(df_calc),
+    }
+
+def _format_chart_trace(ctx):
+    return (
+        f"cache_state={ctx.get('cache_state', 'unknown')} | "
+        f"action={ctx.get('vnstock_action', 'unknown')} | "
+        f"source={ctx.get('source', 'unknown')}"
+    )
+
+def _build_chart_message(ctx):
+    symbol = ctx["symbol"]
+    df_calc = ctx["df_calc"]
+    today = ctx["today"]
+    date_str = ctx["date_str"]
+    pct = (today['close'] - df_calc['close'].iloc[-2]) / df_calc['close'].iloc[-2] * 100
+    change = today['close'] - df_calc['close'].iloc[-2]
+    vol_vs_prev = (today['volume'] - df_calc['volume'].iloc[-2]) / df_calc['volume'].iloc[-2] * 100
+    vol_vs_vma50 = (today['volume'] - today['VMA50']) / today['VMA50'] * 100 if today['VMA50'] > 0 else 0
+
+    if ctx["is_index"]:
+        return (
+            f"#{symbol}  {date_str}\n"
+            f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+            f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%"
+        )
+
+    link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
+    link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
+    link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
+    link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
+    link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
+    return (
+        f"#{symbol}  {date_str}\n"
+        f"Sig: {ctx['signal_type']}\n"
+        f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
+        f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
+        f"<a href='{link_vnd_detail}'>⚖️</a> "
+        f"<a href='{link_vnd_news}'>🗞️</a> "
+        f"<a href='{link_vietstock}'>📈</a> "
+        f"<a href='{link_vnd_summary}'>📄</a> "
+        f"<a href='{link_24h_money}'>📄</a>"
+    )
+
+def _build_daily_weekly_chart_paths(ctx):
+    paths, labels = [], []
+    symbol = ctx["symbol"]
+    signal_type = ctx["signal_type"]
+    try:
+        path_d = draw_chart(
+            ctx["df_calc"].tail(250).copy(), symbol, signal_type, ctx["today"],
+            timeframe='Daily', add_arrow=False, date_str=ctx["date_str"]
+        )
+        paths.append(path_d)
+        labels.append('📊 Daily [D]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Daily {symbol}: {e}")
+
+    try:
+        df_weekly = build_weekly_df(ctx["df_raw"])
+        df_plot_w = df_weekly.tail(200).copy()
+        today_w = df_plot_w.iloc[-1]
+        date_str_w = _date_str_from_df(ctx["df_raw"])
+        path_w = draw_chart(
+            df_plot_w, symbol, signal_type, today_w,
+            timeframe='Weekly', add_arrow=False, date_str=date_str_w
+        )
+        paths.append(path_w)
+        labels.append('📈 Weekly [W]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Weekly {symbol}: {e}")
+    return paths, labels
+
+def _build_daily_weekly_chart_bytes(ctx):
+    png_bytes, labels = [], []
+    symbol = ctx["symbol"]
+    signal_type = ctx["signal_type"]
+    try:
+        png_bytes.append(draw_chart(
+            ctx["df_calc"].tail(250).copy(), symbol, signal_type, ctx["today"],
+            timeframe='Daily', add_arrow=False, date_str=ctx["date_str"], as_bytes=True
+        ))
+        labels.append('📊 Daily [D]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Daily bytes {symbol}: {e}")
+
+    try:
+        df_weekly = build_weekly_df(ctx["df_raw"])
+        df_plot_w = df_weekly.tail(200).copy()
+        today_w = df_plot_w.iloc[-1]
+        date_str_w = _date_str_from_df(ctx["df_raw"])
+        png_bytes.append(draw_chart(
+            df_plot_w, symbol, signal_type, today_w,
+            timeframe='Weekly', add_arrow=False, date_str=date_str_w, as_bytes=True
+        ))
+        labels.append('📈 Weekly [W]')
+    except Exception as e:
+        print(f"  [ChartCore] ❌ Weekly bytes {symbol}: {e}")
+    return png_bytes, labels
+
+def _cleanup_chart_paths(paths):
+    for path in paths:
+        try:
+            if os.path.exists(path): os.remove(path)
+        except Exception:
+            pass
+
 def fetch_and_send_chart(symbol, chat_id):
     thread_id = threading.current_thread().ident
     symbol    = symbol.upper().strip()
     url_msg   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    is_index  = symbol in INDEX_SYMBOLS
-    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol} (index={is_index})")
+    image_paths = []
+    print(f"  🧵 [{thread_id}] fetch_and_send_chart BẮT ĐẦU: {symbol}")
 
     try:
-        current_date = datetime.now(TZ_VN).date()
+        ctx = _get_chart_context(symbol)
+        if ctx is None:
+            requests.post(url_msg, data={
+                'chat_id': chat_id,
+                'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
+                'parse_mode': 'HTML'
+            })
+            return
 
-        if is_index:
-            df_raw = fetch_index_history(symbol)
-            if df_raw is None or len(df_raw) < 10:
-                requests.post(url_msg, data={
-                    'chat_id': chat_id,
-                    'text': f"❌ Không tìm thấy dữ liệu chỉ số <b>{symbol}</b>.",
-                    'parse_mode': 'HTML'
-                })
-                return
-        else:
-            ts_log   = datetime.now(TZ_VN).strftime('%H:%M:%S')
-            df_raw   = fetch_fresh_for_chart(symbol, current_date)
-            if df_raw is not None:
-                print(f"  [{ts_log}] ℹ️  {symbol}: fresh fetch OK (nến cuối: {df_raw.index[-1].date()})")
-            else:
-                requests.post(url_msg, data={
-                    'chat_id': chat_id,
-                    'text': f"❌ Không tìm thấy dữ liệu cho mã <b>{symbol}</b>",
-                    'parse_mode': 'HTML'
-                })
-                return
-
-        df_calc  = compute_indicators(df_raw)
-        today    = df_calc.iloc[-1]
-        now_time = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-
-        if is_index:
-            signal_type = "INDEX"
-        else:
-            signal_type = detect_signal(df_raw, now_time) or "ON-DEMAND"
-
-        date_str     = _date_str_from_df(df_calc)
-        pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
-        change       = today['close'] - df_calc['close'].iloc[-2]
-        vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
-        vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
-
-        if is_index:
-            msg = (
-                f"#{symbol}  {date_str}\n"
-                f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
-                f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%"
-            )
-        else:
-            link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
-            link_vnd_news    = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/tin-tuc-ma-popup?type=dn"
-            link_vietstock   = f"https://stockchart.vietstock.vn/?stockcode={symbol}"
-            link_vnd_summary = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}"
-            link_24h_money   = f"https://24hmoney.vn/stock/{symbol}/news"
-            msg = (
-                f"#{symbol}  {date_str}\n"
-                f"Sig: {signal_type}\n"
-                f"Clo: <b>{today['close']:.2f}</b> ({change:+.2f} / {pct:+.2f}%)\n"
-                f"Vol: {vol_vs_prev:+.1f}% | {vol_vs_vma50:+.1f}%\n"
-                f"<a href='{link_vnd_detail}'>⚖️</a> "
-                f"<a href='{link_vnd_news}'>🗞️</a> "
-                f"<a href='{link_vietstock}'>📈</a> "
-                f"<a href='{link_vnd_summary}'>📄</a> "
-                f"<a href='{link_24h_money}'>📄</a>"
-            )
-
-        df_plot_d  = df_calc.tail(250).copy()
-        img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
-                                timeframe='Daily', add_arrow=False, date_str=date_str)
-        df_weekly  = build_weekly_df(df_raw)
-        df_plot_w  = df_weekly.tail(200).copy()
-        today_w    = df_plot_w.iloc[-1]
-        date_str_w = _date_str_from_df(df_raw)
-        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
-                                timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-
-        image_paths = [img_daily, img_weekly]
-        if not is_index:
-            img_15m = _build_15m_chart(symbol, signal_type)
+        print(f"  [Chart] {symbol} | {_format_chart_trace(ctx)} | last_bar={ctx['df_raw'].index[-1].date()} | via=telegram")
+        image_paths, _ = _build_daily_weekly_chart_paths(ctx)
+        if not ctx["is_index"]:
+            img_15m = _build_15m_chart(symbol, ctx["signal_type"], via="telegram_15m")
             if img_15m: image_paths.append(img_15m)
 
+        if not image_paths:
+            requests.post(url_msg, data={
+                'chat_id': chat_id,
+                'text': f"❌ Không tạo được chart cho <b>{symbol}</b>",
+                'parse_mode': 'HTML'
+            })
+            return
+
         print(f"  🧵 [{thread_id}] {symbol} — chuẩn bị gửi {len(image_paths)} chart")
-        _send_chart_to_chat(msg, image_paths, chat_id)
+        _send_chart_to_chat(_build_chart_message(ctx), image_paths, chat_id)
+        image_paths = []
         print(f"  🧵 [{thread_id}] {symbol} — đã gửi xong")
 
     except Exception as e:
@@ -1478,6 +1742,8 @@ def fetch_and_send_chart(symbol, chat_id):
             'text': f"❌ Lỗi lấy dữ liệu <b>{symbol}</b>: {e}",
             'parse_mode': 'HTML'
         })
+    finally:
+        _cleanup_chart_paths(image_paths)
 
 def _send_chart_to_chat(msg, image_paths, chat_id):
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -1514,74 +1780,46 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
 def dashboard_chart_fn(symbol: str):
     """
     Được truyền vào start_dashboard(fetch_chart_fn=...).
-    Tạo 3 ảnh chart (Daily, Weekly, 15m), trả về (list[bytes], list[str]).
+    Tạo nhanh Daily + Weekly từ history_cache nếu có, trả về (list[bytes], list[str]).
     Không gửi Telegram.
     """
-    symbol       = symbol.upper().strip()
-    current_date = datetime.now(TZ_VN).date()
-    png_bytes    = []
-    labels       = []
-    tmp_files    = []
+    symbol = symbol.upper().strip()
     try:
-        is_index = symbol in INDEX_SYMBOLS
-        if is_index:
-            df_raw = fetch_index_history(symbol)
-        else:
-            df_raw = fetch_fresh_for_chart(symbol, current_date)
-        if df_raw is None or len(df_raw) < 10:
+        ctx = _get_chart_context(symbol)
+        if ctx is None:
             return [], []
-        df_calc     = compute_indicators(df_raw)
-        today       = df_calc.iloc[-1]
-        now_time    = int(datetime.now(TZ_VN).strftime("%H%M%S"))
-        signal_type = "INDEX" if is_index else (detect_signal(df_raw, now_time) or "ON-DEMAND")
-        date_str    = _date_str_from_df(df_calc)
-
-        # Daily
-        try:
-            path_d = draw_chart(df_calc.tail(250).copy(), symbol, signal_type, today,
-                                timeframe='Daily', add_arrow=False, date_str=date_str)
-            tmp_files.append(path_d)
-            with open(path_d, 'rb') as f: png_bytes.append(f.read())
-            labels.append('📊 Daily [D]')
-        except Exception as e:
-            print(f"  [DashChart] ❌ Daily {symbol}: {e}")
-
-        # Weekly
-        try:
-            df_weekly  = build_weekly_df(df_raw)
-            df_plot_w  = df_weekly.tail(200).copy()
-            today_w    = df_plot_w.iloc[-1]
-            date_str_w = _date_str_from_df(df_raw)
-            path_w = draw_chart(df_plot_w, symbol, signal_type, today_w,
-                                timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-            tmp_files.append(path_w)
-            with open(path_w, 'rb') as f: png_bytes.append(f.read())
-            labels.append('📈 Weekly [W]')
-        except Exception as e:
-            print(f"  [DashChart] ❌ Weekly {symbol}: {e}")
-
-        # 15m (bỏ qua cho index)
-        if not is_index:
-            try:
-                path_15m = _build_15m_chart(symbol, signal_type)
-                if path_15m:
-                    tmp_files.append(path_15m)
-                    with open(path_15m, 'rb') as f: png_bytes.append(f.read())
-                    labels.append('⚡ 15 phút [15m]')
-            except Exception as e:
-                print(f"  [DashChart] ❌ 15m {symbol}: {e}")
-
-        return png_bytes, labels
+        print(f"  [Chart] {symbol} | {_format_chart_trace(ctx)} | last_bar={ctx['df_raw'].index[-1].date()} | via=scanner_chart")
+        return _build_daily_weekly_chart_bytes(ctx)
 
     except Exception as e:
         print(f"  [DashChart] ❌ {symbol}: {e}")
         return [], []
-    finally:
-        for p in tmp_files:
-            try:
-                if os.path.exists(p): os.remove(p)
-            except Exception:
-                pass
+
+def dashboard_chart_15m_fn(symbol: str):
+    """
+    Được truyền vào start_dashboard(fetch_chart_15m_fn=...).
+    Tạo riêng chart 15m để dashboard tải sau Daily/Weekly.
+    """
+    symbol = symbol.upper().strip()
+    try:
+        ctx = _get_chart_context(symbol)
+        if ctx is None or ctx["is_index"]:
+            return [], []
+        df_15m = fetch_intraday_15m(symbol)
+        if df_15m is None or len(df_15m) < 2:
+            print(f"  ⚠️  {symbol}: không có dữ liệu 15m")
+            return [], []
+        today_15m = df_15m.iloc[-1]
+        date_str_15m = _date_str_from_df(df_15m)
+        print(f"  [Chart] {symbol} | cache_state=intraday_15m | action=fetch_intraday_15m | source=vnstock_15m | last_bar={df_15m.index[-1]} | via=scanner_chart_15m")
+        png_15m = draw_chart(
+            df_15m.tail(200).copy(), symbol, ctx["signal_type"], today_15m,
+            timeframe='15m', add_arrow=False, date_str=date_str_15m, as_bytes=True
+        )
+        return [png_15m], ['⚡ 15 phút [15m]']
+    except Exception as e:
+        print(f"  [DashChart] ❌ 15m {symbol}: {e}")
+        return [], []
 
 # =============================================================================
 # BƯỚC 8E: TELEGRAM LISTENER
@@ -1785,6 +2023,7 @@ except NameError:
 alerted_today = {}
 momentum_today = {}
 last_run_date = datetime.now(TZ_VN).date()
+_last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
 
 _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
@@ -1798,6 +2037,9 @@ start_dashboard(
     signal_emoji_ref  = SIGNAL_EMOJI,
     signal_rank_ref   = SIGNAL_RANK,
     fetch_chart_fn    = dashboard_chart_fn,
+    fetch_chart_15m_fn = dashboard_chart_15m_fn,
+    ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
+    chart_symbol_status_fn = chart_symbol_status,
     momentum_today_ref = lambda: momentum_today,
     port              = 8888,
 )
@@ -1805,6 +2047,7 @@ start_dashboard(
 print("\n" + "="*60)
 print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
 print(f"   Danh sách   : {len(symbols_to_scan)} mã")
+print(f"   Cache chart : {len(symbols_to_cache)} mã")
 print(f"   Chu kỳ quét : {SCAN_INTERVAL_SEC} giây")
 print(f"   Tín hiệu    → Channel/Group: {TELEGRAM_CHAT_ID}")
 print(f"   Dashboard   : http://VPS_IP:8888")
@@ -1818,12 +2061,12 @@ print(f"   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
 print(f"                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
 print(f"   Nhận lệnh   : Group + Private Chat (24/7)")
 print(f"   Cache check : Tự động trước mỗi chu kỳ quét")
-print(f"   On-demand   : Fetch fresh, không phụ thuộc cache")
+print(f"   On-demand   : Ưu tiên cache, fallback fetch fresh")
 print(f"   Nghỉ quét   : Thứ 7 và Chủ nhật")
 print("="*60)
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
-build_history_cache(symbols_to_scan, last_run_date)
+build_history_cache(symbols_to_cache, last_run_date)
 
 # =============================================================================
 # VÒNG LẶP CHÍNH
@@ -1849,30 +2092,33 @@ while True:
             last_run_date = current_date
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
             print("🔧 Reload cache lịch sử cho ngày mới...")
-            build_history_cache(symbols_to_scan, current_date)
+            build_history_cache(symbols_to_cache, current_date)
 
-        is_morning   =  85500 <= now_time <= 113000
-        is_afternoon = 130000 <= now_time <= 150000
+        if not _is_trading_session_time(current_date, now_time):
+            # Tự dò + tự sửa cache lệch phiên — CHỈ chạy ngoài giờ giao dịch, với nhịp
+            # riêng CACHE_CHECK_INTERVAL_SEC (30 phút), hoàn toàn tách khỏi SCAN_INTERVAL_SEC
+            # (nhịp quét tín hiệu). Vòng lặp vẫn "thức" mỗi SCAN_INTERVAL_SEC để không lỡ
+            # thời điểm mở cửa, nhưng chỉ THỰC SỰ gọi kiểm tra cache mỗi 30 phút 1 lần.
+            if time.time() - _last_cache_check_ts >= CACHE_CHECK_INTERVAL_SEC:
+                _last_cache_check_ts = time.time()
+                check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
 
-        if not (is_morning or is_afternoon):
-            with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
-            if not cache_ok:
-                print(f"[{ts}] Cache chưa có — tải lịch sử trước giờ giao dịch...")
-                build_history_cache(symbols_to_scan, current_date)
-
-            if   now_time < 85000:  next_open = "09:00"
-            elif now_time < 130000: next_open = "13:00"
-            else:                   next_open = "09:00 ngày mai"
+            next_open = _next_trading_session_label(now_time)
             print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
             time.sleep(SCAN_INTERVAL_SEC)
             continue
 
-        with cache_lock: cache_ok = (cache_date == current_date and len(history_cache) > 0)
-        if not cache_ok:
-            print(f"[{ts}] ⚠️  Cache chưa sẵn sàng — đang load...")
-            build_history_cache(symbols_to_scan, current_date)
-
-        check_and_rebuild_cache_if_stale(symbols_to_scan, current_date)
+        # Trong giờ giao dịch: KHÔNG chạy check_and_rebuild_cache_if_stale ở đây nữa
+        # (rebuild toàn bộ có thể tốn 45s-vài phút, làm chậm/nghẽn chu kỳ quét tín hiệu).
+        # Việc tự dò + tự sửa cache lệch phiên chỉ chạy ở nhánh ngoài giờ giao dịch phía
+        # trên (trước 09:00, nghỉ trưa 11:30-13:00, sau 15:00). Ở đây chỉ giữ lại 1 lớp
+        # bảo hiểm rẻ: nếu cache trống hoàn toàn (sự cố nghiêm trọng, gần như không xảy ra
+        # trong vận hành bình thường) thì vẫn bắt buộc load để tránh quét trên cache rỗng.
+        with cache_lock:
+            cache_empty = len(history_cache) == 0
+        if cache_empty:
+            print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
+            build_history_cache(symbols_to_cache, current_date)
 
         print(f"\n{'='*60}")
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
