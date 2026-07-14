@@ -4349,7 +4349,13 @@ function bindLiteChartControls(){
     // #lite-chart-search nằm lồng bên trong #lite-chart-frame nên keydown của nó vẫn nổi bọt lên tới đây;
     // _liteTryOpenSearchOnKey tự bỏ qua khi đang focus sẵn 1 input/textarea/select để input đó tự nhận phím
     // (tránh lặp chữ khi gõ tiếng Việt qua IME).
-    _liteTryOpenSearchOnKey(e);
+    // stopPropagation() ở đây là bắt buộc: nếu không, event vẫn nổi bọt tiếp lên listener trên document bên
+    // dưới và event đó CŨNG cố mở ô tìm mã lần nữa cho cùng 1 lần bấm phím. Bình thường .focus() đã chuyển
+    // focus đồng bộ nên listener document tự bỏ qua (activeElement đã là input) — nhưng việc dựa vào đúng
+    // thời điểm đó không chắc chắn 100% khi gõ rất nhanh hoặc qua bộ gõ tiếng Việt, khiến ký tự ĐẦU TIÊN
+    // (lúc ô tìm mã còn chưa tồn tại/focus) có thể bị 2 nơi cùng xử lý → chữ bị lặp. stopPropagation() chặn
+    // triệt để, không phụ thuộc timing của trình duyệt nữa.
+    if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
     if(!_litePointerInside)return;
