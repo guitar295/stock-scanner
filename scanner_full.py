@@ -789,53 +789,61 @@ def chart_symbol_status(symbol: str) -> dict:
     return {"symbol": symbol, "cached": True, "need_fetch": True, "reason": "live_update_due"}
 
 
-def ensure_symbol_live_in_cache(symbol: str) -> bool:
+def _append_chart_action(current: str, action: str) -> str:
+    return action if current == "skip" else f"{current}+{action}"
+
+
+def ensure_symbol_live_in_cache(symbol: str) -> dict:
     symbol = symbol.upper().strip()
     now = datetime.now(TZ_VN)
     current_date = now.date()
     now_time = int(now.strftime("%H%M%S"))
+    result = {"vnstock_action": "skip"}
 
     with cache_lock:
         df_hist = history_cache.get(symbol)
 
     if df_hist is None or len(df_hist) < 60:
+        result["vnstock_action"] = "fetch_full_history"
         df_hist = load_history_for_symbol(symbol, current_date)
         if df_hist is None or len(df_hist) < 60:
-            return False
+            return result
         with cache_lock:
             history_cache[symbol] = df_hist
-        return True
+        return result
 
     # Cache đã có nhưng lệch hơn 1 phiên so với kỳ vọng (ví dụ bị bỏ lỡ phiên gần nhất
     # do không ai xem chart lúc phiên đó diễn ra) → nạp lại toàn bộ và ghi đè cache dùng
     # chung, thay vì chỉ cố vá đúng bar "hôm nay" như nhánh live-update bên dưới.
     if not _cache_is_fresh(df_hist, current_date, now_time):
+        result["vnstock_action"] = "fetch_full_history"
         fresh = load_history_for_symbol(symbol, current_date)
         if fresh is not None and len(fresh) >= 60:
             with cache_lock:
                 history_cache[symbol] = fresh
             last_bar_update[symbol] = time.time()
-            return True
+            return result
         # Fetch fresh lỗi → rơi xuống logic live-update bên dưới để vẫn thử vá tạm
 
     if not _is_trading_session_time(current_date, now_time):
-        return True
+        return result
 
     last_touch = last_bar_update.get(symbol, 0)
     if time.time() - last_touch < BAR_UPDATE_TTL_SEC:
-        return True
+        return result
 
+    result["vnstock_action"] = _append_chart_action(result["vnstock_action"], "fetch_today_bar")
     today_bar = fetch_today_bar(symbol, current_date)
     last_bar_update[symbol] = time.time()
     if today_bar is None:
-        return True
+        return result
 
     with cache_lock:
         latest_hist = history_cache.get(symbol)
         if latest_hist is None or len(latest_hist) < 60:
             latest_hist = df_hist
         history_cache[symbol] = upsert_today_bar(latest_hist, today_bar)
-    return True
+    return result
 
 # =============================================================================
 # BƯỚC 5C: HÀM TIỆN ÍCH
@@ -1364,13 +1372,14 @@ def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow
     return img_name
 
 
-def _build_15m_chart(symbol: str, signal_type: str) -> str | None:
+def _build_15m_chart(symbol: str, signal_type: str, via: str = "telegram_15m") -> str | None:
     df_15m = fetch_intraday_15m(symbol)
     if df_15m is None or len(df_15m) < 2:
         print(f"  ⚠️  {symbol}: không có dữ liệu 15m")
         return None
     today_15m    = df_15m.iloc[-1]
     date_str_15m = _date_str_from_df(df_15m)
+    print(f"  [Chart] {symbol} | cache_state=intraday_15m | action=fetch_intraday_15m | source=vnstock_15m | last_bar={df_15m.index[-1]} | via={via}")
     return draw_chart(
         df_15m.tail(200).copy(), symbol, signal_type, today_15m,
         timeframe='15m', add_arrow=False, date_str=date_str_15m
@@ -1475,7 +1484,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             date_str_w = _date_str_from_df(df_merged)
             img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
                                     timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-            img_15m    = _build_15m_chart(symbol, signal_type)
+            img_15m    = _build_15m_chart(symbol, signal_type, via="scanner_signal_15m")
 
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
@@ -1534,24 +1543,32 @@ def _get_chart_context(symbol: str):
     current_date = now_obj.date()
     now_time     = int(now_obj.strftime("%H%M%S"))
     is_index = symbol in INDEX_SYMBOLS
-    source = "index"
+    trace = {
+        "cache_state": "index" if is_index else "unknown",
+        "vnstock_action": "fetch_index_history" if is_index else "skip",
+        "source": "index_api" if is_index else "unknown",
+    }
 
     if is_index:
         df_raw = fetch_index_history(symbol)
     else:
+        pre_status = chart_symbol_status(symbol)
+        trace["cache_state"] = pre_status.get("reason", "unknown")
         # Dùng chung cơ chế "vá nến hôm nay nếu quá BAR_UPDATE_TTL_SEC" với thẻ CHART
         # (ensure_symbol_live_in_cache), thay vì chỉ kiểm tra tươi theo NGÀY như trước.
         # Nhờ vậy mã NGOÀI danh sách quét (không được run_scan_cycle() chạm tới) khi
         # xem qua scanner chart / Telegram cũng được vá giá/khối lượng mới nhất trong
         # phiên, không còn bị coi là "fresh" chỉ vì nến cuối cùng ngày với hôm nay.
-        ensure_symbol_live_in_cache(symbol)
+        ensure_result = ensure_symbol_live_in_cache(symbol)
+        trace["vnstock_action"] = ensure_result.get("vnstock_action", "skip")
         with cache_lock:
             cached = history_cache.get(symbol)
             df_raw = cached.copy() if cached is not None and len(cached) >= 10 else None
         if df_raw is not None:
-            source = "history_cache"
+            trace["source"] = "history_cache"
         if df_raw is None:
-            source = "fresh"
+            trace["vnstock_action"] = _append_chart_action(trace["vnstock_action"], "fetch_fresh_fallback")
+            trace["source"] = "fresh_fetch"
             df_raw = fetch_fresh_for_chart(symbol, current_date)
             # Ghi ngược vào history_cache dùng chung để các nơi khác (thẻ CHART, quét tín
             # hiệu) không phải tự fetch lại từ đầu ở lần gọi kế tiếp.
@@ -1568,13 +1585,22 @@ def _get_chart_context(symbol: str):
     return {
         "symbol": symbol,
         "is_index": is_index,
-        "source": source,
+        "source": trace["source"],
+        "cache_state": trace["cache_state"],
+        "vnstock_action": trace["vnstock_action"],
         "df_raw": df_raw,
         "df_calc": df_calc,
         "today": today,
         "signal_type": signal_type,
         "date_str": _date_str_from_df(df_calc),
     }
+
+def _format_chart_trace(ctx):
+    return (
+        f"cache_state={ctx.get('cache_state', 'unknown')} | "
+        f"action={ctx.get('vnstock_action', 'unknown')} | "
+        f"source={ctx.get('source', 'unknown')}"
+    )
 
 def _build_chart_message(ctx):
     symbol = ctx["symbol"]
@@ -1690,10 +1716,10 @@ def fetch_and_send_chart(symbol, chat_id):
             })
             return
 
-        print(f"  🧵 [{thread_id}] {symbol}: dùng nguồn {ctx['source']} (nến cuối: {ctx['df_raw'].index[-1].date()})")
+        print(f"  [Chart] {symbol} | {_format_chart_trace(ctx)} | last_bar={ctx['df_raw'].index[-1].date()} | via=telegram")
         image_paths, _ = _build_daily_weekly_chart_paths(ctx)
         if not ctx["is_index"]:
-            img_15m = _build_15m_chart(symbol, ctx["signal_type"])
+            img_15m = _build_15m_chart(symbol, ctx["signal_type"], via="telegram_15m")
             if img_15m: image_paths.append(img_15m)
 
         if not image_paths:
@@ -1762,7 +1788,7 @@ def dashboard_chart_fn(symbol: str):
         ctx = _get_chart_context(symbol)
         if ctx is None:
             return [], []
-        print(f"  [DashChart] {symbol}: Daily/Weekly từ {ctx['source']}")
+        print(f"  [Chart] {symbol} | {_format_chart_trace(ctx)} | last_bar={ctx['df_raw'].index[-1].date()} | via=scanner_chart")
         return _build_daily_weekly_chart_bytes(ctx)
 
     except Exception as e:
@@ -1785,6 +1811,7 @@ def dashboard_chart_15m_fn(symbol: str):
             return [], []
         today_15m = df_15m.iloc[-1]
         date_str_15m = _date_str_from_df(df_15m)
+        print(f"  [Chart] {symbol} | cache_state=intraday_15m | action=fetch_intraday_15m | source=vnstock_15m | last_bar={df_15m.index[-1]} | via=scanner_chart_15m")
         png_15m = draw_chart(
             df_15m.tail(200).copy(), symbol, ctx["signal_type"], today_15m,
             timeframe='15m', add_arrow=False, date_str=date_str_15m, as_bytes=True
