@@ -2325,7 +2325,7 @@ let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=n
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-const LITE_BARS_VISIBLE=300,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
+const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
@@ -2516,6 +2516,22 @@ function _liteCleanSym(v){
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+// Gắn sự kiện làm sạch ký tự cho ô nhập mã, TRÁNH ép sửa value trong lúc IME (Unikey Telex/VNI...)
+// đang composing — ép sửa value giữa chừng composition sẽ xung đột với bộ đệm nội bộ của IME,
+// khiến IME chèn lại phần đang gõ dở đè lên giá trị đã bị sửa → gây lặp chữ liên tục kiểu "VNVNVND".
+// Chỉ làm sạch khi: (a) input bình thường không composing, hoặc (b) composition vừa kết thúc.
+function _liteBindSymInput(el,onClean){
+  if(!el)return;
+  let composing=false;
+  el.addEventListener('compositionstart',()=>{composing=true;});
+  el.addEventListener('compositionend',()=>{composing=false;});
+  el.addEventListener('input',e=>{
+    if(composing||e.isComposing)return;
+    const raw=_liteCleanSym(e.target.value);
+    e.target.value=raw;
+    onClean(raw);
+  });
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
   const out=[];
@@ -4078,6 +4094,10 @@ function openLiteSearchWithChar(ch){
   DOM.liteChartSearch.classList.add('on');
   DOM.liteChartSearch.focus();
 }
+// Phím đơn (không kèm Ctrl/Alt/Meta) là chữ/số thường — dùng chung cho 2 nơi bắt phím gõ nhanh mã cổ phiếu.
+function _liteIsPlainAlnumKey(e){
+  return !(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key));
+}
 function renderLiteIndicators(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   const prevRange=_liteGetVisibleLogicalRange();
@@ -4265,9 +4285,7 @@ function bindLiteChartControls(){
   bindLiteIndColorPickers();
   bindLiteIndGroupDropdowns();
   bindLiteDrawToolbar();
-  if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('input',e=>{
-    const raw=_liteCleanSym(e.target.value);
-    e.target.value=raw;
+  _liteBindSymInput(DOM.liteChartInput,raw=>{
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
   });
@@ -4316,12 +4334,12 @@ function bindLiteChartControls(){
       }
       return;
     }
-    if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
+    if(!_liteIsPlainAlnumKey(e))return;
     e.preventDefault();
     openLiteSearchWithChar(e.key);
   });
   document.addEventListener('keydown',e=>{
-    if(!_litePointerInside||e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
+    if(!_litePointerInside||!_liteIsPlainAlnumKey(e))return;
     // Bỏ qua khi đang gõ vào ô chữ của công cụ Text (#lite-text-input là div contenteditable, không phải
     // input/textarea/select nên check tag ở dưới không bắt được) — trước đây bug này khiến gõ chữ chú thích
     // bị "cướp" thành gõ tìm mã cổ phiếu.
@@ -4331,9 +4349,7 @@ function bindLiteChartControls(){
     e.preventDefault();
     openLiteSearchWithChar(e.key);
   });
-  if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('input',e=>{
-    const raw=_liteCleanSym(e.target.value);
-    e.target.value=raw;
+  _liteBindSymInput(DOM.liteChartSearch,raw=>{
     resizeLiteSearchInput();
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
