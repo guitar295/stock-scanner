@@ -2556,9 +2556,10 @@ function _liteApplyBuySignal(){
   if(!_liteCandle||!_liteData.length)return;
   const sig=_sigTodayMap.get(_liteSymbol);
   if(sig){
+    // Mũi tên báo mua: thu nhỏ còn một nửa (size:1 thay vì 2), không set text để không hiện badge
+    // tên tín hiệu ngay dưới mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
     _liteCandle.setMarkers([{
-      time:_liteData[_liteData.length-1].time,position:'belowBar',color:'#9333ea',shape:'arrowUp',size:2,
-      text:(sig.emoji||'📌')+' '+signalLabel(sig.signal)
+      time:_liteData[_liteData.length-1].time,position:'belowBar',color:'#9333ea',shape:'arrowUp',size:1
     }]);
     if(DOM.liteChartSignal){
       DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
@@ -3620,6 +3621,34 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
     x+=ctx.measureText(seg.text).width;
   }
 }
+// Vẽ badge tín hiệu (emoji + nhãn màu) lên canvas copy, y hệt badge #lite-chart-signal đang hiển
+// thị trên chart — badge đó là lớp DOM nổi phía trên canvas nên takeScreenshot() không chụp được,
+// phải tự vẽ vào canvas copy. Đọc trực tiếp kích thước/màu đã render của DOM badge thật (không tự
+// định nghĩa lại màu/kích thước riêng) để luôn khớp 100% với badge thật, kể cả khi CSS đổi màu sau này.
+function _liteDrawSignalBadge(ctx,x,y,dpr){
+  const el=DOM.liteChartSignal;
+  if(!el)return;
+  const emojiEl=el.querySelector('.s-emoji'),badgeEl=el.querySelector('.s-badge');
+  if(!emojiEl||!badgeEl)return;
+  const emojiCs=getComputedStyle(emojiEl),badgeCs=getComputedStyle(badgeEl);
+  const emojiR=emojiEl.getBoundingClientRect(),badgeR=badgeEl.getBoundingClientRect();
+  const gap=Math.round(5*dpr);
+  ctx.textBaseline='middle';
+  ctx.font=emojiCs.font||`${emojiCs.fontSize} sans-serif`;
+  ctx.fillText(emojiEl.textContent,x,y+emojiR.height*dpr/2);
+  const bx=x+emojiR.width*dpr+gap,bw=badgeR.width*dpr,bh=badgeR.height*dpr;
+  const br=(parseFloat(badgeCs.borderRadius)||0)*dpr;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(bx,y,bw,bh,br);else ctx.rect(bx,y,bw,bh);
+  ctx.fillStyle=badgeCs.backgroundColor;ctx.fill();
+  ctx.lineWidth=Math.max(1,(parseFloat(badgeCs.borderWidth)||1)*dpr);
+  ctx.strokeStyle=badgeCs.borderColor;ctx.stroke();
+  ctx.fillStyle=badgeCs.color;
+  ctx.font=badgeCs.font||`${badgeCs.fontWeight} ${badgeCs.fontSize} sans-serif`;
+  ctx.textAlign='center';
+  ctx.fillText(badgeEl.textContent,bx+bw/2,y+bh/2+dpr);
+  ctx.textAlign='left';
+}
 async function copyLiteChartImage(btn){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   try{
@@ -3631,11 +3660,13 @@ async function copyLiteChartImage(btn){
       panes.push({kind:'macd',canvas:_liteMacdChart.takeScreenshot()});
     }
     const titleSegments=_liteTitleSegments(_liteData[_liteData.length-1]);
+    const hasSigBadge=!!(DOM.liteChartSignal&&DOM.liteChartSignal.classList.contains('on'));
     const dpr=window.devicePixelRatio||1;
     const titleH=titleSegments.length?Math.round(30*dpr):0;
+    const badgeH=hasSigBadge?Math.round(24*dpr):0;
     const out=document.createElement('canvas');
     out.width=Math.max(...panes.map(p=>p.canvas.width));
-    out.height=titleH+panes.reduce((sum,p)=>sum+p.canvas.height,0);
+    out.height=titleH+badgeH+panes.reduce((sum,p)=>sum+p.canvas.height,0);
     const ctx=out.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,out.width,out.height);
     if(titleSegments.length){
@@ -3643,14 +3674,17 @@ async function copyLiteChartImage(btn){
       ctx.textBaseline='middle';
       _liteDrawTitleSegments(ctx,titleSegments,10*dpr,titleH/2);
     }
-    let y=titleH;
+    if(hasSigBadge){
+      _liteDrawSignalBadge(ctx,10*dpr,titleH+Math.round(3*dpr),dpr);
+    }
+    let y=titleH+badgeH;
     panes.forEach(p=>{
       ctx.drawImage(p.canvas,0,y);
       y+=p.canvas.height;
     });
     if(DOM.liteDrawCanvas){
       const mainCanvas=panes[0].canvas;
-      ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH,mainCanvas.width,mainCanvas.height);
+      ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH+badgeH,mainCanvas.width,mainCanvas.height);
     }
     const toBlobPromise=()=>new Promise(resolve=>out.toBlob(resolve,'image/png'));
     // Copy as Bitmap: truyền thẳng Promise<Blob> vào ClipboardItem (không await trước) để trình duyệt
