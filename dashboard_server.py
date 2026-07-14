@@ -4183,7 +4183,7 @@ function renderLiteIndicators(){
     const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
     const macdAligned=alignLiteSeries(m.macd);
     hist.setData(histScaled);macdLine.setData(macdAligned);sigLine.setData(alignLiteSeries(m.signal));
-    hist.priceScale().applyOptions({scaleMargins:{top:.07,bottom:.10}});
+    hist.priceScale().applyOptions({autoScale:true,scaleMargins:{top:.07,bottom:.10}});
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
