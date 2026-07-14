@@ -2556,15 +2556,20 @@ function _liteApplyBuySignal(){
   if(!_liteCandle||!_liteData.length)return;
   const sig=_sigTodayMap.get(_liteSymbol);
   if(sig){
-    // Mũi tên báo mua: thu nhỏ còn một nửa (size:1 thay vì 2), không set text để không hiện badge
-    // tên tín hiệu ngay dưới mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
-    _liteCandle.setMarkers([{
-      time:_liteData[_liteData.length-1].time,position:'belowBar',color:'#9333ea',shape:'arrowUp',size:1
-    }]);
+    let arrowColor='#9333ea';
     if(DOM.liteChartSignal){
       DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
       DOM.liteChartSignal.classList.add('on');
+      // Lấy đúng màu chữ của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — không khai báo
+      // lại bảng màu riêng, mũi tên luôn đồng bộ màu với badge kể cả khi CSS đổi màu sau này.
+      const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
+      if(badgeEl)arrowColor=getComputedStyle(badgeEl).color||arrowColor;
     }
+    // Mũi tên báo mua: thu nhỏ còn một nửa (size:1 thay vì 2), không set text để không hiện badge
+    // tên tín hiệu ngay dưới mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
+    _liteCandle.setMarkers([{
+      time:_liteData[_liteData.length-1].time,position:'belowBar',color:arrowColor,shape:'arrowUp',size:1
+    }]);
   }else{
     _liteCandle.setMarkers([]);
     if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
