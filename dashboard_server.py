@@ -2552,6 +2552,41 @@ function updateLiteTitle(bar){
 // Gắn mũi tên điểm mua lên nến cuối cùng (= nến giao dịch gần nhất, kể cả khi hôm nay không phải
 // ngày giao dịch) cho mã đang xem, dựa HOÀN TOÀN vào _sigTodayMap đã cache sẵn từ fetchSigs() —
 // không gọi thêm API nào, không tính toán chỉ báo riêng, nên gần như không tốn thêm chi phí.
+// Làm đậm một màu rgb()/rgba() theo không gian HSL: giữ nguyên hue (luồng màu), TĂNG saturation và
+// GIẢM lightness — khác với cách nhân đều từng kênh RGB (sẽ kéo màu về phía xám/đen). Cách này cho
+// màu đậm mà vẫn tươi/rực, đúng tông với màu viền badge gốc.
+function _liteDarkenColor(c,satBoost,lightDrop){
+  const m=/rgba?\((\d+(?:\.\d+)?)[,\s]+(\d+(?:\.\d+)?)[,\s]+(\d+(?:\.\d+)?)/.exec(c||'');
+  if(!m)return c;
+  let r=+m[1]/255,g=+m[2]/255,b=+m[3]/255;
+  const max=Math.max(r,g,b),min=Math.min(r,g,b);
+  let h=0,s=0,l=(max+min)/2;
+  if(max!==min){
+    const d=max-min;
+    s=l>.5?d/(2-max-min):d/(max+min);
+    if(max===r)h=(g-b)/d+(g<b?6:0);
+    else if(max===g)h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h/=6;
+  }
+  s=Math.max(0,Math.min(1,s+(satBoost||0)));
+  l=Math.max(0,Math.min(1,l-(lightDrop||0)));
+  const hue2rgb=(p,q,t)=>{
+    if(t<0)t+=1;if(t>1)t-=1;
+    if(t<1/6)return p+(q-p)*6*t;
+    if(t<1/2)return q;
+    if(t<2/3)return p+(q-p)*(2/3-t)*6;
+    return p;
+  };
+  let r2,g2,b2;
+  if(s===0){r2=g2=b2=l;}
+  else{
+    const q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;
+    r2=hue2rgb(p,q,h+1/3);g2=hue2rgb(p,q,h);b2=hue2rgb(p,q,h-1/3);
+  }
+  const to255=v=>Math.round(v*255);
+  return `rgb(${to255(r2)},${to255(g2)},${to255(b2)})`;
+}
 function _liteApplyBuySignal(){
   if(!_liteCandle||!_liteData.length)return;
   const sig=_sigTodayMap.get(_liteSymbol);
@@ -2562,8 +2597,10 @@ function _liteApplyBuySignal(){
       DOM.liteChartSignal.classList.add('on');
       // Lấy đúng màu viền của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — không khai báo
       // lại bảng màu riêng, mũi tên luôn đồng bộ màu với badge kể cả khi CSS đổi màu sau này.
+      // Viền badge là tông pastel nhạt: tăng saturation +.35 và giảm lightness -.25 để mũi tên
+      // đậm mà vẫn tươi màu, không bị ngả xám.
       const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
-      if(badgeEl)arrowColor=getComputedStyle(badgeEl).borderColor||arrowColor;
+      if(badgeEl)arrowColor=_liteDarkenColor(getComputedStyle(badgeEl).borderColor,.35,.25)||arrowColor;
     }
     // Mũi tên báo mua: thu nhỏ còn một nửa (size:1 thay vì 2), không set text để không hiện badge
     // tên tín hiệu ngay dưới mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
