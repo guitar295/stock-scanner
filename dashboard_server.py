@@ -2346,7 +2346,7 @@ function initLiteChart(){
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.14,bottom:.25}},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.12,bottom:.22}},
     handleScale:{axisPressedMouseMove:{time:true,price:true}}
   });
   _liteRsiChart=LightweightCharts.createChart(DOM.liteRsiChart,{
@@ -2776,7 +2776,7 @@ function applyLitePaneLayout(){
     _liteChart.applyOptions({
       width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
       timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.14,bottom:.21}}
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.12,bottom:.18}}
     });
     if(_liteRsiChart)_liteRsiChart.applyOptions({
       width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
@@ -4247,7 +4247,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
-    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.14,bottom:.21}});
+    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.12,bottom:.18}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteApplyBuySignal();
