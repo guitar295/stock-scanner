@@ -4098,6 +4098,18 @@ function openLiteSearchWithChar(ch){
 function _liteIsPlainAlnumKey(e){
   return !(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key));
 }
+// Đuôi dùng chung cho 2 nơi bắt phím gõ nhanh mở ô tìm mã (#lite-chart-frame và document):
+// chỉ xử lý phím chữ/số đơn, bỏ qua khi đang gõ chú thích Text hoặc đang focus sẵn 1 input/textarea/select
+// khác (để input đó tự nhận phím, tránh lặp chữ khi gõ tiếng Việt qua IME). Trả về true nếu đã mở ô tìm mã.
+function _liteTryOpenSearchOnKey(e){
+  if(!_liteIsPlainAlnumKey(e))return false;
+  if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
+  const tag=(document.activeElement?.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select')return false;
+  e.preventDefault();
+  openLiteSearchWithChar(e.key);
+  return true;
+}
 function renderLiteIndicators(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   const prevRange=_liteGetVisibleLogicalRange();
@@ -4334,20 +4346,14 @@ function bindLiteChartControls(){
       }
       return;
     }
-    if(!_liteIsPlainAlnumKey(e))return;
-    e.preventDefault();
-    openLiteSearchWithChar(e.key);
+    // #lite-chart-search nằm lồng bên trong #lite-chart-frame nên keydown của nó vẫn nổi bọt lên tới đây;
+    // _liteTryOpenSearchOnKey tự bỏ qua khi đang focus sẵn 1 input/textarea/select để input đó tự nhận phím
+    // (tránh lặp chữ khi gõ tiếng Việt qua IME).
+    _liteTryOpenSearchOnKey(e);
   });
   document.addEventListener('keydown',e=>{
-    if(!_litePointerInside||!_liteIsPlainAlnumKey(e))return;
-    // Bỏ qua khi đang gõ vào ô chữ của công cụ Text (#lite-text-input là div contenteditable, không phải
-    // input/textarea/select nên check tag ở dưới không bắt được) — trước đây bug này khiến gõ chữ chú thích
-    // bị "cướp" thành gõ tìm mã cổ phiếu.
-    if(_liteTextEditPos||document.activeElement?.isContentEditable)return;
-    const tag=(document.activeElement?.tagName||'').toLowerCase();
-    if(tag==='input'||tag==='textarea'||tag==='select')return;
-    e.preventDefault();
-    openLiteSearchWithChar(e.key);
+    if(!_litePointerInside)return;
+    _liteTryOpenSearchOnKey(e);
   });
   _liteBindSymInput(DOM.liteChartSearch,raw=>{
     resizeLiteSearchInput();
