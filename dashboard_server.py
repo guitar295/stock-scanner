@@ -1517,20 +1517,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   .market-frame{height:70vh}
   #market-panel{display:none !important;}
 
-  /* Thẻ CHART: trước đây ẩn hẳn trên mobile (display:none), giờ hiển thị với
-     kích thước co giãn theo viewport thay vì các giá trị cố định của desktop. */
-  .lite-chart-panel .lite-chart-toolbar{gap:6px}
-  .lite-chart-input{width:64px}
-  .lite-chart-input:focus{width:84px}
-  .lite-draw-toolbar{
-    width:100%;order:99;margin-top:4px;padding-left:0;border-left:none;
-    padding-top:4px;border-top:1px solid var(--border);
-    overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;
-  }
-  .lite-draw-toolbar::-webkit-scrollbar{display:none}
-  .lite-draw-btn{flex-shrink:0}
-  .lite-chart-frame{height:60vh}
-  #lite-chart{height:46vh}
+  #lite-chart-panel{display:none !important}
 }
 
 /* ═══════════════════════════════════════════
