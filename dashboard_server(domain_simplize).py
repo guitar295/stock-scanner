@@ -1289,7 +1289,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel.collapsed .lite-draw-toolbar,
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
-.lite-chart-frame{width:100%;height:710px;background:#fff;position:relative}
+.lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
 #lite-chart{width:100%;height:540px}
 #lite-rsi-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
@@ -2325,7 +2325,7 @@ let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=n
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-const LITE_BARS_VISIBLE=300,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
+const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
@@ -2346,7 +2346,7 @@ function initLiteChart(){
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.16,bottom:.28}},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.12,bottom:.22}},
     handleScale:{axisPressedMouseMove:{time:true,price:true}}
   });
   _liteRsiChart=LightweightCharts.createChart(DOM.liteRsiChart,{
@@ -2357,7 +2357,7 @@ function initLiteChart(){
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}},
+    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.07,bottom:.10}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });  _liteCandle=_liteChart.addCandlestickSeries({
     upColor:LITE_CANDLE_UP_COLOR,downColor:LITE_CANDLE_DOWN_COLOR,borderUpColor:LITE_CANDLE_UP_COLOR,
@@ -2516,6 +2516,22 @@ function _liteCleanSym(v){
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+// Gắn sự kiện làm sạch ký tự cho ô nhập mã, TRÁNH ép sửa value trong lúc IME (Unikey Telex/VNI...)
+// đang composing — ép sửa value giữa chừng composition sẽ xung đột với bộ đệm nội bộ của IME,
+// khiến IME chèn lại phần đang gõ dở đè lên giá trị đã bị sửa → gây lặp chữ liên tục kiểu "VNVNVND".
+// Chỉ làm sạch khi: (a) input bình thường không composing, hoặc (b) composition vừa kết thúc.
+function _liteBindSymInput(el,onClean){
+  if(!el)return;
+  let composing=false;
+  el.addEventListener('compositionstart',()=>{composing=true;});
+  el.addEventListener('compositionend',()=>{composing=false;});
+  el.addEventListener('input',e=>{
+    if(composing||e.isComposing)return;
+    const raw=_liteCleanSym(e.target.value);
+    e.target.value=raw;
+    onClean(raw);
+  });
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
   const out=[];
@@ -2750,7 +2766,7 @@ function alignLiteSeries(points){
 function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  const totalH=710;
+  const totalH=720;
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
@@ -2776,7 +2792,7 @@ function applyLitePaneLayout(){
     _liteChart.applyOptions({
       width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
       timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.16,bottom:.24}}
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.12,bottom:.18}}
     });
     if(_liteRsiChart)_liteRsiChart.applyOptions({
       width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
@@ -2786,7 +2802,7 @@ function applyLitePaneLayout(){
     if(_liteMacdChart)_liteMacdChart.applyOptions({
       width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
       timeScale:{visible:showMacdTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.08,bottom:.12}}
+      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.07,bottom:.10}}
     });
   }finally{
     _liteSyncing=prevSyncing;
@@ -4078,6 +4094,22 @@ function openLiteSearchWithChar(ch){
   DOM.liteChartSearch.classList.add('on');
   DOM.liteChartSearch.focus();
 }
+// Phím đơn (không kèm Ctrl/Alt/Meta) là chữ/số thường — dùng chung cho 2 nơi bắt phím gõ nhanh mã cổ phiếu.
+function _liteIsPlainAlnumKey(e){
+  return !(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key));
+}
+// Đuôi dùng chung cho 2 nơi bắt phím gõ nhanh mở ô tìm mã (#lite-chart-frame và document):
+// chỉ xử lý phím chữ/số đơn, bỏ qua khi đang gõ chú thích Text hoặc đang focus sẵn 1 input/textarea/select
+// khác (để input đó tự nhận phím, tránh lặp chữ khi gõ tiếng Việt qua IME). Trả về true nếu đã mở ô tìm mã.
+function _liteTryOpenSearchOnKey(e){
+  if(!_liteIsPlainAlnumKey(e))return false;
+  if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
+  const tag=(document.activeElement?.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select')return false;
+  e.preventDefault();
+  openLiteSearchWithChar(e.key);
+  return true;
+}
 function renderLiteIndicators(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   const prevRange=_liteGetVisibleLogicalRange();
@@ -4183,7 +4215,7 @@ function renderLiteIndicators(){
     const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
     const macdAligned=alignLiteSeries(m.macd);
     hist.setData(histScaled);macdLine.setData(macdAligned);sigLine.setData(alignLiteSeries(m.signal));
-    hist.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.12}});
+    hist.priceScale().applyOptions({autoScale:true,scaleMargins:{top:.07,bottom:.10}});
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
@@ -4247,7 +4279,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
-    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.16,bottom:.24}});
+    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.12,bottom:.18}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteApplyBuySignal();
@@ -4265,9 +4297,7 @@ function bindLiteChartControls(){
   bindLiteIndColorPickers();
   bindLiteIndGroupDropdowns();
   bindLiteDrawToolbar();
-  if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('input',e=>{
-    const raw=_liteCleanSym(e.target.value);
-    e.target.value=raw;
+  _liteBindSymInput(DOM.liteChartInput,raw=>{
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
   });
@@ -4316,24 +4346,22 @@ function bindLiteChartControls(){
       }
       return;
     }
-    if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
-    e.preventDefault();
-    openLiteSearchWithChar(e.key);
+    // #lite-chart-search nằm lồng bên trong #lite-chart-frame nên keydown của nó vẫn nổi bọt lên tới đây;
+    // _liteTryOpenSearchOnKey tự bỏ qua khi đang focus sẵn 1 input/textarea/select để input đó tự nhận phím
+    // (tránh lặp chữ khi gõ tiếng Việt qua IME).
+    // stopPropagation() ở đây là bắt buộc: nếu không, event vẫn nổi bọt tiếp lên listener trên document bên
+    // dưới và event đó CŨNG cố mở ô tìm mã lần nữa cho cùng 1 lần bấm phím. Bình thường .focus() đã chuyển
+    // focus đồng bộ nên listener document tự bỏ qua (activeElement đã là input) — nhưng việc dựa vào đúng
+    // thời điểm đó không chắc chắn 100% khi gõ rất nhanh hoặc qua bộ gõ tiếng Việt, khiến ký tự ĐẦU TIÊN
+    // (lúc ô tìm mã còn chưa tồn tại/focus) có thể bị 2 nơi cùng xử lý → chữ bị lặp. stopPropagation() chặn
+    // triệt để, không phụ thuộc timing của trình duyệt nữa.
+    if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
-    if(!_litePointerInside||e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return;
-    // Bỏ qua khi đang gõ vào ô chữ của công cụ Text (#lite-text-input là div contenteditable, không phải
-    // input/textarea/select nên check tag ở dưới không bắt được) — trước đây bug này khiến gõ chữ chú thích
-    // bị "cướp" thành gõ tìm mã cổ phiếu.
-    if(_liteTextEditPos||document.activeElement?.isContentEditable)return;
-    const tag=(document.activeElement?.tagName||'').toLowerCase();
-    if(tag==='input'||tag==='textarea'||tag==='select')return;
-    e.preventDefault();
-    openLiteSearchWithChar(e.key);
+    if(!_litePointerInside)return;
+    _liteTryOpenSearchOnKey(e);
   });
-  if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('input',e=>{
-    const raw=_liteCleanSym(e.target.value);
-    e.target.value=raw;
+  _liteBindSymInput(DOM.liteChartSearch,raw=>{
     resizeLiteSearchInput();
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
