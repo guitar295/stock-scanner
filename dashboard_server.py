@@ -2282,9 +2282,9 @@ function bindLiteIndGroupDropdowns(){
   document.addEventListener('click',()=>closeAllLiteIndDropdowns());
   updateLiteIndGroupCounts();
 }
-function _liteHexToRgba(hex,alpha){
+function _liteHexToRgba(hex,alpha,fallbackRgb='147,51,234'){
   const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'');
-  if(!m)return `rgba(147,51,234,${alpha})`;
+  if(!m)return `rgba(${fallbackRgb},${alpha})`;
   const r=parseInt(m[1],16),g=parseInt(m[2],16),b=parseInt(m[3],16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
@@ -3147,11 +3147,11 @@ function _liteDrawShapeToCanvas(ctx,d){
     }
   }
 }
+// _liteHexAlpha: trước đây tự parse hex riêng (trùng logic với _liteHexToRgba ở trên) — nay chỉ là
+// lớp mỏng gọi lại _liteHexToRgba với màu fallback riêng của mình ('26,86,219' = #1a56db, màu vẽ mặc
+// định), kết quả đầu ra giữ NGUYÊN y hệt như cài đặt cũ cho mọi input hex hợp lệ/không hợp lệ.
 function _liteHexAlpha(hex,a){
-  const m=/^#?([0-9a-f]{6})$/i.exec(hex||'');
-  if(!m)return `rgba(26,86,219,${a})`;
-  const n=parseInt(m[1],16);
-  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+  return _liteHexToRgba(hex,a,'26,86,219');
 }
 function _liteTimeToX(t){
   const c=_liteChart&&_liteChart.timeScale().timeToCoordinate(t);
