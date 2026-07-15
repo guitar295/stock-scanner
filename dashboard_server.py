@@ -1806,7 +1806,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         </div>
         <div class="lite-indicators" id="lite-indicators">
           <div class="lite-ind-group" data-group="maema">
-            <input type="checkbox" class="lite-ind-master" value="maema_on">
+            <input type="checkbox" value="maema_on">
             <button type="button" class="lite-ind-group-btn" data-group-btn="maema">MA/EMA<span class="lite-ind-count" data-count="maema"></span><span class="lite-ind-caret">▾</span></button>
             <div class="lite-ind-dropdown" data-dropdown="maema" style="min-width:120px">
               <div class="lite-ind-dropdown-sub-title">MA</div>
@@ -2516,18 +2516,23 @@ function _liteCleanSym(v){
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Gắn sự kiện làm sạch ký tự cho ô nhập mã, TRÁNH ép sửa value trong lúc IME (Unikey Telex/VNI...)
-// đang composing — ép sửa value giữa chừng composition sẽ xung đột với bộ đệm nội bộ của IME,
-// khiến IME chèn lại phần đang gõ dở đè lên giá trị đã bị sửa → gây lặp chữ liên tục kiểu "VNVNVND".
-// Chỉ làm sạch khi: (a) input bình thường không composing, hoặc (b) composition vừa kết thúc.
+// Làm sạch mã sau khi IME chốt ký tự; riêng ô quick-search có thêm bước bỏ 1 bản echo
+// của ký tự seed ngay sau focus để tránh "V" thành "VV", nhưng vẫn giữ mã lặp thật như SSI.
 function _liteBindSymInput(el,onClean){
   if(!el)return;
   let composing=false;
+  const clearQuickSeed=()=>{el._liteQuickSeed=null;};
   el.addEventListener('compositionstart',()=>{composing=true;});
   el.addEventListener('compositionend',()=>{composing=false;});
+  el.addEventListener('keydown',clearQuickSeed);
   el.addEventListener('input',e=>{
     if(composing||e.isComposing)return;
-    const raw=_liteCleanSym(e.target.value);
+    let raw=_liteCleanSym(e.target.value);
+    const q=el._liteQuickSeed;
+    if(q&&Date.now()-q.at<350&&raw===((q.value+q.seed).slice(0,10))){
+      raw=q.value;
+      clearQuickSeed();
+    }
     e.target.value=raw;
     onClean(raw);
   });
@@ -4088,7 +4093,10 @@ function resizeLiteSearchInput(){
 }
 function openLiteSearchWithChar(ch){
   const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
-  DOM.liteChartSearch.value=(cur+String(ch||'').toUpperCase()).slice(0,10);
+  const seed=String(ch||'').toUpperCase();
+  const next=(cur+seed).slice(0,10);
+  DOM.liteChartSearch.value=next;
+  DOM.liteChartSearch._liteQuickSeed={seed,value:next,at:Date.now()};
   resizeLiteSearchInput();
   DOM.liteChartSearch.classList.add('on');
   DOM.liteChartSearch.focus();
@@ -4107,12 +4115,7 @@ function _liteTryOpenSearchOnKey(e){
   if(tag==='input'||tag==='textarea'||tag==='select')return false;
   e.preventDefault();
   const ch=e.key;
-  // Trì hoãn set value + focus() sang tick kế tiếp thay vì làm NGAY trong keydown: một số bộ gõ
-  // tiếng Việt (Unikey/EVKey... hook bàn phím ở mức OS) xử lý phím và nhận biết focus đổi gần như
-  // đồng thời trong cùng 1 chu trình phím, khiến bộ đệm của IME "gửi lại" đúng ký tự vừa gõ vào ô
-  // input mới toanh ngay sau khi nó nhận focus → ký tự đầu bị lặp (vd gõ "V" ra "VV"). Delay 0ms
-  // (setTimeout) đẩy việc set value/focus ra khỏi chu trình xử lý phím hiện tại (đã preventDefault),
-  // cho IME đủ thời gian "chốt" xong ký tự cũ trước khi ô input mới xuất hiện và nhận focus.
+  // Trì hoãn mở input sang tick kế tiếp và đánh dấu ký tự seed để khử echo từ IME tiếng Việt.
   setTimeout(()=>openLiteSearchWithChar(ch),0);
   return true;
 }
@@ -4281,7 +4284,6 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
     _liteVolumeData=_liteNormalizeVolumeData(j.volume,_liteData);
     _liteCandle.setData(_liteData);
-    _liteVolume.setData(_liteVolumeData);
     _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
