@@ -4106,7 +4106,14 @@ function _liteTryOpenSearchOnKey(e){
   const tag=(document.activeElement?.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea'||tag==='select')return false;
   e.preventDefault();
-  openLiteSearchWithChar(e.key);
+  const ch=e.key;
+  // Trì hoãn set value + focus() sang tick kế tiếp thay vì làm NGAY trong keydown: một số bộ gõ
+  // tiếng Việt (Unikey/EVKey... hook bàn phím ở mức OS) xử lý phím và nhận biết focus đổi gần như
+  // đồng thời trong cùng 1 chu trình phím, khiến bộ đệm của IME "gửi lại" đúng ký tự vừa gõ vào ô
+  // input mới toanh ngay sau khi nó nhận focus → ký tự đầu bị lặp (vd gõ "V" ra "VV"). Delay 0ms
+  // (setTimeout) đẩy việc set value/focus ra khỏi chu trình xử lý phím hiện tại (đã preventDefault),
+  // cho IME đủ thời gian "chốt" xong ký tự cũ trước khi ô input mới xuất hiện và nhận focus.
+  setTimeout(()=>openLiteSearchWithChar(ch),0);
   return true;
 }
 function renderLiteIndicators(){
@@ -4348,12 +4355,12 @@ function bindLiteChartControls(){
     // #lite-chart-search nằm lồng bên trong #lite-chart-frame nên keydown của nó vẫn nổi bọt lên tới đây;
     // _liteTryOpenSearchOnKey tự bỏ qua khi đang focus sẵn 1 input/textarea/select để input đó tự nhận phím
     // (tránh lặp chữ khi gõ tiếng Việt qua IME).
-    // stopPropagation() ở đây là bắt buộc: nếu không, event vẫn nổi bọt tiếp lên listener trên document bên
-    // dưới và event đó CŨNG cố mở ô tìm mã lần nữa cho cùng 1 lần bấm phím. Bình thường .focus() đã chuyển
-    // focus đồng bộ nên listener document tự bỏ qua (activeElement đã là input) — nhưng việc dựa vào đúng
-    // thời điểm đó không chắc chắn 100% khi gõ rất nhanh hoặc qua bộ gõ tiếng Việt, khiến ký tự ĐẦU TIÊN
-    // (lúc ô tìm mã còn chưa tồn tại/focus) có thể bị 2 nơi cùng xử lý → chữ bị lặp. stopPropagation() chặn
-    // triệt để, không phụ thuộc timing của trình duyệt nữa.
+    // stopPropagation() ở đây BẮT BUỘC phải giữ, không phải chỉ là lớp an toàn thêm: vì openLiteSearchWithChar()
+    // giờ được gọi trễ 1 tick qua setTimeout (xem _liteTryOpenSearchOnKey), tại thời điểm event đang xử lý ở
+    // ĐÂY, ô tìm mã VẪN CHƯA nhận focus (activeElement chưa đổi). Nếu không stopPropagation(), event chắc chắn
+    // 100% nổi bọt tiếp lên listener trên document bên dưới, listener đó CŨNG gọi _liteTryOpenSearchOnKey cho
+    // cùng 1 lần bấm phím → xếp thêm 1 lệnh setTimeout thứ 2. Khi cả 2 timeout lần lượt chạy, timeout thứ 2 sẽ
+    // đọc value đã có ký tự do timeout thứ 1 vừa set rồi cộng dồn thêm 1 lần nữa → ký tự bị lặp (vd "VV").
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
