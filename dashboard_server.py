@@ -1288,6 +1288,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel.collapsed .lite-indicators,
 .lite-chart-panel.collapsed .lite-draw-toolbar,
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
+.hmap-panel-hdr{cursor:pointer;user-select:none}
+.hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0;margin-left:auto}
+.hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
+.hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none}
+.hmap-panel.collapsed .hmap-ts-wrap{display:none}
+.hmap-panel.collapsed>.pbar-wrap,
+.hmap-panel.collapsed>.panel-body{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
@@ -1764,8 +1771,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   </div>
 
   <!-- HEATMAP -->
-  <div class="panel">
-    <div class="hmap-panel-hdr">
+  <div class="panel hmap-panel" id="hmap-panel">
+    <div class="hmap-panel-hdr" id="hmap-toggle">
       <div class="hmap-hdr-row1">
         <span class="panel-title">Heatmap</span>
         <button class="hmap-link-btn" id="btn-market">MARKET</button>
@@ -1780,6 +1787,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
+      <span class="hmap-toggle-icon">▶</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
@@ -2080,6 +2088,7 @@ const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
+  hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
@@ -4715,6 +4724,12 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
 DOM.sankeyToggle.addEventListener('click',()=>{
   const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
   DOM.sankeyWrap.hidden=collapsed;
+});
+DOM.hmapToggle.addEventListener('click',e=>{
+  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
+  // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
+  if(e.target.closest('button,input,.hmap-search-wrap'))return;
+  DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
   // Khi thẻ đang mở, các control bên trong thanh công cụ (tìm mã, D/W, chỉ báo, vẽ...)
