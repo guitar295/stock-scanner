@@ -1288,6 +1288,15 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel.collapsed .lite-indicators,
 .lite-chart-panel.collapsed .lite-draw-toolbar,
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
+.hmap-panel-hdr{cursor:pointer;user-select:none}
+.hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
+.hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none}
+.hmap-panel.collapsed .hmap-hdr-row1 #hover-preview-btn{display:none}
+.hmap-panel.collapsed .hmap-ts-wrap{display:none}
+.hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
+.hmap-panel.collapsed>.pbar-wrap,
+.hmap-panel.collapsed>.panel-body{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
@@ -1764,8 +1773,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
   </div>
 
   <!-- HEATMAP -->
-  <div class="panel">
-    <div class="hmap-panel-hdr">
+  <div class="panel hmap-panel" id="hmap-panel">
+    <div class="hmap-panel-hdr" id="hmap-toggle">
       <div class="hmap-hdr-row1">
         <span class="panel-title">Heatmap</span>
         <button class="hmap-link-btn" id="btn-market">MARKET</button>
@@ -1780,6 +1789,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
         <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
+      <span class="hmap-toggle-icon">▶</span>
     </div>
     <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
@@ -1842,6 +1852,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="rsi"><span class="lite-ind-label" data-ind="rsi" title="Bấm để đổi màu">RSI</span><input type="color" class="lite-ind-color" data-ind="rsi" value="#7c6ee6"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
+          <label class="lite-ind-simple"><input type="checkbox" value="signal">Signal</label>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
           <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
@@ -2079,6 +2090,7 @@ const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
+  hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
@@ -2281,9 +2293,9 @@ function bindLiteIndGroupDropdowns(){
   document.addEventListener('click',()=>closeAllLiteIndDropdowns());
   updateLiteIndGroupCounts();
 }
-function _liteHexToRgba(hex,alpha){
+function _liteHexToRgba(hex,alpha,fallbackRgb='147,51,234'){
   const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'');
-  if(!m)return `rgba(147,51,234,${alpha})`;
+  if(!m)return `rgba(${fallbackRgb},${alpha})`;
   const r=parseInt(m[1],16),g=parseInt(m[2],16),b=parseInt(m[3],16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
@@ -2325,6 +2337,10 @@ let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=fa
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
 const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
+// Phần chung của mọi cấu hình rightPriceScale trong initLiteChart()/applyLitePaneLayout() —
+// borderColor và minimumWidth giống hệt nhau ở cả 3 chart (main/RSI/MACD) và ở mọi lần áp dụng,
+// chỉ scaleMargins (và autoScale ở main/RSI khi đổi layout) là khác nhau nên vẫn để riêng.
+const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
@@ -2345,18 +2361,18 @@ function initLiteChart(){
   };
   _liteChart=LightweightCharts.createChart(DOM.liteChart,{
     ...chartOpts,width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.12,bottom:.22}},
+    rightPriceScale:{...LITE_PRICE_SCALE_BASE,scaleMargins:{top:.12,bottom:.22}},
     handleScale:{axisPressedMouseMove:{time:true,price:true}}
   });
   _liteRsiChart=LightweightCharts.createChart(DOM.liteRsiChart,{
     ...chartOpts,width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
     layout:{background:{type:'solid',color:'rgba(255,255,255,0)'},textColor:'#111827'},
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.04,bottom:.06}},
+    rightPriceScale:{...LITE_PRICE_SCALE_BASE,scaleMargins:{top:.04,bottom:.06}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });
   _liteMacdChart=LightweightCharts.createChart(DOM.liteMacdChart,{
     ...chartOpts,width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
-    rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.07,bottom:.10}},
+    rightPriceScale:{...LITE_PRICE_SCALE_BASE,scaleMargins:{top:.07,bottom:.10}},
     handleScale:{axisPressedMouseMove:{time:false,price:true}}
   });  _liteCandle=_liteChart.addCandlestickSeries({
     upColor:LITE_CANDLE_UP_COLOR,downColor:LITE_CANDLE_DOWN_COLOR,borderUpColor:LITE_CANDLE_UP_COLOR,
@@ -2414,36 +2430,35 @@ function initLiteChart(){
     const price=series&&series.coordinateToPrice&&series.coordinateToPrice(localY);
     return Number.isFinite(price)?fmtLiteNum(price):'';
   }
-  _liteChart.subscribeCrosshairMove(param=>{
-    const key=param&&param.time?liteTimeKey(param.time):'';
-    const bar=key?_liteDataByTime.get(key):null;
-    if(bar)updateLiteTitle(bar);else updateLiteTitle(_liteData[_liteData.length-1]);
-    if(!param||!param.point){_liteHideXhair();return;}
-    const x=param.point.x,y=(DOM.liteChart.offsetTop||0)+param.point.y;
-    const priceTxt=_liteCrosshairPriceTxt(_liteCandle,param.point.y);
-    const timeTxt=key?fmtLiteDate(key):'';
-    _liteMoveXhair(x,y,priceTxt,timeTxt);
-  });
-  _liteMacdChart.subscribeCrosshairMove(param=>{
-    if(!param||!param.point){_liteHideXhair();return;}
-    const key=param.time?liteTimeKey(param.time):'';
-    const bar=key?_liteDataByTime.get(key):null;
-    if(bar)updateLiteTitle(bar);
-    const x=param.point.x,y=(DOM.liteMacdChart.offsetTop||0)+param.point.y;
-    const priceTxt=_liteCrosshairPriceTxt(_liteMacdCrosshairSeries,param.point.y);
-    const timeTxt=key?fmtLiteDate(key):'';
-    _liteMoveXhair(x,y,priceTxt,timeTxt);
-  });
-  _liteRsiChart.subscribeCrosshairMove(param=>{
+  // _liteHandleCrosshairMove: dùng chung cho cả 3 panel (main/MACD/RSI) — gộp lại từ 3 khối
+  // subscribeCrosshairMove gần như giống hệt nhau trước đây để đỡ lặp code khi cần sửa sau này.
+  // isMain=true GIỮ NGUYÊN thứ tự xử lý gốc của chart chính (luôn cập nhật title kể cả khi con trỏ
+  // rời khỏi chart, để hiện title của nến cuối); isMain=false giữ nguyên hành vi gốc của MACD/RSI
+  // (chỉ cập nhật title khi có điểm trỏ hợp lệ, không có "else" fallback).
+  function _liteHandleCrosshairMove(param,domEl,priceSeries,isMain){
+    if(isMain){
+      const key=param&&param.time?liteTimeKey(param.time):'';
+      const bar=key?_liteDataByTime.get(key):null;
+      if(bar)updateLiteTitle(bar);else updateLiteTitle(_liteData[_liteData.length-1]);
+      if(!param||!param.point){_liteHideXhair();return;}
+      const x=param.point.x,y=(domEl.offsetTop||0)+param.point.y;
+      const priceTxt=_liteCrosshairPriceTxt(priceSeries,param.point.y);
+      const timeTxt=key?fmtLiteDate(key):'';
+      _liteMoveXhair(x,y,priceTxt,timeTxt);
+      return;
+    }
     if(!param||!param.point){_liteHideXhair();return;}
     const key=param.time?liteTimeKey(param.time):'';
     const bar=key?_liteDataByTime.get(key):null;
     if(bar)updateLiteTitle(bar);
-    const x=param.point.x,y=(DOM.liteRsiChart.offsetTop||0)+param.point.y;
-    const priceTxt=_liteCrosshairPriceTxt(_liteRsiCrosshairSeries,param.point.y);
+    const x=param.point.x,y=(domEl.offsetTop||0)+param.point.y;
+    const priceTxt=_liteCrosshairPriceTxt(priceSeries,param.point.y);
     const timeTxt=key?fmtLiteDate(key):'';
     _liteMoveXhair(x,y,priceTxt,timeTxt);
-  });
+  }
+  _liteChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteChart,_liteCandle,true));
+  _liteMacdChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteMacdChart,_liteMacdCrosshairSeries,false));
+  _liteRsiChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteRsiChart,_liteRsiCrosshairSeries,false));
   if(!_liteResizeBound){
     _liteResizeBound=true;
     window.addEventListener('resize',()=>{
@@ -2569,7 +2584,7 @@ function updateLiteTitle(bar){
 // không gọi thêm API nào, không tính toán chỉ báo riêng, nên gần như không tốn thêm chi phí.
 function _liteApplyBuySignal(){
   if(!_liteCandle||!_liteData.length)return;
-  const sig=_sigTodayMap.get(_liteSymbol);
+  const sig=_liteChecked('signal')?_sigTodayMap.get(_liteSymbol):null;
   if(sig){
     let arrowColor='#9333ea';
     if(DOM.liteChartSignal){
@@ -2791,17 +2806,17 @@ function applyLitePaneLayout(){
     _liteChart.applyOptions({
       width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
       timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.12,bottom:.18}}
+      rightPriceScale:{...LITE_PRICE_SCALE_BASE,autoScale:true,scaleMargins:{top:.12,bottom:.18}}
     });
     if(_liteRsiChart)_liteRsiChart.applyOptions({
       width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
       timeScale:{visible:showRsiTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,autoScale:true,scaleMargins:{top:.04,bottom:.06}}
+      rightPriceScale:{...LITE_PRICE_SCALE_BASE,autoScale:true,scaleMargins:{top:.04,bottom:.06}}
     });
     if(_liteMacdChart)_liteMacdChart.applyOptions({
       width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
       timeScale:{visible:showMacdTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{borderColor:'#dde3ee',minimumWidth:64,scaleMargins:{top:.07,bottom:.10}}
+      rightPriceScale:{...LITE_PRICE_SCALE_BASE,scaleMargins:{top:.07,bottom:.10}}
     });
   }finally{
     _liteSyncing=prevSyncing;
@@ -3143,11 +3158,11 @@ function _liteDrawShapeToCanvas(ctx,d){
     }
   }
 }
+// _liteHexAlpha: trước đây tự parse hex riêng (trùng logic với _liteHexToRgba ở trên) — nay chỉ là
+// lớp mỏng gọi lại _liteHexToRgba với màu fallback riêng của mình ('26,86,219' = #1a56db, màu vẽ mặc
+// định), kết quả đầu ra giữ NGUYÊN y hệt như cài đặt cũ cho mọi input hex hợp lệ/không hợp lệ.
 function _liteHexAlpha(hex,a){
-  const m=/^#?([0-9a-f]{6})$/i.exec(hex||'');
-  if(!m)return `rgba(26,86,219,${a})`;
-  const n=parseInt(m[1],16);
-  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+  return _liteHexToRgba(hex,a,'26,86,219');
 }
 function _liteTimeToX(t){
   const c=_liteChart&&_liteChart.timeScale().timeToCoordinate(t);
@@ -4300,28 +4315,28 @@ function bindLiteChartControls(){
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
   });
-  if(DOM.liteChartInput)DOM.liteChartInput.addEventListener('keydown',e=>{
+  DOM.liteChartInput?.addEventListener('keydown',e=>{
     if(e.key==='Enter')loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
   });
-  if(DOM.liteChartTf)DOM.liteChartTf.addEventListener('click',e=>{
+  DOM.liteChartTf?.addEventListener('click',e=>{
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
-  if(DOM.liteIndicators)DOM.liteIndicators.addEventListener('change',()=>{saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();});
-  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('click',()=>{
+  DOM.liteIndicators?.addEventListener('change',()=>{saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();_liteApplyBuySignal();});
+  DOM.liteChartFrame?.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
     // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
     if(_liteTextEditPos)return;
     DOM.liteChartFrame.focus();
   });
-  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseenter',()=>{
+  DOM.liteChartFrame?.addEventListener('mouseenter',()=>{
     _litePointerInside=true;
     if(_liteTextEditPos)return;
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag!=='input'&&tag!=='textarea')DOM.liteChartFrame.focus();
   });
-  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('mouseleave',()=>{_litePointerInside=false;});
-  if(DOM.liteChartFrame)DOM.liteChartFrame.addEventListener('keydown',e=>{
+  DOM.liteChartFrame?.addEventListener('mouseleave',()=>{_litePointerInside=false;});
+  DOM.liteChartFrame?.addEventListener('keydown',e=>{
     // Đang gõ chữ (công cụ Text) → không xử lý phím tắt của khung chart (xoá hình, mở tìm mã...) ở đây.
     // Bản thân ô chữ (#lite-text-input) đã tự xử lý Enter/Escape và stopPropagation() cho các phím khác,
     // đây chỉ là lớp bảo vệ thêm phòng khi ô chữ chưa kịp nhận focus.
@@ -4365,11 +4380,11 @@ function bindLiteChartControls(){
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
   });
-  if(DOM.liteChartSearch)DOM.liteChartSearch.addEventListener('keydown',e=>{
+  DOM.liteChartSearch?.addEventListener('keydown',e=>{
     if(e.key==='Escape'){DOM.liteChartSearch.classList.remove('on');DOM.liteChartFrame.focus();}
     if(e.key==='Enter'&&DOM.liteChartSearch.value){DOM.liteChartSearch.classList.remove('on');loadLiteChart(DOM.liteChartSearch.value,0);}
   });
-  if(DOM.liteMacdResizer)DOM.liteMacdResizer.addEventListener('pointerdown',e=>{
+  DOM.liteMacdResizer?.addEventListener('pointerdown',e=>{
     e.preventDefault();
     const startY=e.clientY,startH=_liteMacdSoloHeight||DOM.liteMacdChart.clientHeight||176;
     // Gộp các sự kiện pointermove (bắn nhiều hơn tốc độ khung hình màn hình) thành đúng 1 lần
@@ -4711,6 +4726,12 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
 DOM.sankeyToggle.addEventListener('click',()=>{
   const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
   DOM.sankeyWrap.hidden=collapsed;
+});
+DOM.hmapToggle.addEventListener('click',e=>{
+  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
+  // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
+  if(e.target.closest('button,input,.hmap-search-wrap'))return;
+  DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
   // Khi thẻ đang mở, các control bên trong thanh công cụ (tìm mã, D/W, chỉ báo, vẽ...)
