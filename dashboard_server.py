@@ -232,7 +232,7 @@ def _event_to_dict(row):
 def _validate_alert_rule_payload(data):
     periods = {10, 20, 30, 50, 100, 200}
     ma_kinds = {"MA", "EMA"}
-    operators = {"rise", "fall", "cross_above", "cross_below"}
+    operators = {"gte", "lte"}
     client_id = _clean_alert_client_id(data.get("client_id"))
     symbol = str(data.get("symbol") or "").upper().strip()
     left_type = str(data.get("left_type") or "price").lower()
@@ -252,13 +252,6 @@ def _validate_alert_rule_payload(data):
         raise ValueError("invalid_right_type")
     if after_trigger not in {"disable", "keep"}:
         after_trigger = "disable"
-
-    if left_type == "ma" and operator in {"rise", "fall"}:
-        raise ValueError("ma_source_requires_cross")
-    if operator in {"rise", "fall"} and right_type != "price":
-        raise ValueError("rise_fall_requires_price")
-    if left_type == "ma" and right_type != "ma":
-        raise ValueError("ma_source_requires_ma_target")
 
     left_ma_kind = None
     left_period = None
@@ -2286,10 +2279,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
                 <div class="lite-alert-field">
                   <label>Điều kiện</label>
                   <select id="lite-alert-operator">
-                    <option value="cross_above">Cắt lên</option>
-                    <option value="cross_below">Cắt xuống</option>
-                    <option value="rise">Tăng</option>
-                    <option value="fall">Giảm</option>
+                    <option value="gte">&ge; (Tăng lên / Cắt lên)</option>
+                    <option value="lte">&le; (Giảm về / Cắt xuống)</option>
                   </select>
                 </div>
                 <div class="lite-alert-field">
@@ -5314,7 +5305,7 @@ function _alertMaText(kind,period){return `${(kind||'MA').toUpperCase()}${period
 function _alertSideText(type,kind,period,value){
   return type==='ma'?_alertMaText(kind,period):(value?Number(value).toFixed(2):'Giá cổ phiếu');
 }
-function _alertOperatorText(op){return({rise:'Tăng tới',fall:'Giảm về',cross_above:'Cắt lên',cross_below:'Cắt xuống'}[op]||op);}
+function _alertOperatorText(op){return({gte:'≥ (Tăng lên/Cắt lên)',lte:'≤ (Giảm về/Cắt xuống)'}[op]||op);}
 function _alertRuleText(r){
   const left=_alertSideText(r.left_type,r.left_ma_kind,r.left_period);
   const right=r.right_type==='ma'?_alertMaText(r.right_ma_kind,r.right_period):Number(r.right_value||0).toFixed(2);
@@ -5326,21 +5317,8 @@ function _alertJumpSymbol(sym){
 }
 function updateAlertFormVisibility(){
   const leftType=DOM.liteAlertLeftType.value;
-  const op=DOM.liteAlertOperator.value;
   DOM.liteAlertLeftKindWrap.style.display=leftType==='ma'?'':'none';
   DOM.liteAlertLeftPeriodWrap.style.display=leftType==='ma'?'':'none';
-  [...DOM.liteAlertOperator.options].forEach(o=>{
-    o.disabled=leftType==='ma'&&(o.value==='rise'||o.value==='fall');
-  });
-  if(leftType==='ma'&&(op==='rise'||op==='fall'))DOM.liteAlertOperator.value='cross_above';
-  if(DOM.liteAlertOperator.value==='rise'||DOM.liteAlertOperator.value==='fall'){
-    DOM.liteAlertRightType.value='price';
-    DOM.liteAlertRightType.disabled=true;
-  }else{
-    DOM.liteAlertRightType.disabled=false;
-    if(leftType==='ma')DOM.liteAlertRightType.value='ma';
-  }
-  if(leftType==='ma')DOM.liteAlertRightType.disabled=true;
   const rightType=DOM.liteAlertRightType.value;
   DOM.liteAlertPriceWrap.style.display=rightType==='price'?'':'none';
   DOM.liteAlertRightKindWrap.style.display=rightType==='ma'?'':'none';
@@ -5455,7 +5433,7 @@ function bindAlertControls(){
   document.addEventListener('click',e=>{
     if(DOM.liteAlertWrap&&!DOM.liteAlertWrap.contains(e.target))DOM.liteAlertPanel?.classList.remove('on');
   });
-  [DOM.liteAlertLeftType,DOM.liteAlertOperator,DOM.liteAlertRightType,DOM.liteAlertTelegram].forEach(el=>el?.addEventListener('change',updateAlertFormVisibility));
+  [DOM.liteAlertLeftType,DOM.liteAlertRightType,DOM.liteAlertTelegram].forEach(el=>el?.addEventListener('change',updateAlertFormVisibility));
   DOM.liteAlertSave?.addEventListener('click',saveAlertRule);
   DOM.liteAlertSeen?.addEventListener('click',markAlertsSeen);
   DOM.liteAlertTest?.addEventListener('click',testAlertTelegram);
