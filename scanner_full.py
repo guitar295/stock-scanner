@@ -1794,10 +1794,8 @@ def _price_alert_series_value(row, rule: dict, side: str):
 def _price_alert_message(rule: dict, price: float, left_label: str, right_label: str, right_value: float) -> str:
     op = rule.get("operator")
     op_label = {
-        "rise": "Tăng tới",
-        "fall": "Giảm về",
-        "cross_above": "Cắt lên",
-        "cross_below": "Cắt xuống",
+        "gte": "Tăng lên / Cắt lên",
+        "lte": "Giảm về / Cắt xuống",
     }.get(op, op)
     if rule.get("right_type") == "price":
         target = f"{right_value:.2f}"
@@ -1818,12 +1816,13 @@ def _price_alert_triggered(rule: dict, prev_row, cur_row):
     vals = [left_prev, left_cur, right_prev, right_cur]
     if any(pd.isna(v) or not math.isfinite(v) for v in vals):
         return False, "", ""
+    # Công thức tổng quát duy nhất cho mọi tổ hợp nguồn/đối tượng (Giá/MA vs Mức giá/MA):
+    # gte: hôm qua bên trái còn thấp hơn bên phải, hôm nay đã bằng/vượt qua -> "tăng lên / cắt lên"
+    # lte: hôm qua bên trái còn cao hơn bên phải, hôm nay đã bằng/thấp hơn -> "giảm về / cắt xuống"
     op = rule.get("operator")
     ok = (
-        (op == "rise" and left_prev < right_cur <= left_cur) or
-        (op == "fall" and left_prev > right_cur >= left_cur) or
-        (op == "cross_above" and left_prev <= right_prev and left_cur > right_cur) or
-        (op == "cross_below" and left_prev >= right_prev and left_cur < right_cur)
+        (op == "gte" and left_prev < right_prev and left_cur >= right_cur) or
+        (op == "lte" and left_prev > right_prev and left_cur <= right_cur)
     )
     if not ok:
         return False, "", ""
