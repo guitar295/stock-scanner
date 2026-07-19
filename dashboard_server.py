@@ -10,6 +10,7 @@ import hmac
 import json
 import math
 import os
+import requests
 import sqlite3
 import threading
 import time
@@ -49,6 +50,7 @@ JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
 JOURNAL_WARNING_PATH = JOURNAL_DATA_DIR / "market_warning.txt"
 JOURNAL_ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
 _journal_lock = threading.Lock()
+_price_alert_lock = threading.Lock()
 
 HMAP_COLS_CONFIG = [
     {"groups": [{"name": "VN30", "syms": ["FPT", "GAS", "NVL", "VNM", "VCB", "PLX", "TCB", "MWG", "STB", "HPG", "PNJ", "BID", "CTG", "HDB", "VJC", "VPB", "KDH", "MBB", "VHM", "POW", "VRE", "MSN", "SSI", "ACB", "BVH", "GVR", "TPB"]}]},
@@ -120,6 +122,227 @@ def _journal_conn():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _init_price_alert_storage():
+    JOURNAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(JOURNAL_DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS price_alert_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                left_type TEXT NOT NULL,
+                left_ma_kind TEXT,
+                left_period INTEGER,
+                operator TEXT NOT NULL,
+                right_type TEXT NOT NULL,
+                right_value REAL,
+                right_ma_kind TEXT,
+                right_period INTEGER,
+                notify_dashboard INTEGER DEFAULT 1,
+                notify_telegram INTEGER DEFAULT 0,
+                telegram_chat_id TEXT,
+                after_trigger TEXT DEFAULT 'disable',
+                active INTEGER DEFAULT 1,
+                last_trigger_bar TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS price_alert_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_id INTEGER,
+                client_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                message TEXT NOT NULL,
+                detail TEXT,
+                bar_date TEXT,
+                price REAL,
+                seen INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(rule_id) REFERENCES price_alert_rules(id) ON DELETE SET NULL
+            )
+        """)
+        conn.commit()
+
+
+def _price_alert_conn():
+    _init_price_alert_storage()
+    conn = sqlite3.connect(JOURNAL_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def _clean_alert_client_id(value):
+    value = str(value or "").strip()
+    return value[:80] if value else ""
+
+
+def _get_alert_client_id(data=None):
+    data = data or {}
+    return _clean_alert_client_id(
+        request.headers.get("X-Alert-Client-Id")
+        or request.args.get("client_id")
+        or data.get("client_id")
+    )
+
+
+def _rule_to_dict(row):
+    return {
+        "id": row["id"],
+        "client_id": row["client_id"],
+        "symbol": row["symbol"],
+        "left_type": row["left_type"],
+        "left_ma_kind": row["left_ma_kind"] or "",
+        "left_period": row["left_period"],
+        "operator": row["operator"],
+        "right_type": row["right_type"],
+        "right_value": row["right_value"],
+        "right_ma_kind": row["right_ma_kind"] or "",
+        "right_period": row["right_period"],
+        "notify_dashboard": bool(row["notify_dashboard"]),
+        "notify_telegram": bool(row["notify_telegram"]),
+        "telegram_chat_id": row["telegram_chat_id"] or "",
+        "after_trigger": row["after_trigger"] or "disable",
+        "active": bool(row["active"]),
+        "last_trigger_bar": row["last_trigger_bar"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _event_to_dict(row):
+    return {
+        "id": row["id"],
+        "rule_id": row["rule_id"],
+        "client_id": row["client_id"],
+        "symbol": row["symbol"],
+        "message": row["message"],
+        "detail": row["detail"] or "",
+        "bar_date": row["bar_date"] or "",
+        "price": row["price"],
+        "seen": bool(row["seen"]),
+        "created_at": row["created_at"],
+    }
+
+
+def _validate_alert_rule_payload(data):
+    periods = {10, 20, 30, 50, 100, 200}
+    ma_kinds = {"MA", "EMA"}
+    operators = {"rise", "fall", "cross_above", "cross_below"}
+    client_id = _clean_alert_client_id(data.get("client_id"))
+    symbol = str(data.get("symbol") or "").upper().strip()
+    left_type = str(data.get("left_type") or "price").lower()
+    operator = str(data.get("operator") or "").lower()
+    right_type = str(data.get("right_type") or "ma").lower()
+    after_trigger = str(data.get("after_trigger") or "disable").lower()
+
+    if not client_id:
+        raise ValueError("missing_client_id")
+    if not symbol or len(symbol) > 10 or not all(ch.isalnum() for ch in symbol):
+        raise ValueError("invalid_symbol")
+    if left_type not in {"price", "ma"}:
+        raise ValueError("invalid_left_type")
+    if operator not in operators:
+        raise ValueError("invalid_operator")
+    if right_type not in {"price", "ma"}:
+        raise ValueError("invalid_right_type")
+    if after_trigger not in {"disable", "keep"}:
+        after_trigger = "disable"
+
+    if left_type == "ma" and operator in {"rise", "fall"}:
+        raise ValueError("ma_source_requires_cross")
+    if operator in {"rise", "fall"} and right_type != "price":
+        raise ValueError("rise_fall_requires_price")
+    if left_type == "ma" and right_type != "ma":
+        raise ValueError("ma_source_requires_ma_target")
+
+    left_ma_kind = None
+    left_period = None
+    if left_type == "ma":
+        left_ma_kind = str(data.get("left_ma_kind") or "MA").upper()
+        left_period = int(data.get("left_period") or 20)
+        if left_ma_kind not in ma_kinds or left_period not in periods:
+            raise ValueError("invalid_left_ma")
+
+    right_value = None
+    right_ma_kind = None
+    right_period = None
+    if right_type == "price":
+        right_value = float(data.get("right_value") or 0)
+        if not math.isfinite(right_value) or right_value <= 0:
+            raise ValueError("invalid_price")
+    else:
+        right_ma_kind = str(data.get("right_ma_kind") or "MA").upper()
+        right_period = int(data.get("right_period") or 20)
+        if right_ma_kind not in ma_kinds or right_period not in periods:
+            raise ValueError("invalid_right_ma")
+
+    notify_dashboard = 1 if data.get("notify_dashboard", True) else 0
+    notify_telegram = 1 if data.get("notify_telegram") else 0
+    telegram_chat_id = str(data.get("telegram_chat_id") or "").strip()[:80]
+    if not notify_dashboard and not notify_telegram:
+        raise ValueError("missing_notify_channel")
+    if notify_telegram and not telegram_chat_id:
+        raise ValueError("missing_telegram_chat_id")
+
+    return {
+        "client_id": client_id,
+        "symbol": symbol,
+        "left_type": left_type,
+        "left_ma_kind": left_ma_kind,
+        "left_period": left_period,
+        "operator": operator,
+        "right_type": right_type,
+        "right_value": right_value,
+        "right_ma_kind": right_ma_kind,
+        "right_period": right_period,
+        "notify_dashboard": notify_dashboard,
+        "notify_telegram": notify_telegram,
+        "telegram_chat_id": telegram_chat_id,
+        "after_trigger": after_trigger,
+    }
+
+
+def get_active_price_alert_rules():
+    with _price_alert_lock, _price_alert_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM price_alert_rules
+            WHERE active=1
+            ORDER BY symbol, id
+        """).fetchall()
+    return [_rule_to_dict(row) for row in rows]
+
+
+def record_price_alert_event(rule_id, message, detail, bar_date, price, notify_dashboard=True):
+    now = _now_vn_iso()
+    with _price_alert_lock, _price_alert_conn() as conn:
+        rule = conn.execute("SELECT * FROM price_alert_rules WHERE id=?", (rule_id,)).fetchone()
+        if not rule:
+            return None
+        bar_date = str(bar_date or "")
+        if rule["last_trigger_bar"] == bar_date:
+            return None
+        conn.execute("""
+            INSERT INTO price_alert_events
+            (rule_id, client_id, symbol, message, detail, bar_date, price, seen, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            rule["id"], rule["client_id"], rule["symbol"], message,
+            detail or "", bar_date, float(price or 0), 0 if notify_dashboard else 1, now,
+        ))
+        active = 0 if (rule["after_trigger"] or "disable") == "disable" else 1
+        conn.execute("""
+            UPDATE price_alert_rules
+            SET last_trigger_bar=?, active=?, updated_at=?
+            WHERE id=?
+        """, (bar_date, active, now, rule["id"]))
+        conn.commit()
+        event = conn.execute("SELECT * FROM price_alert_events WHERE id=last_insert_rowid()").fetchone()
+    return _event_to_dict(event) if event else None
 
 
 def _safe_text(value, max_len=2000):
@@ -361,6 +584,137 @@ def api_chart_cache_clear(symbol):
 def api_config():
     return jsonify({"signal_ttl_sec": SIGNAL_TTL_SEC,
                     "heatmap_ttl_sec": HEATMAP_TTL_SEC})
+
+@app.route("/api/alerts", methods=["GET", "POST"])
+def api_alerts():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        try:
+            payload = _validate_alert_rule_payload(data)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+        now = _now_vn_iso()
+        with _price_alert_lock, _price_alert_conn() as conn:
+            cur = conn.execute("""
+                INSERT INTO price_alert_rules
+                (client_id, symbol, left_type, left_ma_kind, left_period, operator,
+                 right_type, right_value, right_ma_kind, right_period,
+                 notify_dashboard, notify_telegram, telegram_chat_id,
+                 after_trigger, active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            """, (
+                payload["client_id"], payload["symbol"], payload["left_type"],
+                payload["left_ma_kind"], payload["left_period"], payload["operator"],
+                payload["right_type"], payload["right_value"], payload["right_ma_kind"],
+                payload["right_period"], payload["notify_dashboard"],
+                payload["notify_telegram"], payload["telegram_chat_id"],
+                payload["after_trigger"], now, now,
+            ))
+            conn.commit()
+            row = conn.execute("SELECT * FROM price_alert_rules WHERE id=?", (cur.lastrowid,)).fetchone()
+        return jsonify({"rule": _rule_to_dict(row)})
+
+    client_id = _get_alert_client_id()
+    if not client_id:
+        return jsonify({"error": "missing_client_id"}), 400
+    with _price_alert_lock, _price_alert_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM price_alert_rules
+            WHERE client_id=?
+            ORDER BY active DESC, updated_at DESC, id DESC
+        """, (client_id,)).fetchall()
+    return jsonify({"rules": [_rule_to_dict(row) for row in rows]})
+
+
+@app.route("/api/alerts/<int:rule_id>/toggle", methods=["POST"])
+def api_alert_toggle(rule_id):
+    data = request.get_json(silent=True) or {}
+    client_id = _get_alert_client_id(data)
+    active = 1 if data.get("active") else 0
+    if not client_id:
+        return jsonify({"error": "missing_client_id"}), 400
+    with _price_alert_lock, _price_alert_conn() as conn:
+        conn.execute("""
+            UPDATE price_alert_rules SET active=?, updated_at=?
+            WHERE id=? AND client_id=?
+        """, (active, _now_vn_iso(), rule_id, client_id))
+        conn.commit()
+        row = conn.execute("""
+            SELECT * FROM price_alert_rules WHERE id=? AND client_id=?
+        """, (rule_id, client_id)).fetchone()
+    if not row:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"rule": _rule_to_dict(row)})
+
+
+@app.route("/api/alerts/<int:rule_id>", methods=["DELETE"])
+def api_alert_delete(rule_id):
+    client_id = _get_alert_client_id()
+    if not client_id:
+        return jsonify({"error": "missing_client_id"}), 400
+    with _price_alert_lock, _price_alert_conn() as conn:
+        cur = conn.execute("""
+            DELETE FROM price_alert_rules WHERE id=? AND client_id=?
+        """, (rule_id, client_id))
+        conn.commit()
+    return jsonify({"deleted": cur.rowcount > 0})
+
+
+@app.route("/api/alerts/feed")
+def api_alert_feed():
+    client_id = _get_alert_client_id()
+    if not client_id:
+        return jsonify({"error": "missing_client_id"}), 400
+    try:
+        limit = max(1, min(50, int(request.args.get("limit", 20))))
+    except (TypeError, ValueError):
+        limit = 20
+    with _price_alert_lock, _price_alert_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM price_alert_events
+            WHERE client_id=?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (client_id, limit)).fetchall()
+        unseen = conn.execute("""
+            SELECT COUNT(*) AS n FROM price_alert_events
+            WHERE client_id=? AND seen=0
+        """, (client_id,)).fetchone()["n"]
+    return jsonify({"events": [_event_to_dict(row) for row in rows], "unseen_count": unseen})
+
+
+@app.route("/api/alerts/seen", methods=["POST"])
+def api_alert_seen():
+    data = request.get_json(silent=True) or {}
+    client_id = _get_alert_client_id(data)
+    if not client_id:
+        return jsonify({"error": "missing_client_id"}), 400
+    with _price_alert_lock, _price_alert_conn() as conn:
+        conn.execute("UPDATE price_alert_events SET seen=1 WHERE client_id=?", (client_id,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/alerts/test_telegram", methods=["POST"])
+def api_alert_test_telegram():
+    data = request.get_json(silent=True) or {}
+    chat_id = str(data.get("telegram_chat_id") or "").strip()
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not chat_id:
+        return jsonify({"error": "missing_telegram_chat_id"}), 400
+    if not token:
+        return jsonify({"error": "telegram_bot_token_not_configured"}), 503
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": chat_id, "text": "Test cảnh báo từ Dashboard", "parse_mode": "HTML"},
+            timeout=10,
+        )
+        if not resp.ok:
+            return jsonify({"error": "telegram_error", "detail": resp.text[:500]}), 400
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 @app.route("/journal")
 def journal_view():
@@ -1355,6 +1709,38 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-draw-btn{width:24px;height:24px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lite-draw-btn:hover{background:#f1f5f9}
 .lite-draw-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
+.lite-alert-wrap{position:relative;display:flex}
+.lite-alert-badge{position:absolute;top:-5px;right:-5px;min-width:14px;height:14px;padding:0 3px;border-radius:8px;background:#dc2626;color:#fff;font-size:8px;font-weight:800;line-height:14px;text-align:center;display:none}
+.lite-alert-badge.on{display:block}
+.lite-alert-panel{display:none;position:absolute;top:calc(100% + 7px);right:0;z-index:40;width:360px;max-width:calc(100vw - 28px);background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 14px 34px rgba(17,24,39,.18);padding:10px;color:var(--text)}
+.lite-alert-panel.on{display:block}
+.lite-alert-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--accent);letter-spacing:.08em;text-transform:uppercase}
+.lite-alert-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.lite-alert-field{display:flex;flex-direction:column;gap:3px}
+.lite-alert-field.full{grid-column:1/-1}
+.lite-alert-field label,.lite-alert-check{font-size:10px;color:var(--muted);font-family:var(--font-mono)}
+.lite-alert-field select,.lite-alert-field input{height:28px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;padding:0 7px;outline:none}
+.lite-alert-field input{text-transform:uppercase}
+.lite-alert-field select:focus,.lite-alert-field input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.1)}
+.lite-alert-checks{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.lite-alert-check{display:flex;align-items:center;gap:4px;cursor:pointer}
+.lite-alert-actions{display:flex;gap:6px;margin-top:9px;align-items:center;justify-content:flex-end}
+.lite-alert-action{height:28px;padding:0 10px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:#374151;font-size:11px;font-weight:700;cursor:pointer}
+.lite-alert-action.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.lite-alert-action:hover{filter:brightness(.97)}
+.lite-alert-list{border-top:1px solid var(--border);margin-top:10px;padding-top:8px;max-height:210px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.lite-alert-row{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;border:1px solid var(--border);border-radius:6px;padding:7px;background:#fbfcff}
+.lite-alert-row.off{opacity:.62}
+.lite-alert-row-main{min-width:0}
+.lite-alert-row-title{font-size:11px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lite-alert-row-sub{font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lite-alert-row-actions{display:flex;gap:4px}
+.lite-alert-mini{height:23px;min-width:28px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#374151;font-size:10px;font-weight:700;cursor:pointer}
+.lite-alert-mini.danger{color:#dc2626}
+.alert-toast-wrap{position:fixed;top:70px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 28px))}
+.alert-toast{background:#111827;color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:8px;box-shadow:0 12px 32px rgba(17,24,39,.28);padding:10px 12px;cursor:pointer}
+.alert-toast-title{font-size:12px;font-weight:800;margin-bottom:3px}
+.alert-toast-sub{font-size:11px;color:#d1d5db}
 .lite-draw-sep{width:1px;height:16px;background:var(--border);margin:0 2px}
 .lite-draw-color{width:24px;height:20px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
 .lite-draw-color::-webkit-color-swatch-wrapper{padding:2px}
@@ -1873,6 +2259,84 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
           <div class="lite-draw-sep"></div>
           <button class="lite-draw-btn" id="lite-draw-copy" title="Copy hình chart">📋</button>
+          <div class="lite-alert-wrap" id="lite-alert-wrap">
+            <button class="lite-draw-btn" id="lite-alert-btn" title="Cảnh báo giá">🔔<span class="lite-alert-badge" id="lite-alert-badge"></span></button>
+            <div class="lite-alert-panel" id="lite-alert-panel">
+              <div class="lite-alert-title"><span>Cảnh báo Daily</span><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></div>
+              <div class="lite-alert-grid">
+                <div class="lite-alert-field">
+                  <label>Mã</label>
+                  <input id="lite-alert-symbol" maxlength="10" spellcheck="false">
+                </div>
+                <div class="lite-alert-field">
+                  <label>Nguồn</label>
+                  <select id="lite-alert-left-type">
+                    <option value="price">Giá cổ phiếu</option>
+                    <option value="ma">Đường trung bình</option>
+                  </select>
+                </div>
+                <div class="lite-alert-field" id="lite-alert-left-kind-wrap">
+                  <label>Loại nguồn</label>
+                  <select id="lite-alert-left-kind"><option>MA</option><option>EMA</option></select>
+                </div>
+                <div class="lite-alert-field" id="lite-alert-left-period-wrap">
+                  <label>Chu kỳ nguồn</label>
+                  <select id="lite-alert-left-period"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option><option>200</option></select>
+                </div>
+                <div class="lite-alert-field">
+                  <label>Điều kiện</label>
+                  <select id="lite-alert-operator">
+                    <option value="cross_above">Cắt lên</option>
+                    <option value="cross_below">Cắt xuống</option>
+                    <option value="rise">Tăng</option>
+                    <option value="fall">Giảm</option>
+                  </select>
+                </div>
+                <div class="lite-alert-field">
+                  <label>Đối tượng</label>
+                  <select id="lite-alert-right-type">
+                    <option value="ma">Đường trung bình</option>
+                    <option value="price">Mức giá</option>
+                  </select>
+                </div>
+                <div class="lite-alert-field" id="lite-alert-price-wrap">
+                  <label>Mức giá</label>
+                  <input id="lite-alert-price" type="number" step="0.01" min="0" placeholder="0.00">
+                </div>
+                <div class="lite-alert-field" id="lite-alert-right-kind-wrap">
+                  <label>Loại đích</label>
+                  <select id="lite-alert-right-kind"><option>MA</option><option>EMA</option></select>
+                </div>
+                <div class="lite-alert-field" id="lite-alert-right-period-wrap">
+                  <label>Chu kỳ đích</label>
+                  <select id="lite-alert-right-period"><option>10</option><option selected>20</option><option>30</option><option>50</option><option>100</option><option>200</option></select>
+                </div>
+                <div class="lite-alert-field full">
+                  <label>Kênh báo</label>
+                  <div class="lite-alert-checks">
+                    <label class="lite-alert-check"><input type="checkbox" id="lite-alert-dashboard" checked>Dashboard</label>
+                    <label class="lite-alert-check"><input type="checkbox" id="lite-alert-telegram">Telegram</label>
+                  </div>
+                </div>
+                <div class="lite-alert-field full" id="lite-alert-chat-wrap">
+                  <label>Telegram chat ID</label>
+                  <input id="lite-alert-chat" placeholder="VD: 1207484510">
+                </div>
+                <div class="lite-alert-field full">
+                  <label>Sau khi khớp</label>
+                  <select id="lite-alert-after">
+                    <option value="disable" selected>Tự tắt sau khi báo</option>
+                    <option value="keep">Giữ cảnh báo</option>
+                  </select>
+                </div>
+              </div>
+              <div class="lite-alert-actions">
+                <button class="lite-alert-action" id="lite-alert-test">Test Telegram</button>
+                <button class="lite-alert-action primary" id="lite-alert-save">Lưu</button>
+              </div>
+              <div class="lite-alert-list" id="lite-alert-list"></div>
+            </div>
+          </div>
         </div>
       </div>
       <span class="lite-chart-toggle-icon">▶</span>
@@ -1976,6 +2440,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
     </div>
   </div>
 </div>
+<div class="alert-toast-wrap" id="alert-toast-wrap"></div>
 
 <footer id="footer-txt">Scanner Bot Dashboard</footer>
 
@@ -2115,6 +2580,19 @@ const DOM={
   liteShapeDash:$('lite-shape-dash'),liteDrawCopy:$('lite-draw-copy'),
   liteShapeArrowStyle:$('lite-shape-arrow-style'),liteShapeZigzagFill:$('lite-shape-zigzag-fill'),
   liteShapeArrowWidth:$('lite-shape-arrow-width'),
+  liteAlertWrap:$('lite-alert-wrap'),liteAlertBtn:$('lite-alert-btn'),liteAlertBadge:$('lite-alert-badge'),
+  liteAlertPanel:$('lite-alert-panel'),liteAlertSymbol:$('lite-alert-symbol'),
+  liteAlertLeftType:$('lite-alert-left-type'),liteAlertLeftKind:$('lite-alert-left-kind'),
+  liteAlertLeftPeriod:$('lite-alert-left-period'),liteAlertLeftKindWrap:$('lite-alert-left-kind-wrap'),
+  liteAlertLeftPeriodWrap:$('lite-alert-left-period-wrap'),liteAlertOperator:$('lite-alert-operator'),
+  liteAlertRightType:$('lite-alert-right-type'),liteAlertPrice:$('lite-alert-price'),
+  liteAlertPriceWrap:$('lite-alert-price-wrap'),liteAlertRightKind:$('lite-alert-right-kind'),
+  liteAlertRightPeriod:$('lite-alert-right-period'),liteAlertRightKindWrap:$('lite-alert-right-kind-wrap'),
+  liteAlertRightPeriodWrap:$('lite-alert-right-period-wrap'),liteAlertDashboard:$('lite-alert-dashboard'),
+  liteAlertTelegram:$('lite-alert-telegram'),liteAlertChat:$('lite-alert-chat'),
+  liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
+  liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
+  liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -2171,6 +2649,17 @@ const FOLLOW_KEY='dashboard_follow_symbols';
 const FOLLOW_ON_KEY='dashboard_follow_on';
 let FOLLOW=loadFollowSymbols();
 let FOLLOW_ON=localStorage.getItem(FOLLOW_ON_KEY)!=='0';
+const ALERT_CLIENT_KEY='dashboard_alert_client_id';
+const ALERT_POLL_SEC=10;
+let _alertRules=[],_alertEvents=[],_alertShownIds=new Set();
+function getAlertClientId(){
+  let id=_liteLSGet(ALERT_CLIENT_KEY,'');
+  if(!id){
+    id=(window.crypto&&window.crypto.randomUUID)?window.crypto.randomUUID():('client-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));
+    _liteLSSet(ALERT_CLIENT_KEY,id);
+  }
+  return id;
+}
 function loadFollowSymbols(){
   try{return JSON.parse(localStorage.getItem(FOLLOW_KEY)||'[]').filter(Boolean).map(s=>String(s).toUpperCase());}
   catch(e){return [];}
@@ -4281,6 +4770,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
     _liteData=(j.candles||[]).map((bar,idx,arr)=>{
       const prev=idx>0?arr[idx-1].close:null;
       const pct=prev?((bar.close-prev)/prev*100):0;
@@ -4810,6 +5300,180 @@ function startBar(elOrId,sec){
   const el=typeof elOrId==='string'?$(elOrId):elOrId;if(!el)return;
   el.style.transition='none';el.style.width='0%';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
+}
+// ═══════════════════════════════════════════════════════
+// PRICE ALERTS
+// ═══════════════════════════════════════════════════════
+function _esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function alertReq(path,opts={}){
+  const headers={...(opts.headers||{}),'X-Alert-Client-Id':getAlertClientId()};
+  if(opts.body&&!headers['Content-Type'])headers['Content-Type']='application/json';
+  return fetch(path,{...opts,headers});
+}
+function _alertMaText(kind,period){return `${(kind||'MA').toUpperCase()}${period||20}`;}
+function _alertSideText(type,kind,period,value){
+  return type==='ma'?_alertMaText(kind,period):(value?Number(value).toFixed(2):'Giá cổ phiếu');
+}
+function _alertOperatorText(op){return({rise:'Tăng tới',fall:'Giảm về',cross_above:'Cắt lên',cross_below:'Cắt xuống'}[op]||op);}
+function _alertRuleText(r){
+  const left=_alertSideText(r.left_type,r.left_ma_kind,r.left_period);
+  const right=r.right_type==='ma'?_alertMaText(r.right_ma_kind,r.right_period):Number(r.right_value||0).toFixed(2);
+  return `${r.symbol}: ${left} ${_alertOperatorText(r.operator)} ${right}`;
+}
+function _alertJumpSymbol(sym){
+  sym=String(sym||'').toUpperCase().trim();if(!sym)return;
+  if(IS_MOBILE())openChart(sym);else _hmapDesktopClick(sym);
+}
+function updateAlertFormVisibility(){
+  const leftType=DOM.liteAlertLeftType.value;
+  const op=DOM.liteAlertOperator.value;
+  DOM.liteAlertLeftKindWrap.style.display=leftType==='ma'?'':'none';
+  DOM.liteAlertLeftPeriodWrap.style.display=leftType==='ma'?'':'none';
+  [...DOM.liteAlertOperator.options].forEach(o=>{
+    o.disabled=leftType==='ma'&&(o.value==='rise'||o.value==='fall');
+  });
+  if(leftType==='ma'&&(op==='rise'||op==='fall'))DOM.liteAlertOperator.value='cross_above';
+  if(DOM.liteAlertOperator.value==='rise'||DOM.liteAlertOperator.value==='fall'){
+    DOM.liteAlertRightType.value='price';
+    DOM.liteAlertRightType.disabled=true;
+  }else{
+    DOM.liteAlertRightType.disabled=false;
+    if(leftType==='ma')DOM.liteAlertRightType.value='ma';
+  }
+  if(leftType==='ma')DOM.liteAlertRightType.disabled=true;
+  const rightType=DOM.liteAlertRightType.value;
+  DOM.liteAlertPriceWrap.style.display=rightType==='price'?'':'none';
+  DOM.liteAlertRightKindWrap.style.display=rightType==='ma'?'':'none';
+  DOM.liteAlertRightPeriodWrap.style.display=rightType==='ma'?'':'none';
+  DOM.liteAlertChatWrap.style.display=DOM.liteAlertTelegram.checked?'':'none';
+}
+function renderAlertRules(){
+  if(!DOM.liteAlertList)return;
+  const rows=[];
+  if(_alertEvents.length){
+    rows.push(`<div class="lite-alert-row"><div class="lite-alert-row-main"><div class="lite-alert-row-title">Gần nhất</div><div class="lite-alert-row-sub">${_esc(_alertEvents[0].message)} • ${_esc(_alertEvents[0].created_at)}</div></div><div class="lite-alert-row-actions"><button class="lite-alert-mini" data-alert-jump="${_esc(_alertEvents[0].symbol)}">Mở</button></div></div>`);
+  }
+  if(!_alertRules.length){
+    rows.push('<div class="lite-alert-row"><div class="lite-alert-row-main"><div class="lite-alert-row-title">Chưa có cảnh báo</div><div class="lite-alert-row-sub">Tạo rule mới cho mã đang mở trên CHART.</div></div></div>');
+  }else{
+    _alertRules.forEach(r=>{
+      rows.push(`<div class="lite-alert-row ${r.active?'':'off'}"><div class="lite-alert-row-main"><div class="lite-alert-row-title">${_esc(_alertRuleText(r))}</div><div class="lite-alert-row-sub">${r.active?'Đang bật':'Đang tắt'} • ${r.after_trigger==='disable'?'Tự tắt sau khi báo':'Giữ cảnh báo'}</div></div><div class="lite-alert-row-actions"><button class="lite-alert-mini" data-alert-toggle="${r.id}" data-active="${r.active?0:1}">${r.active?'Tắt':'Bật'}</button><button class="lite-alert-mini danger" data-alert-delete="${r.id}">Xóa</button></div></div>`);
+    });
+  }
+  DOM.liteAlertList.innerHTML=rows.join('');
+}
+async function loadAlerts(){
+  try{
+    const r=await alertReq('/api/alerts');
+    if(r.ok){const j=await r.json();_alertRules=j.rules||[];renderAlertRules();}
+  }catch(e){console.error('loadAlerts:',e);}
+}
+async function pollAlertFeed(showToast=true){
+  try{
+    const r=await alertReq('/api/alerts/feed?limit=20');
+    if(!r.ok)return;
+    const j=await r.json();
+    _alertEvents=j.events||[];
+    const n=j.unseen_count||0;
+    DOM.liteAlertBadge.textContent=n>9?'9+':String(n);
+    DOM.liteAlertBadge.classList.toggle('on',n>0);
+    renderAlertRules();
+    if(showToast){
+      [..._alertEvents].reverse().forEach(ev=>{
+        if(ev.seen||_alertShownIds.has(ev.id))return;
+        _alertShownIds.add(ev.id);
+        showAlertToast(ev);
+      });
+    }
+  }catch(e){console.error('pollAlertFeed:',e);}
+}
+function showAlertToast(ev){
+  if(!DOM.alertToastWrap)return;
+  const el=document.createElement('div');
+  el.className='alert-toast';
+  el.innerHTML=`<div class="alert-toast-title">${_esc(ev.symbol)} - Cảnh báo</div><div class="alert-toast-sub">${_esc(ev.message)}</div>`;
+  el.addEventListener('click',()=>_alertJumpSymbol(ev.symbol));
+  DOM.alertToastWrap.prepend(el);
+  setTimeout(()=>{el.style.opacity='0';el.style.transform='translateY(-4px)';setTimeout(()=>el.remove(),260);},10000);
+}
+function alertPayload(){
+  const leftType=DOM.liteAlertLeftType.value,rightType=DOM.liteAlertRightType.value;
+  return {
+    client_id:getAlertClientId(),
+    symbol:(DOM.liteAlertSymbol.value||_liteSymbol||'').toUpperCase().trim(),
+    left_type:leftType,
+    left_ma_kind:leftType==='ma'?DOM.liteAlertLeftKind.value:null,
+    left_period:leftType==='ma'?Number(DOM.liteAlertLeftPeriod.value):null,
+    operator:DOM.liteAlertOperator.value,
+    right_type:rightType,
+    right_value:rightType==='price'?Number(DOM.liteAlertPrice.value):null,
+    right_ma_kind:rightType==='ma'?DOM.liteAlertRightKind.value:null,
+    right_period:rightType==='ma'?Number(DOM.liteAlertRightPeriod.value):null,
+    notify_dashboard:DOM.liteAlertDashboard.checked,
+    notify_telegram:DOM.liteAlertTelegram.checked,
+    telegram_chat_id:DOM.liteAlertChat.value.trim(),
+    after_trigger:DOM.liteAlertAfter.value
+  };
+}
+async function saveAlertRule(){
+  const payload=alertPayload();
+  if(!payload.symbol){alert('Chưa có mã cổ phiếu');return;}
+  if(payload.right_type==='price'&&(!payload.right_value||payload.right_value<=0)){alert('Nhập mức giá hợp lệ');return;}
+  if(!payload.notify_dashboard&&!payload.notify_telegram){alert('Chọn ít nhất một kênh báo');return;}
+  try{
+    const r=await alertReq('/api/alerts',{method:'POST',body:JSON.stringify(payload)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Không lưu được cảnh báo');
+    DOM.liteAlertPrice.value='';
+    await loadAlerts();
+  }catch(e){alert('Lỗi lưu cảnh báo: '+e.message);}
+}
+async function markAlertsSeen(){
+  try{
+    await alertReq('/api/alerts/seen',{method:'POST',body:JSON.stringify({client_id:getAlertClientId()})});
+    await pollAlertFeed(false);
+  }catch(e){console.error('markAlertsSeen:',e);}
+}
+async function testAlertTelegram(){
+  const chat=DOM.liteAlertChat.value.trim();
+  if(!chat){alert('Nhập Telegram chat ID trước');return;}
+  try{
+    const r=await alertReq('/api/alerts/test_telegram',{method:'POST',body:JSON.stringify({telegram_chat_id:chat})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.detail||j.error||'Test Telegram lỗi');
+    alert('Telegram OK');
+  }catch(e){alert('Telegram lỗi: '+e.message);}
+}
+function bindAlertControls(){
+  if(!DOM.liteAlertBtn)return;
+  DOM.liteAlertBtn.addEventListener('click',e=>{
+    e.stopPropagation();
+    DOM.liteAlertSymbol.value=(_liteSymbol||'').toUpperCase();
+    DOM.liteAlertPanel.classList.toggle('on');
+    updateAlertFormVisibility();loadAlerts();pollAlertFeed(false);
+  });
+  document.addEventListener('click',e=>{
+    if(DOM.liteAlertWrap&&!DOM.liteAlertWrap.contains(e.target))DOM.liteAlertPanel?.classList.remove('on');
+  });
+  [DOM.liteAlertLeftType,DOM.liteAlertOperator,DOM.liteAlertRightType,DOM.liteAlertTelegram].forEach(el=>el?.addEventListener('change',updateAlertFormVisibility));
+  DOM.liteAlertSave?.addEventListener('click',saveAlertRule);
+  DOM.liteAlertSeen?.addEventListener('click',markAlertsSeen);
+  DOM.liteAlertTest?.addEventListener('click',testAlertTelegram);
+  DOM.liteAlertList?.addEventListener('click',async e=>{
+    const jump=e.target.closest('[data-alert-jump]');
+    if(jump){_alertJumpSymbol(jump.dataset.alertJump);return;}
+    const tog=e.target.closest('[data-alert-toggle]');
+    if(tog){
+      await alertReq(`/api/alerts/${tog.dataset.alertToggle}/toggle`,{method:'POST',body:JSON.stringify({client_id:getAlertClientId(),active:Number(tog.dataset.active)===1})});
+      await loadAlerts();return;
+    }
+    const del=e.target.closest('[data-alert-delete]');
+    if(del&&confirm('Xóa cảnh báo này?')){
+      await alertReq(`/api/alerts/${del.dataset.alertDelete}?client_id=${encodeURIComponent(getAlertClientId())}`,{method:'DELETE'});
+      await loadAlerts();
+    }
+  });
+  updateAlertFormVisibility();
 }
 // ═══════════════════════════════════════════════════════
 // SEARCH helper
@@ -5576,11 +6240,14 @@ async function init(){
   await loadConfig();
   _refreshChartModeUI();
   bindLiteChartControls();
+  bindAlertControls();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap()]);
   loadLiteChart(_liteSymbol);
+  await Promise.all([loadAlerts(),pollAlertFeed(false)]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
+  setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
 }
 init();
 </script>
