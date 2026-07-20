@@ -1731,9 +1731,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-alert-mini{height:23px;min-width:28px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#374151;font-size:10px;font-weight:700;cursor:pointer}
 .lite-alert-mini.danger{color:#dc2626}
 .alert-toast-wrap{position:fixed;top:70px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 28px))}
-.alert-toast{background:#111827;color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:8px;box-shadow:0 12px 32px rgba(17,24,39,.28);padding:10px 12px;cursor:pointer}
-.alert-toast-title{font-size:12px;font-weight:800;margin-bottom:3px}
-.alert-toast-sub{font-size:11px;color:#d1d5db}
+.alert-toast{background:#fff;color:#111827;border:1px solid rgba(17,24,39,.12);border-radius:8px;box-shadow:0 12px 32px rgba(17,24,39,.18);padding:10px 12px;cursor:pointer}
+.alert-toast-title{font-size:12px;font-weight:800;margin-bottom:3px;color:#111827}
+.alert-toast-sub{font-size:11px;color:#4b5563}
 .lite-draw-sep{width:1px;height:16px;background:var(--border);margin:0 2px}
 .lite-draw-color{width:24px;height:20px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
 .lite-draw-color::-webkit-color-swatch-wrapper{padding:2px}
@@ -2641,6 +2641,7 @@ const FOLLOW_ON_KEY='dashboard_follow_on';
 let FOLLOW=loadFollowSymbols();
 let FOLLOW_ON=localStorage.getItem(FOLLOW_ON_KEY)!=='0';
 const ALERT_CLIENT_KEY='dashboard_alert_client_id';
+const ALERT_CHAT_KEY='dashboard_alert_telegram_chat_id';
 const ALERT_POLL_SEC=10;
 let _alertRules=[],_alertEvents=[],_alertShownIds=new Set();
 function getAlertClientId(){
@@ -5402,6 +5403,7 @@ async function saveAlertRule(){
     const r=await alertReq('/api/alerts',{method:'POST',body:JSON.stringify(payload)});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||'Không lưu được cảnh báo');
+    if(payload.telegram_chat_id)_liteLSSet(ALERT_CHAT_KEY,payload.telegram_chat_id);
     DOM.liteAlertPrice.value='';
     await loadAlerts();
   }catch(e){alert('Lỗi lưu cảnh báo: '+e.message);}
@@ -5419,6 +5421,7 @@ async function testAlertTelegram(){
     const r=await alertReq('/api/alerts/test_telegram',{method:'POST',body:JSON.stringify({telegram_chat_id:chat})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.detail||j.error||'Test Telegram lỗi');
+    _liteLSSet(ALERT_CHAT_KEY,chat);
     alert('Telegram OK');
   }catch(e){alert('Telegram lỗi: '+e.message);}
 }
@@ -5427,8 +5430,16 @@ function bindAlertControls(){
   DOM.liteAlertBtn.addEventListener('click',e=>{
     e.stopPropagation();
     DOM.liteAlertSymbol.value=(_liteSymbol||'').toUpperCase();
+    if(DOM.liteAlertChat&&!DOM.liteAlertChat.value.trim()){
+      const savedChat=_liteLSGet(ALERT_CHAT_KEY,'');
+      if(savedChat){DOM.liteAlertChat.value=savedChat;DOM.liteAlertTelegram.checked=true;}
+    }
     DOM.liteAlertPanel.classList.toggle('on');
     updateAlertFormVisibility();loadAlerts();pollAlertFeed(false);
+  });
+  DOM.liteAlertChat?.addEventListener('change',()=>{
+    const v=DOM.liteAlertChat.value.trim();
+    if(v)_liteLSSet(ALERT_CHAT_KEY,v);
   });
   document.addEventListener('click',e=>{
     if(DOM.liteAlertWrap&&!DOM.liteAlertWrap.contains(e.target))DOM.liteAlertPanel?.classList.remove('on');
