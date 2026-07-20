@@ -640,8 +640,41 @@ def api_alert_toggle(rule_id):
     return jsonify({"rule": _rule_to_dict(row)})
 
 
-@app.route("/api/alerts/<int:rule_id>", methods=["DELETE"])
-def api_alert_delete(rule_id):
+@app.route("/api/alerts/<int:rule_id>", methods=["PUT", "DELETE"])
+def api_alert_update_or_delete(rule_id):
+    if request.method == "PUT":
+        data = request.get_json(silent=True) or {}
+        client_id = _get_alert_client_id(data)
+        if not client_id:
+            return jsonify({"error": "missing_client_id"}), 400
+        try:
+            payload = _validate_alert_rule_payload(data)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+        with _price_alert_lock, _price_alert_conn() as conn:
+            conn.execute("""
+                UPDATE price_alert_rules SET
+                    symbol=?, left_type=?, left_ma_kind=?, left_period=?, operator=?,
+                    right_type=?, right_value=?, right_ma_kind=?, right_period=?,
+                    notify_dashboard=?, notify_telegram=?, telegram_chat_id=?,
+                    after_trigger=?, updated_at=?
+                WHERE id=? AND client_id=?
+            """, (
+                payload["symbol"], payload["left_type"], payload["left_ma_kind"],
+                payload["left_period"], payload["operator"], payload["right_type"],
+                payload["right_value"], payload["right_ma_kind"], payload["right_period"],
+                payload["notify_dashboard"], payload["notify_telegram"],
+                payload["telegram_chat_id"], payload["after_trigger"], _now_vn_iso(),
+                rule_id, client_id,
+            ))
+            conn.commit()
+            row = conn.execute("""
+                SELECT * FROM price_alert_rules WHERE id=? AND client_id=?
+            """, (rule_id, client_id)).fetchone()
+        if not row:
+            return jsonify({"error": "not_found"}), 404
+        return jsonify({"rule": _rule_to_dict(row)})
+
     client_id = _get_alert_client_id()
     if not client_id:
         return jsonify({"error": "missing_client_id"}), 400
@@ -1730,7 +1763,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-alert-row-actions{display:flex;gap:4px}
 .lite-alert-mini{height:23px;min-width:28px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#374151;font-size:10px;font-weight:700;cursor:pointer}
 .lite-alert-mini.danger{color:#dc2626}
-.alert-toast-wrap{position:fixed;top:70px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 28px))}
+.alert-toast-wrap{position:fixed;top:8px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 28px))}
 .alert-toast{background:#fff;color:#111827;border:1px solid rgba(17,24,39,.12);border-radius:8px;box-shadow:0 12px 32px rgba(17,24,39,.18);padding:10px 12px;cursor:pointer}
 .alert-toast-title{font-size:12px;font-weight:800;margin-bottom:3px;color:#111827}
 .alert-toast-sub{font-size:11px;color:#4b5563}
@@ -2255,7 +2288,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <div class="lite-alert-wrap" id="lite-alert-wrap">
             <button class="lite-draw-btn" id="lite-alert-btn" title="Cảnh báo giá">🔔<span class="lite-alert-badge" id="lite-alert-badge"></span></button>
             <div class="lite-alert-panel" id="lite-alert-panel">
-              <div class="lite-alert-title"><span>Cảnh báo Daily</span><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></div>
+              <div class="lite-alert-title"><span>CẢNH BÁO</span><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></div>
               <div class="lite-alert-grid">
                 <div class="lite-alert-field">
                   <label>Mã</label>
@@ -2287,7 +2320,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
                   <label>Đối tượng</label>
                   <select id="lite-alert-right-type">
                     <option value="ma">Đường trung bình</option>
-                    <option value="price">Mức giá</option>
+                    <option value="price" selected>Mức giá</option>
                   </select>
                 </div>
                 <div class="lite-alert-field" id="lite-alert-price-wrap">
@@ -2643,7 +2676,7 @@ let FOLLOW_ON=localStorage.getItem(FOLLOW_ON_KEY)!=='0';
 const ALERT_CLIENT_KEY='dashboard_alert_client_id';
 const ALERT_CHAT_KEY='dashboard_alert_telegram_chat_id';
 const ALERT_POLL_SEC=10;
-let _alertRules=[],_alertEvents=[],_alertShownIds=new Set();
+let _alertRules=[],_alertEvents=[],_alertShownIds=new Set(),_editingAlertRuleId=null;
 function getAlertClientId(){
   let id=_liteLSGet(ALERT_CLIENT_KEY,'');
   if(!id){
@@ -5336,7 +5369,7 @@ function renderAlertRules(){
     rows.push('<div class="lite-alert-row"><div class="lite-alert-row-main"><div class="lite-alert-row-title">Chưa có cảnh báo</div><div class="lite-alert-row-sub">Tạo rule mới cho mã đang mở trên CHART.</div></div></div>');
   }else{
     _alertRules.forEach(r=>{
-      rows.push(`<div class="lite-alert-row ${r.active?'':'off'}"><div class="lite-alert-row-main"><div class="lite-alert-row-title">${_esc(_alertRuleText(r))}</div><div class="lite-alert-row-sub">${r.active?'Đang bật':'Đang tắt'} • ${r.after_trigger==='disable'?'Tự tắt sau khi báo':'Giữ cảnh báo'}</div></div><div class="lite-alert-row-actions"><button class="lite-alert-mini" data-alert-toggle="${r.id}" data-active="${r.active?0:1}">${r.active?'Tắt':'Bật'}</button><button class="lite-alert-mini danger" data-alert-delete="${r.id}">Xóa</button></div></div>`);
+      rows.push(`<div class="lite-alert-row ${r.active?'':'off'}"><div class="lite-alert-row-main"><div class="lite-alert-row-title">${_esc(_alertRuleText(r))}</div><div class="lite-alert-row-sub">${r.active?'Đang bật':'Đang tắt'} • ${r.after_trigger==='disable'?'Tự tắt sau khi báo':'Giữ cảnh báo'}</div></div><div class="lite-alert-row-actions"><button class="lite-alert-mini" data-alert-edit="${r.id}">Sửa</button><button class="lite-alert-mini" data-alert-toggle="${r.id}" data-active="${r.active?0:1}">${r.active?'Tắt':'Bật'}</button><button class="lite-alert-mini danger" data-alert-delete="${r.id}">Xóa</button></div></div>`);
     });
   }
   DOM.liteAlertList.innerHTML=rows.join('');
@@ -5394,17 +5427,41 @@ function alertPayload(){
     after_trigger:DOM.liteAlertAfter.value
   };
 }
+function fillAlertFormForEdit(r){
+  _editingAlertRuleId=r.id;
+  DOM.liteAlertSymbol.value=r.symbol||'';
+  DOM.liteAlertLeftType.value=r.left_type||'price';
+  if(r.left_ma_kind)DOM.liteAlertLeftKind.value=r.left_ma_kind;
+  if(r.left_period)DOM.liteAlertLeftPeriod.value=String(r.left_period);
+  DOM.liteAlertOperator.value=r.operator||'gte';
+  DOM.liteAlertRightType.value=r.right_type||'price';
+  DOM.liteAlertPrice.value=r.right_type==='price'?(r.right_value||''):'';
+  if(r.right_ma_kind)DOM.liteAlertRightKind.value=r.right_ma_kind;
+  if(r.right_period)DOM.liteAlertRightPeriod.value=String(r.right_period);
+  DOM.liteAlertDashboard.checked=!!r.notify_dashboard;
+  DOM.liteAlertTelegram.checked=!!r.notify_telegram;
+  DOM.liteAlertChat.value=r.telegram_chat_id||'';
+  DOM.liteAlertAfter.value=r.after_trigger||'disable';
+  updateAlertFormVisibility();
+  if(DOM.liteAlertSave)DOM.liteAlertSave.textContent='Cập nhật';
+}
+function cancelEditAlertRule(){
+  _editingAlertRuleId=null;
+  if(DOM.liteAlertSave)DOM.liteAlertSave.textContent='Lưu';
+}
 async function saveAlertRule(){
   const payload=alertPayload();
   if(!payload.symbol){alert('Chưa có mã cổ phiếu');return;}
   if(payload.right_type==='price'&&(!payload.right_value||payload.right_value<=0)){alert('Nhập mức giá hợp lệ');return;}
   if(!payload.notify_dashboard&&!payload.notify_telegram){alert('Chọn ít nhất một kênh báo');return;}
   try{
-    const r=await alertReq('/api/alerts',{method:'POST',body:JSON.stringify(payload)});
+    const editingId=_editingAlertRuleId;
+    const r=editingId?await alertReq(`/api/alerts/${editingId}`,{method:'PUT',body:JSON.stringify(payload)})
+                      :await alertReq('/api/alerts',{method:'POST',body:JSON.stringify(payload)});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||'Không lưu được cảnh báo');
-    if(payload.telegram_chat_id)_liteLSSet(ALERT_CHAT_KEY,payload.telegram_chat_id);
     DOM.liteAlertPrice.value='';
+    cancelEditAlertRule();
     await loadAlerts();
   }catch(e){alert('Lỗi lưu cảnh báo: '+e.message);}
 }
@@ -5421,7 +5478,6 @@ async function testAlertTelegram(){
     const r=await alertReq('/api/alerts/test_telegram',{method:'POST',body:JSON.stringify({telegram_chat_id:chat})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.detail||j.error||'Test Telegram lỗi');
-    _liteLSSet(ALERT_CHAT_KEY,chat);
     alert('Telegram OK');
   }catch(e){alert('Telegram lỗi: '+e.message);}
 }
@@ -5429,6 +5485,7 @@ function bindAlertControls(){
   if(!DOM.liteAlertBtn)return;
   DOM.liteAlertBtn.addEventListener('click',e=>{
     e.stopPropagation();
+    cancelEditAlertRule();
     DOM.liteAlertSymbol.value=(_liteSymbol||'').toUpperCase();
     if(DOM.liteAlertChat&&!DOM.liteAlertChat.value.trim()){
       const savedChat=_liteLSGet(ALERT_CHAT_KEY,'');
@@ -5451,6 +5508,12 @@ function bindAlertControls(){
   DOM.liteAlertList?.addEventListener('click',async e=>{
     const jump=e.target.closest('[data-alert-jump]');
     if(jump){_alertJumpSymbol(jump.dataset.alertJump);return;}
+    const edit=e.target.closest('[data-alert-edit]');
+    if(edit){
+      const rule=_alertRules.find(x=>String(x.id)===String(edit.dataset.alertEdit));
+      if(rule)fillAlertFormForEdit(rule);
+      return;
+    }
     const tog=e.target.closest('[data-alert-toggle]');
     if(tog){
       await alertReq(`/api/alerts/${tog.dataset.alertToggle}/toggle`,{method:'POST',body:JSON.stringify({client_id:getAlertClientId(),active:Number(tog.dataset.active)===1})});
