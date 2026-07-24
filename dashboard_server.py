@@ -4198,36 +4198,34 @@ function _liteDrawSignalBadge(ctx,x,y,dpr){
   ctx.fillText(badgeEl.textContent,bx+bw/2,y+bh/2+dpr);
   ctx.textAlign='left';
 }
-function _liteCopyFeedback(btn,copied){
+function _liteCopyFeedback(btn,status){
   if(!btn)return;
+  const states={
+    copied:{icon:'✓',title:'Đã sao chép ảnh chart',delay:1200},
+    downloaded:{icon:'↓',title:'Clipboard bị chặn — đã tải ảnh PNG',delay:1200},
+    failed:{icon:'!',title:'Không thể tạo ảnh chart',delay:2200}
+  };
+  const state=states[status]||states.failed;
   const icon=btn.dataset.copyIcon||(btn.dataset.copyIcon=btn.innerHTML);
   const title=btn.dataset.copyTitle||(btn.dataset.copyTitle=btn.title);
   if(btn._copyFeedbackTimer)clearTimeout(btn._copyFeedbackTimer);
-  btn.innerHTML=copied?'✓':'!';
-  btn.title=copied?'Đã sao chép ảnh chart':'Không thể sao chép ảnh — hãy mở dashboard bằng HTTPS hoặc localhost';
+  btn.innerHTML=state.icon;btn.title=state.title;
   btn._copyFeedbackTimer=setTimeout(()=>{
     btn.innerHTML=icon;btn.title=title;
-  },copied?1200:2200);
+  },state.delay);
 }
-// Fallback cho các phiên dashboard chạy HTTP, nơi Clipboard API bị trình duyệt chặn.
-// Chọn ảnh như Ctrl+C của người dùng để trình duyệt chép ảnh thay vì tải file.
-function _liteCopyImageWithExecCommand(canvas){
-  const holder=document.createElement('div');
-  const image=new Image();
-  holder.contentEditable='true';
-  holder.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden;opacity:0';
-  image.src=canvas.toDataURL('image/png');
-  holder.appendChild(image);
-  document.body.appendChild(holder);
-  let selection=null;
-  try{
-    selection=window.getSelection();
-    if(!selection)return false;
-    const range=document.createRange();
-    range.selectNode(image);selection.removeAllRanges();selection.addRange(range);
-    return document.execCommand('copy');
-  }catch(e){console.warn('Legacy image copy lỗi:',e);return false;}
-  finally{if(selection)selection.removeAllRanges();holder.remove();}
+function _litePngBlobFromDataUrl(dataUrl){
+  const binary=atob(dataUrl.slice(dataUrl.indexOf(',')+1));
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  return new Blob([bytes],{type:'image/png'});
+}
+function _liteDownloadChartImage(blob){
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;link.download=`chart_${_liteSymbol}_${_liteTf}.png`;
+  document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 async function copyLiteChartImage(btn){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
@@ -4266,25 +4264,21 @@ async function copyLiteChartImage(btn){
       const mainCanvas=panes[0].canvas;
       ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH+badgeH,mainCanvas.width,mainCanvas.height);
     }
-    const pngBlob=new Promise((resolve,reject)=>out.toBlob(blob=>blob?resolve(blob):reject(new Error('Không thể tạo ảnh PNG')),'image/png'));
-    // Copy as Bitmap: truyền thẳng Promise<Blob> vào ClipboardItem (không await trước) để trình duyệt
-    // vẫn coi đây là hành động clipboard gắn liền với cú click của người dùng (user-gesture), tránh mất
-    // quyền clipboard do await xong mới gọi write().
-    if(navigator.clipboard&&window.ClipboardItem){
+    // Mã hóa đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật, không phải Promise.
+    // Điều này giữ user-gesture trên các trình duyệt không xử lý Promise<Blob> ổn định.
+    const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
+    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
       try{
         await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,true);
+        _liteCopyFeedback(btn,'copied');
         return;
       }catch(e){
-        console.warn('Copy bitmap vào clipboard lỗi, thử cơ chế Ctrl+C tương thích:',e);
+        console.warn('Copy bitmap vào clipboard lỗi, chuyển sang tải ảnh PNG:',e);
       }
     }
-    if(_liteCopyImageWithExecCommand(out)){
-      _liteCopyFeedback(btn,true);
-      return;
-    }
-    throw new Error('Trình duyệt không cho phép ghi ảnh vào clipboard');
-  }catch(e){console.error('copyLiteChartImage lỗi:',e);_liteCopyFeedback(btn,false);}
+    _liteDownloadChartImage(pngBlob);
+    _liteCopyFeedback(btn,'downloaded');
+  }catch(e){console.error('copyLiteChartImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
 function bindLiteDrawToolbar(){
   resizeLiteDrawCanvas();
