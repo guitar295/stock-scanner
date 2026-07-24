@@ -4370,7 +4370,11 @@ function bindLiteDrawToolbar(){
     const sel=_liteGetSelectedShape();
     if(sel&&sel.type==='text'){setLiteDrawTool('text');_liteOpenTextInput(sel.points[0],null,sel);}
   });
-  DOM.liteDrawCopy?.addEventListener('click',()=>copyLiteChartImage(DOM.liteDrawCopy));
+  DOM.liteDrawCopy?.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    copyLiteChartImage(e.currentTarget);
+  });
   if(DOM.liteTextInput){
     DOM.liteTextInput.addEventListener('keydown',e=>{
       // Chặn nổi bọt lên #lite-chart-frame để không kích hoạt phím tắt khác (mở ô tìm mã, xoá hình...)
