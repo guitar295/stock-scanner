@@ -37,7 +37,11 @@ import json
 import threading
 import math
 from PIL import Image, ImageDraw, ImageFont
-from dashboard_server import start_dashboard
+from dashboard_server import (
+    start_dashboard,
+    get_active_price_alert_rules,
+    record_price_alert_event,
+)
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
@@ -547,9 +551,9 @@ def afl_cross(s1, s2):
 
 def compute_indicators(df):
     df = df.copy()
-    for n in [2,3,5,10,15,20,30,50,200]:
+    for n in [2,3,5,10,15,20,30,50,100,200]:
         df[f'MA{n}']  = df['close'].rolling(n).mean()
-    for n in [10,20,30,50,200]:
+    for n in [10,20,30,50,100,200]:
         df[f'EMA{n}'] = df['close'].ewm(span=n, adjust=False).mean()
     for n in [2,3,5,10,15,20,30,50]:
         df[f'VMA{n}'] = df['volume'].rolling(n).mean()
@@ -1775,6 +1779,132 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
             if os.path.exists(path): os.remove(path)
 
 # =============================================================================
+# BƯỚC 8D0: CẢNH BÁO DAILY CHO DASHBOARD / TELEGRAM
+# =============================================================================
+def _price_alert_series_value(row, rule: dict, side: str):
+    typ = rule.get(f"{side}_type")
+    if typ == "price":
+        return float(row.get("close", np.nan)), "Giá"
+    kind = str(rule.get(f"{side}_ma_kind") or "MA").upper()
+    period = int(rule.get(f"{side}_period") or 20)
+    col = f"{kind}{period}"
+    return float(row.get(col, np.nan)), col
+
+
+def _price_alert_message(rule: dict, price: float, left_label: str, right_label: str, right_value: float) -> str:
+    op = rule.get("operator")
+    op_label = {
+        "gte": "Tăng lên / Cắt lên",
+        "lte": "Giảm về / Cắt xuống",
+    }.get(op, op)
+    if rule.get("right_type") == "price":
+        target = f"{right_value:.2f}"
+    else:
+        target = right_label
+    return f"{rule['symbol']} - {left_label} {op_label} {target} - Close {price:.2f}"
+
+
+def _price_alert_triggered(rule: dict, prev_row, cur_row):
+    left_prev, left_label = _price_alert_series_value(prev_row, rule, "left")
+    left_cur, _ = _price_alert_series_value(cur_row, rule, "left")
+    if rule.get("right_type") == "price":
+        right_prev = right_cur = float(rule.get("right_value") or np.nan)
+        right_label = "Mức giá"
+    else:
+        right_prev, right_label = _price_alert_series_value(prev_row, rule, "right")
+        right_cur, _ = _price_alert_series_value(cur_row, rule, "right")
+    vals = [left_prev, left_cur, right_prev, right_cur]
+    if any(pd.isna(v) or not math.isfinite(v) for v in vals):
+        return False, "", ""
+    # Công thức tổng quát duy nhất cho mọi tổ hợp nguồn/đối tượng (Giá/MA vs Mức giá/MA):
+    # gte: hôm qua bên trái còn thấp hơn bên phải, hôm nay đã bằng/vượt qua -> "tăng lên / cắt lên"
+    # lte: hôm qua bên trái còn cao hơn bên phải, hôm nay đã bằng/thấp hơn -> "giảm về / cắt xuống"
+    op = rule.get("operator")
+    ok = (
+        (op == "gte" and left_prev < right_prev and left_cur >= right_cur) or
+        (op == "lte" and left_prev > right_prev and left_cur <= right_cur)
+    )
+    if not ok:
+        return False, "", ""
+    price = float(cur_row.get("close", np.nan))
+    msg = _price_alert_message(rule, price, left_label, right_label, right_cur)
+    detail = (
+        f"prev_left={left_prev:.4f}; cur_left={left_cur:.4f}; "
+        f"prev_right={right_prev:.4f}; cur_right={right_cur:.4f}"
+    )
+    return True, msg, detail
+
+
+def send_price_alert_chart_to_telegram(symbol: str, chat_id: str, alert_message: str):
+    image_paths = []
+    symbol = symbol.upper().strip()
+    try:
+        ctx = _get_chart_context(symbol)
+        if ctx is None:
+            return
+        image_paths, _ = _build_daily_weekly_chart_paths(ctx)
+        if not ctx["is_index"]:
+            img_15m = _build_15m_chart(symbol, ctx["signal_type"], via="price_alert_15m")
+            if img_15m:
+                image_paths.append(img_15m)
+        if not image_paths:
+            return
+        msg = f"<b>CẢNH BÁO #{symbol}</b>\n{alert_message}\n\n{_build_chart_message(ctx)}"
+        _send_chart_to_chat(msg, image_paths, chat_id)
+        image_paths = []
+    except Exception as e:
+        print(f"  [Alert] ❌ Gửi Telegram {symbol}: {e}")
+    finally:
+        _cleanup_chart_paths(image_paths)
+
+
+def check_price_alerts():
+    try:
+        rules = get_active_price_alert_rules()
+    except Exception as e:
+        print(f"  [Alert] ❌ Không đọc được rule cảnh báo: {e}")
+        return []
+    if not rules:
+        return []
+    triggered = []
+    for rule in rules:
+        symbol = str(rule.get("symbol") or "").upper().strip()
+        if not symbol:
+            continue
+        try:
+            ensure_symbol_live_in_cache(symbol)
+            with cache_lock:
+                df_raw = history_cache.get(symbol)
+                df_raw = df_raw.copy() if df_raw is not None and len(df_raw) >= 210 else None
+            if df_raw is None or len(df_raw) < 2:
+                continue
+            df_calc = compute_indicators(df_raw)
+            prev_row = df_calc.iloc[-2]
+            cur_row = df_calc.iloc[-1]
+            ok, msg, detail = _price_alert_triggered(rule, prev_row, cur_row)
+            if not ok:
+                continue
+            bar_date = pd.Timestamp(df_calc.index[-1]).strftime("%Y-%m-%d")
+            price = float(cur_row.get("close", np.nan))
+            event = record_price_alert_event(
+                rule["id"], msg, detail, bar_date, price,
+                notify_dashboard=bool(rule.get("notify_dashboard", True))
+            )
+            if not event:
+                continue
+            triggered.append(symbol)
+            print(f"  [Alert] 🔔 {msg}")
+            if rule.get("notify_telegram") and rule.get("telegram_chat_id"):
+                threading.Thread(
+                    target=send_price_alert_chart_to_telegram,
+                    args=(symbol, str(rule["telegram_chat_id"]), msg),
+                    daemon=True
+                ).start()
+        except Exception as e:
+            print(f"  [Alert] ❌ {symbol}: {e}")
+    return triggered
+
+# =============================================================================
 # BƯỚC 8D: HÀM DASHBOARD CHART — trả về PNG bytes cho web dashboard
 # =============================================================================
 def dashboard_chart_fn(symbol: str):
@@ -2125,11 +2255,14 @@ while True:
         print(f"{'='*60}")
 
         new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today)
+        triggered_alerts = check_price_alerts()
 
         if new_signals:
             print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
         else:
             print(f"[{ts}] Không có tín hiệu mới.")
+        if triggered_alerts:
+            print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
 
         if alerted_today:
             summary_str = " | ".join([f"{k}:{v['signal']}" for k,v in alerted_today.items()])
