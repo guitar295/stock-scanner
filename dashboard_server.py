@@ -44,6 +44,12 @@ _chart_cache: dict = {}
 _chart_lock = threading.Lock()
 CHART_TTL_SEC = 120
 
+# Khóa theo mã cho lần kiểm tra Vnstock chạy nền của Lightweight Chart. Khi người
+# dùng đổi D/W hoặc mở lại cùng mã thật nhanh, chỉ một request được phép cập nhật
+# cache tại một thời điểm; các request khác vẫn không chặn việc vẽ cache trên web.
+_lite_chart_refresh_locks: dict = {}
+_lite_chart_refresh_locks_guard = threading.Lock()
+
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
@@ -410,6 +416,33 @@ def _serve_chart_images(symbol, fetch_fn, cache_key, label):
         print(f"  [Dashboard] ❌ {label} {symbol} lỗi: {e}")
         return jsonify({"error": str(e)}), 500
 
+
+def _lightweight_chart_status(symbol):
+    """Trạng thái quyết định màu ••• của Lightweight Chart.
+
+    Hàm này không gọi mạng. ``need_fetch`` giữ nguyên ý nghĩa cũ: cache có cần
+    gọi Vnstock để cập nhật hay không.
+    """
+    if _chart_symbol_status_fn:
+        try:
+            return _chart_symbol_status_fn(symbol)
+        except Exception as exc:
+            return {"symbol": symbol, "cached": False, "need_fetch": True,
+                    "reason": "status_error", "detail": str(exc)}
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not _cache_lock:
+        return {"symbol": symbol, "cached": False, "need_fetch": True, "reason": "unknown"}
+    with _cache_lock:
+        df = cache.get(symbol)
+        has_cache = df is not None and len(df) >= 60
+    return {"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
+            "reason": "fallback_check"}
+
+
+def _get_lite_chart_refresh_lock(symbol):
+    with _lite_chart_refresh_locks_guard:
+        return _lite_chart_refresh_locks.setdefault(symbol, threading.Lock())
+
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
@@ -476,20 +509,31 @@ def api_lightweight_chart_status(symbol):
     """Kiểm tra nhanh, không gọi mạng: chart sẽ phục vụ từ cache hay cần
     update (vnstock) — dùng để hiển thị trạng thái trước khi tải dữ liệu."""
     symbol = symbol.upper().strip()
-    if _chart_symbol_status_fn:
-        try:
-            return jsonify(_chart_symbol_status_fn(symbol))
-        except Exception as exc:
-            return jsonify({"symbol": symbol, "cached": False, "need_fetch": True,
-                            "reason": "status_error", "detail": str(exc)})
-    cache = _get_history_cache() if _get_history_cache else {}
-    if not _cache_lock:
-        return jsonify({"symbol": symbol, "cached": False, "need_fetch": True, "reason": "unknown"})
-    with _cache_lock:
-        df = cache.get(symbol)
-        has_cache = df is not None and len(df) >= 60
-    return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
-                    "reason": "fallback_check"})
+    return jsonify(_lightweight_chart_status(symbol))
+
+
+@app.route("/api/lightweight_chart_refresh/<symbol>", methods=["POST"])
+def api_lightweight_chart_refresh(symbol):
+    """Kiểm tra/cập nhật Vnstock sau khi web đã vẽ cache.
+
+    Trạng thái trả về được chụp trước khi cập nhật, nên màu ••• giữ nguyên đúng
+    nguyên lý cũ: xanh nếu không cần gọi Vnstock, cam nếu đã cần gọi Vnstock.
+    Request này được trình duyệt gọi nền và chỉ hoàn tất khi việc cập nhật xong.
+    """
+    symbol = symbol.upper().strip()
+    refresh_error = None
+    refresh_action = "skip"
+    with _get_lite_chart_refresh_lock(symbol):
+        status = _lightweight_chart_status(symbol)
+        if _ensure_chart_symbol_fn:
+            try:
+                result = _ensure_chart_symbol_fn(symbol) or {}
+                refresh_action = result.get("vnstock_action", "skip")
+            except Exception as exc:
+                refresh_error = str(exc)
+                print(f"  [LiteChart] {symbol}: background refresh lỗi: {exc}")
+    return jsonify({**status, "refresh_completed": True,
+                    "refresh_action": refresh_action, "refresh_error": refresh_error})
 
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
@@ -500,11 +544,8 @@ def api_lightweight_chart(symbol):
     except (TypeError, ValueError):
         limit = 320
     limit = max(50, min(1000, limit))
-    if _ensure_chart_symbol_fn:
-        try:
-            _ensure_chart_symbol_fn(symbol)
-        except Exception as exc:
-            print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
+    # Luôn trả cache đang có ngay. Việc kiểm tra/cập nhật Vnstock được tách sang
+    # /api/lightweight_chart_refresh/<symbol> để không chặn lần vẽ chart đầu tiên.
     cache = _get_history_cache() if _get_history_cache else {}
     if not _cache_lock:
         return jsonify({"error": "cache_not_ready"}), 503
@@ -4796,8 +4837,53 @@ function showLiteChartStatus(status){
   clearTimeout(DOM.liteChartStatus._hideTimer);
   DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
 }
+let _liteLoadSeq=0;
+function renderLiteChartData(symbol,j){
+  _liteSymbol=symbol;setLiteTf(j.timeframe||_liteTf);
+  if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
+  _liteData=(j.candles||[]).map((bar,idx,arr)=>{
+    const prev=idx>0?arr[idx-1].close:null;
+    const pct=prev?((bar.close-prev)/prev*100):0;
+    return{...bar,pct};
+  });
+  _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
+  _liteVolumeData=_liteNormalizeVolumeData(j.volume,_liteData);
+  _liteCandle.setData(_liteData);
+  _liteVolume.setData(_liteVolumeData);
+  _liteUpdateWhitespace();
+  renderLiteIndicators();
+  setLiteRightOffset();
+  _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.12,bottom:.18}});
+  DOM.liteChartEmpty.style.display='none';
+  updateLiteTitle(_liteData[_liteData.length-1]);
+  _liteApplyBuySignal();
+  loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
+}
+async function refreshLiteChartInBackground(symbol,timeframe,loadSeq){
+  try{
+    // Endpoint này chờ Vnstock ở nền; chart đang hiển thị vẫn dùng cache đã trả về.
+    const r=await fetch('/api/lightweight_chart_refresh/'+encodeURIComponent(symbol),{method:'POST'});
+    const status=await r.json();
+    if(!r.ok)throw new Error(status.error||'background_refresh_failed');
+    if(loadSeq!==_liteLoadSeq||_liteSymbol!==symbol)return;
+    // Khi Vnstock đã được gọi, đọc lại cache mới nhưng không khởi động thêm lượt refresh.
+    if(status.need_fetch){
+      const cached=await fetch('/api/lightweight_chart/'+encodeURIComponent(symbol)+'?tf='+encodeURIComponent(timeframe)+'&limit=1000');
+      if(!cached.ok)throw new Error('updated_cache_unavailable');
+      const fresh=await cached.json();
+      if(loadSeq!==_liteLoadSeq||_liteSymbol!==symbol)return;
+      renderLiteChartData(symbol,fresh);
+    }
+    // ••• chỉ hiện sau khi kiểm tra ngầm đã hoàn tất, với nguyên lý màu giữ nguyên.
+    showLiteChartStatus(status);
+  }catch(e){
+    console.warn('refreshLiteChartInBackground:',e);
+  }
+}
 async function loadLiteChart(sym='FPT',retry=1){
   const s=(sym||'FPT').toUpperCase().trim();
+  const loadSeq=++_liteLoadSeq;
+  const timeframe=_liteTf;
   if(!DOM.liteChart)return;
   initLiteChart();
   if(DOM.liteChartInput)DOM.liteChartInput.value='';
@@ -4809,42 +4895,24 @@ async function loadLiteChart(sym='FPT',retry=1){
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),1200);
     return;
   }
-  // Gọi song song: status chỉ để hiển thị placeholder text, không cần chờ nó xong
-  // mới bắt đầu fetch data thật — gộp lại giúp giảm ~1 round-trip độ trễ tải chart.
-  const statusPromise=fetch('/api/lightweight_chart_status/'+encodeURIComponent(s))
-    .then(x=>x.json()).catch(()=>null);
-  statusPromise.then(st=>{
-    if(DOM.liteChartEmpty.style.display!=='none')
-      DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
-  });
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=1000');
+    // Endpoint này chỉ đọc cache, không chờ Vnstock. Đây là lượt vẽ đầu tiên.
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(timeframe)+'&limit=1000');
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
-    _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
-    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
-    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
-      const prev=idx>0?arr[idx-1].close:null;
-      const pct=prev?((bar.close-prev)/prev*100):0;
-      return{...bar,pct};
-    });
-    _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
-    _liteVolumeData=_liteNormalizeVolumeData(j.volume,_liteData);
-    _liteCandle.setData(_liteData);
-    _liteVolume.setData(_liteVolumeData);
-    _liteUpdateWhitespace();
-    renderLiteIndicators();
-    setLiteRightOffset();
-    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.12,bottom:.18}});
-    DOM.liteChartEmpty.style.display='none';
-    updateLiteTitle(_liteData[_liteData.length-1]);
-    _liteApplyBuySignal();
-    loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
-    showLiteChartStatus(await statusPromise);
+    if(loadSeq!==_liteLoadSeq)return;
+    renderLiteChartData(s,j);
+    void refreshLiteChartInBackground(s,timeframe,loadSeq);
   }catch(e){
+    if(loadSeq!==_liteLoadSeq)return;
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
-    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),5000);
+    // Không có cache là trường hợp duy nhất cần chờ Vnstock trước lần vẽ đầu tiên.
+    if(retry>0){
+      fetch('/api/lightweight_chart_refresh/'+encodeURIComponent(s),{method:'POST'})
+        .catch(()=>null)
+        .finally(()=>{if(loadSeq===_liteLoadSeq)setTimeout(()=>loadLiteChart(s,retry-1),0);});
+    }
   }
 }
 function bindLiteChartControls(){
