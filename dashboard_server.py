@@ -3560,8 +3560,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.save();ctx.strokeStyle=color;ctx.fillStyle=_liteHexAlpha(color,.10);
     ctx.lineWidth=selected?1.8:1.2;const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
     ctx.fillRect(rx,ry,rw,rh);ctx.strokeRect(rx,ry,rw,rh);ctx.restore();
-    if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
-    // % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp): kéo lên (tăng giá) -> nhãn ở cạnh trên;
+    if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);_liteDrawHandle(ctx,x1,y2);_liteDrawHandle(ctx,x2,y1);}
     // kéo xuống (giảm giá) -> nhãn ở cạnh dưới. Chỉ hiện realtime lúc đang vẽ dở (xem trước qua _liteLinePending
     // — rect luôn được tạo theo kiểu click-click, không đi qua _liteDrawActive); khi đã chốt hình thì mặc định
     // ẨN, chỉ hiện nếu bật tuỳ chọn "%" trên thanh công cụ của hộp (d.showPct).
@@ -3698,8 +3697,9 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.restore();
     if(selected){
       _liteDrawHandle(ctx,rx,entryY);_liteDrawHandle(ctx,rx+rw,entryY);
-      _liteDrawHandle(ctx,rx,targetY);_liteDrawHandle(ctx,rx,(stopY!==null?stopY:entryY));
-      if(target2Y!==null)_liteDrawHandle(ctx,rx,target2Y);
+      _liteDrawHandle(ctx,rx,targetY);_liteDrawHandle(ctx,rx+rw,targetY);
+      _liteDrawHandle(ctx,rx,(stopY!==null?stopY:entryY));_liteDrawHandle(ctx,rx+rw,(stopY!==null?stopY:entryY));
+      if(target2Y!==null){_liteDrawHandle(ctx,rx,target2Y);_liteDrawHandle(ctx,rx+rw,target2Y);}
     }
   }
 }
@@ -4084,6 +4084,8 @@ function _liteHitTestShape(d,x,y){
   if(d.type==='rect'){
     if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
     if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
+    if(Math.hypot(x-x1,y-y2)<=9)return{part:'c1'}; // góc ảo: x theo p0, y theo p1
+    if(Math.hypot(x-x2,y-y1)<=9)return{part:'c2'}; // góc ảo: x theo p1, y theo p0
     const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
     if(x>=rx-LITE_HIT_TOL&&x<=rx+rw+LITE_HIT_TOL&&y>=ry-LITE_HIT_TOL&&y<=ry+rh+LITE_HIT_TOL)return{part:'line'};
     return null;
@@ -4174,7 +4176,16 @@ function _liteApplyDrag(d,info,cur){
   const key=d.type+':'+info.part;
   if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
   else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
-  else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'){
+  else if(key==='rect:c1'){
+    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển
+    // toàn khối, chỉ từng thành phần riêng, tạo hiệu ứng resize đúng từ góc đang kéo.
+    d.points[0]={l:op[0].l+dl,p:op[0].p};
+    d.points[1]={l:op[1].l,p:op[1].p+dp};
+  }else if(key==='rect:c2'){
+    // Góc ảo (x theo p1, y theo p0): kéo ngang đổi p1.l, kéo dọc đổi p0.p.
+    d.points[0]={l:op[0].l,p:op[0].p+dp};
+    d.points[1]={l:op[1].l+dl,p:op[1].p};
+  }else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'){
     d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
   }else if(key==='arc:line'){
     d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
