@@ -2284,6 +2284,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
           <button class="lite-draw-btn" id="lite-draw-undo" title="Xóa nét vừa vẽ">↩</button>
           <button class="lite-draw-btn" id="lite-draw-clear" title="Xóa tất cả">🗑</button>
           <div class="lite-draw-sep"></div>
+          <button class="lite-draw-btn" id="lite-fireant-widget" title="Mở widget FireAnt cho mã hiện tại" aria-label="Mở widget FireAnt cho mã hiện tại"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M12 3v9l6 3"/><path d="M21 3v5h-5"/></svg></button>
           <button class="lite-draw-btn" id="lite-draw-copy" title="Sao chép ảnh chart vào clipboard" aria-label="Sao chép ảnh chart vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
           <div class="lite-alert-wrap" id="lite-alert-wrap">
             <button class="lite-draw-btn" id="lite-alert-btn" title="Cảnh báo giá">🔔<span class="lite-alert-badge" id="lite-alert-badge"></span></button>
@@ -2602,6 +2603,7 @@ const DOM={
   liteShapeBgClear:$('lite-shape-bg-clear'),liteShapeEdit:$('lite-shape-edit'),
   liteTextInput:$('lite-text-input'),
   liteShapeDash:$('lite-shape-dash'),liteDrawCopy:$('lite-draw-copy'),
+  liteFireantBtn:$('lite-fireant-widget'),
   liteShapeArrowStyle:$('lite-shape-arrow-style'),liteShapeZigzagFill:$('lite-shape-zigzag-fill'),
   liteShapeArrowWidth:$('lite-shape-arrow-width'),
   liteAlertWrap:$('lite-alert-wrap'),liteAlertBtn:$('lite-alert-btn'),liteAlertBadge:$('lite-alert-badge'),
@@ -2715,6 +2717,7 @@ let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
+function fireantWidgetUrl(sym){return `https://fireant.vn/charts/content/symbols/${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
 const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
@@ -3554,6 +3557,26 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.lineWidth=selected?1.8:1.2;const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
     ctx.fillRect(rx,ry,rw,rh);ctx.strokeRect(rx,ry,rw,rh);ctx.restore();
     if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
+    // % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp): kéo từ dưới lên -> % tăng, kéo từ trên xuống -> % giảm.
+    const _p0=pts[0]&&pts[0].p,_p1=pts[1]&&pts[1].p;
+    if(typeof _p0==='number'&&typeof _p1==='number'&&_p0!==0){
+      const pct=(_p1-_p0)/_p0*100;
+      const pctColor=pct>=0?'#16a34a':'#ef4444';
+      const pctText=(pct>=0?'+':'')+pct.toFixed(2)+'%';
+      ctx.save();
+      ctx.font='bold 11px "IBM Plex Mono",monospace';
+      ctx.textAlign='center';ctx.textBaseline='top';
+      const tw=ctx.measureText(pctText).width;
+      const lx=rx+rw/2;let ly=ry+3;
+      if(ly+15>DOM.liteChart.clientHeight)ly=ry-16;
+      ctx.fillStyle='rgba(255,255,255,.88)';
+      ctx.fillRect(lx-tw/2-4,ly-1,tw+8,15);
+      ctx.strokeStyle=_liteHexAlpha(pctColor,.4);ctx.lineWidth=1;
+      ctx.strokeRect(lx-tw/2-4,ly-1,tw+8,15);
+      ctx.fillStyle=pctColor;
+      ctx.fillText(pctText,lx,ly+1);
+      ctx.restore();
+    }
   }else if(d.type==='channel'){
     // CHỈ hiện kênh (2 cạnh + tô nền) khi đã có điểm thứ 3 (độ rộng kênh) thật sự được xác lập
     // ở bước 2 (rê chuột lên/xuống). Trong lúc bước 1 (mới chọn 2 điểm đầu-cuối, chưa rê) chỉ hiện
@@ -4368,6 +4391,15 @@ function bindLiteDrawToolbar(){
     e.preventDefault();
     e.stopPropagation();
     copyLiteChartImage(e.currentTarget);
+  });
+  DOM.liteFireantBtn?.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    const sym=_liteSymbol||_sym||'VNINDEX';
+    const box=_getPopupViewport();
+    const w=Math.min(900,box.width-40),h=Math.min(760,box.height-40);
+    const win=_openMaximizedWindow(fireantWidgetUrl(sym),'FireantWidget_'+sym,w,h,0,0);
+    if(!win)alert('Trình duyệt chặn popup!');
   });
   if(DOM.liteTextInput){
     DOM.liteTextInput.addEventListener('keydown',e=>{
