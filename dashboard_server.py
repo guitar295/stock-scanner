@@ -3956,6 +3956,14 @@ function _liteShapeAnchor(d){
     }
     return n?{x:sumX/n,y:minY}:null;
   }
+  if(d.type==='rect'){
+    const top=Math.min(y1,y2);
+    // Khi bật nhãn % (d.showPct) và giá đang tăng, nhãn % được vẽ ngay phía trên cạnh trên hộp
+    // (xem khối vẽ rect ở trên, boxY=ry-3-boxH) — đẩy anchor lên cao hơn 1 khoảng đủ rộng để
+    // thanh công cụ nổi không đè lên nhãn đó. Giá giảm thì nhãn nằm dưới hộp, không xung đột.
+    const pct=d.showPct?_liteRectPct(d):null;
+    return{x:(x1+x2)/2,y:(pct!==null&&pct>=0)?top-18:top};
+  }
   return{x:(x1+x2)/2,y:Math.min(y1,y2)};
 }
 // Lấy hình đang được chọn (theo _liteSelectedId) — gộp lại 1 chỗ duy nhất thay vì lặp lại
