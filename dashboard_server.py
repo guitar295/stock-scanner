@@ -2722,7 +2722,6 @@ let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
 const SIMPLIZE_ORIGIN='https://simplize.vn';
 function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
-function fireantWidgetUrl(sym){return `https://fireant.vn/charts/content/symbols/${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
 const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
@@ -4129,7 +4128,16 @@ function _liteHitTest(x,y){
   }
   return null;
 }
+// Hover tooltip của hộp vẽ (rect) chỉ hiện sau khi con trỏ DỪNG một khoảng thời gian tại vị trí đó
+// (giống hover tooltip mã cổ phiếu trên HEATMAP — native title tooltip); di chuột đi là ẩn ngay và
+// phải dừng lại đủ thời gian mới hiện lại.
+const LITE_RECT_TOOLTIP_DELAY_MS=600;
+let _liteRectTooltipTimer=null;
+function _liteClearRectTooltipTimer(){
+  if(_liteRectTooltipTimer){clearTimeout(_liteRectTooltipTimer);_liteRectTooltipTimer=null;}
+}
 function _liteHideRectTooltip(){
+  _liteClearRectTooltipTimer();
   if(DOM.liteRectTooltip)DOM.liteRectTooltip.style.display='none';
 }
 // % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp) của 1 hình chữ nhật — dùng chung cho cả
@@ -4145,7 +4153,7 @@ function _liteRectPct(d){
 function _liteShowRectTooltip(hit,x,y){
   const tip=DOM.liteRectTooltip;
   if(!tip)return;
-  const pct=hit?_liteRectPct(hit.shape):null;
+  const pct=_liteRectPct(hit.shape);
   if(pct===null){tip.style.display='none';return;}
   tip.textContent=(pct>=0?'+':'')+pct.toFixed(2)+'%';
   tip.style.color=pct>=0?'#16a34a':'#ef4444';
@@ -4435,7 +4443,7 @@ function bindLiteDrawToolbar(){
     e.preventDefault();
     e.stopPropagation();
     const sym=_liteSymbol||_sym||'VNINDEX';
-    openUrl(fireantWidgetUrl(sym),sym);
+    openChart(sym,'24h'); // chỉ nút này mở thẳng tab Fireant; các nơi khác gọi openChart(sym) vẫn mặc định Vietstock
   });
   if(DOM.liteTextInput){
     DOM.liteTextInput.addEventListener('keydown',e=>{
@@ -4520,7 +4528,12 @@ function bindLiteDrawToolbar(){
       const{x,y}=_liteXYFromEvent(e);
       const hit=_liteHitTest(x,y);
       DOM.liteChart.style.cursor=hit?'move':'';
-      _liteShowRectTooltip(hit,x,y);
+      // Mỗi lần chuột di chuyển: ẩn tooltip đang hiện (nếu có) và huỷ hẹn giờ cũ — chỉ hiện lại
+      // sau khi con trỏ đứng yên đủ LITE_RECT_TOOLTIP_DELAY_MS tại 1 hộp.
+      _liteHideRectTooltip();
+      if(hit){
+        _liteRectTooltipTimer=setTimeout(()=>{_liteRectTooltipTimer=null;_liteShowRectTooltip(hit,x,y);},LITE_RECT_TOOLTIP_DELAY_MS);
+      }
     });
     DOM.liteChart.addEventListener('pointerleave',()=>{_liteHideRectTooltip();});
     DOM.liteChart.addEventListener('dblclick',e=>{
@@ -5817,14 +5830,14 @@ function _openPopup(){
   else
     DOM.mobClose.style.display='none';
 }
-function openChart(sym){
+function openChart(sym,tab='vs'){
   _resetPopupChrome();
-  _sym=sym.toUpperCase().trim();_tab='vs';
+  _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _resetScannerUI();
-  _activateTab('vs');
+  _activateTab(tab);
   _openPopup();
   setTimeout(()=>DOM.pbox.focus(),0);
   // Clear search inputs
