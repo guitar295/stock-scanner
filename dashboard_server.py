@@ -44,11 +44,6 @@ _chart_cache: dict = {}
 _chart_lock = threading.Lock()
 CHART_TTL_SEC = 120
 
-# Các mã đang được update ngầm (background) cho lightweight chart — tránh spawn
-# nhiều thread trùng cho cùng 1 mã khi user bấm nhanh liên tục.
-_lite_refreshing: set = set()
-_lite_refresh_lock = threading.Lock()
-
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
@@ -496,29 +491,6 @@ def api_lightweight_chart_status(symbol):
     return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
                     "reason": "fallback_check"})
 
-def _lite_background_refresh_worker(symbol):
-    """Chạy _ensure_chart_symbol_fn trong thread nền, không chặn response.
-    Cache (history_cache_ref) được update in-place nên lần load/poll sau sẽ
-    tự thấy dữ liệu mới."""
-    try:
-        _ensure_chart_symbol_fn(symbol)
-    except Exception as exc:
-        print(f"  [LiteChart] {symbol}: ensure cache ngầm lỗi: {exc}")
-    finally:
-        with _lite_refresh_lock:
-            _lite_refreshing.discard(symbol)
-
-def _trigger_lite_background_refresh(symbol):
-    """Đảm bảo chỉ có 1 thread update ngầm cho mỗi mã tại 1 thời điểm."""
-    if not _ensure_chart_symbol_fn:
-        return False
-    with _lite_refresh_lock:
-        if symbol in _lite_refreshing:
-            return True  # đã có refresh đang chạy
-        _lite_refreshing.add(symbol)
-    threading.Thread(target=_lite_background_refresh_worker, args=(symbol,), daemon=True).start()
-    return True
-
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
@@ -528,23 +500,14 @@ def api_lightweight_chart(symbol):
     except (TypeError, ValueError):
         limit = 320
     limit = max(50, min(1000, limit))
-    cache = _get_history_cache() if _get_history_cache else {}
-    if not _cache_lock:
-        return jsonify({"error": "cache_not_ready"}), 503
-    with _cache_lock:
-        existing = cache.get(symbol)
-        has_cache = existing is not None and len(existing) >= 60
-    refreshing = False
-    if has_cache:
-        # Cache đã đủ dữ liệu: vẽ ngay từ cache, việc kiểm tra/tải dữ liệu mới
-        # (vnstock) được đẩy ra chạy ngầm, không chặn response này.
-        refreshing = _trigger_lite_background_refresh(symbol)
-    elif _ensure_chart_symbol_fn:
-        # Chưa có cache sẵn: fallback cơ chế cũ — chờ tải xong rồi mới trả.
+    if _ensure_chart_symbol_fn:
         try:
             _ensure_chart_symbol_fn(symbol)
         except Exception as exc:
             print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not _cache_lock:
+        return jsonify({"error": "cache_not_ready"}), 503
     with _cache_lock:
         df = cache.get(symbol)
         df = df.copy() if df is not None and len(df) else None
@@ -581,8 +544,7 @@ def api_lightweight_chart(symbol):
     if not candles:
         return jsonify({"error": "no_data", "symbol": symbol}), 404
     return jsonify({"symbol": symbol, "timeframe": tf, "candles": candles, "volume": volume,
-                    "last_date": candles[-1]["time"],
-                    "from_cache": has_cache, "refreshing": refreshing})
+                    "last_date": candles[-1]["time"]})
 
 @app.route("/api/cache_info")
 def api_cache_info():
@@ -4982,45 +4944,6 @@ function showLiteChartStatus(status){
   clearTimeout(DOM.liteChartStatus._hideTimer);
   DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
 }
-// Áp dữ liệu mới vào chart đang hiển thị mà KHÔNG phá góc nhìn (zoom/scroll)
-// hiện tại của user — dùng cho cập nhật ngầm sau khi vẽ nhanh từ cache.
-function _liteApplyQuietUpdate(j){
-  const prevRange=_liteGetVisibleLogicalRange();
-  _liteData=(j.candles||[]).map((bar,idx,arr)=>{
-    const prev=idx>0?arr[idx-1].close:null;
-    const pct=prev?((bar.close-prev)/prev*100):0;
-    return{...bar,pct};
-  });
-  _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
-  _liteVolumeData=_liteNormalizeVolumeData(j.volume,_liteData);
-  _liteCandle.setData(_liteData);
-  _liteVolume.setData(_liteVolumeData);
-  _liteUpdateWhitespace();
-  renderLiteIndicators();
-  if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
-  updateLiteTitle(_liteData[_liteData.length-1]);
-  _liteApplyBuySignal();
-  redrawLiteDrawings();
-}
-// Poll ngầm sau khi vẽ chart nhanh từ cache: chờ server hoàn tất update
-// (vnstock) rồi âm thầm lấy dữ liệu mới nhất, chỉ áp dụng nếu thực sự đổi.
-async function _liteQuietRefetch(sym,tf,attempt=0){
-  if(_liteSymbol!==sym)return; // user đã đổi mã khác, bỏ qua kết quả cũ
-  try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=1000');
-    if(!r.ok)return;
-    const j=await r.json();
-    if(_liteSymbol!==sym||_liteTf!==tf)return; // mã/khung thời gian đã đổi trong lúc chờ
-    const oldLast=_liteData.length?_liteData[_liteData.length-1].time:null;
-    if(j.last_date&&j.last_date!==oldLast){
-      _liteApplyQuietUpdate(j);
-      return;
-    }
-    if(j.refreshing&&attempt<4)setTimeout(()=>_liteQuietRefetch(sym,tf,attempt+1),3000);
-  }catch(e){
-    if(attempt<4)setTimeout(()=>_liteQuietRefetch(sym,tf,attempt+1),3000);
-  }
-}
 async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
   if(!DOM.liteChart)return;
@@ -5073,7 +4996,6 @@ async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
     _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
     showLiteChartStatus(await statusPromise);
-    if(j.refreshing)setTimeout(()=>_liteQuietRefetch(s,_liteTf,0),3000);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
