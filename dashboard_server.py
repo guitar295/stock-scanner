@@ -2731,6 +2731,7 @@ function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURICom
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
 const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
+const LITE_LAST_SYMBOL_KEY='dashboard_lite_last_symbol';
 function loadLiteTrendMode(){
   let mode='regular';
   try{mode=localStorage.getItem(LITE_TREND_MODE_KEY)||'regular';}catch(e){}
@@ -2858,7 +2859,7 @@ function _liteSyncVisibleRangeFrom(source,range){
   });
   _liteSyncing=false;
 }
-let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
+let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
@@ -4960,6 +4961,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
     }else{
@@ -5244,6 +5246,7 @@ function _hmapDesktopClick(sym){
     loadLiteChart(sym,0);
     if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
+    if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
     if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
   },220);
@@ -6462,11 +6465,12 @@ window.addEventListener('message',e=>{
 let _chartPopoutWin=null,_lastChartSyncSymbol=null;
 function openChartPopout(){
   if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
-  const sym=_liteSymbol||'FPT';
-  const w=Math.min(1400,window.screen.availWidth-40);
-  const h=Math.min(900,window.screen.availHeight-80);
+  const sym=_liteSymbol||'VNINDEX';
+  const box=_getPopupViewport();
+  const w=Math.min(1600,box.width-40),h=box.height;
   const url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
-  _chartPopoutWin=window.open(url,'ChartPopout','width='+w+',height='+h+',left=40,top=40,scrollbars=yes,resizable=yes');
+  _chartPopoutWin=_openMaximizedWindow(url,'ChartPopout',w,h,0,0,'scrollbars=yes');
+  if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
 }
 document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openChartPopout);
 // Đồng bộ 2 chiều: dùng chung 1 listener cho cả cửa sổ chính (nhận từ popout con) lẫn
