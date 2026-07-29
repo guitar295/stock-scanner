@@ -4935,7 +4935,7 @@ function showLiteChartStatus(status){
   clearTimeout(DOM.liteChartStatus._hideTimer);
   DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
 }
-async function loadLiteChart(sym='FPT',retry=1){
+async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
   if(!DOM.liteChart)return;
   initLiteChart();
@@ -4964,7 +4964,7 @@ async function loadLiteChart(sym='FPT',retry=1){
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
-    }else{
+    }else if(!skipPopoutSync){
       if(_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
       if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
     }
@@ -5233,9 +5233,17 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   _syncHoverPreview(cell.dataset.sym);
   updatePopout(cell.dataset.sym);
   updateSimplize(cell.dataset.sym);
-  loadLiteChart(cell.dataset.sym,0);
+  _syncChartPopoutSymbol(cell.dataset.sym);
+  loadLiteChart(cell.dataset.sym,0,true);
   openChart(cell.dataset.sym);
 });
+// Gửi mã sang cửa sổ CHART popout NGAY khi biết mã (không chờ chart cửa sổ chính tải
+// xong dữ liệu trước), để popout tự fetch song song luôn thay vì tuần tự sau — tránh mất
+// 2 lần đồng bộ nối tiếp làm chart trên popout nhảy chậm hơn hẳn so với chart mặc định.
+function _syncChartPopoutSymbol(sym){
+  const s=String(sym||'').toUpperCase().trim();
+  if(s&&_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+}
 let _hmapClickTimer=null;
 function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
@@ -5243,7 +5251,8 @@ function _hmapDesktopClick(sym){
     _syncHoverPreview(sym);
     updatePopout(sym);
     updateSimplize(sym);
-    loadLiteChart(sym,0);
+    _syncChartPopoutSymbol(sym);
+    loadLiteChart(sym,0,true);
     if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
     if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
@@ -5262,7 +5271,8 @@ DOM.sigList.addEventListener('dblclick',e=>{
   _syncHoverPreview(row.dataset.sym);
   updatePopout(row.dataset.sym);
   updateSimplize(row.dataset.sym);
-  loadLiteChart(row.dataset.sym,0);
+  _syncChartPopoutSymbol(row.dataset.sym);
+  loadLiteChart(row.dataset.sym,0,true);
   openChart(row.dataset.sym);
 });
 DOM.momentumList.addEventListener('click',e=>{
@@ -6492,6 +6502,19 @@ window.addEventListener('message',e=>{
   DOM.liteChartPanel.classList.remove('collapsed');
   const qsym=(qs.get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
+  // Cửa sổ được mở sẵn cao bằng toàn màn hình (để không bị browser giới hạn kích thước),
+  // nhưng nội dung panel CHART lại có chiều cao cố định nên thừa khoảng trắng phía dưới.
+  // Sau khi layout đã ổn định (2 lần requestAnimationFrame), co chiều cao cửa sổ lại vừa
+  // đúng nội dung thực tế — giữ nguyên vị trí top/trái, chỉ cắt bớt phần thừa phía dưới.
+  window.addEventListener('load',()=>{
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      try{
+        const chrome=Math.max(0,window.outerHeight-window.innerHeight);
+        const targetOuterH=Math.min(window.screen.availHeight,document.body.scrollHeight+chrome+2);
+        if(targetOuterH>0&&targetOuterH<window.outerHeight)window.resizeTo(window.outerWidth,targetOuterH);
+      }catch(e){}
+    }));
+  });
 })();
 
 // ═══════════════════════════════════════════════════════
