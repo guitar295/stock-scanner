@@ -6480,14 +6480,16 @@ let _chartPopoutWin=null,_lastChartSyncSymbol=null;
 //   720   = chiều cao khung chart (.lite-chart-frame{height:720px})
 //   80    = phần toolbar/header phía trên (dự trù tối đa 2 dòng khi màn hình hẹp hơn)
 //   18    = padding trên/dưới #main-wrap ở chart-popout-mode (8px * 2) + viền panel
+//   34    = dòng footer "Scanner Bot Dashboard • ..." (footer nằm ngoài #main-wrap nên vẫn
+//           hiện trong popout, cần cộng thêm để không bị hụt/mất chữ)
 // Nếu ước tính hụt vài px trên màn hình quá hẹp, cửa sổ đã có scrollbars=yes làm phương án
 // dự phòng an toàn (hiện thanh cuộn thay vì bị cắt nội dung), thay vì phải đo rồi co giật cục.
-const CHART_POPOUT_CONTENT_H=720+80+18;
+const CHART_POPOUT_CONTENT_H=720+80+18+34;
 function openChartPopout(){
   if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
   const sym=_liteSymbol||'VNINDEX';
   const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
+  const w=Math.min(1600,box.width-40)*0.9,h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
   const url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
   _chartPopoutWin=_openMaximizedWindow(url,'ChartPopout',w,h,0,0,'scrollbars=yes');
   if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
