@@ -1092,7 +1092,7 @@ html.embedded-popout .phdr{display:none !important}
     </div>
   </div>
   <div class="pbody">
-    <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
+    <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
     <div class="tpanel" id="panel-scanner">
       <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
       <div class="album-outer" id="album-outer" style="display:none">
@@ -1167,7 +1167,7 @@ function _activateTab(tab){
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
   document.title=_sym+' • Full Chart';
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(_sym.toLowerCase());
+  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   DOM.outer.style.display='none';
   DOM.loading.style.display='flex';
@@ -1227,7 +1227,7 @@ async function loadScannerChart(sym){
     if(h)h.textContent='Đang tải 15m...';
     loadScannerChart15m(sym);
   }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${encodeURIComponent(sym.toLowerCase())}" target="_blank" rel="noreferrer" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 async function loadScannerChart15m(sym){
@@ -1768,8 +1768,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-alert-row-sub{font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lite-alert-row-actions{display:flex;gap:4px}
 .lite-alert-mini{height:23px;min-width:28px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#374151;font-size:10px;font-weight:700;cursor:pointer}
-.lite-alert-mini.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 .lite-alert-mini.danger{color:#dc2626}
+.alert-toast-wrap{position:fixed;top:8px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 28px))}
+.alert-toast{background:#fff;color:#111827;border:1px solid rgba(17,24,39,.12);border-radius:8px;box-shadow:0 12px 32px rgba(17,24,39,.18);padding:10px 12px;cursor:pointer}
+.alert-toast-title{font-size:12px;font-weight:800;margin-bottom:3px;color:#111827}
+.alert-toast-sub{font-size:11px;color:#4b5563}
 .lite-draw-sep{width:1px;height:16px;background:var(--border);margin:0 2px}
 .lite-draw-color{width:24px;height:20px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
 .lite-draw-color::-webkit-color-swatch-wrapper{padding:2px}
@@ -2292,7 +2295,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <div class="lite-alert-wrap" id="lite-alert-wrap">
             <button class="lite-draw-btn" id="lite-alert-btn" title="Cảnh báo giá">🔔<span class="lite-alert-badge" id="lite-alert-badge"></span></button>
             <div class="lite-alert-panel" id="lite-alert-panel">
-              <div class="lite-alert-title"><span>CẢNH BÁO</span><div style="display:flex;gap:4px"><button class="lite-alert-mini" id="lite-alert-desktop-notif" title="Bật/tắt thông báo ra màn hình desktop (ngoài trình duyệt)">🖥</button><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></div></div>
+              <div class="lite-alert-title"><span>CẢNH BÁO</span><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></div>
               <div class="lite-alert-grid">
                 <div class="lite-alert-field">
                   <label>Mã</label>
@@ -2467,10 +2470,12 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   <div class="hv-body">
     <div class="hv-symlist" id="hv-symlist" style="display:none"></div>
     <div id="hover-preview-iframe-wrap">
-      <iframe id="hover-preview-iframe" src="about:blank" referrerpolicy="no-referrer"></iframe>
+      <iframe id="hover-preview-iframe" src="about:blank"></iframe>
     </div>
   </div>
 </div>
+<div class="alert-toast-wrap" id="alert-toast-wrap"></div>
+
 <footer id="footer-txt">Scanner Bot Dashboard</footer>
 
 <!-- POPUP -->
@@ -2540,7 +2545,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     </div>
 
     <div class="pbody">
-      <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
+      <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
         <div class="album-outer" id="album-outer" style="display:none">
@@ -2624,7 +2629,7 @@ const DOM={
   liteAlertTelegram:$('lite-alert-telegram'),liteAlertChat:$('lite-alert-chat'),
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
-  liteAlertSeen:$('lite-alert-seen'),liteAlertDesktopNotif:$('lite-alert-desktop-notif'),liteAlertList:$('lite-alert-list'),
+  liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
@@ -5578,34 +5583,23 @@ async function pollAlertFeed(showToast=true){
     DOM.liteAlertBadge.textContent=n>9?'9+':String(n);
     DOM.liteAlertBadge.classList.toggle('on',n>0);
     renderAlertRules();
-    // Chỉ cửa sổ dashboard CHÍNH mới bắn thông báo — cửa sổ CHART popout không tự thông báo
-    // nữa (tránh trùng lặp 2 lần), vì thông báo desktop đã hiện sẵn ngoài màn hình rồi.
-    if(showToast&&!document.body.classList.contains('chart-popout-mode')){
+    if(showToast){
       [..._alertEvents].reverse().forEach(ev=>{
         if(ev.seen||_alertShownIds.has(ev.id))return;
         _alertShownIds.add(ev.id);
-        _fireDesktopNotification(ev);
+        showAlertToast(ev);
       });
     }
   }catch(e){console.error('pollAlertFeed:',e);}
 }
-// Thông báo ra màn hình desktop (ngoài cửa sổ trình duyệt) qua Notification API — chỉ bắn khi
-// người dùng đã bấm nút 🖥 và cấp quyền; nếu chưa cấp/không hỗ trợ thì bỏ qua (không còn toast
-// trong trang để dự phòng nữa, vì đã có thông báo desktop thay thế).
-function _fireDesktopNotification(ev){
-  if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
-  try{
-    const n=new Notification(`${ev.symbol} - Cảnh báo`,{body:ev.message,tag:'alert-'+ev.id});
-    n.onclick=()=>{window.focus();_alertJumpSymbol(ev.symbol);n.close();};
-  }catch(e){}
-}
-function _refreshDesktopNotifBtn(){
-  if(!DOM.liteAlertDesktopNotif)return;
-  const supported=typeof Notification!=='undefined';
-  const granted=supported&&Notification.permission==='granted';
-  DOM.liteAlertDesktopNotif.classList.toggle('on',granted);
-  DOM.liteAlertDesktopNotif.title=!supported?'Trình duyệt không hỗ trợ thông báo desktop':
-    granted?'Đã bật thông báo desktop':'Bấm để bật thông báo ra màn hình desktop';
+function showAlertToast(ev){
+  if(!DOM.alertToastWrap)return;
+  const el=document.createElement('div');
+  el.className='alert-toast';
+  el.innerHTML=`<div class="alert-toast-title">${_esc(ev.symbol)} - Cảnh báo</div><div class="alert-toast-sub">${_esc(ev.message)}</div>`;
+  el.addEventListener('click',()=>_alertJumpSymbol(ev.symbol));
+  DOM.alertToastWrap.prepend(el);
+  setTimeout(()=>{el.style.opacity='0';el.style.transform='translateY(-4px)';setTimeout(()=>el.remove(),260);},10000);
 }
 function alertPayload(){
   const leftType=DOM.liteAlertLeftType.value,rightType=DOM.liteAlertRightType.value;
@@ -5703,14 +5697,6 @@ function bindAlertControls(){
   [DOM.liteAlertLeftType,DOM.liteAlertRightType,DOM.liteAlertTelegram].forEach(el=>el?.addEventListener('change',updateAlertFormVisibility));
   DOM.liteAlertSave?.addEventListener('click',saveAlertRule);
   DOM.liteAlertSeen?.addEventListener('click',markAlertsSeen);
-  DOM.liteAlertDesktopNotif?.addEventListener('click',async()=>{
-    if(typeof Notification==='undefined'){alert('Trình duyệt này không hỗ trợ thông báo ra desktop.');return;}
-    if(Notification.permission==='granted'){alert('Thông báo desktop đang BẬT.\nMuốn tắt, vào phần quyền Thông báo (Notifications) của trình duyệt cho trang này.');return;}
-    if(Notification.permission==='denied'){alert('Trình duyệt đang CHẶN thông báo cho trang này.\nBấm vào biểu tượng khoá cạnh địa chỉ web để mở lại quyền Thông báo.');return;}
-    await Notification.requestPermission();
-    _refreshDesktopNotifBtn();
-  });
-  _refreshDesktopNotifBtn();
   DOM.liteAlertTest?.addEventListener('click',testAlertTelegram);
   DOM.liteAlertList?.addEventListener('click',async e=>{
     const jump=e.target.closest('[data-alert-jump]');
@@ -5843,7 +5829,7 @@ async function loadScannerChart(sym){
     if(h)h.textContent='Đang tải 15m...';
     loadScannerChart15m(sym);
   }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${encodeURIComponent(sym.toLowerCase())}" target="_blank" rel="noreferrer" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 async function loadScannerChart15m(sym){
@@ -5923,7 +5909,7 @@ function openChart(sym,tab='vs'){
   _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(_sym.toLowerCase());
+  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _resetScannerUI();
   _activateTab(tab);
@@ -6176,7 +6162,7 @@ function _syncHoverPreview(sym,updateFrame=true){
   _hoverPreviewCurrent=sym;
   if(!_hoverPreviewOn)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
-  if(updateFrame)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(sym.toLowerCase());
+  if(updateFrame)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
 }
 DOM.hpSymlist.addEventListener('click',e=>{
   const item=e.target.closest('.hv-sym-item');if(!item)return;
@@ -6376,7 +6362,7 @@ function _buildPopoutHTML(initSym){
     +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
     +'function loadChart(sym){'
     +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+encodeURIComponent(sym)):("https://ta.vietstock.vn/?stockcode="+encodeURIComponent(sym.toLowerCase()));'
+    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
     +'  if(cf.src===url)return;'
     +'  ld.classList.remove("hide");'
     +'  cf.onload=function(){ld.classList.add("hide");};'
@@ -6456,7 +6442,7 @@ function minimizePopout(){
     DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
   }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
-  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(_hoverPreviewCurrent.toLowerCase());
+  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
   _refreshChartModeUI();
 }
 function closePopoutWindow(){
