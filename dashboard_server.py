@@ -1668,6 +1668,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel.collapsed .lite-indicators,
 .lite-chart-panel.collapsed .lite-draw-toolbar,
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
+/* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
+body.chart-popout-mode>header,
+body.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
+body.chart-popout-mode #main-wrap{padding:8px}
+body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -2363,6 +2368,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
               <div class="lite-alert-list" id="lite-alert-list"></div>
             </div>
           </div>
+          <button class="lite-draw-btn" id="lite-chart-popout-btn" title="Mở CHART trong cửa sổ riêng" aria-label="Mở CHART trong cửa sổ riêng">⧉</button>
         </div>
       </div>
       <span class="lite-chart-toggle-icon">▶</span>
@@ -4954,6 +4960,12 @@ async function loadLiteChart(sym='FPT',retry=1){
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    if(_lastChartSyncSymbol===s){
+      _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
+    }else{
+      if(_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+      if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+    }
     if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
     _liteData=(j.candles||[]).map((bar,idx,arr)=>{
       const prev=idx>0?arr[idx-1].close:null;
@@ -6443,6 +6455,40 @@ window.addEventListener('message',e=>{
     closePopoutWindow();
   }
 });
+
+// ═══════════════════════════════════════════════════════
+// CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
+// ═══════════════════════════════════════════════════════
+let _chartPopoutWin=null,_lastChartSyncSymbol=null;
+function openChartPopout(){
+  if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
+  const sym=_liteSymbol||'FPT';
+  const w=Math.min(1400,window.screen.availWidth-40);
+  const h=Math.min(900,window.screen.availHeight-80);
+  const url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
+  _chartPopoutWin=window.open(url,'ChartPopout','width='+w+',height='+h+',left=40,top=40,scrollbars=yes,resizable=yes');
+}
+document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openChartPopout);
+// Đồng bộ 2 chiều: dùng chung 1 listener cho cả cửa sổ chính (nhận từ popout con) lẫn
+// cửa sổ popout (nhận từ cửa sổ chính, qua window.opener). _lastChartSyncSymbol đánh dấu
+// mã vừa nhận từ phía kia để loadLiteChart() không gửi ngược lại, tránh lặp vô hạn.
+window.addEventListener('message',e=>{
+  if(e.data&&e.data.type==='CHART_POPOUT_SYNC'&&e.data.symbol){
+    _lastChartSyncSymbol=String(e.data.symbol).toUpperCase().trim();
+    loadLiteChart(_lastChartSyncSymbol,0);
+  }
+});
+// Nếu chính trang này được mở lại bởi openChartPopout() ở trên (?chartPopout=1) thì tự mở
+// sẵn panel CHART, ẩn phần còn lại của dashboard, và nạp đúng mã đã chọn từ cửa sổ chính
+// (đánh dấu sẵn _lastChartSyncSymbol để lần nạp đầu tiên này không gửi ngược lại cửa sổ chính).
+(function(){
+  const qs=new URLSearchParams(window.location.search);
+  if(qs.get('chartPopout')!=='1')return;
+  document.body.classList.add('chart-popout-mode');
+  DOM.liteChartPanel.classList.remove('collapsed');
+  const qsym=(qs.get('sym')||'').trim();
+  if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
+})();
 
 // ═══════════════════════════════════════════════════════
 // INIT
