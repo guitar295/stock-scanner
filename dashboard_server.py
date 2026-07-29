@@ -3389,6 +3389,13 @@ function loadLiteDrawings(){
 function saveLiteDrawings(){
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
+// Đồng bộ hình vẽ realtime giữa cửa sổ CHART mặc định và cửa sổ CHART popout: 'storage' là sự
+// kiện có sẵn của trình duyệt, tự bắn sang các cửa sổ KHÁC (không bắn lại về cửa sổ vừa ghi)
+// mỗi khi localStorage thay đổi — nên chỉ cần lắng nghe và vẽ lại, không cần tự gửi message.
+window.addEventListener('storage',e=>{
+  if(e.key!==_liteDrawStoreKey())return; // không phải mã + khung thời gian đang xem — bỏ qua
+  loadLiteDrawings();redrawLiteDrawings();
+});
 function resizeLiteDrawCanvas(){
   if(!DOM.liteDrawCanvas||!DOM.liteChart)return;
   const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight,dpr=window.devicePixelRatio||1;
@@ -6485,11 +6492,14 @@ let _chartPopoutWin=null,_lastChartSyncSymbol=null;
 // Nếu ước tính hụt vài px trên màn hình quá hẹp, cửa sổ đã có scrollbars=yes làm phương án
 // dự phòng an toàn (hiện thanh cuộn thay vì bị cắt nội dung), thay vì phải đo rồi co giật cục.
 const CHART_POPOUT_CONTENT_H=720+80+18+34;
+// Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại
+// (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
+const CHART_POPOUT_WIDTH_RATIO=0.855;
 function openChartPopout(){
   if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
   const sym=_liteSymbol||'VNINDEX';
   const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40)*0.9,h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
+  const w=Math.min(1600,box.width-40)*CHART_POPOUT_WIDTH_RATIO,h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
   const url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
   _chartPopoutWin=_openMaximizedWindow(url,'ChartPopout',w,h,0,0,'scrollbars=yes');
   if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
