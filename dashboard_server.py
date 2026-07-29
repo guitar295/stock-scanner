@@ -6475,11 +6475,19 @@ window.addEventListener('message',e=>{
 // CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
 // ═══════════════════════════════════════════════════════
 let _chartPopoutWin=null,_lastChartSyncSymbol=null;
+// Chiều cao nội dung panel CHART khi mở popout, tính sẵn từ các trị CSS cố định — để mở cửa
+// sổ đúng kích thước ngay từ đầu, KHÔNG mở full màn hình rồi co lại (tránh giật hình):
+//   720   = chiều cao khung chart (.lite-chart-frame{height:720px})
+//   80    = phần toolbar/header phía trên (dự trù tối đa 2 dòng khi màn hình hẹp hơn)
+//   18    = padding trên/dưới #main-wrap ở chart-popout-mode (8px * 2) + viền panel
+// Nếu ước tính hụt vài px trên màn hình quá hẹp, cửa sổ đã có scrollbars=yes làm phương án
+// dự phòng an toàn (hiện thanh cuộn thay vì bị cắt nội dung), thay vì phải đo rồi co giật cục.
+const CHART_POPOUT_CONTENT_H=720+80+18;
 function openChartPopout(){
   if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
   const sym=_liteSymbol||'VNINDEX';
   const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),h=box.height;
+  const w=Math.min(1600,box.width-40),h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
   const url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
   _chartPopoutWin=_openMaximizedWindow(url,'ChartPopout',w,h,0,0,'scrollbars=yes');
   if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
@@ -6504,27 +6512,6 @@ window.addEventListener('message',e=>{
   DOM.liteChartPanel.classList.remove('collapsed');
   const qsym=(qs.get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
-  // Cửa sổ được mở sẵn cao bằng toàn màn hình (để không bị browser giới hạn kích thước),
-  // nhưng nội dung panel CHART lại có chiều cao cố định nên thừa khoảng trắng phía dưới.
-  // Đo trực tiếp mép dưới của panel CHART (không dùng document.body.scrollHeight vì body có
-  // CSS min-height:100vh — luôn bằng đúng chiều cao cửa sổ, khiến phép đo vô nghĩa), rồi co
-  // chiều cao cửa sổ lại vừa khít — giữ nguyên vị trí top/trái, chỉ cắt phần thừa phía dưới.
-  const fitChartPopoutWindow=()=>{
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      try{
-        const panel=DOM.liteChartPanel;
-        if(!panel)return;
-        const contentH=Math.ceil(panel.getBoundingClientRect().bottom)+8; // +padding-bottom của #main-wrap
-        const chrome=Math.max(0,window.outerHeight-window.innerHeight);
-        const targetOuterH=Math.min(window.screen.availHeight,contentH+chrome);
-        if(targetOuterH>0&&targetOuterH<window.outerHeight)window.resizeTo(window.outerWidth,targetOuterH);
-      }catch(e){}
-    }));
-  };
-  // Script này chạy ở cuối trang nên sự kiện 'load' của cửa sổ có thể đã bắn qua rồi —
-  // nếu tài liệu đã tải xong thì chạy luôn, nếu chưa thì mới cần chờ 'load'.
-  if(document.readyState==='complete')fitChartPopoutWindow();
-  else window.addEventListener('load',fitChartPopoutWindow);
 })();
 
 // ═══════════════════════════════════════════════════════
