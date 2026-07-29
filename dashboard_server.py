@@ -3425,6 +3425,17 @@ function _liteDrawHandle(ctx,x,y){
   ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#1a56db';ctx.lineWidth=1.3;
   ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
 }
+// Vẽ 4 chấm góc của khung 2-điểm (khớp đúng bộ 4 điểm p0/p1/c1/c2 mà _liteCornerHitPart nhận diện)
+// — dùng chung cho cả Hộp (rect) và Target (position, ở phần khung Entry-Target).
+function _liteDrawCornerHandles(ctx,x1,y1,x2,y2){
+  _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
+  _liteDrawHandle(ctx,x1,y2);_liteDrawHandle(ctx,x2,y1);
+}
+// Vẽ 1 cặp chấm trái/phải cùng 1 mức giá (y) trong khung rx..rx+rw — dùng cho các dòng Stop/Target2
+// của Target, vốn không thuộc bộ 4 góc chính (chỉ resize ngang qua edgeL/edgeR, không phải góc chéo).
+function _liteDrawHandlePair(ctx,rx,rw,y){
+  _liteDrawHandle(ctx,rx,y);_liteDrawHandle(ctx,rx+rw,y);
+}
 function _liteChannelOffset(d){
   const pts=d.points;
   return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
@@ -3560,7 +3571,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.save();ctx.strokeStyle=color;ctx.fillStyle=_liteHexAlpha(color,.10);
     ctx.lineWidth=selected?1.8:1.2;const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
     ctx.fillRect(rx,ry,rw,rh);ctx.strokeRect(rx,ry,rw,rh);ctx.restore();
-    if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);_liteDrawHandle(ctx,x1,y2);_liteDrawHandle(ctx,x2,y1);}
+    if(selected)_liteDrawCornerHandles(ctx,x1,y1,x2,y2);
     // kéo xuống (giảm giá) -> nhãn ở cạnh dưới. Chỉ hiện realtime lúc đang vẽ dở (xem trước qua _liteLinePending
     // — rect luôn được tạo theo kiểu click-click, không đi qua _liteDrawActive); khi đã chốt hình thì mặc định
     // ẨN, chỉ hiện nếu bật tuỳ chọn "%" trên thanh công cụ của hộp (d.showPct).
@@ -3696,10 +3707,9 @@ function _liteDrawShapeToCanvas(ctx,d){
     }
     ctx.restore();
     if(selected){
-      _liteDrawHandle(ctx,rx,entryY);_liteDrawHandle(ctx,rx+rw,entryY);
-      _liteDrawHandle(ctx,rx,targetY);_liteDrawHandle(ctx,rx+rw,targetY);
-      _liteDrawHandle(ctx,rx,(stopY!==null?stopY:entryY));_liteDrawHandle(ctx,rx+rw,(stopY!==null?stopY:entryY));
-      if(target2Y!==null){_liteDrawHandle(ctx,rx,target2Y);_liteDrawHandle(ctx,rx+rw,target2Y);}
+      _liteDrawCornerHandles(ctx,x1,y1,x2,y2);
+      _liteDrawHandlePair(ctx,rx,rw,stopY!==null?stopY:entryY);
+      if(target2Y!==null)_liteDrawHandlePair(ctx,rx,rw,target2Y);
     }
   }
 }
@@ -4048,6 +4058,15 @@ function _liteSegDist(px,py,x1,y1,x2,y2){
   let t=((px-x1)*dx+(py-y1)*dy)/len2;t=Math.max(0,Math.min(1,t));
   return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
 }
+// Hit-test 4 góc của 1 khung 2-điểm (p0,p1 thật + c1,c2 là 2 góc ảo ghép chéo toạ độ) — dùng chung
+// cho cả Hộp (rect) và Target (position), tránh lặp lại cùng 4 dòng kiểm tra ở 2 nơi.
+function _liteCornerHitPart(x,y,x1,y1,x2,y2){
+  if(Math.hypot(x-x1,y-y1)<=9)return'p0';
+  if(Math.hypot(x-x2,y-y2)<=9)return'p1';
+  if(Math.hypot(x-x1,y-y2)<=9)return'c1'; // góc ảo: x theo p0, y theo p1
+  if(Math.hypot(x-x2,y-y1)<=9)return'c2'; // góc ảo: x theo p1, y theo p0
+  return null;
+}
 function _liteHitTestShape(d,x,y){
   const pts=d.points;
   if(d.type==='text'){
@@ -4082,10 +4101,8 @@ function _liteHitTestShape(d,x,y){
     return null;
   }
   if(d.type==='rect'){
-    if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
-    if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
-    if(Math.hypot(x-x1,y-y2)<=9)return{part:'c1'}; // góc ảo: x theo p0, y theo p1
-    if(Math.hypot(x-x2,y-y1)<=9)return{part:'c2'}; // góc ảo: x theo p1, y theo p0
+    const c=_liteCornerHitPart(x,y,x1,y1,x2,y2);
+    if(c)return{part:c};
     const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
     if(x>=rx-LITE_HIT_TOL&&x<=rx+rw+LITE_HIT_TOL&&y>=ry-LITE_HIT_TOL&&y<=ry+rh+LITE_HIT_TOL)return{part:'line'};
     return null;
@@ -4117,6 +4134,11 @@ function _liteHitTestShape(d,x,y){
     const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
     const target2Y=Number.isFinite(d.target2P)?_litePriceToY(d.target2P):null;
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
+    // 4 góc của khung Entry-Target (điểm gốc p0=entry, p1=target + 2 góc ảo c1/c2) — cho phép
+    // chỉnh cả ngang (rộng khung) lẫn dọc (mức giá) cùng lúc, giống công cụ Hộp. Đặt trước test
+    // edgeL/edgeR/target để góc được ưu tiên thay vì chỉ nhận diện là kéo cạnh (chỉ ngang).
+    const c=_liteCornerHitPart(x,y,x1,y1,x2,y2);
+    if(c)return{part:c};
     if(x<rx-LITE_HIT_TOL||x>rx+rw+LITE_HIT_TOL)return null;
     if(Math.abs(x-rx)<=LITE_HIT_TOL)return{part:'edgeL'};
     if(Math.abs(x-(rx+rw))<=LITE_HIT_TOL)return{part:'edgeR'};
@@ -4174,14 +4196,14 @@ function _liteShowRectTooltip(hit,x,y){
 function _liteApplyDrag(d,info,cur){
   const dl=cur.l-info.startL,dp=cur.p-info.startP,op=info.origPoints;
   const key=d.type+':'+info.part;
-  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
-  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
-  else if(key==='rect:c1'){
+  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
+  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+  else if(key==='rect:c1'||key==='position:c1'){
     // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển
     // toàn khối, chỉ từng thành phần riêng, tạo hiệu ứng resize đúng từ góc đang kéo.
     d.points[0]={l:op[0].l+dl,p:op[0].p};
     d.points[1]={l:op[1].l,p:op[1].p+dp};
-  }else if(key==='rect:c2'){
+  }else if(key==='rect:c2'||key==='position:c2'){
     // Góc ảo (x theo p1, y theo p0): kéo ngang đổi p1.l, kéo dọc đổi p0.p.
     d.points[0]={l:op[0].l,p:op[0].p+dp};
     d.points[1]={l:op[1].l+dl,p:op[1].p};
