@@ -575,6 +575,246 @@ def compute_indicators(df):
     df['A']                = df['close'].pct_change()
     return df
 
+
+# =============================================================================
+# BƯỚC 5A2: MARKET HEALTH / FEAR-GREED INDEX
+# =============================================================================
+def _mh_finite_float(value, default=None):
+    try:
+        value = float(value)
+        return value if np.isfinite(value) else default
+    except Exception:
+        return default
+
+
+def _mh_score_band(score: float) -> dict:
+    if score >= 75:
+        return {"key": "euphoria", "label": "Hưng phấn", "tone": "purple"}
+    if score >= 55:
+        return {"key": "positive", "label": "Tích cực", "tone": "green"}
+    if score >= 45:
+        return {"key": "neutral", "label": "Trung tính", "tone": "yellow"}
+    if score >= 25:
+        return {"key": "negative", "label": "Tiêu cực", "tone": "red"}
+    return {"key": "fear", "label": "Sợ hãi", "tone": "cyan"}
+
+
+def _mh_percentile_score(series: pd.Series, window: int = 252) -> pd.Series:
+    series = pd.to_numeric(series, errors="coerce")
+
+    def _rank(x):
+        x = pd.Series(x).dropna()
+        if len(x) < 20:
+            return np.nan
+        return 100.0 * (x <= x.iloc[-1]).mean()
+
+    return series.rolling(window, min_periods=20).apply(_rank, raw=False).clip(0, 100)
+
+
+def _mh_last_streak(values, pred) -> int:
+    n = 0
+    for v in reversed(list(values)):
+        if pred(v):
+            n += 1
+        else:
+            break
+    return n
+
+
+def compute_market_health_index(limit: int = 30) -> dict:
+    """
+    Chỉ số HEALTH/Fear-Greed dùng hoàn toàn dữ liệu đang có trong history_cache.
+    Mỗi phiên được chấm 0-100 từ momentum proxy, volatility, breadth, new high/low,
+    RSI trung vị và volume stress của rổ HEATMAP/TRADING.
+    """
+    with cache_lock:
+        raw_cache = {
+            sym: df.copy()
+            for sym, df in history_cache.items()
+            if sym in cache_symbol_set and df is not None and len(df) >= 80
+        }
+
+    prepared = {}
+    for sym, df in raw_cache.items():
+        try:
+            cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+            if "close" not in cols:
+                continue
+            d = df[cols].copy().sort_index()
+            if "volume" not in d.columns:
+                d["volume"] = 0
+            d.index = pd.to_datetime(d.index).normalize()
+            d = d[~d.index.duplicated(keep="last")]
+            d = compute_indicators(d)
+            if len(d) >= 80:
+                prepared[sym] = d
+        except Exception:
+            continue
+
+    if len(prepared) < 20:
+        return {
+            "ok": False,
+            "error": "not_enough_cache",
+            "message": f"Chưa đủ cache để tính HEALTH ({len(prepared)} mã hợp lệ).",
+            "history": [],
+            "components": [],
+        }
+
+    close_df = pd.concat({sym: d["close"] for sym, d in prepared.items()}, axis=1).sort_index()
+    close_df = close_df.dropna(how="all").tail(360)
+    returns = close_df.pct_change(fill_method=None)
+    eq_ret = returns.mean(axis=1, skipna=True).fillna(0)
+    market_proxy = (1 + eq_ret).cumprod() * 100
+    momentum_raw = (market_proxy / market_proxy.rolling(50, min_periods=30).mean() - 1) * 100
+    volatility_raw = -eq_ret.rolling(20, min_periods=10).std() * np.sqrt(252) * 100
+    momentum_score = _mh_percentile_score(momentum_raw)
+    volatility_score = _mh_percentile_score(volatility_raw)
+
+    above_ma50, rsi14, new_high, new_low, vol_push = {}, {}, {}, {}, {}
+    for sym, d in prepared.items():
+        above_ma50[sym] = (d["close"] > d["MA50"]).astype(float)
+        rsi14[sym] = d["RSI14"]
+        new_high[sym] = (d["close"] >= d["close"].rolling(252, min_periods=60).max()).astype(float)
+        new_low[sym] = (d["close"] <= d["close"].rolling(252, min_periods=60).min()).astype(float)
+        pct = d["close"].pct_change() * 100
+        v_ratio = d["volume"] / d["VMA20"].replace(0, np.nan)
+        excite = ((pct >= 2.5) & (v_ratio >= 1.5)).astype(float)
+        panic = ((pct <= -2.5) & (v_ratio >= 1.5)).astype(float)
+        vol_push[sym] = excite - panic
+
+    dates = close_df.index[-max(limit, 30):]
+    breadth_s = pd.concat(above_ma50, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    rsi_s = pd.concat(rsi14, axis=1).reindex(dates).median(axis=1, skipna=True).clip(0, 100)
+    nh_s = pd.concat(new_high, axis=1).reindex(dates).sum(axis=1, skipna=True)
+    nl_s = pd.concat(new_low, axis=1).reindex(dates).sum(axis=1, skipna=True)
+    denom = (nh_s + nl_s).replace(0, np.nan)
+    newhl_s = (50 + 50 * ((nh_s - nl_s) / denom)).fillna(50).clip(0, 100)
+    vol_push_s = (50 + 50 * pd.concat(vol_push, axis=1).reindex(dates).mean(axis=1, skipna=True)).clip(0, 100)
+
+    component_series = {
+        "momentum": momentum_score.reindex(dates),
+        "volatility": volatility_score.reindex(dates),
+        "breadth": breadth_s,
+        "new_high_low": newhl_s,
+        "rsi": rsi_s,
+        "volume": vol_push_s,
+    }
+    score_df = pd.DataFrame(component_series)
+    score = score_df.mean(axis=1, skipna=True).clip(0, 100)
+
+    usable = score.dropna()
+    if usable.empty:
+        return {
+            "ok": False,
+            "error": "not_enough_history",
+            "message": "Cache chưa đủ lịch sử để tính HEALTH.",
+            "history": [],
+            "components": [],
+        }
+
+    last_dates = list(usable.tail(limit).index)
+    history = []
+    for dt in last_dates:
+        history.append({
+            "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
+            "score": round(float(score.loc[dt]), 1),
+        })
+
+    cur_dt = last_dates[-1]
+    cur_score = float(score.loc[cur_dt])
+    prev_score = float(score.loc[last_dates[-2]]) if len(last_dates) >= 2 else cur_score
+    current_components = {
+        k: _mh_finite_float(v.loc[cur_dt])
+        for k, v in component_series.items()
+    }
+    component_labels = {
+        "momentum": "Đà thị trường",
+        "volatility": "Biến động",
+        "breadth": "Độ rộng",
+        "new_high_low": "Đỉnh/đáy 52 tuần",
+        "rsi": "RSI trung vị",
+        "volume": "Dòng tiền/volume",
+    }
+    components = [
+        {
+            "key": k,
+            "label": component_labels[k],
+            "score": round(v, 1) if v is not None else None,
+        }
+        for k, v in current_components.items()
+    ]
+
+    recent_scores = [x["score"] for x in history[-10:]]
+    high_streak = _mh_last_streak(recent_scores, lambda x: x >= 75)
+    low_streak = _mh_last_streak(recent_scores, lambda x: x <= 25)
+    rising_3 = len(history) >= 4 and history[-1]["score"] > history[-4]["score"]
+    falling_3 = len(history) >= 4 and history[-1]["score"] < history[-4]["score"]
+
+    breadth_now = current_components.get("breadth") or 0
+    rsi_now = current_components.get("rsi") or 0
+    vol_now = current_components.get("volume") or 50
+    momentum_now = current_components.get("momentum") or 50
+    newhl_now = current_components.get("new_high_low") or 50
+
+    tags = []
+    if high_streak >= 3 and breadth_now < 55:
+        tags.append("Cảnh báo phân phối")
+    if high_streak >= 3 and falling_3:
+        tags.append("Rủi ro tạo đỉnh")
+    if low_streak >= 3 and rising_3:
+        tags.append("Tín hiệu dò đáy")
+    if cur_score <= 35 and breadth_now < 35 and rsi_now < 40:
+        tags.append("Bán tháo/hoảng loạn")
+    if 45 <= cur_score <= 60 and abs(cur_score - prev_score) <= 4 and 40 <= breadth_now <= 60:
+        tags.append("Tích lũy cân bằng")
+    if not tags:
+        tags.append("Theo dõi xu hướng")
+
+    band = _mh_score_band(cur_score)
+    delta = cur_score - prev_score
+    summary = (
+        f"HEALTH hiện ở vùng {band['label']} ({cur_score:.1f}/100), "
+        f"{'tăng' if delta >= 0 else 'giảm'} {abs(delta):.1f} điểm so với phiên trước."
+    )
+    factors = [
+        f"Độ rộng thị trường đạt {breadth_now:.1f}% số mã trên MA50.",
+        f"RSI trung vị rổ theo dõi ở {rsi_now:.1f}.",
+        f"Đỉnh/đáy 52 tuần đóng góp {newhl_now:.1f}/100; volume stress ở {vol_now:.1f}/100.",
+        f"Momentum proxy đạt {momentum_now:.1f}/100."
+    ]
+    if "Cảnh báo phân phối" in tags or "Rủi ro tạo đỉnh" in tags:
+        conclusion = "Nhận định: ưu tiên quản trị rủi ro; thị trường có dấu hiệu hưng phấn nhưng nền tham gia không đủ rộng, cần cảnh giác vùng đỉnh/phân phối."
+    elif "Tín hiệu dò đáy" in tags:
+        conclusion = "Nhận định: lực bán đang suy yếu sau vùng sợ hãi; phù hợp theo dõi quá trình tạo đáy, chưa coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện."
+    elif "Bán tháo/hoảng loạn" in tags:
+        conclusion = "Nhận định: trạng thái tiêu cực cực đoan; tránh bán đuổi, chờ tín hiệu phục hồi của độ rộng và RSI để xác nhận đáy."
+    elif "Tích lũy cân bằng" in tags:
+        conclusion = "Nhận định: thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
+    else:
+        conclusion = "Nhận định: chưa có tín hiệu cực đoan đủ mạnh để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
+
+    return {
+        "ok": True,
+        "as_of": pd.Timestamp(cur_dt).strftime("%Y-%m-%d"),
+        "updated_at": datetime.now(TZ_VN).strftime("%Y-%m-%d %H:%M:%S"),
+        "score": round(cur_score, 1),
+        "delta": round(delta, 1),
+        "band": band,
+        "tags": tags,
+        "history": history,
+        "components": components,
+        "analysis": {
+            "summary": summary,
+            "factors": factors,
+            "conclusion": conclusion,
+        },
+        "meta": {
+            "symbols": len(prepared),
+            "lookback_sessions": len(last_dates),
+            "source": "history_cache",
+        },
+    }
+
 # =============================================================================
 # BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
@@ -2171,6 +2411,7 @@ start_dashboard(
     ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
     chart_symbol_status_fn = chart_symbol_status,
     momentum_today_ref = lambda: momentum_today,
+    fetch_market_health_fn = compute_market_health_index,
     port              = 8888,
 )
 
