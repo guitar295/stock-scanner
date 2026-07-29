@@ -5233,8 +5233,7 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   _syncHoverPreview(cell.dataset.sym);
   updatePopout(cell.dataset.sym);
   updateSimplize(cell.dataset.sym);
-  _syncChartPopoutSymbol(cell.dataset.sym);
-  loadLiteChart(cell.dataset.sym,0,true);
+  _jumpLiteChart(cell.dataset.sym);
   openChart(cell.dataset.sym);
 });
 // Gửi mã sang cửa sổ CHART popout NGAY khi biết mã (không chờ chart cửa sổ chính tải
@@ -5244,6 +5243,11 @@ function _syncChartPopoutSymbol(sym){
   const s=String(sym||'').toUpperCase().trim();
   if(s&&_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
 }
+// Nạp chart cửa sổ chính + đồng bộ popout song song (dùng chung cho mọi nơi bấm chọn mã).
+function _jumpLiteChart(sym){
+  _syncChartPopoutSymbol(sym);
+  loadLiteChart(sym,0,true);
+}
 let _hmapClickTimer=null;
 function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
@@ -5251,8 +5255,7 @@ function _hmapDesktopClick(sym){
     _syncHoverPreview(sym);
     updatePopout(sym);
     updateSimplize(sym);
-    _syncChartPopoutSymbol(sym);
-    loadLiteChart(sym,0,true);
+    _jumpLiteChart(sym);
     if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
     if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
@@ -5271,8 +5274,7 @@ DOM.sigList.addEventListener('dblclick',e=>{
   _syncHoverPreview(row.dataset.sym);
   updatePopout(row.dataset.sym);
   updateSimplize(row.dataset.sym);
-  _syncChartPopoutSymbol(row.dataset.sym);
-  loadLiteChart(row.dataset.sym,0,true);
+  _jumpLiteChart(row.dataset.sym);
   openChart(row.dataset.sym);
 });
 DOM.momentumList.addEventListener('click',e=>{
@@ -6504,17 +6506,25 @@ window.addEventListener('message',e=>{
   if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
   // Cửa sổ được mở sẵn cao bằng toàn màn hình (để không bị browser giới hạn kích thước),
   // nhưng nội dung panel CHART lại có chiều cao cố định nên thừa khoảng trắng phía dưới.
-  // Sau khi layout đã ổn định (2 lần requestAnimationFrame), co chiều cao cửa sổ lại vừa
-  // đúng nội dung thực tế — giữ nguyên vị trí top/trái, chỉ cắt bớt phần thừa phía dưới.
-  window.addEventListener('load',()=>{
+  // Đo trực tiếp mép dưới của panel CHART (không dùng document.body.scrollHeight vì body có
+  // CSS min-height:100vh — luôn bằng đúng chiều cao cửa sổ, khiến phép đo vô nghĩa), rồi co
+  // chiều cao cửa sổ lại vừa khít — giữ nguyên vị trí top/trái, chỉ cắt phần thừa phía dưới.
+  const fitChartPopoutWindow=()=>{
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
       try{
+        const panel=DOM.liteChartPanel;
+        if(!panel)return;
+        const contentH=Math.ceil(panel.getBoundingClientRect().bottom)+8; // +padding-bottom của #main-wrap
         const chrome=Math.max(0,window.outerHeight-window.innerHeight);
-        const targetOuterH=Math.min(window.screen.availHeight,document.body.scrollHeight+chrome+2);
+        const targetOuterH=Math.min(window.screen.availHeight,contentH+chrome);
         if(targetOuterH>0&&targetOuterH<window.outerHeight)window.resizeTo(window.outerWidth,targetOuterH);
       }catch(e){}
     }));
-  });
+  };
+  // Script này chạy ở cuối trang nên sự kiện 'load' của cửa sổ có thể đã bắn qua rồi —
+  // nếu tài liệu đã tải xong thì chạy luôn, nếu chưa thì mới cần chờ 'load'.
+  if(document.readyState==='complete')fitChartPopoutWindow();
+  else window.addEventListener('load',fitChartPopoutWindow);
 })();
 
 // ═══════════════════════════════════════════════════════
