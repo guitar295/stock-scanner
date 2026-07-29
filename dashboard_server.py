@@ -5573,14 +5573,27 @@ function renderAlertRules(){
 // chạy init()/pollAlertFeed() y hệt cửa sổ chính. Cờ này dùng để cửa sổ riêng KHÔNG bắn thông
 // báo cảnh báo giá nữa, tránh báo trùng 2 lần (1 lần ở cửa sổ chính, 1 lần ở cửa sổ CHART popout).
 const _isChartPopoutWindow=new URLSearchParams(window.location.search).get('chartPopout')==='1';
+// Trình duyệt KHÔNG cho JS tự thu hồi quyền Notification đã granted (chỉ người dùng tắt được qua
+// cài đặt trình duyệt) — nên cần 1 cờ riêng ở tầng ứng dụng để biết có ĐANG MUỐN dùng desktop
+// notification hay không, độc lập với quyền của trình duyệt. Bấm nút 🖥 chỉ đổi cờ này.
+const DESKTOP_NOTIFY_KEY='dashboard_desktop_notify_on';
+function desktopNotifyEnabled(){
+  return 'Notification' in window&&Notification.permission==='granted'&&_liteLSGet(DESKTOP_NOTIFY_KEY,'0')==='1';
+}
 function syncDesktopNotifyBtn(){
   if(!DOM.liteAlertDesktopNotify)return;
-  const granted='Notification' in window&&Notification.permission==='granted';
-  DOM.liteAlertDesktopNotify.classList.toggle('on',granted);
-  DOM.liteAlertDesktopNotify.title=granted?'Đã bật thông báo desktop':'Bật thông báo desktop';
+  const on=desktopNotifyEnabled();
+  DOM.liteAlertDesktopNotify.classList.toggle('on',on);
+  DOM.liteAlertDesktopNotify.title=on?'Tắt thông báo desktop (đang bật)':'Bật thông báo desktop';
 }
 async function toggleDesktopNotify(){
   if(!('Notification' in window)){alert('Trình duyệt không hỗ trợ thông báo desktop');return;}
+  if(desktopNotifyEnabled()){
+    // Đang bật -> tắt: chỉ đổi cờ ứng dụng, không đụng tới quyền trình duyệt (JS không thu hồi được).
+    _liteLSSet(DESKTOP_NOTIFY_KEY,'0');
+    syncDesktopNotifyBtn();
+    return;
+  }
   if(Notification.permission==='denied'){
     alert('Thông báo desktop đang bị chặn cho trang này. Vào cài đặt trình duyệt (biểu tượng khóa cạnh URL) để bật lại quyền, sau đó bấm lại nút này.');
     return;
@@ -5588,6 +5601,7 @@ async function toggleDesktopNotify(){
   if(Notification.permission==='default'){
     try{await Notification.requestPermission();}catch(e){}
   }
+  if(Notification.permission==='granted')_liteLSSet(DESKTOP_NOTIFY_KEY,'1');
   syncDesktopNotifyBtn();
 }
 function initDesktopNotifyBtn(){
@@ -5623,7 +5637,7 @@ async function pollAlertFeed(showToast=true){
   }catch(e){console.error('pollAlertFeed:',e);}
 }
 function showAlertToast(ev){
-  if('Notification' in window&&Notification.permission==='granted'){
+  if(desktopNotifyEnabled()){
     try{
       const n=new Notification(ev.symbol+' - Cảnh báo',{
         body:ev.message||'',
@@ -5633,7 +5647,7 @@ function showAlertToast(ev){
       return;
     }catch(e){console.error('Notification error:',e);}
   }
-  // Dự phòng: trình duyệt không hỗ trợ Notification, hoặc người dùng chưa cấp/đã từ chối quyền
+  // Dự phòng: trình duyệt không hỗ trợ/chưa cấp/đã từ chối quyền, hoặc người dùng đã tắt qua nút 🖥
   // -> vẫn hiện toast trên dashboard như trước để không mất cảnh báo.
   if(!DOM.alertToastWrap)return;
   const el=document.createElement('div');
