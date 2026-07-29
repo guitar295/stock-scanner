@@ -1769,6 +1769,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-alert-row-actions{display:flex;gap:4px}
 .lite-alert-mini{height:23px;min-width:28px;border:1px solid var(--border);border-radius:5px;background:#fff;color:#374151;font-size:10px;font-weight:700;cursor:pointer}
 .lite-alert-mini.danger{color:#dc2626}
+.lite-alert-mini.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 .alert-toast-wrap{position:fixed;top:8px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 28px))}
 .alert-toast{background:#fff;color:#111827;border:1px solid rgba(17,24,39,.12);border-radius:8px;box-shadow:0 12px 32px rgba(17,24,39,.18);padding:10px 12px;cursor:pointer}
 .alert-toast-title{font-size:12px;font-weight:800;margin-bottom:3px;color:#111827}
@@ -2295,7 +2296,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <div class="lite-alert-wrap" id="lite-alert-wrap">
             <button class="lite-draw-btn" id="lite-alert-btn" title="Cảnh báo giá">🔔<span class="lite-alert-badge" id="lite-alert-badge"></span></button>
             <div class="lite-alert-panel" id="lite-alert-panel">
-              <div class="lite-alert-title"><span>CẢNH BÁO</span><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></div>
+              <div class="lite-alert-title"><span>CẢNH BÁO</span><span style="display:flex;gap:4px"><button class="lite-alert-mini" id="lite-alert-desktop-notify" title="Bật thông báo desktop">🖥</button><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></span></div>
               <div class="lite-alert-grid">
                 <div class="lite-alert-field">
                   <label>Mã</label>
@@ -2618,6 +2619,7 @@ const DOM={
   liteShapeArrowStyle:$('lite-shape-arrow-style'),liteShapeZigzagFill:$('lite-shape-zigzag-fill'),
   liteShapeArrowWidth:$('lite-shape-arrow-width'),
   liteAlertWrap:$('lite-alert-wrap'),liteAlertBtn:$('lite-alert-btn'),liteAlertBadge:$('lite-alert-badge'),
+  liteAlertDesktopNotify:$('lite-alert-desktop-notify'),
   liteAlertPanel:$('lite-alert-panel'),liteAlertSymbol:$('lite-alert-symbol'),
   liteAlertLeftType:$('lite-alert-left-type'),liteAlertLeftKind:$('lite-alert-left-kind'),
   liteAlertLeftPeriod:$('lite-alert-left-period'),liteAlertLeftKindWrap:$('lite-alert-left-kind-wrap'),
@@ -5567,6 +5569,33 @@ function renderAlertRules(){
   }
   DOM.liteAlertList.innerHTML=rows.join('');
 }
+// Cửa sổ CHART mở riêng (openChartPopout) nạp lại đúng trang này với ?chartPopout=1 nên cũng
+// chạy init()/pollAlertFeed() y hệt cửa sổ chính. Cờ này dùng để cửa sổ riêng KHÔNG bắn thông
+// báo cảnh báo giá nữa, tránh báo trùng 2 lần (1 lần ở cửa sổ chính, 1 lần ở cửa sổ CHART popout).
+const _isChartPopoutWindow=new URLSearchParams(window.location.search).get('chartPopout')==='1';
+function syncDesktopNotifyBtn(){
+  if(!DOM.liteAlertDesktopNotify)return;
+  const granted='Notification' in window&&Notification.permission==='granted';
+  DOM.liteAlertDesktopNotify.classList.toggle('on',granted);
+  DOM.liteAlertDesktopNotify.title=granted?'Đã bật thông báo desktop':'Bật thông báo desktop';
+}
+async function toggleDesktopNotify(){
+  if(!('Notification' in window)){alert('Trình duyệt không hỗ trợ thông báo desktop');return;}
+  if(Notification.permission==='denied'){
+    alert('Thông báo desktop đang bị chặn cho trang này. Vào cài đặt trình duyệt (biểu tượng khóa cạnh URL) để bật lại quyền, sau đó bấm lại nút này.');
+    return;
+  }
+  if(Notification.permission==='default'){
+    try{await Notification.requestPermission();}catch(e){}
+  }
+  syncDesktopNotifyBtn();
+}
+function initDesktopNotifyBtn(){
+  if(!DOM.liteAlertDesktopNotify)return;
+  if(_isChartPopoutWindow){DOM.liteAlertDesktopNotify.style.display='none';return;} // chỉ điều khiển từ cửa sổ chính
+  syncDesktopNotifyBtn();
+  DOM.liteAlertDesktopNotify.addEventListener('click',e=>{e.stopPropagation();toggleDesktopNotify();});
+}
 async function loadAlerts(){
   try{
     const r=await alertReq('/api/alerts');
@@ -5583,7 +5612,8 @@ async function pollAlertFeed(showToast=true){
     DOM.liteAlertBadge.textContent=n>9?'9+':String(n);
     DOM.liteAlertBadge.classList.toggle('on',n>0);
     renderAlertRules();
-    if(showToast){
+    // Cửa sổ CHART popout không cần xử lý toast/notification — bỏ qua để đỡ việc thừa mỗi lần poll.
+    if(showToast&&!_isChartPopoutWindow){
       [..._alertEvents].reverse().forEach(ev=>{
         if(ev.seen||_alertShownIds.has(ev.id))return;
         _alertShownIds.add(ev.id);
@@ -5593,6 +5623,18 @@ async function pollAlertFeed(showToast=true){
   }catch(e){console.error('pollAlertFeed:',e);}
 }
 function showAlertToast(ev){
+  if('Notification' in window&&Notification.permission==='granted'){
+    try{
+      const n=new Notification(ev.symbol+' - Cảnh báo',{
+        body:ev.message||'',
+        tag:'price-alert-'+ev.id, // trùng id thì thay thế, không chồng nhiều notification
+      });
+      n.onclick=()=>{window.focus();_alertJumpSymbol(ev.symbol);n.close();};
+      return;
+    }catch(e){console.error('Notification error:',e);}
+  }
+  // Dự phòng: trình duyệt không hỗ trợ Notification, hoặc người dùng chưa cấp/đã từ chối quyền
+  // -> vẫn hiện toast trên dashboard như trước để không mất cảnh báo.
   if(!DOM.alertToastWrap)return;
   const el=document.createElement('div');
   el.className='alert-toast';
@@ -6518,11 +6560,10 @@ window.addEventListener('message',e=>{
 // sẵn panel CHART, ẩn phần còn lại của dashboard, và nạp đúng mã đã chọn từ cửa sổ chính
 // (đánh dấu sẵn _lastChartSyncSymbol để lần nạp đầu tiên này không gửi ngược lại cửa sổ chính).
 (function(){
-  const qs=new URLSearchParams(window.location.search);
-  if(qs.get('chartPopout')!=='1')return;
+  if(!_isChartPopoutWindow)return;
   document.body.classList.add('chart-popout-mode');
   DOM.liteChartPanel.classList.remove('collapsed');
-  const qsym=(qs.get('sym')||'').trim();
+  const qsym=(new URLSearchParams(window.location.search).get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
 })();
 
@@ -6531,6 +6572,7 @@ window.addEventListener('message',e=>{
 // ═══════════════════════════════════════════════════════
 async function init(){
   await loadConfig();
+  initDesktopNotifyBtn();
   _refreshChartModeUI();
   bindLiteChartControls();
   bindAlertControls();
