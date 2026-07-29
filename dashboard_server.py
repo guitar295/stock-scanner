@@ -28,6 +28,7 @@ _get_momentum_today = None
 _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
+_fetch_market_health_fn = None
 _fetch_chart_fn = None
 _fetch_chart_15m_fn = None
 _ensure_chart_symbol_fn = None
@@ -38,7 +39,11 @@ _signal_rank = {}
 _heatmap_cache = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock = threading.Lock()
 HEATMAP_TTL_SEC = 120
+MARKET_HEALTH_TTL_SEC = 1800
 SIGNAL_TTL_SEC = 10
+
+_market_health_cache = {"data": {}, "updated_at": 0}
+_market_health_lock = threading.Lock()
 
 _chart_cache: dict = {}
 _chart_lock = threading.Lock()
@@ -461,6 +466,24 @@ def api_heatmap():
         "cached_age": int(now - snap_time),
     })
 
+@app.route("/api/market_health")
+def api_market_health():
+    now = time.time()
+    with _market_health_lock:
+        if now - _market_health_cache["updated_at"] > MARKET_HEALTH_TTL_SEC and _fetch_market_health_fn:
+            try:
+                data = _fetch_market_health_fn()
+                _market_health_cache["data"] = data
+                _market_health_cache["updated_at"] = time.time()
+            except Exception as e:
+                print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
+        snap_time = _market_health_cache["updated_at"]
+        data = _market_health_cache["data"]
+    payload = dict(data or {})
+    payload["cached_age"] = int(now - snap_time) if snap_time else 0
+    payload["ttl_sec"] = MARKET_HEALTH_TTL_SEC
+    return jsonify(_json_safe(payload))
+
 @app.route("/api/chart_images/<symbol>")
 def api_chart_images(symbol):
     symbol = symbol.upper().strip()
@@ -576,7 +599,8 @@ def api_chart_cache_clear(symbol):
 @app.route("/api/config")
 def api_config():
     return jsonify({"signal_ttl_sec": SIGNAL_TTL_SEC,
-                    "heatmap_ttl_sec": HEATMAP_TTL_SEC})
+                    "heatmap_ttl_sec": HEATMAP_TTL_SEC,
+                    "market_health_ttl_sec": MARKET_HEALTH_TTL_SEC})
 
 @app.route("/api/alerts", methods=["GET", "POST"])
 def api_alerts():
@@ -970,14 +994,15 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_chart_fn=None, fetch_chart_15m_fn=None,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
-                    momentum_today_ref=None, port=8888):
+                    momentum_today_ref=None, fetch_market_health_fn=None, port=8888):
     global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
+    _fetch_market_health_fn = fetch_market_health_fn
     _fetch_chart_fn    = fetch_chart_fn
     _fetch_chart_15m_fn = fetch_chart_15m_fn
     _ensure_chart_symbol_fn = ensure_chart_symbol_fn
@@ -992,7 +1017,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
 
     threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
+    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
 
 # =============================================================================
 # POPOUT FULL HTML
@@ -1656,6 +1681,35 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+.health-panel .panel-hdr{cursor:pointer;user-select:none}
+.health-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
+.health-panel:not(.collapsed) .health-toggle{transform:rotate(90deg);color:var(--accent)}
+.health-panel.collapsed .health-body,
+.health-panel.collapsed>.pbar-wrap{display:none}
+.health-body{padding:12px 14px;background:#fff}
+.health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
+.health-chartbox{height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden}
+.health-svg{display:block;width:100%;height:100%}
+.health-side{display:grid;grid-template-rows:auto auto 1fr;gap:10px;min-width:0}
+.health-score-card{border:1px solid var(--border);border-radius:8px;padding:12px;background:#fbfcff}
+.health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.health-score{font-family:var(--font-ui);font-size:42px;line-height:.9;font-weight:800;color:var(--accent);letter-spacing:0}
+.health-label{font-family:var(--font-ui);font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--text)}
+.health-meta{margin-top:5px;font-size:10px;color:var(--muted)}
+.health-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.health-tag{font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:3px 6px;color:#334155;background:#f8fafc}
+.health-components{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.health-comp{border:1px solid var(--border);border-radius:6px;padding:6px;background:#fff}
+.health-comp-head{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--muted)}
+.health-comp-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.health-comp-val{font-weight:700;color:var(--text)}
+.health-comp-bar{height:5px;border-radius:999px;background:#edf2f7;margin-top:5px;overflow:hidden}
+.health-comp-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#7dd3fc,#facc15,#22c55e,#a855f7)}
+.health-analysis{border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;min-height:120px}
+.health-analysis-title{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.health-analysis p{font-size:11px;line-height:1.45;margin:0 0 6px;color:#1f2937}
+.health-analysis ul{margin:0 0 7px 16px;color:#4b5563;font-size:10.5px;line-height:1.45}
+.health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
 .sankey-panel .panel-hdr{cursor:pointer;user-select:none}
 .sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
 .sankey-panel.collapsed .sankey-wrap{display:none}
@@ -1922,6 +1976,10 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     -webkit-overflow-scrolling:touch;
   }
   .hmap-ts-wrap::-webkit-scrollbar{display:none}
+  .health-layout{grid-template-columns:1fr}
+  .health-chartbox{height:280px}
+  .health-components{grid-template-columns:1fr}
+  .health-score{font-size:36px}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
@@ -2439,6 +2497,40 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
   </div>
 
+  <!-- HEALTH -->
+  <div class="panel health-panel collapsed" id="health-panel">
+    <div class="panel-hdr" id="health-toggle">
+      <span class="panel-title">HEALTH</span>
+      <span class="panel-meta" id="health-meta">Đang tải...</span>
+      <span class="health-toggle">▶</span>
+    </div>
+    <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
+    <div class="health-body" id="health-body">
+      <div class="health-layout">
+        <div class="health-chartbox">
+          <svg class="health-svg" id="health-svg" viewBox="0 0 900 360" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="health-side">
+          <div class="health-score-card">
+            <div class="health-score-top">
+              <div>
+                <div class="health-label" id="health-label">--</div>
+                <div class="health-meta" id="health-date">--</div>
+              </div>
+              <div class="health-score" id="health-score">--</div>
+            </div>
+            <div class="health-tags" id="health-tags"></div>
+          </div>
+          <div class="health-components" id="health-components"></div>
+          <div class="health-analysis" id="health-analysis">
+            <div class="health-analysis-title">Nhận định</div>
+            <div class="health-empty">Đang tải dữ liệu HEALTH...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- SANKEY -->
   <div class="panel sankey-panel collapsed" id="sankey-panel">
     <div class="panel-hdr" id="sankey-toggle">
@@ -2591,6 +2683,10 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
+  healthPanel:$('health-panel'),healthToggle:$('health-toggle'),healthMeta:$('health-meta'),
+  healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
+  healthDate:$('health-date'),healthTags:$('health-tags'),healthComponents:$('health-components'),
+  healthAnalysis:$('health-analysis'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
@@ -2632,7 +2728,7 @@ const DOM={
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
   liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
-  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
+  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   // Desktop popup header
@@ -2682,7 +2778,7 @@ const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
 // SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
-let SIG_TTL=30,HMAP_TTL=120;
+let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
 const FOLLOW_ON_KEY='dashboard_follow_on';
@@ -5295,6 +5391,86 @@ DOM.signalHeader.addEventListener('click',e=>{
   DOM.momentumBox.classList.toggle('on');
 });
 // ═══════════════════════════════════════════════════════
+// MARKET HEALTH RENDER
+// ═══════════════════════════════════════════════════════
+function healthEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function healthBand(score){
+  const s=Number(score);
+  if(s>=75)return{label:'Hưng phấn',fill:'#7e22ce'};
+  if(s>=55)return{label:'Tích cực',fill:'#16a34a'};
+  if(s>=45)return{label:'Trung tính',fill:'#ca8a04'};
+  if(s>=25)return{label:'Tiêu cực',fill:'#dc2626'};
+  return{label:'Sợ hãi',fill:'#0284c7'};
+}
+function healthTextAt(y,txt,fill='#475569',size=11,weight=600){
+  return `<text x="48" y="${y}" fill="${fill}" font-family="IBM Plex Mono, monospace" font-size="${size}" font-weight="${weight}">${txt}</text>`;
+}
+function renderHealthChart(history){
+  const h=(history||[]).filter(p=>Number.isFinite(Number(p.score)));
+  if(!h.length){DOM.healthSvg.innerHTML='<foreignObject x="0" y="0" width="900" height="360"><div class="health-empty">Chưa có dữ liệu HEALTH</div></foreignObject>';return;}
+  const W=900,H=360,L=52,R=16,T=18,B=34,plotW=W-L-R,plotH=H-T-B;
+  const bands=[
+    {from:75,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
+    {from:55,to:75,c1:'#dcfce7',c2:'#16a34a',label:'Tích cực'},
+    {from:45,to:55,c1:'#fef9c3',c2:'#ca8a04',label:'Trung tính'},
+    {from:25,to:45,c1:'#fee2e2',c2:'#dc2626',label:'Tiêu cực'},
+    {from:0,to:25,c1:'#e0f2fe',c2:'#0284c7',label:'Sợ hãi'},
+  ];
+  const y=v=>T+(100-v)/100*plotH;
+  const x=i=>L+(h.length===1?plotW:plotW*i/(h.length-1));
+  const defs=bands.map((b,i)=>`<linearGradient id="healthBand${i}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${b.c2}" stop-opacity=".30"/><stop offset="1" stop-color="${b.c1}" stop-opacity=".74"/></linearGradient>`).join('');
+  const rects=bands.map((b,i)=>{
+    const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
+    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-20}" y="${mid}" text-anchor="end" fill="#334155" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">${b.label}</text>`;
+  }).join('');
+  const grid=[0,25,45,55,75,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="10">${v}</text>`).join('');
+  const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
+  const area=`${L},${y(0)} ${pts} ${W-R},${y(0)}`;
+  const circles=h.map((p,i)=>{
+    const b=healthBand(p.score);
+    return `<circle cx="${x(i)}" cy="${y(Number(p.score))}" r="${i===h.length-1?5:3}" fill="${b.fill}" stroke="#fff" stroke-width="1.5"><title>${p.date}: ${Number(p.score).toFixed(1)}</title></circle>`;
+  }).join('');
+  const first=h[0],last=h[h.length-1];
+  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${circles}<text x="${L}" y="${H-10}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="10">${first.date}</text><text x="${W-R}" y="${H-10}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="10">${last.date}</text>${healthTextAt(14,'100', '#64748b',10,500)}`;
+}
+function renderHealth(data){
+  const d=data||{};
+  if(!d.ok){
+    DOM.healthMeta.textContent=d.message||'Chưa có dữ liệu';
+    DOM.healthScore.textContent='--';
+    DOM.healthLabel.textContent='--';
+    DOM.healthDate.textContent='--';
+    DOM.healthTags.innerHTML='';
+    DOM.healthComponents.innerHTML='';
+    DOM.healthAnalysis.innerHTML='<div class="health-analysis-title">Nhận định</div><div class="health-empty">'+healthEsc(d.message||'Chưa có dữ liệu HEALTH')+'</div>';
+    renderHealthChart([]);
+    return;
+  }
+  const score=Number(d.score),band=d.band||healthBand(score),delta=Number(d.delta||0);
+  DOM.healthMeta.textContent=`${d.as_of||'--'} • ${d.meta?.symbols||0} mã • cache ${Math.round((d.cached_age||0)/60)} phút`;
+  DOM.healthScore.textContent=Number.isFinite(score)?score.toFixed(1):'--';
+  DOM.healthScore.style.color=healthBand(score).fill;
+  DOM.healthLabel.textContent=band.label||healthBand(score).label;
+  DOM.healthDate.textContent=`Phiên ${d.as_of||'--'} • ${delta>=0?'+':''}${delta.toFixed(1)} điểm`;
+  DOM.healthTags.innerHTML=(d.tags||[]).map(t=>`<span class="health-tag">${healthEsc(t)}</span>`).join('');
+  DOM.healthComponents.innerHTML=(d.components||[]).map(c=>{
+    const val=Number(c.score),pct=Number.isFinite(val)?Math.max(0,Math.min(100,val)):0;
+    return `<div class="health-comp"><div class="health-comp-head"><span class="health-comp-name">${healthEsc(c.label)}</span><span class="health-comp-val">${Number.isFinite(val)?val.toFixed(1):'--'}</span></div><div class="health-comp-bar"><div class="health-comp-fill" style="width:${pct}%"></div></div></div>`;
+  }).join('');
+  const a=d.analysis||{};
+  DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
+  renderHealthChart(d.history||[]);
+}
+async function fetchHealth(){
+  try{
+    const j=await fetch('/api/market_health').then(r=>r.json());
+    renderHealth(j);
+  }catch(e){
+    console.error('fetchHealth:',e);
+    renderHealth({ok:false,message:'Không tải được dữ liệu HEALTH'});
+  }
+}
+// ═══════════════════════════════════════════════════════
 // SANKEY RENDER
 // ═══════════════════════════════════════════════════════
 const SANKEY_SECTORS=[];
@@ -5437,6 +5613,9 @@ DOM.sankeyToggle.addEventListener('click',()=>{
   const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
   DOM.sankeyWrap.hidden=collapsed;
 });
+DOM.healthToggle.addEventListener('click',()=>{
+  DOM.healthPanel.classList.toggle('collapsed');
+});
 DOM.hmapToggle.addEventListener('click',e=>{
   // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
   // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
@@ -5475,8 +5654,8 @@ function tick(){
 }
 setInterval(tick,1000);tick();
 async function loadConfig(){
-  try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;}catch(e){}
-  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap tự động làm mới sau ${HMAP_TTL}s`;
+  try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;HEALTH_TTL=j.market_health_ttl_sec||1800;}catch(e){}
+  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • HEALTH ${Math.round(HEALTH_TTL/60)} phút`;
 }
 // ═══════════════════════════════════════════════════════
 // FETCH
@@ -6590,12 +6769,13 @@ async function init(){
   _refreshChartModeUI();
   bindLiteChartControls();
   bindAlertControls();
-  startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
-  await Promise.all([fetchSigs(),fetchHmap()]);
+  startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);startBar(DOM.pbarHealth,HEALTH_TTL);
+  await Promise.all([fetchSigs(),fetchHmap(),fetchHealth()]);
   loadLiteChart(_liteSymbol);
   await Promise.all([loadAlerts(),pollAlertFeed(false)]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
+  setInterval(async()=>{startBar(DOM.pbarHealth,HEALTH_TTL);await fetchHealth();},HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
 }
 init();
