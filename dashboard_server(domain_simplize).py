@@ -1668,6 +1668,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel.collapsed .lite-indicators,
 .lite-chart-panel.collapsed .lite-draw-toolbar,
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
+/* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
+body.chart-popout-mode>header,
+body.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
+body.chart-popout-mode #main-wrap{padding:8px}
+body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -2363,6 +2368,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
               <div class="lite-alert-list" id="lite-alert-list"></div>
             </div>
           </div>
+          <button class="lite-draw-btn" id="lite-chart-popout-btn" title="Mở CHART trong cửa sổ riêng" aria-label="Mở CHART trong cửa sổ riêng">⧉</button>
         </div>
       </div>
       <span class="lite-chart-toggle-icon">▶</span>
@@ -2725,6 +2731,7 @@ function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURICom
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
 const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
+const LITE_LAST_SYMBOL_KEY='dashboard_lite_last_symbol';
 function loadLiteTrendMode(){
   let mode='regular';
   try{mode=localStorage.getItem(LITE_TREND_MODE_KEY)||'regular';}catch(e){}
@@ -2852,7 +2859,7 @@ function _liteSyncVisibleRangeFrom(source,range){
   });
   _liteSyncing=false;
 }
-let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol='FPT';
+let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
@@ -3382,6 +3389,13 @@ function loadLiteDrawings(){
 function saveLiteDrawings(){
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
+// Đồng bộ hình vẽ realtime giữa cửa sổ CHART mặc định và cửa sổ CHART popout: 'storage' là sự
+// kiện có sẵn của trình duyệt, tự bắn sang các cửa sổ KHÁC (không bắn lại về cửa sổ vừa ghi)
+// mỗi khi localStorage thay đổi — nên chỉ cần lắng nghe và vẽ lại, không cần tự gửi message.
+window.addEventListener('storage',e=>{
+  if(e.key!==_liteDrawStoreKey())return; // không phải mã + khung thời gian đang xem — bỏ qua
+  loadLiteDrawings();redrawLiteDrawings();
+});
 function resizeLiteDrawCanvas(){
   if(!DOM.liteDrawCanvas||!DOM.liteChart)return;
   const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight,dpr=window.devicePixelRatio||1;
@@ -4928,7 +4942,7 @@ function showLiteChartStatus(status){
   clearTimeout(DOM.liteChartStatus._hideTimer);
   DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
 }
-async function loadLiteChart(sym='FPT',retry=1){
+async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
   if(!DOM.liteChart)return;
   initLiteChart();
@@ -4954,6 +4968,13 @@ async function loadLiteChart(sym='FPT',retry=1){
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
+    if(_lastChartSyncSymbol===s){
+      _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
+    }else if(!skipPopoutSync){
+      if(_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+      if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+    }
     if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
     _liteData=(j.candles||[]).map((bar,idx,arr)=>{
       const prev=idx>0?arr[idx-1].close:null;
@@ -5219,9 +5240,21 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   _syncHoverPreview(cell.dataset.sym);
   updatePopout(cell.dataset.sym);
   updateSimplize(cell.dataset.sym);
-  loadLiteChart(cell.dataset.sym,0);
+  _jumpLiteChart(cell.dataset.sym);
   openChart(cell.dataset.sym);
 });
+// Gửi mã sang cửa sổ CHART popout NGAY khi biết mã (không chờ chart cửa sổ chính tải
+// xong dữ liệu trước), để popout tự fetch song song luôn thay vì tuần tự sau — tránh mất
+// 2 lần đồng bộ nối tiếp làm chart trên popout nhảy chậm hơn hẳn so với chart mặc định.
+function _syncChartPopoutSymbol(sym){
+  const s=String(sym||'').toUpperCase().trim();
+  if(s&&_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+}
+// Nạp chart cửa sổ chính + đồng bộ popout song song (dùng chung cho mọi nơi bấm chọn mã).
+function _jumpLiteChart(sym){
+  _syncChartPopoutSymbol(sym);
+  loadLiteChart(sym,0,true);
+}
 let _hmapClickTimer=null;
 function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
@@ -5229,9 +5262,10 @@ function _hmapDesktopClick(sym){
     _syncHoverPreview(sym);
     updatePopout(sym);
     updateSimplize(sym);
-    loadLiteChart(sym,0);
+    _jumpLiteChart(sym);
     if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
+    if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
     if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
   },220);
@@ -5247,7 +5281,7 @@ DOM.sigList.addEventListener('dblclick',e=>{
   _syncHoverPreview(row.dataset.sym);
   updatePopout(row.dataset.sym);
   updateSimplize(row.dataset.sym);
-  loadLiteChart(row.dataset.sym,0);
+  _jumpLiteChart(row.dataset.sym);
   openChart(row.dataset.sym);
 });
 DOM.momentumList.addEventListener('click',e=>{
@@ -6443,6 +6477,54 @@ window.addEventListener('message',e=>{
     closePopoutWindow();
   }
 });
+
+// ═══════════════════════════════════════════════════════
+// CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
+// ═══════════════════════════════════════════════════════
+let _chartPopoutWin=null,_lastChartSyncSymbol=null;
+// Chiều cao nội dung panel CHART khi mở popout, tính sẵn từ các trị CSS cố định — để mở cửa
+// sổ đúng kích thước ngay từ đầu, KHÔNG mở full màn hình rồi co lại (tránh giật hình):
+//   720   = chiều cao khung chart (.lite-chart-frame{height:720px})
+//   80    = phần toolbar/header phía trên (dự trù tối đa 2 dòng khi màn hình hẹp hơn)
+//   18    = padding trên/dưới #main-wrap ở chart-popout-mode (8px * 2) + viền panel
+//   34    = dòng footer "Scanner Bot Dashboard • ..." (footer nằm ngoài #main-wrap nên vẫn
+//           hiện trong popout, cần cộng thêm để không bị hụt/mất chữ)
+// Nếu ước tính hụt vài px trên màn hình quá hẹp, cửa sổ đã có scrollbars=yes làm phương án
+// dự phòng an toàn (hiện thanh cuộn thay vì bị cắt nội dung), thay vì phải đo rồi co giật cục.
+const CHART_POPOUT_CONTENT_H=720+80+18+34;
+// Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại
+// (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
+const CHART_POPOUT_WIDTH_RATIO=0.855;
+function openChartPopout(){
+  if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
+  const sym=_liteSymbol||'VNINDEX';
+  const box=_getPopupViewport();
+  const w=Math.min(1600,box.width-40)*CHART_POPOUT_WIDTH_RATIO,h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
+  const url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
+  _chartPopoutWin=_openMaximizedWindow(url,'ChartPopout',w,h,0,0,'scrollbars=yes');
+  if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
+}
+document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openChartPopout);
+// Đồng bộ 2 chiều: dùng chung 1 listener cho cả cửa sổ chính (nhận từ popout con) lẫn
+// cửa sổ popout (nhận từ cửa sổ chính, qua window.opener). _lastChartSyncSymbol đánh dấu
+// mã vừa nhận từ phía kia để loadLiteChart() không gửi ngược lại, tránh lặp vô hạn.
+window.addEventListener('message',e=>{
+  if(e.data&&e.data.type==='CHART_POPOUT_SYNC'&&e.data.symbol){
+    _lastChartSyncSymbol=String(e.data.symbol).toUpperCase().trim();
+    loadLiteChart(_lastChartSyncSymbol,0);
+  }
+});
+// Nếu chính trang này được mở lại bởi openChartPopout() ở trên (?chartPopout=1) thì tự mở
+// sẵn panel CHART, ẩn phần còn lại của dashboard, và nạp đúng mã đã chọn từ cửa sổ chính
+// (đánh dấu sẵn _lastChartSyncSymbol để lần nạp đầu tiên này không gửi ngược lại cửa sổ chính).
+(function(){
+  const qs=new URLSearchParams(window.location.search);
+  if(qs.get('chartPopout')!=='1')return;
+  document.body.classList.add('chart-popout-mode');
+  DOM.liteChartPanel.classList.remove('collapsed');
+  const qsym=(qs.get('sym')||'').trim();
+  if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
+})();
 
 // ═══════════════════════════════════════════════════════
 // INIT
