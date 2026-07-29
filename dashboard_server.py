@@ -1092,7 +1092,7 @@ html.embedded-popout .phdr{display:none !important}
     </div>
   </div>
   <div class="pbody">
-    <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
+    <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
     <div class="tpanel" id="panel-scanner">
       <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
       <div class="album-outer" id="album-outer" style="display:none">
@@ -1167,7 +1167,7 @@ function _activateTab(tab){
 function setSymbol(sym){
   _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
   document.title=_sym+' • Full Chart';
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
+  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(_sym.toLowerCase());
   Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   DOM.outer.style.display='none';
   DOM.loading.style.display='flex';
@@ -1227,7 +1227,7 @@ async function loadScannerChart(sym){
     if(h)h.textContent='Đang tải 15m...';
     loadScannerChart15m(sym);
   }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${encodeURIComponent(sym.toLowerCase())}" target="_blank" rel="noreferrer" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 async function loadScannerChart15m(sym){
@@ -2467,7 +2467,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   <div class="hv-body">
     <div class="hv-symlist" id="hv-symlist" style="display:none"></div>
     <div id="hover-preview-iframe-wrap">
-      <iframe id="hover-preview-iframe" src="about:blank"></iframe>
+      <iframe id="hover-preview-iframe" src="about:blank" referrerpolicy="no-referrer"></iframe>
     </div>
   </div>
 </div>
@@ -2540,7 +2540,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     </div>
 
     <div class="pbody">
-      <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
+      <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
         <div class="album-outer" id="album-outer" style="display:none">
@@ -5843,7 +5843,7 @@ async function loadScannerChart(sym){
     if(h)h.textContent='Đang tải 15m...';
     loadScannerChart15m(sym);
   }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
+    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${encodeURIComponent(sym.toLowerCase())}" target="_blank" rel="noreferrer" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
   }
 }
 async function loadScannerChart15m(sym){
@@ -5923,7 +5923,7 @@ function openChart(sym,tab='vs'){
   _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
+  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(_sym.toLowerCase());
   ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _resetScannerUI();
   _activateTab(tab);
@@ -6176,7 +6176,7 @@ function _syncHoverPreview(sym,updateFrame=true){
   _hoverPreviewCurrent=sym;
   if(!_hoverPreviewOn)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===sym));
-  if(updateFrame)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
+  if(updateFrame)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(sym.toLowerCase());
 }
 DOM.hpSymlist.addEventListener('click',e=>{
   const item=e.target.closest('.hv-sym-item');if(!item)return;
@@ -6376,7 +6376,7 @@ function _buildPopoutHTML(initSym){
     +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
     +'function loadChart(sym){'
     +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
+    +'  var url=full?(window.location.origin+"/popout_full/"+encodeURIComponent(sym)):("https://ta.vietstock.vn/?stockcode="+encodeURIComponent(sym.toLowerCase()));'
     +'  if(cf.src===url)return;'
     +'  ld.classList.remove("hide");'
     +'  cf.onload=function(){ld.classList.add("hide");};'
@@ -6456,7 +6456,7 @@ function minimizePopout(){
     DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
   }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
-  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
+  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+encodeURIComponent(_hoverPreviewCurrent.toLowerCase());
   _refreshChartModeUI();
 }
 function closePopoutWindow(){
