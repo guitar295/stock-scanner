@@ -1734,8 +1734,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-vni-toggle{position:absolute;top:6px;left:88.4%;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
-.health-body{padding:12px 14px;background:#fff}
-.health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
+.health-body{padding:12px 14px;background:#fff;height:720px;display:flex;align-items:center;overflow:auto}
+.health-layout{width:100%;display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:#fbfcff}
@@ -1774,6 +1774,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel.collapsed>.pbar-wrap,
 .hmap-panel.collapsed>.panel-body{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
+.frame-shrink{width:100%;height:720px;overflow:hidden;position:relative;background:#fff}
+.frame-shrink iframe{position:absolute;top:0;left:0;width:125%;height:125%;border:none;background:#fff;transform:scale(.8);transform-origin:0 0}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
 #lite-chart{width:100%;height:540px}
@@ -2014,6 +2016,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   }
   .hmap-ts-wrap::-webkit-scrollbar{display:none}
   .health-layout{grid-template-columns:1fr}
+  .health-body{height:auto;display:block;overflow:visible}
   .health-chartbox{height:280px}
   .health-score{font-size:36px}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
@@ -2036,6 +2039,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     height:auto;
   }
   .market-frame{height:70vh}
+  .frame-shrink{height:70vh}
   .tri-tabs [data-tab="fireant"],
   #tri-content-fireant{display:none !important}
 
@@ -2574,10 +2578,10 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         </div>
       </div>
       <div class="tri-content" id="tri-content-marketwatch">
-        <iframe class="market-frame" id="marketwatch-frame" src="about:blank" allowfullscreen></iframe>
+        <div class="frame-shrink"><iframe id="marketwatch-frame" src="about:blank" allowfullscreen></iframe></div>
       </div>
       <div class="tri-content" id="tri-content-dinhgia">
-        <iframe class="market-frame" id="dinhgia-frame" src="about:blank" allowfullscreen></iframe>
+        <div class="frame-shrink"><iframe id="dinhgia-frame" src="about:blank" allowfullscreen></iframe></div>
       </div>
       <div class="tri-content" id="tri-content-sankey">
         <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
