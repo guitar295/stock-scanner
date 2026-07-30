@@ -1725,12 +1725,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-panel.collapsed .health-body,
 .health-panel.collapsed>.pbar-wrap{display:none}
 .health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
-.health-vni-toggle{position:absolute;top:6px;right:11%;left:auto;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
+.health-vni-toggle{position:absolute;top:6px;left:88.4%;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
 .health-body{padding:12px 14px;background:#fff}
 .health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
-.health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
+.health-chartbox{height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:#fbfcff}
 .health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -5525,7 +5525,7 @@ function _healthRenderWindow(){
     const vals=h.map(p=>Number(p.vnindex)).filter(v=>Number.isFinite(v));
     if(vals.length>=2){
       vniMin=Math.min(...vals);vniMax=Math.max(...vals);
-      const norm=v=>vniMax>vniMin?((v-vniMin)/(vniMax-vniMin))*100:50;
+      const norm=v=>vniMax>vniMin?10+((v-vniMin)/(vniMax-vniMin))*80:50;
       let segs=[],cur=[];
       h.forEach((p,i)=>{
         const v=Number(p.vnindex);
