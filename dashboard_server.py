@@ -5722,14 +5722,33 @@ function renderHealth(data){
   DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
   renderHealthChart(d.history||[]);
 }
+// Trong lúc hệ thống đang build lại history_cache lúc khởi động (hoặc đầu
+// phiên mới), /api/market_health trả ok:false vì chưa đủ dữ liệu. Thay vì bắt
+// người dùng F5 cả trang để thấy chart khi cache build xong, tự động thử lại
+// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu —
+// một khi đã ok:true thì dừng vòng thử nhanh này, cơ chế làm mới định kỳ theo
+// HEALTH_TTL ở startDashboard() vẫn chạy như cũ, không đổi.
+const HEALTH_RETRY_MS=20000;
+let _healthRetryTimer=null;
 async function fetchHealth(){
   try{
     const j=await fetch('/api/market_health').then(r=>r.json());
     renderHealth(j);
+    if(_healthRetryTimer){clearTimeout(_healthRetryTimer);_healthRetryTimer=null;}
+    if(j.ok){
+      startBar(DOM.pbarHealth,HEALTH_TTL);
+    }else{
+      startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
+      _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
+    }
   }catch(e){
     console.error('fetchHealth:',e);
     renderHealth({ok:false,message:'Không tải được dữ liệu HEALTH'});
+    if(_healthRetryTimer)clearTimeout(_healthRetryTimer);
+    startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
+    _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
   }
+}
 }
 // ═══════════════════════════════════════════════════════
 // SANKEY RENDER
@@ -7033,13 +7052,13 @@ async function init(){
   _refreshChartModeUI();
   bindLiteChartControls();
   bindAlertControls();
-  startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);startBar(DOM.pbarHealth,HEALTH_TTL);
+  startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   await Promise.all([fetchSigs(),fetchHmap(),fetchHealth()]);
   loadLiteChart(_liteSymbol);
   await Promise.all([loadAlerts(),pollAlertFeed(false)]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
-  setInterval(async()=>{startBar(DOM.pbarHealth,HEALTH_TTL);await fetchHealth();},HEALTH_TTL*1000);
+  setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
 }
 init();
