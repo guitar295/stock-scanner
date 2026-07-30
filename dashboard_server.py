@@ -5442,10 +5442,10 @@ DOM.signalHeader.addEventListener('click',e=>{
 function healthEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function healthBand(score){
   const s=Number(score);
-  if(s>=75)return{label:'Hưng phấn',fill:'#7e22ce'};
-  if(s>=55)return{label:'Tích cực',fill:'#16a34a'};
-  if(s>=45)return{label:'Trung tính',fill:'#ca8a04'};
-  if(s>=25)return{label:'Tiêu cực',fill:'#dc2626'};
+  if(s>=80)return{label:'Hưng phấn',fill:'#7e22ce'};
+  if(s>=60)return{label:'Tích cực',fill:'#16a34a'};
+  if(s>=40)return{label:'Trung tính',fill:'#ca8a04'};
+  if(s>=20)return{label:'Tiêu cực',fill:'#dc2626'};
   return{label:'Sợ hãi',fill:'#0284c7'};
 }
 function healthTextAt(y,txt,fill='#475569',size=11,weight=600){
@@ -5477,13 +5477,13 @@ function _healthRenderWindow(){
   const end=total-_healthOffset;
   const start=Math.max(0,end-windowLen);
   const h=_healthFullHistory.slice(start,end);
-  const W=900,H=360,L=52,R=16,T=18,B=34,plotW=W-L-R,plotH=H-T-B;
+  const W=900,H=360,L=52,R=16,T=28,B=34,plotW=W-L-R,plotH=H-T-B;
   const bands=[
-    {from:75,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
-    {from:55,to:75,c1:'#dcfce7',c2:'#16a34a',label:'Tích cực'},
-    {from:45,to:55,c1:'#fef9c3',c2:'#ca8a04',label:'Trung tính'},
-    {from:25,to:45,c1:'#fee2e2',c2:'#dc2626',label:'Tiêu cực'},
-    {from:0,to:25,c1:'#e0f2fe',c2:'#0284c7',label:'Sợ hãi'},
+    {from:80,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
+    {from:60,to:80,c1:'#dcfce7',c2:'#16a34a',label:'Tích cực'},
+    {from:40,to:60,c1:'#fef9c3',c2:'#ca8a04',label:'Trung tính'},
+    {from:20,to:40,c1:'#fee2e2',c2:'#dc2626',label:'Tiêu cực'},
+    {from:0,to:20,c1:'#e0f2fe',c2:'#0284c7',label:'Sợ hãi'},
   ];
   const y=v=>T+(100-v)/100*plotH;
   const x=i=>L+(h.length===1?plotW:plotW*i/(h.length-1));
@@ -5508,7 +5508,7 @@ function _healthRenderWindow(){
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
     return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="10">${h[i].date}</text>`;
   }).join('');
-  const hint=total>windowLen?`<text x="${W-R}" y="${T+2}" text-anchor="end" fill="#94a3b8" font-family="IBM Plex Mono, monospace" font-size="9">‹ kéo/vuốt xem lịch sử</text>`:'';
+  const hint=total>windowLen?`<text x="${W-R}" y="14" text-anchor="end" fill="#94a3b8" font-family="IBM Plex Mono, monospace" font-size="9">‹ kéo/vuốt xem lịch sử</text>`:'';
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${circles}${xLabels}${hint}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,x,y};
 }
@@ -5566,9 +5566,11 @@ function _healthOnMove(evt){
       const rect=DOM.healthSvg.getBoundingClientRect();
       if(rect.width&&windowLen>1){
         const scaleX=_healthLayout.W/rect.width;
-        const pxPerPoint=(_healthLayout.plotW*scaleX)/(windowLen-1);
-        // Kéo/vuốt sang trái (dx<0) → lùi về lịch sử (tăng offset); sang phải → tiến lại hiện tại.
-        let newOffset=Math.round(_healthDrag.startOffset-dx/pxPerPoint);
+        // plotW đang ở đơn vị viewBox (900) — quy đổi về pixel thật đang hiển thị
+        // bằng cách CHIA cho scaleX (không phải nhân), rồi mới suy ra pxPerPoint.
+        const pxPerPointReal=(_healthLayout.plotW/scaleX)/(windowLen-1);
+        // Kéo/vuốt sang trái (dx<0) → xem lịch sử (tăng offset); sang phải → tiến về hiện tại/gần đây.
+        let newOffset=Math.round(_healthDrag.startOffset+dx/pxPerPointReal);
         newOffset=Math.max(0,Math.min(maxOffset,newOffset));
         if(newOffset!==_healthOffset){_healthOffset=newOffset;_healthRenderWindow();}
       }
