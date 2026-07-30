@@ -2533,6 +2533,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="tri-tabs" id="tri-tabs">
         <span class="tri-tab on" data-tab="fireant">Fireant</span>
         <span class="tri-tab" data-tab="health">Mrk Health</span>
+        <span class="tri-tab" data-tab="marketwatch">MrkWatch</span>
+        <span class="tri-tab" data-tab="dinhgia">Định giá</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
       <span class="tri-toggle" id="tri-toggle">▶</span>
@@ -2573,6 +2575,12 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       </div>
       <div class="tri-content" id="tri-content-sankey">
         <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+      </div>
+      <div class="tri-content" id="tri-content-marketwatch">
+        <iframe class="market-frame" id="marketwatch-frame" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <div class="tri-content" id="tri-content-dinhgia">
+        <iframe class="market-frame" id="dinhgia-frame" src="about:blank" allowfullscreen></iframe>
       </div>
     </div>
   </div>
@@ -5916,7 +5924,11 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   openChart(sym);
 });
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','health','sankey'];
+const TRI_TABS=['fireant','health','marketwatch','dinhgia','sankey'];
+const TRI_IFRAME_MAP={
+  marketwatch:{id:'marketwatch-frame',url:'https://trade.vndirect.com.vn/thong-tin-thi-truong/marketwatch'},
+  dinhgia:{id:'dinhgia-frame',url:'https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong'}
+};
 function triActivateTab(tab){
   if(!TRI_TABS.includes(tab))return;
   DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
@@ -5928,6 +5940,11 @@ function triActivateTab(tab){
   // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
   // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
   if(tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+  // MarketWatch / Định giá: chỉ nạp iframe khi tab được kích hoạt lần đầu (lazy-load)
+  if(TRI_IFRAME_MAP[tab]){
+    const cfg=TRI_IFRAME_MAP[tab],f=document.getElementById(cfg.id);
+    if(f&&f.src==='about:blank')f.src=cfg.url;
+  }
 }
 DOM.triTabs.addEventListener('click',e=>{
   const btn=e.target.closest('.tri-tab');
