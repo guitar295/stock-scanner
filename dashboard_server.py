@@ -2533,7 +2533,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="tri-tabs" id="tri-tabs">
         <span class="tri-tab on" data-tab="fireant">Fireant</span>
         <span class="tri-tab" data-tab="health">Mrk Health</span>
-        <span class="tri-tab" data-tab="marketwatch">MrkWatch</span>
+        <span class="tri-tab" data-tab="marketwatch">Mrk Watch</span>
         <span class="tri-tab" data-tab="dinhgia">Định giá</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
@@ -2573,14 +2573,14 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           </div>
         </div>
       </div>
-      <div class="tri-content" id="tri-content-sankey">
-        <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
-      </div>
       <div class="tri-content" id="tri-content-marketwatch">
         <iframe class="market-frame" id="marketwatch-frame" src="about:blank" allowfullscreen></iframe>
       </div>
       <div class="tri-content" id="tri-content-dinhgia">
         <iframe class="market-frame" id="dinhgia-frame" src="about:blank" allowfullscreen></iframe>
+      </div>
+      <div class="tri-content" id="tri-content-sankey">
+        <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
     </div>
   </div>
