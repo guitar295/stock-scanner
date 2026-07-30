@@ -680,13 +680,17 @@ def compute_market_health_index(limit: int = 120) -> dict:
     momentum_score = _mh_percentile_score(momentum_raw)
     volatility_score = _mh_percentile_score(volatility_raw)
 
-    above_ma50, rsi14, new_high, new_low, vol_push = {}, {}, {}, {}, {}
+    above_ma50, rsi14, new_high, new_low, vol_push, decline_today = {}, {}, {}, {}, {}, {}
     for sym, d in prepared.items():
         above_ma50[sym] = (d["close"] > d["MA50"]).astype(float)
         rsi14[sym] = d["RSI14"]
         new_high[sym] = (d["close"] >= d["close"].rolling(252, min_periods=60).max()).astype(float)
         new_low[sym] = (d["close"] <= d["close"].rolling(252, min_periods=60).min()).astype(float)
         pct = d["close"].pct_change() * 100
+        # Cờ "giảm giá trong phiên" (bất kể mức độ) — dùng riêng để đo diện rộng của
+        # phiên giảm, KHÔNG gộp vào score_df vì đây là điều kiện phụ cho nhãn cảnh
+        # báo, không phải một thành phần chấm điểm HEALTH.
+        decline_today[sym] = (pct < 0).astype(float)
         v_ratio = d["volume"] / d["VMA20"].replace(0, np.nan)
         excite = ((pct >= 2.5) & (v_ratio >= 1.5)).astype(float)
         panic = ((pct <= -2.5) & (v_ratio >= 1.5)).astype(float)
@@ -694,6 +698,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
 
     dates = close_df.index[-max(limit, 30):]
     breadth_s = pd.concat(above_ma50, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    decline_s = pd.concat(decline_today, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
     rsi_s = pd.concat(rsi14, axis=1).reindex(dates).median(axis=1, skipna=True).clip(0, 100)
     nh_s = pd.concat(new_high, axis=1).reindex(dates).sum(axis=1, skipna=True)
     nl_s = pd.concat(new_low, axis=1).reindex(dates).sum(axis=1, skipna=True)
@@ -784,6 +789,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
     vol_now = current_components.get("volume") or 50
     momentum_now = current_components.get("momentum") or 50
     newhl_now = current_components.get("new_high_low") or 50
+    decline_now = _mh_finite_float(decline_s.loc[cur_dt]) if cur_dt in decline_s.index else None
 
     tags = []
     if cur_score >= 90:
@@ -796,7 +802,8 @@ def compute_market_health_index(limit: int = 120) -> dict:
         tags.append("Rủi ro tạo đỉnh")
     if low_streak >= 3 and rising_3:
         tags.append("Tín hiệu dò đáy")
-    if cur_score <= 35 and breadth_now < 35 and rsi_now < 40:
+    MH_BROAD_DECLINE_PCT = 60  # ngưỡng % mã giảm giá trong phiên để coi là "giảm diện rộng"
+    if cur_score <= 35 and breadth_now < 35 and rsi_now < 40 and (decline_now or 0) >= MH_BROAD_DECLINE_PCT:
         tags.append("Bán tháo/hoảng loạn")
     if 45 <= cur_score <= 60 and abs(cur_score - prev_score) <= 4 and 40 <= breadth_now <= 60:
         tags.append("Tích lũy cân bằng")
@@ -815,6 +822,8 @@ def compute_market_health_index(limit: int = 120) -> dict:
         f"Đỉnh/đáy 52 tuần đóng góp {newhl_now:.1f}/100; volume stress ở {vol_now:.1f}/100.",
         f"Momentum proxy đạt {momentum_now:.1f}/100."
     ]
+    if decline_now is not None:
+        factors.append(f"Tỷ lệ mã giảm giá trong phiên: {decline_now:.1f}%.")
     if "Cực kỳ hưng phấn" in tags:
         conclusion = "Nhận định: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
     elif "Cực kỳ sợ hãi" in tags:
