@@ -41,6 +41,7 @@ from dashboard_server import (
     start_dashboard,
     get_active_price_alert_rules,
     record_price_alert_event,
+    warm_market_health_cache,
 )
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
@@ -627,11 +628,20 @@ def compute_market_health_index(limit: int = 30) -> dict:
     Mỗi phiên được chấm 0-100 từ momentum proxy, volatility, breadth, new high/low,
     RSI trung vị và volume stress của rổ HEATMAP/TRADING.
     """
+    # NGƯỠNG ĐỘ DÀI TỐI THIỂU: đồng bộ với build_history_cache() (dòng ~848) —
+    # nơi coi 1 mã là "đã cache hợp lệ" khi có >= 60 phiên. Trước đây HEALTH tự
+    # đòi >= 80 phiên, khiến mọi mã có 60-79 phiên (mã mới niêm yết, mã bị giới
+    # hạn lịch sử từ nguồn dữ liệu...) bị coi là "đã cache" ở MỌI nơi khác trong
+    # hệ thống nhưng lại bị âm thầm loại khỏi HEALTH — dễ gây hiểu lầm "cache đủ
+    # rồi mà vẫn báo thiếu". Với 60 phiên, các chỉ báo HEALTH đang dùng (MA50,
+    # RSI14, VMA20, rolling 252 với min_periods=60) vẫn tính đủ giá trị hợp lệ ở
+    # phiên gần nhất nên hạ ngưỡng là an toàn, không làm giảm chất lượng tính.
+    MH_MIN_ROWS = 60
     with cache_lock:
         raw_cache = {
             sym: df.copy()
             for sym, df in history_cache.items()
-            if sym in cache_symbol_set and df is not None and len(df) >= 80
+            if sym in cache_symbol_set and df is not None and len(df) >= MH_MIN_ROWS
         }
 
     prepared = {}
@@ -646,7 +656,7 @@ def compute_market_health_index(limit: int = 30) -> dict:
             d.index = pd.to_datetime(d.index).normalize()
             d = d[~d.index.duplicated(keep="last")]
             d = compute_indicators(d)
-            if len(d) >= 80:
+            if len(d) >= MH_MIN_ROWS:
                 prepared[sym] = d
         except Exception:
             continue
@@ -931,6 +941,10 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         new_last = sample_df2.index[-1].date()
         ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
         print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
+    # Cache lịch sử vừa rebuild → HEALTH đang cache (nếu có) tính trên dữ liệu
+    # CŨ/lệch phiên. Warm lại ngay để HEALTH khớp với cache vừa cập nhật, thay
+    # vì phải đợi tự nhiên tối đa 30 phút (MARKET_HEALTH_TTL_SEC).
+    warm_market_health_cache()
     return False
 
 def fetch_today_bar(symbol: str, current_date: date):
@@ -2399,6 +2413,20 @@ _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
 listener_thread.start()
 
+# ─── (Đã BỎ ý tưởng đảo thứ tự start_dashboard/build_history_cache) ────────
+# Ban đầu định đảo build_history_cache() lên trước start_dashboard() để tránh
+# HEALTH tính trên cache rỗng lúc khởi động. Nhưng làm vậy khiến Flask KHÔNG
+# mở cổng cho tới khi cache load xong (1-3 phút) → HEATMAP/MARKET/CHART cũng
+# không truy cập được trong lúc đó, dù các panel này vốn có cơ chế fallback
+# "fetch tươi" khi cache chưa có (xem ensure_symbol_live_in_cache, fetch_today_bar)
+# và KHÔNG cần cache sẵn để hoạt động. Đánh đổi đó không đáng — nên GIỮ NGUYÊN
+# thứ tự gốc: mở dashboard trước để HEATMAP/CHART dùng được ngay (chậm hơn do
+# fetch tươi), còn HEALTH tự khắc phục nhờ 2 cơ chế bên dưới:
+#   (1) Fix A trong dashboard_server.py: kết quả lỗi "0 mã hợp lệ" không bị
+#       đóng dấu "cache mới" → không kẹt 30 phút, tự thử lại ở lần gọi sau.
+#   (2) warm_market_health_cache() được gọi CHỦ ĐỘNG ngay khi build_history_cache()
+#       xong (xem bên dưới) → HEALTH có dữ liệu đúng chỉ vài giây sau khi cache
+#       sẵn sàng, không cần đợi ai request hay đợi TTL.
 start_dashboard(
     alerted_today_ref = lambda: alerted_today,
     history_cache_ref = lambda: history_cache,
@@ -2414,6 +2442,15 @@ start_dashboard(
     fetch_market_health_fn = compute_market_health_index,
     port              = 8888,
 )
+
+print("\n🔧 Đang load cache lịch sử lần đầu...")
+build_history_cache(symbols_to_cache, last_run_date)
+
+# Cache lịch sử vừa load xong → chủ động tính HEALTH ngay, không đợi client
+# đầu tiên tự trigger. Trong khoảng thời gian build_history_cache() đang chạy
+# ở trên, dashboard vẫn phản hồi HEATMAP/CHART bình thường (qua fallback fetch
+# tươi); nếu có ai request HEALTH đúng lúc đó thì Fix A đảm bảo không bị kẹt.
+warm_market_health_cache()
 
 print("\n" + "="*60)
 print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
@@ -2435,9 +2472,6 @@ print(f"   Cache check : Tự động trước mỗi chu kỳ quét")
 print(f"   On-demand   : Ưu tiên cache, fallback fetch fresh")
 print(f"   Nghỉ quét   : Thứ 7 và Chủ nhật")
 print("="*60)
-
-print("\n🔧 Đang load cache lịch sử lần đầu...")
-build_history_cache(symbols_to_cache, last_run_date)
 
 # =============================================================================
 # VÒNG LẶP CHÍNH
@@ -2464,6 +2498,9 @@ while True:
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
             print("🔧 Reload cache lịch sử cho ngày mới...")
             build_history_cache(symbols_to_cache, current_date)
+            # Cache vừa reset cho phiên mới → warm lại HEALTH ngay, tránh 30 phút
+            # đầu ngày dashboard hiển thị HEALTH tính trên dữ liệu của phiên hôm trước.
+            warm_market_health_cache()
 
         if not _is_trading_session_time(current_date, now_time):
             # Tự dò + tự sửa cache lệch phiên — CHỈ chạy ngoài giờ giao dịch, với nhịp
@@ -2490,6 +2527,7 @@ while True:
         if cache_empty:
             print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
             build_history_cache(symbols_to_cache, current_date)
+            warm_market_health_cache()
 
         print(f"\n{'='*60}")
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
