@@ -1774,6 +1774,10 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.pbar-wrap,
 .hmap-panel.collapsed>.panel-body{display:none}
+.market-panel .panel-hdr{cursor:pointer;user-select:none}
+.market-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s}
+.market-panel:not(.collapsed) .market-toggle-icon{transform:rotate(90deg);color:var(--accent)}
+.market-panel.collapsed .market-frame{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
@@ -2528,9 +2532,10 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   </div>
 
   <!-- MARKET -->
-  <div class="panel" id="market-panel">
-    <div class="panel-hdr">
+  <div class="panel market-panel" id="market-panel">
+    <div class="panel-hdr" id="market-toggle">
       <span class="panel-title">MARKET</span>
+      <span class="market-toggle-icon">▶</span>
     </div>
     <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
   </div>
@@ -2721,6 +2726,7 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
+  marketPanel:$('market-panel'),marketToggle:$('market-toggle'),
   healthPanel:$('health-panel'),healthToggle:$('health-toggle'),healthMeta:$('health-meta'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),healthComponents:$('health-components'),
@@ -5653,6 +5659,9 @@ DOM.sankeyToggle.addEventListener('click',()=>{
 });
 DOM.healthToggle.addEventListener('click',()=>{
   DOM.healthPanel.classList.toggle('collapsed');
+});
+DOM.marketToggle.addEventListener('click',()=>{
+  DOM.marketPanel.classList.toggle('collapsed');
 });
 DOM.hmapToggle.addEventListener('click',e=>{
   // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
