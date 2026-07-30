@@ -589,13 +589,13 @@ def _mh_finite_float(value, default=None):
 
 
 def _mh_score_band(score: float) -> dict:
-    if score >= 75:
+    if score >= 80:
         return {"key": "euphoria", "label": "Hưng phấn", "tone": "purple"}
-    if score >= 55:
+    if score >= 60:
         return {"key": "positive", "label": "Tích cực", "tone": "green"}
-    if score >= 45:
+    if score >= 40:
         return {"key": "neutral", "label": "Trung tính", "tone": "yellow"}
-    if score >= 25:
+    if score >= 20:
         return {"key": "negative", "label": "Tiêu cực", "tone": "red"}
     return {"key": "fear", "label": "Sợ hãi", "tone": "cyan"}
 
@@ -767,6 +767,10 @@ def compute_market_health_index(limit: int = 120) -> dict:
     newhl_now = current_components.get("new_high_low") or 50
 
     tags = []
+    if cur_score >= 90:
+        tags.append("Cực kỳ hưng phấn")
+    if cur_score <= 10:
+        tags.append("Cực kỳ sợ hãi")
     if high_streak >= 3 and breadth_now < 55:
         tags.append("Cảnh báo phân phối")
     if high_streak >= 3 and falling_3:
@@ -792,7 +796,11 @@ def compute_market_health_index(limit: int = 120) -> dict:
         f"Đỉnh/đáy 52 tuần đóng góp {newhl_now:.1f}/100; volume stress ở {vol_now:.1f}/100.",
         f"Momentum proxy đạt {momentum_now:.1f}/100."
     ]
-    if "Cảnh báo phân phối" in tags or "Rủi ro tạo đỉnh" in tags:
+    if "Cực kỳ hưng phấn" in tags:
+        conclusion = "Nhận định: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
+    elif "Cực kỳ sợ hãi" in tags:
+        conclusion = "Nhận định: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán tháo cực đoan, thường là vùng dò đáy tiềm năng nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
+    elif "Cảnh báo phân phối" in tags or "Rủi ro tạo đỉnh" in tags:
         conclusion = "Nhận định: ưu tiên quản trị rủi ro; thị trường có dấu hiệu hưng phấn nhưng nền tham gia không đủ rộng, cần cảnh giác vùng đỉnh/phân phối."
     elif "Tín hiệu dò đáy" in tags:
         conclusion = "Nhận định: lực bán đang suy yếu sau vùng sợ hãi; phù hợp theo dõi quá trình tạo đáy, chưa coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện."
