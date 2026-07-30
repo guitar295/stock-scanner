@@ -722,13 +722,32 @@ def compute_market_health_index(limit: int = 120) -> dict:
             "components": [],
         }
 
+    # VNINDEX không nằm trong cache_symbol_set (rổ dùng để tính HEALTH), nên phải
+    # tự đảm bảo có dữ liệu — dùng lại đúng cơ chế ensure-on-demand mà CHART tab
+    # đang dùng khi người dùng xem chart VNINDEX, tránh viết thêm luồng fetch riêng.
+    try:
+        ensure_symbol_live_in_cache("VNINDEX")
+    except Exception:
+        pass
+    with cache_lock:
+        _vni_df = history_cache.get("VNINDEX")
+    vni_close = None
+    if _vni_df is not None and not _vni_df.empty and "close" in _vni_df.columns:
+        vni_close = _vni_df["close"].copy()
+        vni_close.index = pd.to_datetime(vni_close.index).normalize()
+        vni_close = vni_close[~vni_close.index.duplicated(keep="last")]
+
     last_dates = list(usable.tail(limit).index)
     history = []
     for dt in last_dates:
-        history.append({
+        entry = {
             "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
             "score": round(float(score.loc[dt]), 1),
-        })
+        }
+        if vni_close is not None:
+            v = vni_close.get(dt)
+            entry["vnindex"] = round(float(v), 2) if v is not None and pd.notna(v) else None
+        history.append(entry)
 
     cur_dt = last_dates[-1]
     cur_score = float(score.loc[cur_dt])
@@ -821,6 +840,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
         "tags": tags,
         "history": history,
         "components": components,
+        "vnindex_available": vni_close is not None,
         "analysis": {
             "summary": summary,
             "factors": factors,
