@@ -941,10 +941,12 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         new_last = sample_df2.index[-1].date()
         ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
         print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
-    # Cache lịch sử vừa rebuild → HEALTH đang cache (nếu có) tính trên dữ liệu
-    # CŨ/lệch phiên. Warm lại ngay để HEALTH khớp với cache vừa cập nhật, thay
-    # vì phải đợi tự nhiên tối đa 30 phút (MARKET_HEALTH_TTL_SEC).
-    warm_market_health_cache()
+    # KHÔNG warm HEALTH chủ động ở đây: hàm này chỉ chạy NGOÀI giờ giao dịch
+    # (tối đa 1 lần/30 phút), lúc gần như không ai theo dõi HEALTH sát sao. Nhờ
+    # Fix A trong dashboard_server.py (_refresh_market_health không đóng dấu
+    # "cache mới" khi tính lỗi), lần request thật sự tiếp theo từ client sẽ tự
+    # tính lại đúng trên cache vừa rebuild — không cần tốn thêm 1 lần tính toán
+    # HEALTH (khá nặng, phải chạy trên toàn bộ rổ mã) mà không ai xem tới.
     return False
 
 def fetch_today_bar(symbol: str, current_date: date):
