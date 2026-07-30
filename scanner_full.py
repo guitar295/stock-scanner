@@ -600,7 +600,7 @@ def _mh_score_band(score: float) -> dict:
     return {"key": "fear", "label": "Sợ hãi", "tone": "cyan"}
 
 
-def _mh_percentile_score(series: pd.Series, window: int = 252) -> pd.Series:
+def _mh_percentile_score(series: pd.Series, window: int = 120) -> pd.Series:
     series = pd.to_numeric(series, errors="coerce")
 
     def _rank(x):
@@ -622,7 +622,7 @@ def _mh_last_streak(values, pred) -> int:
     return n
 
 
-def compute_market_health_index(limit: int = 30) -> dict:
+def compute_market_health_index(limit: int = 120) -> dict:
     """
     Chỉ số HEALTH/Fear-Greed dùng hoàn toàn dữ liệu đang có trong history_cache.
     Mỗi phiên được chấm 0-100 từ momentum proxy, volatility, breadth, new high/low,
@@ -675,8 +675,8 @@ def compute_market_health_index(limit: int = 30) -> dict:
     returns = close_df.pct_change(fill_method=None)
     eq_ret = returns.mean(axis=1, skipna=True).fillna(0)
     market_proxy = (1 + eq_ret).cumprod() * 100
-    momentum_raw = (market_proxy / market_proxy.rolling(50, min_periods=30).mean() - 1) * 100
-    volatility_raw = -eq_ret.rolling(20, min_periods=10).std() * np.sqrt(252) * 100
+    momentum_raw = (market_proxy / market_proxy.rolling(20, min_periods=12).mean() - 1) * 100
+    volatility_raw = -eq_ret.rolling(10, min_periods=5).std() * np.sqrt(252) * 100
     momentum_score = _mh_percentile_score(momentum_raw)
     volatility_score = _mh_percentile_score(volatility_raw)
 
