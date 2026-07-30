@@ -5749,7 +5749,6 @@ async function fetchHealth(){
     _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
   }
 }
-}
 // ═══════════════════════════════════════════════════════
 // SANKEY RENDER
 // ═══════════════════════════════════════════════════════
