@@ -1730,7 +1730,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
 .health-body{padding:12px 14px;background:#fff}
 .health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
-.health-chartbox{height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
+.health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:#fbfcff}
 .health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -5489,9 +5489,18 @@ function _healthRenderWindow(){
   const end=total-_healthOffset;
   const start=Math.max(0,end-windowLen);
   const h=_healthFullHistory.slice(start,end);
-  // R (lề phải) rộng hơn trước để chứa nhãn dải màu (Hưng phấn/Tích cực/...) đặt
-  // NGOÀI vùng tô màu, cùng phía với trục giá trị dùng cho crosshair.
-  const W=900,H=360,L=52,R=112,T=28,B=34,plotW=W-L-R,plotH=H-T-B;
+  // Khung chart giờ được CSS Grid kéo cao bằng khung phân tích bên phải (thay vì
+  // cố định 328px) → viewBox phải tính lại theo ĐÚNG tỉ lệ thật của khung (thay vì
+  // cố định 900x360) để scale ngang/dọc bằng nhau, tránh chữ bị kéo cao méo dạng;
+  // đồng thời mọi cỡ chữ/lề/nét vẽ cũng lớn lên tương ứng với tỉ lệ khung mới cho
+  // cân đối, thay vì giữ nguyên kích thước gốc trong một khung lớn hơn.
+  const rectBox=DOM.healthSvg.getBoundingClientRect();
+  const aspect=(rectBox.width>0&&rectBox.height>0)?rectBox.height/rectBox.width:(360/900);
+  const W=900,H=Math.round(Math.min(720,Math.max(320,W*aspect)));
+  const scale=H/360;
+  const L=Math.round(52*scale),R=Math.round(112*scale),T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
+  const fs=Math.max(9,Math.round(10*scale));
+  DOM.healthSvg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const bands=[
     {from:80,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
     {from:60,to:80,c1:'#dcfce7',c2:'#16a34a',label:'Tích cực'},
@@ -5506,16 +5515,16 @@ function _healthRenderWindow(){
     const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
     // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải),
     // giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
-    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">${b.label}</text>`;
+    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="700">${b.label}</text>`;
   }).join('');
   // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi
   // ngưỡng phân vùng màu ở trên — hai việc khác nhau.
-  const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="10">${v}</text>`).join('');
+  const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${v}</text>`).join('');
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
   const area=`${L},${y(0)} ${pts} ${W-R},${y(0)}`;
   const circles=h.map((p,i)=>{
     const b=healthBand(p.score);
-    return `<circle cx="${x(i)}" cy="${y(Number(p.score))}" r="${i===h.length-1?3.5:2}" fill="${b.fill}" stroke="#fff" stroke-width="1.2"><title>${p.date}: ${Number(p.score).toFixed(1)}</title></circle>`;
+    return `<circle cx="${x(i)}" cy="${y(Number(p.score))}" r="${((i===h.length-1?3.5:2)*scale).toFixed(2)}" fill="${b.fill}" stroke="#fff" stroke-width="${(1.2*scale).toFixed(2)}"><title>${p.date}: ${Number(p.score).toFixed(1)}</title></circle>`;
   }).join('');
   // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
   // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
@@ -5533,7 +5542,7 @@ function _healthRenderWindow(){
         else{if(cur.length>1)segs.push(cur);cur=[];}
       });
       if(cur.length>1)segs.push(cur);
-      vniPolyline=segs.map(seg=>`<polyline points="${seg.join(' ')}" fill="none" stroke="#f97316" stroke-width="1.75" stroke-dasharray="5,3" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
+      vniPolyline=segs.map(seg=>`<polyline points="${seg.join(' ')}" fill="none" stroke="#f97316" stroke-width="${(1.75*scale).toFixed(2)}" stroke-dasharray="5,3" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
     }
   }
   // Trục X: nhiều mốc thời gian dọc theo trục thay vì chỉ đầu/cuối
@@ -5541,16 +5550,17 @@ function _healthRenderWindow(){
   const tickIdxs=[...new Set(tickCount<=1?[0]:Array.from({length:tickCount},(_,k)=>Math.round(k*(h.length-1)/(tickCount-1))))];
   const xLabels=tickIdxs.map(i=>{
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
-    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="10">${h[i].date}</text>`;
+    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${h[i].date}</text>`;
   }).join('');
-  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${circles}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
-  _healthLayout={h,L,R,T,B,H,W,plotW,plotH,x,y,vniMin,vniMax};
+  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${(2.5*scale).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${circles}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
+  _healthLayout={h,L,R,T,B,H,W,plotW,plotH,x,y,vniMin,vniMax,scale,fs};
 }
 // ── Crosshair khi di chuột/chạm: nhãn gắn vào trục dưới (thời gian) và trục
 // phải (giá trị) — giống hệt cách trục thời gian/giá của thẻ CHART hiển thị,
 // thay vì một khung nổi bên cạnh điểm như trước.
 // SVG dùng preserveAspectRatio="none" nên trục X/Y có thể co giãn khác tỉ lệ —
-// phải quy đổi toạ độ con trỏ (pixel thật) về hệ toạ độ viewBox (900x360) theo
+// phải quy đổi toạ độ con trỏ (pixel thật) về hệ toạ độ viewBox (kích thước lấy
+// từ _healthLayout.W/H — viewBox co giãn theo khung thật, không còn cố định) theo
 // đúng tỉ lệ co giãn thực tế của từng trục trước khi tính điểm gần nhất.
 function _healthClientX(evt){
   return evt.touches&&evt.touches.length?evt.touches[0].clientX:evt.clientX;
@@ -5572,25 +5582,25 @@ function _healthShowCrosshair(idx){
   if(!_healthLayout)return;
   const g=DOM.healthSvg.querySelector('#health-crosshair');
   if(!g)return;
-  const{h,x,y,T,H,B,L,W,R,vniMin,vniMax}=_healthLayout,p=h[idx];
+  const{h,x,y,T,H,B,L,W,R,vniMin,vniMax,scale=1,fs=10}=_healthLayout,p=h[idx];
   if(!p)return;
   const px=x(idx),py=y(Number(p.score)),band=healthBand(p.score),bottomY=H-B;
   let svg=`<line x1="${px}" x2="${px}" y1="${T}" y2="${bottomY}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".55"/>`;
   svg+=`<line x1="${L}" x2="${W-R}" y1="${py}" y2="${py}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".35"/>`;
-  svg+=`<circle cx="${px}" cy="${py}" r="4.5" fill="${band.fill}" stroke="#fff" stroke-width="1.5"/>`;
+  svg+=`<circle cx="${px}" cy="${py}" r="${(4.5*scale).toFixed(2)}" fill="${band.fill}" stroke="#fff" stroke-width="1.5"/>`;
   // Nhãn thời gian gắn vào trục dưới, ngay dưới đường crosshair dọc
-  const dateW=86,dateH=20;
+  const dateW=Math.round(86*scale),dateH=Math.round(20*scale);
   const dateX=Math.max(L,Math.min(W-R-dateW,px-dateW/2));
-  svg+=`<rect x="${dateX}" y="${bottomY+4}" width="${dateW}" height="${dateH}" rx="4" fill="#0f172a"/><text x="${dateX+dateW/2}" y="${bottomY+18}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600">${p.date}</text>`;
+  svg+=`<rect x="${dateX}" y="${bottomY+4}" width="${dateW}" height="${dateH}" rx="4" fill="#0f172a"/><text x="${dateX+dateW/2}" y="${bottomY+4+dateH/2+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="600">${p.date}</text>`;
   // Nhãn giá trị (score) gắn vào trục phải, ngang với đường crosshair ngang
-  const valW=34,valH=20;
-  svg+=`<rect x="${W-R+8}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+8+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
+  const valW=Math.round(34*scale),valH=Math.round(20*scale);
+  svg+=`<rect x="${W-R+8}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+8+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
   // Nếu đang bật overlay VNINDEX và điểm này có dữ liệu → thêm đường ngang + nhãn trục phải riêng cho VNINDEX
   const vRaw=Number(p.vnindex);
   if(_healthShowVni&&Number.isFinite(vRaw)&&Number.isFinite(vniMax)&&vniMax>vniMin){
     const py2=y(((vRaw-vniMin)/(vniMax-vniMin))*100);
     svg+=`<line x1="${L}" x2="${W-R}" y1="${py2}" y2="${py2}" stroke="#f97316" stroke-width="1" stroke-dasharray="2,2" opacity=".6"/>`;
-    svg+=`<circle cx="${px}" cy="${py2}" r="4" fill="#f97316" stroke="#fff" stroke-width="1.5"/>`;
+    svg+=`<circle cx="${px}" cy="${py2}" r="${(4*scale).toFixed(2)}" fill="#f97316" stroke="#fff" stroke-width="1.5"/>`;
   }
   g.style.display='';
   g.innerHTML=svg;
@@ -5689,6 +5699,15 @@ if(DOM.healthVniCheckbox){
     _healthRenderWindow();
   });
 }
+// viewBox được tính theo kích thước khung thật (xem _healthRenderWindow) nên khi
+// khung đổi kích thước (resize cửa sổ, thu/mở panel...) cần vẽ lại để không bị
+// lệch tỉ lệ; debounce nhẹ để không vẽ lại liên tục trong lúc đang kéo resize.
+let _healthResizeTimer=null;
+window.addEventListener('resize',()=>{
+  if(!_healthFullHistory.length)return;
+  clearTimeout(_healthResizeTimer);
+  _healthResizeTimer=setTimeout(_healthRenderWindow,150);
+});
 function renderHealth(data){
   const d=data||{};
   if(!d.ok){
