@@ -1739,13 +1739,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-meta{margin-top:6px;font-size:13px;color:var(--muted)}
 .health-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .health-tag{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:4px 8px;color:#334155;background:#f8fafc}
-.health-components{display:none}
-.health-comp{border:1px solid var(--border);border-radius:6px;padding:6px;background:#fff}
-.health-comp-head{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--muted)}
-.health-comp-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.health-comp-val{font-weight:700;color:var(--text)}
-.health-comp-bar{height:5px;border-radius:999px;background:#edf2f7;margin-top:5px;overflow:hidden}
-.health-comp-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#7dd3fc,#facc15,#22c55e,#a855f7)}
 .health-analysis{border:1px solid var(--border);border-radius:8px;padding:18px 20px;background:#fff;min-height:120px;display:flex;flex-direction:column;justify-content:center}
 .health-analysis-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
 .health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:1.65;margin:0 0 12px;color:#1f2937}
@@ -2024,7 +2017,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .hmap-ts-wrap::-webkit-scrollbar{display:none}
   .health-layout{grid-template-columns:1fr}
   .health-chartbox{height:280px}
-  .health-components{grid-template-columns:1fr}
   .health-score{font-size:36px}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
@@ -2562,7 +2554,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             </div>
             <div class="health-tags" id="health-tags"></div>
           </div>
-          <div class="health-components" id="health-components"></div>
           <div class="health-analysis" id="health-analysis">
             <div class="health-analysis-title">Nhận định</div>
             <div class="health-empty">Đang tải dữ liệu HEALTH...</div>
@@ -2736,7 +2727,7 @@ const DOM={
   marketPanel:$('market-panel'),marketToggle:$('market-toggle'),
   healthPanel:$('health-panel'),healthToggle:$('health-toggle'),healthVniCheckbox:$('health-vni-checkbox'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
-  healthDate:$('health-date'),healthTags:$('health-tags'),healthComponents:$('health-components'),
+  healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
   sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
@@ -5498,8 +5489,14 @@ function _healthRenderWindow(){
   const aspect=(rectBox.width>0&&rectBox.height>0)?rectBox.height/rectBox.width:(360/900);
   const W=900,H=Math.round(Math.min(720,Math.max(320,W*aspect)));
   const scale=H/360;
-  const L=Math.round(52*scale),R=Math.round(112*scale),T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
+  // L/R (lề trái/phải) giữ cố định — không co theo `scale` (vốn phản ánh tỉ lệ
+  // CAO/rộng của khung, không phải độ rộng thật) để khỏi ăn vào vùng dải màu
+  // làm khung trông "co ngang lại", đồng thời giữ đúng vị trí checkbox VNINDEX
+  // (đặt theo % cố định, tính sẵn khớp với R=112) thẳng cột với nhãn "Hưng phấn".
+  const L=52,R=112,T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
   const fs=Math.max(9,Math.round(10*scale));
+  // Chừa khoảng đệm 2 bên để đường line không chạm sát mép trái/phải của khung.
+  const padX=16;
   DOM.healthSvg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const bands=[
     {from:80,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
@@ -5509,7 +5506,7 @@ function _healthRenderWindow(){
     {from:0,to:20,c1:'#e0f2fe',c2:'#0284c7',label:'Sợ hãi'},
   ];
   const y=v=>T+(100-v)/100*plotH;
-  const x=i=>L+(h.length===1?plotW:plotW*i/(h.length-1));
+  const x=i=>L+padX+(h.length===1?(plotW-2*padX):(plotW-2*padX)*i/(h.length-1));
   const defs=bands.map((b,i)=>`<linearGradient id="healthBand${i}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${b.c2}" stop-opacity=".30"/><stop offset="1" stop-color="${b.c1}" stop-opacity=".74"/></linearGradient>`).join('');
   const rects=bands.map((b,i)=>{
     const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
@@ -5520,8 +5517,9 @@ function _healthRenderWindow(){
   // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi
   // ngưỡng phân vùng màu ở trên — hai việc khác nhau.
   const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${v}</text>`).join('');
+  const lineW=(1.75*scale).toFixed(2); // HEALTH và VNINDEX dùng chung độ dày nét
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
-  const area=`${L},${y(0)} ${pts} ${W-R},${y(0)}`;
+  const area=`${x(0)},${y(0)} ${pts} ${x(h.length-1)},${y(0)}`;
   // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
   // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
   // vẫn hiển thị đúng số khi xem qua crosshair (xem _healthShowCrosshair).
@@ -5538,7 +5536,7 @@ function _healthRenderWindow(){
         else{if(cur.length>1)segs.push(cur);cur=[];}
       });
       if(cur.length>1)segs.push(cur);
-      vniPolyline=segs.map(seg=>`<polyline points="${seg.join(' ')}" fill="none" stroke="#f97316" stroke-width="${(1.75*scale).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
+      vniPolyline=segs.map(seg=>`<polyline points="${seg.join(' ')}" fill="none" stroke="#f97316" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
     }
   }
   // Trục X: nhiều mốc thời gian dọc theo trục thay vì chỉ đầu/cuối
@@ -5548,8 +5546,8 @@ function _healthRenderWindow(){
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
     return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${h[i].date}</text>`;
   }).join('');
-  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${(2.5*scale).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
-  _healthLayout={h,L,R,T,B,H,W,plotW,plotH,x,y,vniMin,vniMax,scale,fs};
+  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
+  _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
 }
 // ── Crosshair khi di chuột/chạm: nhãn gắn vào trục dưới (thời gian) và trục
 // phải (giá trị) — giống hệt cách trục thời gian/giá của thẻ CHART hiển thị,
@@ -5561,36 +5559,49 @@ function _healthRenderWindow(){
 function _healthClientX(evt){
   return evt.touches&&evt.touches.length?evt.touches[0].clientX:evt.clientX;
 }
-function _healthIdxFromEvent(evt){
+// Quy đổi toạ độ con trỏ (pixel thật) sang hệ toạ độ viewBox hiện tại của chart —
+// dùng chung cho cả việc tìm điểm gần nhất (hover) và kiểm tra chuột có đang ở
+// trong vùng dải màu hay không (chỉ zoom trong vùng đó).
+function _healthEventToSvgPoint(evt){
   if(!_healthLayout)return null;
   const cx=_healthClientX(evt);
-  if(cx==null)return null;
+  const cy=evt.touches&&evt.touches.length?evt.touches[0].clientY:evt.clientY;
+  if(cx==null||cy==null)return null;
   const rect=DOM.healthSvg.getBoundingClientRect();
-  if(!rect.width)return null;
-  const scaleX=_healthLayout.W/rect.width;
-  const svgX=(cx-rect.left)*scaleX;
-  const {h,L,plotW}=_healthLayout;
+  if(!rect.width||!rect.height)return null;
+  const{W,H}=_healthLayout;
+  return{x:(cx-rect.left)*(W/rect.width),y:(cy-rect.top)*(H/rect.height)};
+}
+function _healthIdxFromEvent(evt){
+  if(!_healthLayout)return null;
+  const pt=_healthEventToSvgPoint(evt);
+  if(!pt)return null;
+  const {h,L,plotW,padX}=_healthLayout;
   if(!h.length)return null;
-  const ratio=Math.min(1,Math.max(0,(svgX-L)/plotW));
+  const usableW=plotW-2*padX;
+  const ratio=usableW>0?Math.min(1,Math.max(0,(pt.x-L-padX)/usableW)):0;
   return Math.min(h.length-1,Math.max(0,Math.round(ratio*(h.length-1))));
 }
 function _healthShowCrosshair(idx){
   if(!_healthLayout)return;
   const g=DOM.healthSvg.querySelector('#health-crosshair');
   if(!g)return;
-  const{h,x,y,T,H,B,L,W,R,vniMin,vniMax,scale=1,fs=10}=_healthLayout,p=h[idx];
+  const{h,x,y,T,H,B,L,W,R,vniMin,vniMax,scale=1}=_healthLayout,p=h[idx];
   if(!p)return;
   const px=x(idx),py=y(Number(p.score)),band=healthBand(p.score),bottomY=H-B;
+  // Nhãn hover (thời gian/giá trị) dùng cỡ chữ + khung riêng, nhỏ hơn nhãn trục,
+  // để không bị to quá khổ khi khung chart giãn cao.
+  const crossFs=Math.max(8,Math.round(8*scale));
   let svg=`<line x1="${px}" x2="${px}" y1="${T}" y2="${bottomY}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".55"/>`;
   svg+=`<line x1="${L}" x2="${W-R}" y1="${py}" y2="${py}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".35"/>`;
   svg+=`<circle cx="${px}" cy="${py}" r="${(4.5*scale).toFixed(2)}" fill="${band.fill}" stroke="#fff" stroke-width="1.5"/>`;
   // Nhãn thời gian gắn vào trục dưới, ngay dưới đường crosshair dọc
-  const dateW=Math.round(86*scale),dateH=Math.round(20*scale);
+  const dateW=Math.round(70*scale),dateH=Math.round(16*scale);
   const dateX=Math.max(L,Math.min(W-R-dateW,px-dateW/2));
-  svg+=`<rect x="${dateX}" y="${bottomY+4}" width="${dateW}" height="${dateH}" rx="4" fill="#0f172a"/><text x="${dateX+dateW/2}" y="${bottomY+4+dateH/2+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="600">${p.date}</text>`;
+  svg+=`<rect x="${dateX}" y="${bottomY+4}" width="${dateW}" height="${dateH}" rx="4" fill="#0f172a"/><text x="${dateX+dateW/2}" y="${bottomY+4+dateH/2+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${crossFs}" font-weight="600">${p.date}</text>`;
   // Nhãn giá trị (score) gắn vào trục phải, ngang với đường crosshair ngang
-  const valW=Math.round(34*scale),valH=Math.round(20*scale);
-  svg+=`<rect x="${W-R+8}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+8+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
+  const valW=Math.round(28*scale),valH=Math.round(16*scale);
+  svg+=`<rect x="${W-R+8}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+8+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${crossFs}" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
   // Nếu đang bật overlay VNINDEX và điểm này có dữ liệu → thêm đường ngang + nhãn trục phải riêng cho VNINDEX
   const vRaw=Number(p.vnindex);
   if(_healthShowVni&&Number.isFinite(vRaw)&&Number.isFinite(vniMax)&&vniMax>vniMin){
@@ -5628,15 +5639,10 @@ function _healthHandlePinch(evt){
 }
 function _healthEventInBands(evt){
   if(!_healthLayout)return false;
-  const cx=_healthClientX(evt);
-  const cy=evt.touches&&evt.touches.length?evt.touches[0].clientY:evt.clientY;
-  if(cx==null||cy==null)return false;
-  const rect=DOM.healthSvg.getBoundingClientRect();
-  if(!rect.width||!rect.height)return false;
+  const pt=_healthEventToSvgPoint(evt);
+  if(!pt)return false;
   const{L,R,T,B,W,H}=_healthLayout;
-  const svgX=(cx-rect.left)*(W/rect.width);
-  const svgY=(cy-rect.top)*(H/rect.height);
-  return svgX>=L&&svgX<=W-R&&svgY>=T&&svgY<=H-B;
+  return pt.x>=L&&pt.x<=W-R&&pt.y>=T&&pt.y<=H-B;
 }
 function _healthOnWheel(evt){
   if(!_healthLayout)return;
@@ -5679,7 +5685,9 @@ function _healthOnMove(evt){
         const scaleX=_healthLayout.W/rect.width;
         // plotW đang ở đơn vị viewBox (900) — quy đổi về pixel thật đang hiển thị
         // bằng cách CHIA cho scaleX (không phải nhân), rồi mới suy ra pxPerPoint.
-        const pxPerPointReal=(_healthLayout.plotW/scaleX)/(_healthWindowLen-1);
+        // Trừ 2*padX vì các điểm dữ liệu chỉ trải trong khoảng đã thu vào theo padX,
+        // không phải toàn bộ plotW (xem padX ở _healthRenderWindow).
+        const pxPerPointReal=((_healthLayout.plotW-2*_healthLayout.padX)/scaleX)/(_healthWindowLen-1);
         // Kéo/vuốt sang trái (dx<0) → xem lịch sử (tăng offset); sang phải → tiến về hiện tại/gần đây.
         let newOffset=Math.round(_healthDrag.startOffset+dx/pxPerPointReal);
         newOffset=Math.max(0,Math.min(maxOffset,newOffset));
@@ -5724,7 +5732,6 @@ function renderHealth(data){
     DOM.healthLabel.textContent='--';
     DOM.healthDate.textContent='--';
     DOM.healthTags.innerHTML='';
-    DOM.healthComponents.innerHTML='';
     DOM.healthAnalysis.innerHTML='<div class="health-analysis-title">Nhận định</div><div class="health-empty">'+healthEsc(d.message||'Chưa có dữ liệu HEALTH')+'</div>';
     renderHealthChart([]);
     return;
@@ -5742,10 +5749,6 @@ function renderHealth(data){
   DOM.healthLabel.textContent=band.label||localBand.label;
   DOM.healthDate.textContent=`Phiên ${d.as_of||'--'} • ${delta>=0?'+':''}${delta.toFixed(1)} điểm`;
   DOM.healthTags.innerHTML=(d.tags||[]).map(t=>`<span class="health-tag">${healthEsc(t)}</span>`).join('');
-  DOM.healthComponents.innerHTML=(d.components||[]).map(c=>{
-    const val=Number(c.score),pct=Number.isFinite(val)?Math.max(0,Math.min(100,val)):0;
-    return `<div class="health-comp"><div class="health-comp-head"><span class="health-comp-name">${healthEsc(c.label)}</span><span class="health-comp-val">${Number.isFinite(val)?val.toFixed(1):'--'}</span></div><div class="health-comp-bar"><div class="health-comp-fill" style="width:${pct}%"></div></div></div>`;
-  }).join('');
   const a=d.analysis||{};
   DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
   renderHealthChart(d.history||[]);
@@ -5921,7 +5924,12 @@ DOM.sankeyToggle.addEventListener('click',()=>{
   DOM.sankeyWrap.hidden=collapsed;
 });
 DOM.healthToggle.addEventListener('click',()=>{
-  DOM.healthPanel.classList.toggle('collapsed');
+  const collapsed=DOM.healthPanel.classList.toggle('collapsed');
+  // Panel vừa mở lại sau khi bị ẩn (display:none) — lúc render trước đó (fetchHealth
+  // lúc init, hoặc khi panel còn thu gọn) getBoundingClientRect() trả về 0x0 nên chart
+  // bị vẽ với tỉ lệ mặc định sai (xem _healthRenderWindow). Vẽ lại ngay khi khung đã
+  // có kích thước thật, giống cách panel CHART xử lý ở liteChartToggle.
+  if(!collapsed&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
 });
 DOM.marketToggle.addEventListener('click',()=>{
   DOM.marketPanel.classList.toggle('collapsed');
