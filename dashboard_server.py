@@ -1725,12 +1725,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-panel.collapsed .health-body,
 .health-panel.collapsed>.pbar-wrap{display:none}
 .health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
-.health-vni-toggle{position:absolute;top:8px;left:10px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:rgba(255,255,255,.9);padding:4px 9px;border-radius:12px;border:1px solid var(--border);cursor:pointer;user-select:none}
+.health-vni-toggle{position:absolute;top:6%;left:10px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:rgba(255,255,255,.9);padding:4px 9px;border-radius:12px;border:1px solid var(--border);cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
 .health-body{padding:12px 14px;background:#fff}
 .health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
-.health-chartbox{height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
+.health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:grid;grid-template-rows:auto auto 1fr;gap:10px;min-width:0}
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:12px;background:#fbfcff}
 .health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -2546,7 +2546,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <div class="health-chartbox">
           <label class="health-vni-toggle" id="health-vni-toggle" title="Hiện/ẩn đường VNINDEX để đối chiếu">
             <input type="checkbox" id="health-vni-checkbox">
-            <span class="health-vni-swatch"></span>So sánh VNINDEX
+            <span class="health-vni-swatch"></span>VNINDEX
           </label>
           <svg class="health-svg" id="health-svg" viewBox="0 0 900 360" preserveAspectRatio="none"></svg>
         </div>
@@ -5582,7 +5582,7 @@ function _healthShowCrosshair(idx){
   const dateX=Math.max(L,Math.min(W-R-dateW,px-dateW/2));
   svg+=`<rect x="${dateX}" y="${bottomY+4}" width="${dateW}" height="${dateH}" rx="4" fill="#0f172a"/><text x="${dateX+dateW/2}" y="${bottomY+18}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600">${p.date}</text>`;
   // Nhãn giá trị (score) gắn vào trục phải, ngang với đường crosshair ngang
-  const valW=R-6,valH=20;
+  const valW=34,valH=20;
   svg+=`<rect x="${W-R+2}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+2+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
   // Nếu đang bật overlay VNINDEX và điểm này có dữ liệu → thêm đường ngang + nhãn trục phải riêng cho VNINDEX
   const vRaw=Number(p.vnindex);
@@ -5590,7 +5590,6 @@ function _healthShowCrosshair(idx){
     const py2=y(((vRaw-vniMin)/(vniMax-vniMin))*100);
     svg+=`<line x1="${L}" x2="${W-R}" y1="${py2}" y2="${py2}" stroke="#f97316" stroke-width="1" stroke-dasharray="2,2" opacity=".6"/>`;
     svg+=`<circle cx="${px}" cy="${py2}" r="4" fill="#f97316" stroke="#fff" stroke-width="1.5"/>`;
-    svg+=`<rect x="${W-R+2}" y="${py2-valH/2}" width="${valW}" height="${valH}" rx="4" fill="#f97316"/><text x="${W-R+2+valW/2}" y="${py2+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">${vRaw.toLocaleString('vi-VN',{maximumFractionDigits:2})}</text>`;
   }
   g.style.display='';
   g.innerHTML=svg;
