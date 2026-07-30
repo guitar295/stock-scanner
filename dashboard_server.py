@@ -1731,7 +1731,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-body{padding:12px 14px;background:#fff}
 .health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
-.health-side{display:grid;grid-template-rows:auto auto 1fr;gap:10px;min-width:0}
+.health-side{display:grid;grid-template-rows:auto 1fr;gap:10px;min-width:0}
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:12px;background:#fbfcff}
 .health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .health-score{font-family:var(--font-ui);font-size:42px;line-height:.9;font-weight:800;color:var(--accent);letter-spacing:0}
@@ -1739,7 +1739,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-meta{margin-top:5px;font-size:10px;color:var(--muted)}
 .health-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .health-tag{font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:3px 6px;color:#334155;background:#f8fafc}
-.health-components{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.health-components{display:none}
 .health-comp{border:1px solid var(--border);border-radius:6px;padding:6px;background:#fff}
 .health-comp-head{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--muted)}
 .health-comp-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
