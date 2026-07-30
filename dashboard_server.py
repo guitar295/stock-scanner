@@ -1066,7 +1066,7 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Full Chart — __SYMBOL__</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <script>
 try{
   const qs=new URLSearchParams(window.location.search);
@@ -1334,7 +1334,7 @@ JOURNAL_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Note</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1593,7 +1593,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Scanner Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════
    VARIABLES & RESET
@@ -1725,7 +1725,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-panel.collapsed .health-body,
 .health-panel.collapsed>.pbar-wrap{display:none}
 .health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
-.health-vni-toggle{position:absolute;top:6%;left:10px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:rgba(255,255,255,.9);padding:4px 9px;border-radius:12px;border:1px solid var(--border);cursor:pointer;user-select:none}
+.health-vni-toggle{position:absolute;top:4px;left:10px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:rgba(255,255,255,.9);padding:4px 9px;border-radius:12px;border:1px solid var(--border);cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
 .health-body{padding:12px 14px;background:#fff}
@@ -1735,7 +1735,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:12px;background:#fbfcff}
 .health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .health-score{font-family:var(--font-ui);font-size:42px;line-height:.9;font-weight:800;color:var(--accent);letter-spacing:0}
-.health-label{font-family:var(--font-ui);font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--text)}
+.health-label{font-family:var(--font-ui);font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent)}
 .health-meta{margin-top:5px;font-size:10px;color:var(--muted)}
 .health-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .health-tag{font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:3px 6px;color:#334155;background:#f8fafc}
@@ -1748,8 +1748,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-comp-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#7dd3fc,#facc15,#22c55e,#a855f7)}
 .health-analysis{border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;min-height:120px}
 .health-analysis-title{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
-.health-analysis p{font-size:11px;line-height:1.45;margin:0 0 6px;color:#1f2937}
-.health-analysis ul{margin:0 0 7px 16px;color:#4b5563;font-size:10.5px;line-height:1.45}
+.health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:11px;line-height:1.45;margin:0 0 6px;color:#1f2937}
+.health-analysis ul{margin:0 0 7px 16px;color:#4b5563;font-size:10.5px;line-height:1.45;font-family:'IBM Plex Sans',sans-serif}
 .health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
 .sankey-panel .panel-hdr{cursor:pointer;user-select:none}
 .sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
@@ -5583,7 +5583,7 @@ function _healthShowCrosshair(idx){
   svg+=`<rect x="${dateX}" y="${bottomY+4}" width="${dateW}" height="${dateH}" rx="4" fill="#0f172a"/><text x="${dateX+dateW/2}" y="${bottomY+18}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600">${p.date}</text>`;
   // Nhãn giá trị (score) gắn vào trục phải, ngang với đường crosshair ngang
   const valW=34,valH=20;
-  svg+=`<rect x="${W-R+2}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+2+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
+  svg+=`<rect x="${W-R+8}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+8+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
   // Nếu đang bật overlay VNINDEX và điểm này có dữ liệu → thêm đường ngang + nhãn trục phải riêng cho VNINDEX
   const vRaw=Number(p.vnindex);
   if(_healthShowVni&&Number.isFinite(vRaw)&&Number.isFinite(vniMax)&&vniMax>vniMin){
@@ -6741,7 +6741,7 @@ function _buildPopoutHTML(initSym){
   return '<!DOCTYPE html><html><head>'
     +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
     +'<title>Chart \u2014 '+initSym+'</title>'
-    +'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">'
+    +'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">'
     +'<style>'
     +'*{margin:0;padding:0;box-sizing:border-box}'
     +':root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:\'IBM Plex Mono\',monospace;--font-ui:\'Barlow Condensed\',sans-serif}'
