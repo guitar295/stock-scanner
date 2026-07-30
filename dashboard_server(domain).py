@@ -28,6 +28,7 @@ _get_momentum_today = None
 _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
+_fetch_market_health_fn = None
 _fetch_chart_fn = None
 _fetch_chart_15m_fn = None
 _ensure_chart_symbol_fn = None
@@ -38,7 +39,57 @@ _signal_rank = {}
 _heatmap_cache = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock = threading.Lock()
 HEATMAP_TTL_SEC = 120
+MARKET_HEALTH_TTL_SEC = 1800
 SIGNAL_TTL_SEC = 10
+
+_market_health_cache = {"data": {}, "updated_at": 0}
+_market_health_lock = threading.Lock()
+
+
+def _refresh_market_health(force: bool = False) -> dict:
+    """
+    Tính lại HEALTH và ghi vào _market_health_cache — dùng chung cho endpoint
+    /api/market_health VÀ cho lệnh "warm" cache chủ động lúc khởi động.
+
+    QUAN TRỌNG: chỉ cập nhật "updated_at" (mốc coi cache là "mới") khi kết quả
+    tính ra THỰC SỰ hợp lệ (data.get("ok") is True). Nếu compute_market_health_index()
+    trả lỗi (ví dụ "0 mã hợp lệ" do history_cache chưa kịp load xong) thì KHÔNG
+    đóng dấu "mới" — để lần gọi kế tiếp (dù chỉ vài giây sau) vẫn coi cache là
+    hết hạn và thử tính lại ngay, thay vì phải chờ đủ MARKET_HEALTH_TTL_SEC (30 phút)
+    mới được tính lại dù cache lịch sử lúc đó đã sẵn sàng từ lâu.
+    """
+    if not _fetch_market_health_fn:
+        return _market_health_cache["data"]
+    now = time.time()
+    with _market_health_lock:
+        stale = now - _market_health_cache["updated_at"] > MARKET_HEALTH_TTL_SEC
+        if not (force or stale):
+            return _market_health_cache["data"]
+        try:
+            data = _fetch_market_health_fn()
+            _market_health_cache["data"] = data
+            if data.get("ok"):
+                _market_health_cache["updated_at"] = time.time()
+        except Exception as e:
+            print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
+            # Không ghi đè "data" bằng lỗi cứng ở đây — giữ lại dữ liệu HEALTH
+            # hợp lệ gần nhất (nếu có) để dashboard không "trắng" panel; đồng thời
+            # KHÔNG cập nhật updated_at nên lần gọi sau sẽ tự thử lại.
+        return _market_health_cache["data"]
+
+
+def warm_market_health_cache():
+    """
+    Chủ động tính HEALTH ngay (không chờ request đầu tiên từ client) — gọi hàm
+    này NGAY SAU khi history_cache đã load xong (build_history_cache hoàn tất),
+    để dashboard luôn có sẵn dữ liệu HEALTH đúng ngay từ lượt xem đầu tiên,
+    thay vì phải đợi client tự trigger tính toán rồi TTL 30 phút mới thử lại.
+    """
+    data = _refresh_market_health(force=True)
+    ok = bool(data.get("ok"))
+    print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
+          f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
+    return data
 
 _chart_cache: dict = {}
 _chart_lock = threading.Lock()
@@ -461,6 +512,16 @@ def api_heatmap():
         "cached_age": int(now - snap_time),
     })
 
+@app.route("/api/market_health")
+def api_market_health():
+    data = _refresh_market_health()
+    with _market_health_lock:
+        snap_time = _market_health_cache["updated_at"]
+    payload = dict(data or {})
+    payload["cached_age"] = int(time.time() - snap_time) if snap_time else 0
+    payload["ttl_sec"] = MARKET_HEALTH_TTL_SEC
+    return jsonify(_json_safe(payload))
+
 @app.route("/api/chart_images/<symbol>")
 def api_chart_images(symbol):
     symbol = symbol.upper().strip()
@@ -576,7 +637,8 @@ def api_chart_cache_clear(symbol):
 @app.route("/api/config")
 def api_config():
     return jsonify({"signal_ttl_sec": SIGNAL_TTL_SEC,
-                    "heatmap_ttl_sec": HEATMAP_TTL_SEC})
+                    "heatmap_ttl_sec": HEATMAP_TTL_SEC,
+                    "market_health_ttl_sec": MARKET_HEALTH_TTL_SEC})
 
 @app.route("/api/alerts", methods=["GET", "POST"])
 def api_alerts():
@@ -970,14 +1032,15 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_chart_fn=None, fetch_chart_15m_fn=None,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
-                    momentum_today_ref=None, port=8888):
+                    momentum_today_ref=None, fetch_market_health_fn=None, port=8888):
     global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
+    _fetch_market_health_fn = fetch_market_health_fn
     _fetch_chart_fn    = fetch_chart_fn
     _fetch_chart_15m_fn = fetch_chart_15m_fn
     _ensure_chart_symbol_fn = ensure_chart_symbol_fn
@@ -992,7 +1055,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
 
     threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
+    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
 
 # =============================================================================
 # POPOUT FULL HTML
@@ -1003,7 +1066,7 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Full Chart — __SYMBOL__</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <script>
 try{
   const qs=new URLSearchParams(window.location.search);
@@ -1271,7 +1334,7 @@ JOURNAL_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Note</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1530,7 +1593,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Scanner Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════
    VARIABLES & RESET
@@ -1656,10 +1719,38 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
-.sankey-panel .panel-hdr{cursor:pointer;user-select:none}
-.sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
-.sankey-panel.collapsed .sankey-wrap{display:none}
-.sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
+.tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
+.tri-tabs{display:flex;align-items:center;gap:4px}
+.tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;padding:3px 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
+.tri-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
+.tri-tab.on{color:var(--accent);font-weight:800}
+.tri-toggle{font-size:12px;color:var(--muted);transition:transform .15s;margin-left:auto}
+.tri-panel:not(.collapsed) .tri-toggle{transform:rotate(90deg);color:var(--accent)}
+.tri-panel.collapsed .tri-tabs,
+.tri-panel.collapsed>.tri-body{display:none}
+.tri-content{display:none}
+.tri-content.on{display:block}
+.health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
+.health-vni-toggle{position:absolute;top:6px;left:88.4%;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
+.health-vni-toggle input{margin:0;cursor:pointer}
+.health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
+.health-body{padding:12px 14px;background:#fff}
+.health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
+.health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
+.health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
+.health-score-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:#fbfcff}
+.health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.health-score{font-family:var(--font-ui);font-size:56px;line-height:.9;font-weight:800;color:var(--accent);letter-spacing:0}
+.health-label{font-family:var(--font-ui);font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent)}
+.health-meta{margin-top:6px;font-size:13px;color:var(--muted)}
+.health-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.health-tag{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:4px 8px;color:#334155;background:#f8fafc}
+.health-analysis{border:1px solid var(--border);border-radius:8px;padding:18px 20px;background:#fff;min-height:120px;display:flex;flex-direction:column;justify-content:center}
+.health-analysis-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+.health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:1.65;margin:0 0 12px;color:#1f2937}
+.health-analysis ul{margin:0 0 12px 20px;color:#374151;font-size:14.5px;line-height:1.65;font-family:'IBM Plex Sans',sans-serif}
+.health-analysis li{margin-bottom:5px}
+.health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -1922,6 +2013,9 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     -webkit-overflow-scrolling:touch;
   }
   .hmap-ts-wrap::-webkit-scrollbar{display:none}
+  .health-layout{grid-template-columns:1fr}
+  .health-chartbox{height:280px}
+  .health-score{font-size:36px}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
@@ -1942,7 +2036,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     height:auto;
   }
   .market-frame{height:70vh}
-  #market-panel{display:none !important;}
+  .tri-tabs [data-tab="fireant"],
+  #tri-content-fireant{display:none !important}
 
   #lite-chart-panel{display:none !important}
 }
@@ -2431,23 +2526,58 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     </div>
   </div>
 
-  <!-- MARKET -->
-  <div class="panel" id="market-panel">
-    <div class="panel-hdr">
+  <!-- MARKET (Fireant / Mrk Health / Sankey — gộp 1 thẻ, chuyển nội dung bằng tab) -->
+  <div class="panel tri-panel" id="tri-panel">
+    <div class="panel-hdr tri-hdr" id="tri-hdr">
       <span class="panel-title">MARKET</span>
+      <div class="tri-tabs" id="tri-tabs">
+        <span class="tri-tab on" data-tab="fireant">Fireant</span>
+        <span class="tri-tab" data-tab="health">Mrk Health</span>
+        <span class="tri-tab" data-tab="sankey">Sankey</span>
+      </div>
+      <span class="tri-toggle" id="tri-toggle">▶</span>
     </div>
-    <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
-  </div>
-
-  <!-- SANKEY -->
-  <div class="panel sankey-panel collapsed" id="sankey-panel">
-    <div class="panel-hdr" id="sankey-toggle">
-      <span class="panel-title">Sankey</span>
-      <span class="sankey-toggle">▶</span>
+    <div class="tri-body" id="tri-body">
+      <div class="tri-content on" id="tri-content-fireant">
+        <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
+      </div>
+      <div class="tri-content" id="tri-content-health">
+        <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
+        <div class="health-body" id="health-body">
+          <div class="health-layout">
+            <div class="health-chartbox">
+              <label class="health-vni-toggle" id="health-vni-toggle" title="Hiện/ẩn đường VNINDEX để đối chiếu">
+                <input type="checkbox" id="health-vni-checkbox">
+                <span class="health-vni-swatch"></span>VNINDEX
+              </label>
+              <svg class="health-svg" id="health-svg" viewBox="0 0 900 360" preserveAspectRatio="none"></svg>
+            </div>
+            <div class="health-side">
+              <div class="health-score-card">
+                <div class="health-score-top">
+                  <div>
+                    <div class="health-label" id="health-label">--</div>
+                    <div class="health-meta" id="health-date">--</div>
+                  </div>
+                  <div class="health-score" id="health-score">--</div>
+                </div>
+                <div class="health-tags" id="health-tags"></div>
+              </div>
+              <div class="health-analysis" id="health-analysis">
+                <div class="health-analysis-title">Nhận định</div>
+                <div class="health-empty">Đang tải dữ liệu HEALTH...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tri-content" id="tri-content-sankey">
+        <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+      </div>
     </div>
-    <div class="sankey-wrap" id="sankey-wrap" hidden><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 </div>
+
 
 <!-- TRADE JOURNAL -->
 <div class="journal-overlay" id="journal-overlay">
@@ -2591,7 +2721,12 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
-  sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
+  triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),triToggle:$('tri-toggle'),
+  healthVniCheckbox:$('health-vni-checkbox'),
+  healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
+  healthDate:$('health-date'),healthTags:$('health-tags'),
+  healthAnalysis:$('health-analysis'),
+  sankeyWrap:$('sankey-wrap'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
@@ -2632,7 +2767,7 @@ const DOM={
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
   liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
-  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),
+  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   // Desktop popup header
@@ -2682,7 +2817,7 @@ const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
 // SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
-let SIG_TTL=30,HMAP_TTL=120;
+let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
 const FOLLOW_ON_KEY='dashboard_follow_on';
@@ -5295,6 +5430,353 @@ DOM.signalHeader.addEventListener('click',e=>{
   DOM.momentumBox.classList.toggle('on');
 });
 // ═══════════════════════════════════════════════════════
+// MARKET HEALTH RENDER
+// ═══════════════════════════════════════════════════════
+function healthEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function healthBand(score){
+  const s=Number(score);
+  if(s>=80)return{label:'Hưng phấn',fill:'#7e22ce'};
+  if(s>=60)return{label:'Tích cực',fill:'#16a34a'};
+  if(s>=40)return{label:'Trung tính',fill:'#ca8a04'};
+  if(s>=20)return{label:'Tiêu cực',fill:'#dc2626'};
+  return{label:'Sợ hãi',fill:'#0284c7'};
+}
+// ── State cửa sổ xem + zoom của biểu đồ HEALTH ──────────────────────────────
+// Backend trả về nhiều phiên hơn (xem compute_market_health_index limit=120)
+// so với số điểm hiển thị mặc định — phần dư dùng để kéo/vuốt xem quá khứ và
+// để zoom (thu hẹp/mở rộng số điểm hiển thị) mà không cần gọi thêm API.
+const HEALTH_DEFAULT_WINDOW=30;
+const HEALTH_MIN_WINDOW=10;
+let _healthFullHistory=[];      // toàn bộ lịch sử tải về gần nhất từ /api/market_health
+let _healthOffset=0;            // số điểm lùi về quá khứ so với điểm mới nhất (0 = đang xem mới nhất)
+let _healthWindowLen=HEALTH_DEFAULT_WINDOW; // số điểm đang hiển thị (thay đổi khi zoom)
+let _healthLayout=null;         // toạ độ của lần vẽ khung gần nhất, dùng để tính crosshair/zoom mà không phải vẽ lại toàn bộ SVG
+let _healthShowVni=false;       // có đang bật overlay VNINDEX để đối chiếu không
+function renderHealthChart(history){
+  // Mỗi lần có dữ liệu mới (poll định kỳ) thì quay lại xem đúng phiên mới nhất,
+  // tránh trường hợp đang xem lịch sử cũ thì bị dữ liệu mới "kéo" lệch cửa sổ.
+  // Mức zoom (_healthWindowLen) được giữ nguyên qua các lần refresh.
+  _healthFullHistory=(history||[]).filter(p=>Number.isFinite(Number(p.score)));
+  _healthOffset=0;
+  _healthRenderWindow();
+}
+function _healthClampWindow(len){
+  const total=_healthFullHistory.length||1;
+  const lo=Math.min(HEALTH_MIN_WINDOW,total),hi=total;
+  return Math.min(hi,Math.max(lo,Math.round(len)));
+}
+function _healthRenderWindow(){
+  const total=_healthFullHistory.length;
+  if(!total){
+    DOM.healthSvg.innerHTML='<foreignObject x="0" y="0" width="900" height="360"><div class="health-empty">Chưa có dữ liệu HEALTH</div></foreignObject>';
+    _healthLayout=null;
+    return;
+  }
+  const windowLen=_healthClampWindow(_healthWindowLen);
+  _healthWindowLen=windowLen;
+  const end=total-_healthOffset;
+  const start=Math.max(0,end-windowLen);
+  const h=_healthFullHistory.slice(start,end);
+  // Khung chart giờ được CSS Grid kéo cao bằng khung phân tích bên phải (thay vì
+  // cố định 328px) → viewBox phải tính lại theo ĐÚNG tỉ lệ thật của khung (thay vì
+  // cố định 900x360) để scale ngang/dọc bằng nhau, tránh chữ bị kéo cao méo dạng;
+  // đồng thời mọi cỡ chữ/lề/nét vẽ cũng lớn lên tương ứng với tỉ lệ khung mới cho
+  // cân đối, thay vì giữ nguyên kích thước gốc trong một khung lớn hơn.
+  const rectBox=DOM.healthSvg.getBoundingClientRect();
+  const aspect=(rectBox.width>0&&rectBox.height>0)?rectBox.height/rectBox.width:(360/900);
+  const W=900,H=Math.round(Math.min(720,Math.max(320,W*aspect)));
+  const scale=H/360;
+  // L/R (lề trái/phải) giữ cố định — không co theo `scale` (vốn phản ánh tỉ lệ
+  // CAO/rộng của khung, không phải độ rộng thật) để khỏi ăn vào vùng dải màu
+  // làm khung trông "co ngang lại", đồng thời giữ đúng vị trí checkbox VNINDEX
+  // (đặt theo % cố định, tính sẵn khớp với R=112) thẳng cột với nhãn "Hưng phấn".
+  const L=52,R=112,T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
+  const fs=Math.max(9,Math.round(10*scale));
+  // Chừa khoảng đệm 2 bên để đường line không chạm sát mép trái/phải của khung.
+  const padX=16;
+  DOM.healthSvg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const bands=[
+    {from:80,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
+    {from:60,to:80,c1:'#dcfce7',c2:'#16a34a',label:'Tích cực'},
+    {from:40,to:60,c1:'#fef9c3',c2:'#ca8a04',label:'Trung tính'},
+    {from:20,to:40,c1:'#fee2e2',c2:'#dc2626',label:'Tiêu cực'},
+    {from:0,to:20,c1:'#e0f2fe',c2:'#0284c7',label:'Sợ hãi'},
+  ];
+  const y=v=>T+(100-v)/100*plotH;
+  const x=i=>L+padX+(h.length===1?(plotW-2*padX):(plotW-2*padX)*i/(h.length-1));
+  const defs=bands.map((b,i)=>`<linearGradient id="healthBand${i}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${b.c2}" stop-opacity=".30"/><stop offset="1" stop-color="${b.c1}" stop-opacity=".74"/></linearGradient>`).join('');
+  const rects=bands.map((b,i)=>{
+    const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
+    // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải),
+    // giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
+    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="700">${b.label}</text>`;
+  }).join('');
+  // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi
+  // ngưỡng phân vùng màu ở trên — hai việc khác nhau.
+  const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${v}</text>`).join('');
+  const lineW=(1.75*scale).toFixed(2); // HEALTH và VNINDEX dùng chung độ dày nét
+  const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
+  // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
+  // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
+  // vẫn hiển thị đúng số khi xem qua crosshair (xem _healthShowCrosshair).
+  let vniPolyline='',vniMin=null,vniMax=null;
+  if(_healthShowVni){
+    const vals=h.map(p=>Number(p.vnindex)).filter(v=>Number.isFinite(v));
+    if(vals.length>=2){
+      vniMin=Math.min(...vals);vniMax=Math.max(...vals);
+      const norm=v=>vniMax>vniMin?10+((v-vniMin)/(vniMax-vniMin))*80:50;
+      let segs=[],cur=[];
+      h.forEach((p,i)=>{
+        const v=Number(p.vnindex);
+        if(Number.isFinite(v))cur.push(`${x(i)},${y(norm(v))}`);
+        else{if(cur.length>1)segs.push(cur);cur=[];}
+      });
+      if(cur.length>1)segs.push(cur);
+      vniPolyline=segs.map(seg=>`<polyline points="${seg.join(' ')}" fill="none" stroke="#f97316" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
+    }
+  }
+  // Trục X: nhiều mốc thời gian dọc theo trục thay vì chỉ đầu/cuối
+  const tickCount=Math.min(6,h.length);
+  const tickIdxs=[...new Set(tickCount<=1?[0]:Array.from({length:tickCount},(_,k)=>Math.round(k*(h.length-1)/(tickCount-1))))];
+  const xLabels=tickIdxs.map(i=>{
+    const anchor=i===0?'start':(i===h.length-1?'end':'middle');
+    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${h[i].date}</text>`;
+  }).join('');
+  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
+  _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
+}
+// ── Crosshair khi di chuột/chạm: nhãn gắn vào trục dưới (thời gian) và trục
+// phải (giá trị) — giống hệt cách trục thời gian/giá của thẻ CHART hiển thị,
+// thay vì một khung nổi bên cạnh điểm như trước.
+// SVG dùng preserveAspectRatio="none" nên trục X/Y có thể co giãn khác tỉ lệ —
+// phải quy đổi toạ độ con trỏ (pixel thật) về hệ toạ độ viewBox (kích thước lấy
+// từ _healthLayout.W/H — viewBox co giãn theo khung thật, không còn cố định) theo
+// đúng tỉ lệ co giãn thực tế của từng trục trước khi tính điểm gần nhất.
+function _healthClientX(evt){
+  return evt.touches&&evt.touches.length?evt.touches[0].clientX:evt.clientX;
+}
+// Quy đổi toạ độ con trỏ (pixel thật) sang hệ toạ độ viewBox hiện tại của chart —
+// dùng chung cho cả việc tìm điểm gần nhất (hover) và kiểm tra chuột có đang ở
+// trong vùng dải màu hay không (chỉ zoom trong vùng đó).
+function _healthEventToSvgPoint(evt){
+  if(!_healthLayout)return null;
+  const cx=_healthClientX(evt);
+  const cy=evt.touches&&evt.touches.length?evt.touches[0].clientY:evt.clientY;
+  if(cx==null||cy==null)return null;
+  const rect=DOM.healthSvg.getBoundingClientRect();
+  if(!rect.width||!rect.height)return null;
+  const{W,H}=_healthLayout;
+  return{x:(cx-rect.left)*(W/rect.width),y:(cy-rect.top)*(H/rect.height)};
+}
+function _healthIdxFromEvent(evt){
+  if(!_healthLayout)return null;
+  const pt=_healthEventToSvgPoint(evt);
+  if(!pt)return null;
+  const {h,L,plotW,padX}=_healthLayout;
+  if(!h.length)return null;
+  const usableW=plotW-2*padX;
+  const ratio=usableW>0?Math.min(1,Math.max(0,(pt.x-L-padX)/usableW)):0;
+  return Math.min(h.length-1,Math.max(0,Math.round(ratio*(h.length-1))));
+}
+function _healthShowCrosshair(idx){
+  if(!_healthLayout)return;
+  const g=DOM.healthSvg.querySelector('#health-crosshair');
+  if(!g)return;
+  const{h,x,y,T,H,B,L,W,R,vniMin,vniMax,scale=1}=_healthLayout,p=h[idx];
+  if(!p)return;
+  const px=x(idx),py=y(Number(p.score)),band=healthBand(p.score),bottomY=H-B;
+  // Nhãn hover (thời gian/giá trị) dùng cỡ chữ + khung riêng, nhỏ hơn nhãn trục,
+  // để không bị to quá khổ khi khung chart giãn cao.
+  const crossFs=Math.max(8,Math.round(8*scale));
+  let svg=`<line x1="${px}" x2="${px}" y1="${T}" y2="${bottomY}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".55"/>`;
+  svg+=`<line x1="${L}" x2="${W-R}" y1="${py}" y2="${py}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".35"/>`;
+  svg+=`<circle cx="${px}" cy="${py}" r="${(4.5*scale).toFixed(2)}" fill="${band.fill}" stroke="#fff" stroke-width="1.5"/>`;
+  // Nhãn thời gian gắn vào trục dưới, ngay dưới đường crosshair dọc
+  const dateW=Math.round(70*scale),dateH=Math.round(16*scale);
+  const dateX=Math.max(L,Math.min(W-R-dateW,px-dateW/2));
+  svg+=`<rect x="${dateX}" y="${bottomY+4}" width="${dateW}" height="${dateH}" rx="4" fill="#0f172a"/><text x="${dateX+dateW/2}" y="${bottomY+4+dateH/2+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${crossFs}" font-weight="600">${p.date}</text>`;
+  // Nhãn giá trị (score) gắn vào trục phải, ngang với đường crosshair ngang
+  const valW=Math.round(28*scale),valH=Math.round(16*scale);
+  svg+=`<rect x="${W-R+8}" y="${py-valH/2}" width="${valW}" height="${valH}" rx="4" fill="${band.fill}"/><text x="${W-R+8+valW/2}" y="${py+4}" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="${crossFs}" font-weight="700">${Number(p.score).toFixed(1)}</text>`;
+  // Nếu đang bật overlay VNINDEX và điểm này có dữ liệu → thêm đường ngang + nhãn trục phải riêng cho VNINDEX
+  const vRaw=Number(p.vnindex);
+  if(_healthShowVni&&Number.isFinite(vRaw)&&Number.isFinite(vniMax)&&vniMax>vniMin){
+    const py2=y(((vRaw-vniMin)/(vniMax-vniMin))*100);
+    svg+=`<line x1="${L}" x2="${W-R}" y1="${py2}" y2="${py2}" stroke="#f97316" stroke-width="1" stroke-dasharray="2,2" opacity=".6"/>`;
+    svg+=`<circle cx="${px}" cy="${py2}" r="${(4*scale).toFixed(2)}" fill="#f97316" stroke="#fff" stroke-width="1.5"/>`;
+  }
+  g.style.display='';
+  g.innerHTML=svg;
+}
+function _healthHideCrosshair(){
+  const g=DOM.healthSvg&&DOM.healthSvg.querySelector('#health-crosshair');
+  if(g)g.style.display='none';
+}
+// ── Zoom: lăn chuột (desktop) + chụm/mở 2 ngón (chạm), giống thao tác zoom trên chart CHART ──
+let _healthPinch=null;
+function _healthTouchDist(evt){
+  if(!evt.touches||evt.touches.length<2)return null;
+  const[a,b]=evt.touches;
+  return Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY);
+}
+function _healthHandlePinch(evt){
+  if(!_healthPinch){_healthPinch={dist:_healthTouchDist(evt),startWindow:_healthWindowLen};return;}
+  const d=_healthTouchDist(evt);
+  if(!d||!_healthPinch.dist)return;
+  // 2 ngón giãn ra (d lớn hơn lúc bắt đầu) → scale<1 → zoom in (hiện ít điểm hơn, chi tiết hơn)
+  const scale=_healthPinch.dist/d;
+  const newLen=_healthClampWindow(_healthPinch.startWindow*scale);
+  if(newLen!==_healthWindowLen){
+    _healthWindowLen=newLen;
+    const total=_healthFullHistory.length,maxOffset=Math.max(0,total-_healthWindowLen);
+    _healthOffset=Math.max(0,Math.min(maxOffset,_healthOffset));
+    _healthRenderWindow();
+  }
+}
+function _healthEventInBands(evt){
+  if(!_healthLayout)return false;
+  const pt=_healthEventToSvgPoint(evt);
+  if(!pt)return false;
+  const{L,R,T,B,W,H}=_healthLayout;
+  return pt.x>=L&&pt.x<=W-R&&pt.y>=T&&pt.y<=H-B;
+}
+function _healthOnWheel(evt){
+  if(!_healthLayout)return;
+  if(!_healthEventInBands(evt))return; // chỉ zoom khi chuột đang ở trong vùng dải màu, không tính trục/lề trắng
+  evt.preventDefault();
+  const factor=evt.deltaY<0?0.85:1/0.85; // lăn lên → zoom in; lăn xuống → zoom out
+  const newLen=_healthClampWindow(_healthWindowLen*factor);
+  if(newLen===_healthWindowLen)return;
+  _healthWindowLen=newLen;
+  const total=_healthFullHistory.length,maxOffset=Math.max(0,total-_healthWindowLen);
+  _healthOffset=Math.max(0,Math.min(maxOffset,_healthOffset));
+  _healthRenderWindow();
+}
+// ── Kéo ngang để xem lịch sử ─────────────────────────────────────────────
+let _healthDrag=null;
+function _healthOnDown(evt){
+  if(!_healthLayout)return;
+  if(evt.touches&&evt.touches.length===2){
+    _healthPinch={dist:_healthTouchDist(evt),startWindow:_healthWindowLen};
+    _healthDrag=null;
+    return;
+  }
+  _healthDrag={startX:_healthClientX(evt),startOffset:_healthOffset,moved:false};
+}
+function _healthOnMove(evt){
+  if(!_healthLayout)return;
+  if(evt.touches&&evt.touches.length===2){
+    _healthHandlePinch(evt);
+    if(evt.cancelable)evt.preventDefault();
+    return;
+  }
+  if(_healthDrag){
+    const cx=_healthClientX(evt);
+    const dx=cx-_healthDrag.startX;
+    if(Math.abs(dx)>3)_healthDrag.moved=true;
+    if(_healthDrag.moved){
+      const total=_healthFullHistory.length,maxOffset=Math.max(0,total-_healthWindowLen);
+      const rect=DOM.healthSvg.getBoundingClientRect();
+      if(rect.width&&_healthWindowLen>1){
+        const scaleX=_healthLayout.W/rect.width;
+        // plotW đang ở đơn vị viewBox (900) — quy đổi về pixel thật đang hiển thị
+        // bằng cách CHIA cho scaleX (không phải nhân), rồi mới suy ra pxPerPoint.
+        // Trừ 2*padX vì các điểm dữ liệu chỉ trải trong khoảng đã thu vào theo padX,
+        // không phải toàn bộ plotW (xem padX ở _healthRenderWindow).
+        const pxPerPointReal=((_healthLayout.plotW-2*_healthLayout.padX)/scaleX)/(_healthWindowLen-1);
+        // Kéo/vuốt sang trái (dx<0) → xem lịch sử (tăng offset); sang phải → tiến về hiện tại/gần đây.
+        let newOffset=Math.round(_healthDrag.startOffset+dx/pxPerPointReal);
+        newOffset=Math.max(0,Math.min(maxOffset,newOffset));
+        if(newOffset!==_healthOffset){_healthOffset=newOffset;_healthRenderWindow();}
+      }
+      if(evt.cancelable)evt.preventDefault();
+      return;
+    }
+  }
+  const idx=_healthIdxFromEvent(evt);
+  if(idx!=null)_healthShowCrosshair(idx);
+}
+function _healthOnUp(){_healthDrag=null;_healthPinch=null;}
+DOM.healthSvg.addEventListener('mousemove',_healthOnMove);
+DOM.healthSvg.addEventListener('mousedown',_healthOnDown);
+DOM.healthSvg.addEventListener('mouseleave',()=>{_healthHideCrosshair();_healthDrag=null;});
+DOM.healthSvg.addEventListener('wheel',_healthOnWheel,{passive:false});
+window.addEventListener('mouseup',_healthOnUp);
+DOM.healthSvg.addEventListener('touchstart',_healthOnDown,{passive:true});
+DOM.healthSvg.addEventListener('touchmove',_healthOnMove,{passive:false});
+DOM.healthSvg.addEventListener('touchend',()=>{_healthHideCrosshair();_healthOnUp();});
+if(DOM.healthVniCheckbox){
+  DOM.healthVniCheckbox.addEventListener('change',()=>{
+    _healthShowVni=!!DOM.healthVniCheckbox.checked;
+    _healthHideCrosshair();
+    _healthRenderWindow();
+  });
+}
+// viewBox được tính theo kích thước khung thật (xem _healthRenderWindow) nên khi
+// khung đổi kích thước (resize cửa sổ, thu/mở panel...) cần vẽ lại để không bị
+// lệch tỉ lệ; debounce nhẹ để không vẽ lại liên tục trong lúc đang kéo resize.
+let _healthResizeTimer=null;
+window.addEventListener('resize',()=>{
+  if(!_healthFullHistory.length)return;
+  clearTimeout(_healthResizeTimer);
+  _healthResizeTimer=setTimeout(_healthRenderWindow,150);
+});
+function renderHealth(data){
+  const d=data||{};
+  if(!d.ok){
+    DOM.healthScore.textContent='--';
+    DOM.healthLabel.textContent='--';
+    DOM.healthDate.textContent='--';
+    DOM.healthTags.innerHTML='';
+    DOM.healthAnalysis.innerHTML='<div class="health-analysis-title">Nhận định</div><div class="health-empty">'+healthEsc(d.message||'Chưa có dữ liệu HEALTH')+'</div>';
+    renderHealthChart([]);
+    return;
+  }
+  const score=Number(d.score),localBand=healthBand(score),band=d.band||localBand,delta=Number(d.delta||0);
+  if(DOM.healthVniCheckbox){
+    DOM.healthVniCheckbox.disabled=!d.vnindex_available;
+    if(!d.vnindex_available&&DOM.healthVniCheckbox.checked){
+      DOM.healthVniCheckbox.checked=false;
+      _healthShowVni=false;
+    }
+  }
+  DOM.healthScore.textContent=Number.isFinite(score)?score.toFixed(1):'--';
+  DOM.healthScore.style.color=localBand.fill;
+  DOM.healthLabel.textContent=band.label||localBand.label;
+  DOM.healthDate.textContent=`Phiên ${d.as_of||'--'} • ${delta>=0?'+':''}${delta.toFixed(1)} điểm`;
+  DOM.healthTags.innerHTML=(d.tags||[]).map(t=>`<span class="health-tag">${healthEsc(t)}</span>`).join('');
+  const a=d.analysis||{};
+  DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
+  renderHealthChart(d.history||[]);
+}
+// Trong lúc hệ thống đang build lại history_cache lúc khởi động (hoặc đầu
+// phiên mới), /api/market_health trả ok:false vì chưa đủ dữ liệu. Thay vì bắt
+// người dùng F5 cả trang để thấy chart khi cache build xong, tự động thử lại
+// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu —
+// một khi đã ok:true thì dừng vòng thử nhanh này, cơ chế làm mới định kỳ theo
+// HEALTH_TTL ở startDashboard() vẫn chạy như cũ, không đổi.
+const HEALTH_RETRY_MS=20000;
+let _healthRetryTimer=null;
+async function fetchHealth(){
+  try{
+    const j=await fetch('/api/market_health').then(r=>r.json());
+    renderHealth(j);
+    if(_healthRetryTimer){clearTimeout(_healthRetryTimer);_healthRetryTimer=null;}
+    if(j.ok){
+      startBar(DOM.pbarHealth,HEALTH_TTL);
+    }else{
+      startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
+      _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
+    }
+  }catch(e){
+    console.error('fetchHealth:',e);
+    renderHealth({ok:false,message:'Không tải được dữ liệu HEALTH'});
+    if(_healthRetryTimer)clearTimeout(_healthRetryTimer);
+    startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
+    _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
+  }
+}
+// ═══════════════════════════════════════════════════════
 // SANKEY RENDER
 // ═══════════════════════════════════════════════════════
 const SANKEY_SECTORS=[];
@@ -5433,10 +5915,36 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   updateSimplize(sym);
   openChart(sym);
 });
-DOM.sankeyToggle.addEventListener('click',()=>{
-  const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
-  DOM.sankeyWrap.hidden=collapsed;
+// ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
+const TRI_TABS=['fireant','health','sankey'];
+function triActivateTab(tab){
+  if(!TRI_TABS.includes(tab))return;
+  DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  TRI_TABS.forEach(t=>{
+    const el=document.getElementById('tri-content-'+t);
+    if(el)el.classList.toggle('on',t===tab);
+  });
+  // Tab HEALTH vẽ chart theo kích thước khung THẬT (getBoundingClientRect) — lúc tab đang ẩn
+  // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
+  // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
+  if(tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+}
+DOM.triTabs.addEventListener('click',e=>{
+  const btn=e.target.closest('.tri-tab');
+  if(!btn)return;
+  triActivateTab(btn.dataset.tab);
 });
+DOM.triHdr.addEventListener('click',e=>{
+  if(e.target.closest('.tri-tab'))return; // bấm vào tên tab không tính là bấm thu/mở cả thẻ
+  const collapsed=DOM.triPanel.classList.toggle('collapsed');
+  if(!collapsed){
+    const activeTab=DOM.triTabs.querySelector('.tri-tab.on');
+    if(activeTab&&activeTab.dataset.tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+  }
+});
+// Trên mobile, tab Fireant bị ẩn (xem CSS mobile — iframe fireant.vn không tối ưu cho di động):
+// nếu đang active đúng tab đó thì chuyển sẵn sang HEALTH để mở thẻ ra không bị trống trơn.
+if(IS_MOBILE())triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
   // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
   // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
@@ -5475,8 +5983,8 @@ function tick(){
 }
 setInterval(tick,1000);tick();
 async function loadConfig(){
-  try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;}catch(e){}
-  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap tự động làm mới sau ${HMAP_TTL}s`;
+  try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;HEALTH_TTL=j.market_health_ttl_sec||1800;}catch(e){}
+  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • HEALTH ${Math.round(HEALTH_TTL/60)} phút`;
 }
 // ═══════════════════════════════════════════════════════
 // FETCH
@@ -6299,7 +6807,7 @@ function _buildPopoutHTML(initSym){
   return '<!DOCTYPE html><html><head>'
     +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
     +'<title>Chart \u2014 '+initSym+'</title>'
-    +'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">'
+    +'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">'
     +'<style>'
     +'*{margin:0;padding:0;box-sizing:border-box}'
     +':root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:\'IBM Plex Mono\',monospace;--font-ui:\'Barlow Condensed\',sans-serif}'
@@ -6591,11 +7099,12 @@ async function init(){
   bindLiteChartControls();
   bindAlertControls();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
-  await Promise.all([fetchSigs(),fetchHmap()]);
+  await Promise.all([fetchSigs(),fetchHmap(),fetchHealth()]);
   loadLiteChart(_liteSymbol);
   await Promise.all([loadAlerts(),pollAlertFeed(false)]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
+  setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
 }
 init();
