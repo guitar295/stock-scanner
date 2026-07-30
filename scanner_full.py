@@ -600,7 +600,7 @@ def _mh_score_band(score: float) -> dict:
     return {"key": "fear", "label": "Sợ hãi", "tone": "cyan"}
 
 
-def _mh_percentile_score(series: pd.Series, window: int = 120) -> pd.Series:
+def _mh_percentile_score(series: pd.Series, window: int = 60) -> pd.Series:
     series = pd.to_numeric(series, errors="coerce")
 
     def _rank(x):
