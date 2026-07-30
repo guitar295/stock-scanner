@@ -1719,11 +1719,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
-.health-panel .panel-hdr{cursor:pointer;user-select:none}
-.health-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
-.health-panel:not(.collapsed) .health-toggle{transform:rotate(90deg);color:var(--accent)}
-.health-panel.collapsed .health-body,
-.health-panel.collapsed>.pbar-wrap{display:none}
+.tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
+.tri-tabs{display:flex;align-items:center;gap:4px}
+.tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;padding:3px 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
+.tri-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
+.tri-tab.on{color:var(--accent);font-weight:800}
+.tri-toggle{font-size:12px;color:var(--muted);transition:transform .15s;margin-left:auto}
+.tri-panel:not(.collapsed) .tri-toggle{transform:rotate(90deg);color:var(--accent)}
+.tri-panel.collapsed .tri-tabs,
+.tri-panel.collapsed>.tri-body{display:none}
+.tri-content{display:none}
+.tri-content.on{display:block}
 .health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
 .health-vni-toggle{position:absolute;top:6px;left:88.4%;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
@@ -1745,10 +1751,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-analysis ul{margin:0 0 12px 20px;color:#374151;font-size:14.5px;line-height:1.65;font-family:'IBM Plex Sans',sans-serif}
 .health-analysis li{margin-bottom:5px}
 .health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
-.sankey-panel .panel-hdr{cursor:pointer;user-select:none}
-.sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
-.sankey-panel.collapsed .sankey-wrap{display:none}
-.sankey-panel:not(.collapsed) .sankey-toggle{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -1771,10 +1773,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.pbar-wrap,
 .hmap-panel.collapsed>.panel-body{display:none}
-.market-panel .panel-hdr{cursor:pointer;user-select:none}
-.market-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s}
-.market-panel:not(.collapsed) .market-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.market-panel.collapsed .market-frame{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
@@ -2038,7 +2036,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     height:auto;
   }
   .market-frame{height:70vh}
-  #market-panel{display:none !important;}
+  .tri-tabs [data-tab="fireant"],
+  #tri-content-fireant{display:none !important}
 
   #lite-chart-panel{display:none !important}
 }
@@ -2527,60 +2526,58 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     </div>
   </div>
 
-  <!-- HEALTH -->
-  <div class="panel health-panel collapsed" id="health-panel">
-    <div class="panel-hdr" id="health-toggle">
-      <span class="panel-title">HEALTH</span>
-      <span class="health-toggle">▶</span>
+  <!-- MARKET (Fireant / Mrk Health / Sankey — gộp 1 thẻ, chuyển nội dung bằng tab) -->
+  <div class="panel tri-panel" id="tri-panel">
+    <div class="panel-hdr tri-hdr" id="tri-hdr">
+      <span class="panel-title">MARKET</span>
+      <div class="tri-tabs" id="tri-tabs">
+        <span class="tri-tab on" data-tab="fireant">Fireant</span>
+        <span class="tri-tab" data-tab="health">Mrk Health</span>
+        <span class="tri-tab" data-tab="sankey">Sankey</span>
+      </div>
+      <span class="tri-toggle" id="tri-toggle">▶</span>
     </div>
-    <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
-    <div class="health-body" id="health-body">
-      <div class="health-layout">
-        <div class="health-chartbox">
-          <label class="health-vni-toggle" id="health-vni-toggle" title="Hiện/ẩn đường VNINDEX để đối chiếu">
-            <input type="checkbox" id="health-vni-checkbox">
-            <span class="health-vni-swatch"></span>VNINDEX
-          </label>
-          <svg class="health-svg" id="health-svg" viewBox="0 0 900 360" preserveAspectRatio="none"></svg>
-        </div>
-        <div class="health-side">
-          <div class="health-score-card">
-            <div class="health-score-top">
-              <div>
-                <div class="health-label" id="health-label">--</div>
-                <div class="health-meta" id="health-date">--</div>
-              </div>
-              <div class="health-score" id="health-score">--</div>
+    <div class="tri-body" id="tri-body">
+      <div class="tri-content on" id="tri-content-fireant">
+        <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
+      </div>
+      <div class="tri-content" id="tri-content-health">
+        <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
+        <div class="health-body" id="health-body">
+          <div class="health-layout">
+            <div class="health-chartbox">
+              <label class="health-vni-toggle" id="health-vni-toggle" title="Hiện/ẩn đường VNINDEX để đối chiếu">
+                <input type="checkbox" id="health-vni-checkbox">
+                <span class="health-vni-swatch"></span>VNINDEX
+              </label>
+              <svg class="health-svg" id="health-svg" viewBox="0 0 900 360" preserveAspectRatio="none"></svg>
             </div>
-            <div class="health-tags" id="health-tags"></div>
-          </div>
-          <div class="health-analysis" id="health-analysis">
-            <div class="health-analysis-title">Nhận định</div>
-            <div class="health-empty">Đang tải dữ liệu HEALTH...</div>
+            <div class="health-side">
+              <div class="health-score-card">
+                <div class="health-score-top">
+                  <div>
+                    <div class="health-label" id="health-label">--</div>
+                    <div class="health-meta" id="health-date">--</div>
+                  </div>
+                  <div class="health-score" id="health-score">--</div>
+                </div>
+                <div class="health-tags" id="health-tags"></div>
+              </div>
+              <div class="health-analysis" id="health-analysis">
+                <div class="health-analysis-title">Nhận định</div>
+                <div class="health-empty">Đang tải dữ liệu HEALTH...</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+      <div class="tri-content" id="tri-content-sankey">
+        <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+      </div>
     </div>
-  </div>
-
-  <!-- MARKET -->
-  <div class="panel market-panel" id="market-panel">
-    <div class="panel-hdr" id="market-toggle">
-      <span class="panel-title">MARKET</span>
-      <span class="market-toggle-icon">▶</span>
-    </div>
-    <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
-  </div>
-
-  <!-- SANKEY -->
-  <div class="panel sankey-panel collapsed" id="sankey-panel">
-    <div class="panel-hdr" id="sankey-toggle">
-      <span class="panel-title">Sankey</span>
-      <span class="sankey-toggle">▶</span>
-    </div>
-    <div class="sankey-wrap" id="sankey-wrap" hidden><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
   </div>
 </div>
+
 
 <!-- TRADE JOURNAL -->
 <div class="journal-overlay" id="journal-overlay">
@@ -2724,12 +2721,12 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
-  marketPanel:$('market-panel'),marketToggle:$('market-toggle'),
-  healthPanel:$('health-panel'),healthToggle:$('health-toggle'),healthVniCheckbox:$('health-vni-checkbox'),
+  triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),triToggle:$('tri-toggle'),
+  healthVniCheckbox:$('health-vni-checkbox'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
-  sankeyPanel:$('sankey-panel'),sankeyToggle:$('sankey-toggle'),sankeyWrap:$('sankey-wrap'),
+  sankeyWrap:$('sankey-wrap'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
@@ -5519,7 +5516,6 @@ function _healthRenderWindow(){
   const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${v}</text>`).join('');
   const lineW=(1.75*scale).toFixed(2); // HEALTH và VNINDEX dùng chung độ dày nét
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
-  const area=`${x(0)},${y(0)} ${pts} ${x(h.length-1)},${y(0)}`;
   // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
   // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
   // vẫn hiển thị đúng số khi xem qua crosshair (xem _healthShowCrosshair).
@@ -5546,7 +5542,7 @@ function _healthRenderWindow(){
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
     return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${h[i].date}</text>`;
   }).join('');
-  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
+  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
 }
 // ── Crosshair khi di chuột/chạm: nhãn gắn vào trục dưới (thời gian) và trục
@@ -5919,21 +5915,36 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   updateSimplize(sym);
   openChart(sym);
 });
-DOM.sankeyToggle.addEventListener('click',()=>{
-  const collapsed=DOM.sankeyPanel.classList.toggle('collapsed');
-  DOM.sankeyWrap.hidden=collapsed;
+// ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
+const TRI_TABS=['fireant','health','sankey'];
+function triActivateTab(tab){
+  if(!TRI_TABS.includes(tab))return;
+  DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  TRI_TABS.forEach(t=>{
+    const el=document.getElementById('tri-content-'+t);
+    if(el)el.classList.toggle('on',t===tab);
+  });
+  // Tab HEALTH vẽ chart theo kích thước khung THẬT (getBoundingClientRect) — lúc tab đang ẩn
+  // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
+  // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
+  if(tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+}
+DOM.triTabs.addEventListener('click',e=>{
+  const btn=e.target.closest('.tri-tab');
+  if(!btn)return;
+  triActivateTab(btn.dataset.tab);
 });
-DOM.healthToggle.addEventListener('click',()=>{
-  const collapsed=DOM.healthPanel.classList.toggle('collapsed');
-  // Panel vừa mở lại sau khi bị ẩn (display:none) — lúc render trước đó (fetchHealth
-  // lúc init, hoặc khi panel còn thu gọn) getBoundingClientRect() trả về 0x0 nên chart
-  // bị vẽ với tỉ lệ mặc định sai (xem _healthRenderWindow). Vẽ lại ngay khi khung đã
-  // có kích thước thật, giống cách panel CHART xử lý ở liteChartToggle.
-  if(!collapsed&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+DOM.triHdr.addEventListener('click',e=>{
+  if(e.target.closest('.tri-tab'))return; // bấm vào tên tab không tính là bấm thu/mở cả thẻ
+  const collapsed=DOM.triPanel.classList.toggle('collapsed');
+  if(!collapsed){
+    const activeTab=DOM.triTabs.querySelector('.tri-tab.on');
+    if(activeTab&&activeTab.dataset.tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+  }
 });
-DOM.marketToggle.addEventListener('click',()=>{
-  DOM.marketPanel.classList.toggle('collapsed');
-});
+// Trên mobile, tab Fireant bị ẩn (xem CSS mobile — iframe fireant.vn không tối ưu cho di động):
+// nếu đang active đúng tab đó thì chuyển sẵn sang HEALTH để mở thẻ ra không bị trống trơn.
+if(IS_MOBILE())triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
   // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
   // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
