@@ -1725,20 +1725,20 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-panel.collapsed .health-body,
 .health-panel.collapsed>.pbar-wrap{display:none}
 .health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
-.health-vni-toggle{position:absolute;top:4px;left:10px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:rgba(255,255,255,.9);padding:4px 9px;border-radius:12px;border:1px solid var(--border);cursor:pointer;user-select:none}
+.health-vni-toggle{position:absolute;top:6px;right:11%;left:auto;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
 .health-body{padding:12px 14px;background:#fff}
 .health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
-.health-side{display:grid;grid-template-rows:auto 1fr;gap:10px;min-width:0}
-.health-score-card{border:1px solid var(--border);border-radius:8px;padding:12px;background:#fbfcff}
+.health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
+.health-score-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:#fbfcff}
 .health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.health-score{font-family:var(--font-ui);font-size:42px;line-height:.9;font-weight:800;color:var(--accent);letter-spacing:0}
-.health-label{font-family:var(--font-ui);font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent)}
-.health-meta{margin-top:5px;font-size:10px;color:var(--muted)}
-.health-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.health-tag{font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:3px 6px;color:#334155;background:#f8fafc}
+.health-score{font-family:var(--font-ui);font-size:56px;line-height:.9;font-weight:800;color:var(--accent);letter-spacing:0}
+.health-label{font-family:var(--font-ui);font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent)}
+.health-meta{margin-top:6px;font-size:13px;color:var(--muted)}
+.health-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.health-tag{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:4px 8px;color:#334155;background:#f8fafc}
 .health-components{display:none}
 .health-comp{border:1px solid var(--border);border-radius:6px;padding:6px;background:#fff}
 .health-comp-head{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--muted)}
@@ -1746,10 +1746,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-comp-val{font-weight:700;color:var(--text)}
 .health-comp-bar{height:5px;border-radius:999px;background:#edf2f7;margin-top:5px;overflow:hidden}
 .health-comp-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#7dd3fc,#facc15,#22c55e,#a855f7)}
-.health-analysis{border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;min-height:120px}
-.health-analysis-title{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
-.health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:11px;line-height:1.45;margin:0 0 6px;color:#1f2937}
-.health-analysis ul{margin:0 0 7px 16px;color:#4b5563;font-size:10.5px;line-height:1.45;font-family:'IBM Plex Sans',sans-serif}
+.health-analysis{border:1px solid var(--border);border-radius:8px;padding:18px 20px;background:#fff;min-height:120px;display:flex;flex-direction:column;justify-content:center}
+.health-analysis-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+.health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:1.65;margin:0 0 12px;color:#1f2937}
+.health-analysis ul{margin:0 0 12px 20px;color:#374151;font-size:14.5px;line-height:1.65;font-family:'IBM Plex Sans',sans-serif}
+.health-analysis li{margin-bottom:5px}
 .health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
 .sankey-panel .panel-hdr{cursor:pointer;user-select:none}
 .sankey-toggle{font-size:12px;color:var(--muted);transition:transform .15s}
@@ -5514,7 +5515,7 @@ function _healthRenderWindow(){
   const area=`${L},${y(0)} ${pts} ${W-R},${y(0)}`;
   const circles=h.map((p,i)=>{
     const b=healthBand(p.score);
-    return `<circle cx="${x(i)}" cy="${y(Number(p.score))}" r="${i===h.length-1?5:3}" fill="${b.fill}" stroke="#fff" stroke-width="1.5"><title>${p.date}: ${Number(p.score).toFixed(1)}</title></circle>`;
+    return `<circle cx="${x(i)}" cy="${y(Number(p.score))}" r="${i===h.length-1?3.5:2}" fill="${b.fill}" stroke="#fff" stroke-width="1.2"><title>${p.date}: ${Number(p.score).toFixed(1)}</title></circle>`;
   }).join('');
   // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
   // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
