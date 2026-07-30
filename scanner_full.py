@@ -622,6 +622,57 @@ def _mh_last_streak(values, pred) -> int:
     return n
 
 
+def _mh_component_phrase(key: str, value) -> str:
+    """
+    Chuyển điểm số 0-100 của từng thành phần HEALTH thành một câu mô tả bằng
+    ngôn ngữ thường, dùng để đưa vào phần NHẬN ĐỊNH thay cho việc hiển thị số
+    dạng "X/100" trên thanh ngang — người đọc không cần hiểu ý nghĩa thang điểm
+    nội bộ, chỉ cần đọc câu là hiểu ngay tình trạng thị trường.
+    """
+    v = _mh_finite_float(value)
+    if v is None:
+        return ""
+    if key == "momentum":
+        if v >= 80: return "Đà thị trường đang tăng rất mạnh so với giai đoạn gần đây"
+        if v >= 60: return "Đà thị trường nghiêng tích cực"
+        if v >= 40: return "Đà thị trường trung tính, chưa có xu hướng rõ ràng"
+        if v >= 20: return "Đà thị trường đang suy yếu"
+        return "Đà thị trường rất yếu, thấp hơn hẳn xu hướng gần đây"
+    if key == "volatility":
+        if v >= 80: return "Biến động giá đang rất thấp, thị trường ổn định"
+        if v >= 60: return "Biến động giá ở mức thấp"
+        if v >= 40: return "Biến động giá ở mức bình thường"
+        if v >= 20: return "Biến động giá đang cao hơn bình thường"
+        return "Biến động giá đang rất cao, thị trường dao động mạnh bất thường"
+    if key == "breadth":
+        if v >= 70: return "Phần lớn cổ phiếu trong rổ vẫn giữ vững xu hướng tăng"
+        if v >= 50: return "Đa số cổ phiếu còn giữ xu hướng tăng"
+        if v >= 30: return "Số cổ phiếu giữ xu hướng tăng và giảm khá cân bằng"
+        if v >= 15: return "Phần lớn cổ phiếu đã gãy xu hướng tăng"
+        return "Hầu hết cổ phiếu trong rổ đã mất xu hướng tăng"
+    if key == "new_high_low":
+        if v >= 80: return "Số mã phá đỉnh 52 tuần áp đảo, không có mã phá đáy đáng kể"
+        if v >= 60: return "Số mã phá đỉnh nhỉnh hơn số mã phá đáy"
+        if v >= 40: return "Chưa có làn sóng phá đỉnh hay phá đáy đáng chú ý"
+        if v >= 20: return "Số mã phá đáy 52 tuần nhỉnh hơn số mã phá đỉnh"
+        return "Có mã phá đáy 52 tuần trong khi không có mã nào phá đỉnh"
+    if key == "volume":
+        if v >= 80: return "Dòng tiền đổ vào rất mạnh, nhiều mã tăng kèm khối lượng đột biến"
+        if v >= 60: return "Dòng tiền nghiêng về mua chủ động"
+        if v >= 40: return "Dòng tiền theo khối lượng chưa rõ xu hướng"
+        if v >= 20: return "Dòng tiền nghiêng về bán, xuất hiện phiên giảm kèm khối lượng lớn"
+        return "Áp lực bán rất mạnh, nhiều mã giảm sâu kèm khối lượng đột biến"
+    if key == "rsi":
+        # RSI dùng ngưỡng quy ước riêng (70/30) thay vì thang 20-40-60-80 chung,
+        # vì RSI vốn đã là chỉ báo có ý nghĩa chuẩn hoá quen thuộc với người đọc.
+        if v >= 70: return "RSI trung vị đã vào vùng quá mua"
+        if v >= 55: return "RSI trung vị nghiêng tích cực"
+        if v >= 45: return "RSI trung vị ở vùng trung tính"
+        if v >= 30: return "RSI trung vị nghiêng tiêu cực"
+        return "RSI trung vị đã vào vùng quá bán"
+    return ""
+
+
 def compute_market_health_index(limit: int = 120) -> dict:
     """
     Chỉ số HEALTH/Fear-Greed dùng hoàn toàn dữ liệu đang có trong history_cache.
@@ -817,27 +868,32 @@ def compute_market_health_index(limit: int = 120) -> dict:
         f"{'tăng' if delta >= 0 else 'giảm'} {abs(delta):.1f} điểm so với phiên trước."
     )
     factors = [
-        f"Độ rộng thị trường đạt {breadth_now:.1f}% số mã trên MA50.",
-        f"RSI trung vị rổ theo dõi ở {rsi_now:.1f}.",
-        f"Đỉnh/đáy 52 tuần đóng góp {newhl_now:.1f}/100; volume stress ở {vol_now:.1f}/100.",
-        f"Momentum proxy đạt {momentum_now:.1f}/100."
+        p for p in (
+            _mh_component_phrase("momentum", current_components.get("momentum")),
+            _mh_component_phrase("volatility", current_components.get("volatility")),
+            _mh_component_phrase("breadth", current_components.get("breadth")),
+            _mh_component_phrase("new_high_low", current_components.get("new_high_low")),
+            _mh_component_phrase("volume", current_components.get("volume")),
+            _mh_component_phrase("rsi", current_components.get("rsi")),
+        ) if p
     ]
+    factors = [f"{p}." for p in factors]
     if decline_now is not None:
-        factors.append(f"Tỷ lệ mã giảm giá trong phiên: {decline_now:.1f}%.")
+        factors.append(f"Trong phiên hôm nay có khoảng {decline_now:.0f}% cổ phiếu trong rổ giảm giá.")
     if "Cực kỳ hưng phấn" in tags:
-        conclusion = "Nhận định: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
+        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
     elif "Cực kỳ sợ hãi" in tags:
-        conclusion = "Nhận định: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán tháo cực đoan, thường là vùng dò đáy tiềm năng nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
+        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán tháo cực đoan, thường là vùng dò đáy tiềm năng nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
     elif "Cảnh báo phân phối" in tags or "Rủi ro tạo đỉnh" in tags:
-        conclusion = "Nhận định: ưu tiên quản trị rủi ro; thị trường có dấu hiệu hưng phấn nhưng nền tham gia không đủ rộng, cần cảnh giác vùng đỉnh/phân phối."
+        conclusion = "Kết luận: ưu tiên quản trị rủi ro; thị trường có dấu hiệu hưng phấn nhưng nền tham gia không đủ rộng, cần cảnh giác vùng đỉnh/phân phối."
     elif "Tín hiệu dò đáy" in tags:
-        conclusion = "Nhận định: lực bán đang suy yếu sau vùng sợ hãi; phù hợp theo dõi quá trình tạo đáy, chưa coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện."
+        conclusion = "Kết luận: lực bán đang suy yếu sau vùng sợ hãi; phù hợp theo dõi quá trình tạo đáy, chưa coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện."
     elif "Bán tháo/hoảng loạn" in tags:
-        conclusion = "Nhận định: trạng thái tiêu cực cực đoan; tránh bán đuổi, chờ tín hiệu phục hồi của độ rộng và RSI để xác nhận đáy."
+        conclusion = "Kết luận: trạng thái tiêu cực cực đoan; tránh bán đuổi, chờ tín hiệu phục hồi của độ rộng và RSI để xác nhận đáy."
     elif "Tích lũy cân bằng" in tags:
-        conclusion = "Nhận định: thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
+        conclusion = "Kết luận: thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
     else:
-        conclusion = "Nhận định: chưa có tín hiệu cực đoan đủ mạnh để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
+        conclusion = "Kết luận: chưa có tín hiệu cực đoan đủ mạnh để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
 
     return {
         "ok": True,
