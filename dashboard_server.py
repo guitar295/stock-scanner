@@ -5522,10 +5522,6 @@ function _healthRenderWindow(){
   const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${v}</text>`).join('');
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
   const area=`${L},${y(0)} ${pts} ${W-R},${y(0)}`;
-  const circles=h.map((p,i)=>{
-    const b=healthBand(p.score);
-    return `<circle cx="${x(i)}" cy="${y(Number(p.score))}" r="${((i===h.length-1?3.5:2)*scale).toFixed(2)}" fill="${b.fill}" stroke="#fff" stroke-width="${(1.2*scale).toFixed(2)}"><title>${p.date}: ${Number(p.score).toFixed(1)}</title></circle>`;
-  }).join('');
   // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
   // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
   // vẫn hiển thị đúng số khi xem qua crosshair (xem _healthShowCrosshair).
@@ -5542,7 +5538,7 @@ function _healthRenderWindow(){
         else{if(cur.length>1)segs.push(cur);cur=[];}
       });
       if(cur.length>1)segs.push(cur);
-      vniPolyline=segs.map(seg=>`<polyline points="${seg.join(' ')}" fill="none" stroke="#f97316" stroke-width="${(1.75*scale).toFixed(2)}" stroke-dasharray="5,3" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
+      vniPolyline=segs.map(seg=>`<polyline points="${seg.join(' ')}" fill="none" stroke="#f97316" stroke-width="${(1.75*scale).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
     }
   }
   // Trục X: nhiều mốc thời gian dọc theo trục thay vì chỉ đầu/cuối
@@ -5552,7 +5548,7 @@ function _healthRenderWindow(){
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
     return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${h[i].date}</text>`;
   }).join('');
-  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${(2.5*scale).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${circles}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
+  DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${area}" fill="#1a56db" fill-opacity=".08" stroke="none"/><polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${(2.5*scale).toFixed(2)}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,x,y,vniMin,vniMax,scale,fs};
 }
 // ── Crosshair khi di chuột/chạm: nhãn gắn vào trục dưới (thời gian) và trục
@@ -5630,8 +5626,21 @@ function _healthHandlePinch(evt){
     _healthRenderWindow();
   }
 }
+function _healthEventInBands(evt){
+  if(!_healthLayout)return false;
+  const cx=_healthClientX(evt);
+  const cy=evt.touches&&evt.touches.length?evt.touches[0].clientY:evt.clientY;
+  if(cx==null||cy==null)return false;
+  const rect=DOM.healthSvg.getBoundingClientRect();
+  if(!rect.width||!rect.height)return false;
+  const{L,R,T,B,W,H}=_healthLayout;
+  const svgX=(cx-rect.left)*(W/rect.width);
+  const svgY=(cy-rect.top)*(H/rect.height);
+  return svgX>=L&&svgX<=W-R&&svgY>=T&&svgY<=H-B;
+}
 function _healthOnWheel(evt){
   if(!_healthLayout)return;
+  if(!_healthEventInBands(evt))return; // chỉ zoom khi chuột đang ở trong vùng dải màu, không tính trục/lề trắng
   evt.preventDefault();
   const factor=evt.deltaY<0?0.85:1/0.85; // lăn lên → zoom in; lăn xuống → zoom out
   const newLen=_healthClampWindow(_healthWindowLen*factor);
