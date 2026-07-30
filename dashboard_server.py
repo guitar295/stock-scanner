@@ -45,6 +45,52 @@ SIGNAL_TTL_SEC = 10
 _market_health_cache = {"data": {}, "updated_at": 0}
 _market_health_lock = threading.Lock()
 
+
+def _refresh_market_health(force: bool = False) -> dict:
+    """
+    Tính lại HEALTH và ghi vào _market_health_cache — dùng chung cho endpoint
+    /api/market_health VÀ cho lệnh "warm" cache chủ động lúc khởi động.
+
+    QUAN TRỌNG: chỉ cập nhật "updated_at" (mốc coi cache là "mới") khi kết quả
+    tính ra THỰC SỰ hợp lệ (data.get("ok") is True). Nếu compute_market_health_index()
+    trả lỗi (ví dụ "0 mã hợp lệ" do history_cache chưa kịp load xong) thì KHÔNG
+    đóng dấu "mới" — để lần gọi kế tiếp (dù chỉ vài giây sau) vẫn coi cache là
+    hết hạn và thử tính lại ngay, thay vì phải chờ đủ MARKET_HEALTH_TTL_SEC (30 phút)
+    mới được tính lại dù cache lịch sử lúc đó đã sẵn sàng từ lâu.
+    """
+    if not _fetch_market_health_fn:
+        return _market_health_cache["data"]
+    now = time.time()
+    with _market_health_lock:
+        stale = now - _market_health_cache["updated_at"] > MARKET_HEALTH_TTL_SEC
+        if not (force or stale):
+            return _market_health_cache["data"]
+        try:
+            data = _fetch_market_health_fn()
+            _market_health_cache["data"] = data
+            if data.get("ok"):
+                _market_health_cache["updated_at"] = time.time()
+        except Exception as e:
+            print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
+            # Không ghi đè "data" bằng lỗi cứng ở đây — giữ lại dữ liệu HEALTH
+            # hợp lệ gần nhất (nếu có) để dashboard không "trắng" panel; đồng thời
+            # KHÔNG cập nhật updated_at nên lần gọi sau sẽ tự thử lại.
+        return _market_health_cache["data"]
+
+
+def warm_market_health_cache():
+    """
+    Chủ động tính HEALTH ngay (không chờ request đầu tiên từ client) — gọi hàm
+    này NGAY SAU khi history_cache đã load xong (build_history_cache hoàn tất),
+    để dashboard luôn có sẵn dữ liệu HEALTH đúng ngay từ lượt xem đầu tiên,
+    thay vì phải đợi client tự trigger tính toán rồi TTL 30 phút mới thử lại.
+    """
+    data = _refresh_market_health(force=True)
+    ok = bool(data.get("ok"))
+    print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
+          f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
+    return data
+
 _chart_cache: dict = {}
 _chart_lock = threading.Lock()
 CHART_TTL_SEC = 120
@@ -468,19 +514,11 @@ def api_heatmap():
 
 @app.route("/api/market_health")
 def api_market_health():
-    now = time.time()
+    data = _refresh_market_health()
     with _market_health_lock:
-        if now - _market_health_cache["updated_at"] > MARKET_HEALTH_TTL_SEC and _fetch_market_health_fn:
-            try:
-                data = _fetch_market_health_fn()
-                _market_health_cache["data"] = data
-                _market_health_cache["updated_at"] = time.time()
-            except Exception as e:
-                print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
         snap_time = _market_health_cache["updated_at"]
-        data = _market_health_cache["data"]
     payload = dict(data or {})
-    payload["cached_age"] = int(now - snap_time) if snap_time else 0
+    payload["cached_age"] = int(time.time() - snap_time) if snap_time else 0
     payload["ttl_sec"] = MARKET_HEALTH_TTL_SEC
     return jsonify(_json_safe(payload))
 
