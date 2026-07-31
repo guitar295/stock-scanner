@@ -5345,12 +5345,12 @@ function _tmHslToRgb(h,s,l){
 const TM_POS_L_MIN=0.714, TM_POS_L_MAX=0.947; // dải sáng gốc của thang xanh (đậm→nhạt theo %)
 const TM_NEG_L_MIN=0.755, TM_NEG_L_MAX=0.941; // dải sáng gốc của thang đỏ (đậm→nhạt theo %)
 function treemapCellStyle(pct){
-  if(pct>=6.5)return{bg:'rgb(168,85,247)',fg:'rgb(15,15,15)'}; // trần: tím
-  if(pct>-0.05&&pct<0.05)return{bg:'rgb(242,201,76)',fg:'rgb(15,15,15)'}; // tham chiếu: vàng
-  if(pct<=-6.5)return{bg:'rgb(59,130,246)',fg:'rgb(15,15,15)'}; // sàn: xanh da trời
+  if(pct>=6.5)return{bg:'rgb(168,85,247)',fg:'rgb(255,255,255)'}; // trần: tím
+  if(pct>-0.05&&pct<0.05)return{bg:'rgb(242,201,76)',fg:'rgb(15,15,15)'}; // tham chiếu: vàng (chữ đen)
+  if(pct<=-6.5)return{bg:'rgb(59,130,246)',fg:'rgb(255,255,255)'}; // sàn: xanh da trời
   const{bg}=cellStyle(pct);
   const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
-  if(!m)return{bg,fg:'rgb(15,15,15)'};
+  if(!m)return{bg,fg:'rgb(255,255,255)'};
   const l=_tmLightness(+m[1],+m[2],+m[3]);
   let r,g,b;
   if(pct>=0.05){
@@ -5364,7 +5364,7 @@ function treemapCellStyle(pct){
     const ll=0.60+t*(0.74-0.60);
     [r,g,b]=_tmHslToRgb(0,0.80,ll);
   }
-  return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
+  return{bg:`rgb(${r},${g},${b})`,fg:'rgb(255,255,255)'};
 }
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
 function sortByPct(syms,d){return[...syms].sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0));}
@@ -6261,11 +6261,11 @@ function renderTreemap(data){
       const grp=sankeyEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
       grp.appendChild(sankeyEl('rect',{x:cx,y:cy,width:cw,height:ch,rx:4,ry:4,fill:bg,stroke:'#fff','stroke-width':1}));
       if(cw>36&&ch>16){
-        const fs=Math.min(13,Math.max(9,Math.min(cw/5,ch/2.2)));
+        const fs=Math.min(14,Math.max(10,Math.min(cw/5,ch/2.2)));
         grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2-1,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
         if(ch>28){
           const sign=pct>=0?'+':'';
-          grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+13,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':Math.max(9,fs-2).toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
+          grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+13,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':Math.max(10,fs-2).toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
         }
       }
       secGrp.appendChild(grp);
