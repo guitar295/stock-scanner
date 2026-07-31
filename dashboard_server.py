@@ -6302,13 +6302,17 @@ function renderTreemap(data){
   const secLayout=[];tmSquarify(sectors,0,0,W,H,secLayout);
   secLayout.forEach(sec=>{
     const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
-    svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
+    // Nền chung cho CẢ khung ngành (header + vùng ô mã cổ phiếu) — cùng 1 màu
+    // xám-xanh rất nhạt (#f4f6f9), tránh lộ nền trắng của SVG ở khe hở giữa các
+    // ô mã cổ phiếu (đặc biệt ở đáy khung, nơi các ô không lấp kín hết chiều cao).
+    // Gộp chung 1 rect vừa tô nền vừa vẽ viền (fill + stroke) thay vì 2 rect
+    // trùng hình học, giảm số node SVG phải dựng mỗi lần render.
+    svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'#f4f6f9',stroke:'#d8d6cc','stroke-width':1}));
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
-      // Nền header tách biệt với nền trắng chung của Treemap — màu xám-xanh rất
-      // nhạt (#f4f6f9) + đường kẻ phân cách (#e4e8ec) bên dưới, giúp tên ngành
-      // nổi rõ hơn so với các ô mã cổ phiếu bên dưới.
-      svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:headerH,fill:'#f4f6f9'}));
+      // Đường kẻ phân cách (#e4e8ec) giữa header (tên ngành) và vùng ô mã cổ
+      // phiếu bên dưới — nền 2 vùng giờ đã đồng màu nên chỉ cần đường kẻ để
+      // tách biệt trực quan, không cần rect nền riêng cho header nữa.
       svg.appendChild(sankeyEl('line',{x1:sx,y1:sy+headerH,x2:sx+sw,y2:sy+headerH,stroke:'#e4e8ec','stroke-width':1}));
       // Cắt bớt tên ngành + thêm dấu "…" nếu không đủ chỗ trong khung, tránh tràn ra ngoài
       // (đặc biệt các ô ngành nhỏ ở góc dưới cùng bên phải). ~7.3px/ký tự với font-size 12 monospace.
