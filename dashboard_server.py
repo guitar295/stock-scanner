@@ -1756,6 +1756,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-meta{margin-top:6px;font-size:13px;color:var(--muted)}
 .health-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .health-tag{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:4px 8px;color:#334155;background:#f8fafc}
+.health-tag-critical{border-color:#dc2626;color:#fff;background:#dc2626;box-shadow:0 0 0 0 rgba(220,38,38,.55);animation:healthTagPulse 1.4s ease-in-out infinite}
+.health-tag-warning{border-color:#d97706;color:#7c2d12;background:#fde68a}
+@keyframes healthTagPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.55)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0)}}
 .health-analysis{border:1px solid var(--border);border-radius:8px;padding:18px 20px;background:#fff;min-height:120px;display:flex;flex-direction:column;justify-content:center}
 .health-analysis-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
 .health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:1.65;margin:0 0 12px;color:#1f2937}
@@ -6018,7 +6021,10 @@ function renderHealth(data){
   DOM.healthScore.style.color=localBand.fill;
   DOM.healthLabel.textContent=band.label||localBand.label;
   DOM.healthDate.textContent=`Phiên ${d.as_of||'--'} • ${delta>=0?'+':''}${delta.toFixed(1)} điểm`;
-  DOM.healthTags.innerHTML=(d.tags||[]).map(t=>`<span class="health-tag">${healthEsc(t)}</span>`).join('');
+  DOM.healthTags.innerHTML=(d.tags||[]).map(t=>{
+    const cls=t==='Bán tháo'?'health-tag health-tag-critical':(t==='Hoảng loạn'?'health-tag health-tag-warning':'health-tag');
+    return `<span class="${cls}">${healthEsc(t)}</span>`;
+  }).join('');
   const a=d.analysis||{};
   DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
   renderHealthChart(d.history||[]);
