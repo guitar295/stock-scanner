@@ -5319,26 +5319,13 @@ function cellStyle(pct){
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-// Treemap dùng riêng bản màu tương phản/rực hơn Heatmap — không phải làm tối đi
-// kiểu xám xịt (thử nhân RGB xuống 0.9 lúc trước làm mất luôn cả độ bão hoà nên
-// nhìn xỉn màu), mà chuyển sang không gian HSL để tăng MẠNH ĐỘ BÃO HOÀ (xanh/đỏ/
-// vàng rõ và đậm hơn hẳn) và hạ nhẹ độ sáng (để màu "chắc" hơn thay vì nhạt/pastel),
-// vẫn giữ đúng sắc (hue) như cellStyle gốc. Heatmap không đụng tới, vẫn giữ nguyên
-// tông màu cũ.
-function _tmRgbToHsl(r,g,b){
-  r/=255;g/=255;b/=255;
-  const max=Math.max(r,g,b),min=Math.min(r,g,b);
-  let h=0,s=0;const l=(max+min)/2;
-  if(max!==min){
-    const d=max-min;
-    s=l>0.5?d/(2-max-min):d/(max+min);
-    if(max===r)h=(g-b)/d+(g<b?6:0);
-    else if(max===g)h=(b-r)/d+2;
-    else h=(r-g)/d+4;
-    h/=6;
-  }
-  return[h,s,l];
-}
+// Treemap dùng bảng màu riêng, tách khỏi Heatmap:
+// - Trần (>=+6.5%) / tham chiếu (~0%) / sàn (<=-6.5%): màu phẳng cố định, đo trực
+//   tiếp từ bảng màu mẫu (tím/vàng/xanh dương).
+// - Còn lại (xanh lá tăng giá / đỏ giảm giá): hue cố định đúng "xanh lá thật" (142°)
+//   và "đỏ thật" (0°), độ sáng nội suy theo đúng bậc đậm-nhạt 13 mức của cellStyle
+//   gốc (dùng lại mảng pos/neg đó làm nguồn "độ đậm theo %", không định nghĩa lại).
+function _tmLightness(r,g,b){return(Math.max(r,g,b)+Math.min(r,g,b))/510;}
 function _tmHue2Rgb(p,q,t){
   if(t<0)t+=1;if(t>1)t-=1;
   if(t<1/6)return p+(q-p)*6*t;
@@ -5364,7 +5351,7 @@ function treemapCellStyle(pct){
   const{bg}=cellStyle(pct);
   const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
   if(!m)return{bg,fg:'rgb(15,15,15)'};
-  const l=_tmRgbToHsl(+m[1],+m[2],+m[3])[2];
+  const l=_tmLightness(+m[1],+m[2],+m[3]);
   let r,g,b;
   if(pct>=0.05){
     // Xanh lá cây thật (hue cố định ~142°), bớt sáng: đậm dần theo % tăng
@@ -6251,12 +6238,18 @@ function renderTreemap(data){
   }
   const W=1600,H=900,GAP=4;
   const secLayout=[];tmSquarify(sectors,0,0,W,H,secLayout);
-  secLayout.forEach(sec=>{
+  const defs=sankeyEl('defs',{});svg.appendChild(defs);
+  secLayout.forEach((sec,secIdx)=>{
     const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
-    svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
+    const clipId=`tm-sec-clip-${secIdx}`;
+    const clipPath=sankeyEl('clipPath',{id:clipId});
+    clipPath.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10}));
+    defs.appendChild(clipPath);
+    svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
+    const secGrp=sankeyEl('g',{'clip-path':`url(#${clipId})`});
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
-      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#6b7280'},sec.item.name));
+      secGrp.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#6b7280'},sec.item.name));
     }
     const stockLayout=[];
     tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
@@ -6275,8 +6268,9 @@ function renderTreemap(data){
           grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+13,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':Math.max(9,fs-2).toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
         }
       }
-      svg.appendChild(grp);
+      secGrp.appendChild(grp);
     });
+    svg.appendChild(secGrp);
   });
 }
 DOM.treemapSvg.addEventListener('click',e=>{
