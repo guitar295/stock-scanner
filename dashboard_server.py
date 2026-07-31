@@ -5360,7 +5360,7 @@ function treemapCellStyle(pct){
   const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
   if(!m)return{bg,fg:'rgb(15,15,15)'};
   const[h,s,l]=_tmRgbToHsl(+m[1],+m[2],+m[3]);
-  const[r,g,b]=_tmHslToRgb(h,Math.min(1,s*1.7),Math.max(0,l-0.04));
+  const[r,g,b]=_tmHslToRgb(h,Math.min(1,s*2.6),Math.max(0.28,l-0.09));
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
