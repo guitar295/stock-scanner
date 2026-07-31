@@ -2783,7 +2783,7 @@ const DOM={
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
   liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
-  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),
+  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),healthCopyBtn:$('health-copy-btn'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   // Desktop popup header
@@ -4558,57 +4558,6 @@ async function copyLiteChartImage(btn){
     _liteCopyFeedback(btn,'downloaded');
   }catch(e){console.error('copyLiteChartImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
-// ── MRK HEALTH: nút camera copy ảnh — tái dùng _liteCopyFeedback / _litePngBlobFromDataUrl ──
-// Khác với copyLiteChartImage (chụp canvas của thư viện chart), khung Mrk Health là DOM thường
-// (SVG + các div điểm số/nhận định) nên cần dựng ảnh qua kỹ thuật SVG<foreignObject> rồi vẽ ra
-// canvas — không có canvas gốc để .takeScreenshot() như bên Chart.
-async function copyHealthImage(btn){
-  const el=document.getElementById('health-body');
-  if(!el)return;
-  try{
-    const rect=el.getBoundingClientRect();
-    const w=Math.ceil(rect.width),h=Math.ceil(rect.height);
-    const dpr=window.devicePixelRatio||1;
-    const cssText=Array.from(document.styleSheets).map(ss=>{
-      try{return Array.from(ss.cssRules).map(r=>r.cssText).join('\n');}catch(e){return '';}
-    }).join('\n');
-    const clone=el.cloneNode(true);
-    clone.style.margin='0';clone.style.height=h+'px';clone.style.width=w+'px';
-    const svgData=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
-      +`<foreignObject width="100%" height="100%">`
-      +`<div xmlns="http://www.w3.org/1999/xhtml"><style>${cssText}</style>${clone.outerHTML}</div>`
-      +`</foreignObject></svg>`;
-    const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
-    const svgUrl=URL.createObjectURL(svgBlob);
-    const img=new Image();
-    await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=svgUrl;});
-    const canvas=document.createElement('canvas');
-    canvas.width=w*dpr;canvas.height=h*dpr;
-    const ctx=canvas.getContext('2d');
-    ctx.scale(dpr,dpr);
-    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);
-    ctx.drawImage(img,0,0,w,h);
-    URL.revokeObjectURL(svgUrl);
-    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,'copied');
-        return;
-      }catch(e){console.warn('Copy ảnh Mrk Health vào clipboard lỗi, chuyển sang tải PNG:',e);}
-    }
-    const dlUrl=URL.createObjectURL(pngBlob);
-    const link=document.createElement('a');
-    link.href=dlUrl;link.download=`mrk_health_${_sym||''}.png`;
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
-    _liteCopyFeedback(btn,'downloaded');
-  }catch(e){console.error('copyHealthImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
-}
-document.getElementById('health-copy-btn')?.addEventListener('click',e=>{
-  e.stopPropagation();
-  copyHealthImage(e.currentTarget);
-});
 function bindLiteDrawToolbar(){
   resizeLiteDrawCanvas();
   _liteDrawColor=_liteLSGet(LITE_DRAW_COLOR_KEY,'#1a56db');
@@ -5764,6 +5713,152 @@ function _healthOnMove(evt){
   if(idx!=null)_healthShowCrosshair(idx);
 }
 function _healthOnUp(){_healthDrag=null;_healthPinch=null;}
+// ── Nút camera copy ảnh khung Mrk Health — tái dùng _liteCopyFeedback / _litePngBlobFromDataUrl ──
+// LƯU Ý: bản đầu dùng kỹ thuật SVG<foreignObject> để chụp cả khối HTML — kỹ thuật này nổi tiếng
+// không ổn định (nhiều trình duyệt, đặc biệt Chrome, coi canvas vẽ từ ảnh SVG có foreignObject là
+// "tainted" và chặn xuất ảnh bằng lỗi bảo mật). Cách làm dưới đây tránh hẳn foreignObject:
+// (1) rasterize thẳng SVG biểu đồ (health-svg) — SVG thuần, không phụ thuộc CSS ngoài nên an toàn;
+// (2) phần điểm số/nhãn/thẻ/nhận định được VẼ TAY bằng fillText, theo đúng cách đã dùng cho
+// tiêu đề/badge bên Chart (_liteDrawTitleSegments/_liteDrawSignalBadge) — không đụng canvas "bẩn".
+function _healthWrapText(ctx,text,maxWidth){
+  const words=String(text||'').split(/\s+/).filter(Boolean);
+  const lines=[];let line='';
+  for(const w of words){
+    const test=line?line+' '+w:w;
+    if(ctx.measureText(test).width>maxWidth&&line){lines.push(line);line=w;}
+    else line=test;
+  }
+  if(line)lines.push(line);
+  return lines.length?lines:[''];
+}
+async function copyHealthImage(btn){
+  const svgEl=DOM.healthSvg;
+  if(!svgEl)return;
+  try{
+    const rect=svgEl.getBoundingClientRect();
+    const chartW=Math.max(1,Math.ceil(rect.width)),chartH=Math.max(1,Math.ceil(rect.height));
+    const dpr=window.devicePixelRatio||1;
+    const svgClone=svgEl.cloneNode(true);
+    svgClone.setAttribute('width',chartW*dpr);
+    svgClone.setAttribute('height',chartH*dpr);
+    svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const svgXml=new XMLSerializer().serializeToString(svgClone);
+    const chartImg=new Image();
+    await new Promise((res,rej)=>{
+      chartImg.onload=res;chartImg.onerror=rej;
+      chartImg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
+    });
+    // Lấy nội dung khung phân tích trực tiếp từ DOM đang hiển thị (giá trị mới nhất đã render sẵn)
+    const scoreText=DOM.healthScore?.textContent||'--';
+    const scoreColor=DOM.healthScore?.style.color||'#1f2937';
+    const labelText=DOM.healthLabel?.textContent||'--';
+    const dateText=DOM.healthDate?.textContent||'';
+    const tags=Array.from(DOM.healthTags?.children||[]).map(el=>el.textContent||'');
+    const paras=Array.from(DOM.healthAnalysis?.querySelectorAll('p')||[]).map(p=>p.textContent||'');
+    const factors=Array.from(DOM.healthAnalysis?.querySelectorAll('li')||[]).map(li=>li.textContent||'');
+    const summary=paras[0]||'',conclusion=paras.length>1?paras[paras.length-1]:'';
+    // Đo trước số dòng của phần nhận định (word-wrap) để tính chiều cao canvas cho khớp
+    const measCanvas=document.createElement('canvas'),mctx=measCanvas.getContext('2d');
+    const padX=18,contentW=chartW-2*padX;
+    mctx.font='400 13px "IBM Plex Sans",sans-serif';
+    const bodyBlocks=[];
+    if(summary)bodyBlocks.push(_healthWrapText(mctx,summary,contentW));
+    factors.forEach(f=>bodyBlocks.push(_healthWrapText(mctx,'•  '+f,contentW)));
+    if(conclusion)bodyBlocks.push(_healthWrapText(mctx,conclusion,contentW));
+    const lineH=20,blockGap=6;
+    const analysisLines=bodyBlocks.reduce((n,b)=>n+b.length,0);
+    const analysisH=bodyBlocks.length?(30+analysisLines*lineH+(bodyBlocks.length-1)*blockGap+16):0;
+    // Đo trước layout của các tag (toạ độ + số dòng thật sự cần) — tính 1 lần duy nhất, dùng lại
+    // y hệt khi vẽ ở dưới, tránh phải đo lại lần 2 (có nguy cơ lệch pha giữa lúc đo và lúc vẽ).
+    const pillH=24,pillGap=6,pillRowGap=8;
+    mctx.font='800 11px "IBM Plex Sans",sans-serif';
+    const tagLayout=[];
+    if(tags.length){
+      let tx=0,trow=0;
+      tags.forEach(t=>{
+        const tw=mctx.measureText(t).width+16;
+        if(tx+tw>contentW&&tx>0){tx=0;trow++;}
+        tagLayout.push({text:t,x:tx,row:trow,w:tw});
+        tx+=tw+pillGap;
+      });
+    }
+    const tagRows=tagLayout.length?tagLayout[tagLayout.length-1].row+1:0;
+    const tagsH=tagRows?tagRows*pillH+(tagRows-1)*pillRowGap:0;
+    const headerH=70,gap=14;
+    const W=chartW+2*padX,H=Math.round(padX+headerH+gap+chartH+(tagsH?gap+tagsH:0)+(analysisH?gap+analysisH:0)+padX);
+    const canvas=document.createElement('canvas');
+    canvas.width=W*dpr;canvas.height=H*dpr;
+    const ctx=canvas.getContext('2d');
+    ctx.scale(dpr,dpr);
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);
+    let y=padX;
+    // Header: điểm số lớn + nhãn màu + ngày/delta
+    ctx.textBaseline='alphabetic';
+    ctx.fillStyle=scoreColor;
+    ctx.font='800 40px "IBM Plex Mono",monospace';
+    ctx.fillText(scoreText,padX,y+38);
+    const scoreW=ctx.measureText(scoreText).width;
+    ctx.fillStyle='#1f2937';
+    ctx.font='800 16px "IBM Plex Sans",sans-serif';
+    ctx.fillText(labelText.toUpperCase(),padX+scoreW+14,y+22);
+    ctx.fillStyle='#6b7280';
+    ctx.font='400 12px "IBM Plex Mono",monospace';
+    ctx.fillText(dateText,padX+scoreW+14,y+42);
+    y+=headerH+gap;
+    // Biểu đồ HEALTH (rasterize trực tiếp từ SVG gốc)
+    ctx.drawImage(chartImg,padX,y,chartW,chartH);
+    ctx.strokeStyle='#e5e7eb';ctx.lineWidth=1;ctx.strokeRect(padX,y,chartW,chartH);
+    y+=chartH;
+    // Các thẻ (tags) — vẽ dạng pill nhỏ, dùng đúng layout đã tính ở bước đo phía trên
+    if(tagLayout.length){
+      y+=gap;
+      const tagsTop=y;
+      ctx.font='800 11px "IBM Plex Sans",sans-serif';
+      tagLayout.forEach(p=>{
+        const px=padX+p.x,py=tagsTop+p.row*(pillH+pillRowGap);
+        ctx.fillStyle='#f8fafc';ctx.strokeStyle='#cbd5e1';ctx.lineWidth=1;
+        if(ctx.roundRect){ctx.beginPath();ctx.roundRect(px,py,p.w,pillH,4);ctx.fill();ctx.stroke();}
+        else{ctx.fillRect(px,py,p.w,pillH);ctx.strokeRect(px,py,p.w,pillH);}
+        ctx.fillStyle='#334155';
+        ctx.fillText(p.text,px+8,py+16);
+      });
+      y+=tagsH;
+    }
+    // Nhận định — tiêu đề + các đoạn/gạch đầu dòng đã word-wrap sẵn ở trên
+    if(bodyBlocks.length){
+      y+=gap;
+      ctx.fillStyle='#0f172a';
+      ctx.font='800 13px "IBM Plex Sans",sans-serif';
+      ctx.fillText('NHẬN ĐỊNH',padX,y+14);
+      let ly=y+34;
+      ctx.font='400 13px "IBM Plex Sans",sans-serif';
+      ctx.fillStyle='#1f2937';
+      bodyBlocks.forEach(block=>{
+        block.forEach(line=>{ctx.fillText(line,padX,ly);ly+=lineH;});
+        ly+=blockGap;
+      });
+    }
+    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
+        _liteCopyFeedback(btn,'copied');
+        return;
+      }catch(e){console.warn('Copy ảnh Mrk Health vào clipboard lỗi, chuyển sang tải PNG:',e);}
+    }
+    const dlUrl=URL.createObjectURL(pngBlob);
+    const link=document.createElement('a');
+    link.href=dlUrl;link.download=`mrk_health_${_sym||''}.png`;
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
+    _liteCopyFeedback(btn,'downloaded');
+  }catch(e){console.error('copyHealthImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
+}
+DOM.healthCopyBtn?.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  copyHealthImage(e.currentTarget);
+});
 DOM.healthSvg.addEventListener('mousemove',_healthOnMove);
 DOM.healthSvg.addEventListener('mousedown',_healthOnDown);
 DOM.healthSvg.addEventListener('mouseleave',()=>{_healthHideCrosshair();_healthDrag=null;});
