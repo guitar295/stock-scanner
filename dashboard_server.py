@@ -5344,10 +5344,17 @@ function _tmHslToRgb(h,s,l){
 }
 const TM_POS_L_MIN=0.714, TM_POS_L_MAX=0.947; // dải sáng gốc của thang xanh (đậm→nhạt theo %)
 const TM_NEG_L_MIN=0.755, TM_NEG_L_MAX=0.941; // dải sáng gốc của thang đỏ (đậm→nhạt theo %)
+// Pha màu gốc với trắng theo hệ số alpha cố định — tạo "màng mờ" đồng bộ,
+// áp cho cả 3 màu cố định (tím/vàng/xanh dương) để cùng chất liệu với xanh/đỏ.
+const TM_VEIL_ALPHA=0.82;
+function _tmVeil(r,g,b){
+  const a=TM_VEIL_ALPHA;
+  return[Math.round(r*a+255*(1-a)),Math.round(g*a+255*(1-a)),Math.round(b*a+255*(1-a))];
+}
 function treemapCellStyle(pct){
-  if(pct>=6.5)return{bg:'rgb(168,85,247)',fg:'rgb(255,255,255)'}; // trần: tím
-  if(pct>-0.05&&pct<0.05)return{bg:'rgb(242,201,76)',fg:'rgb(15,15,15)'}; // tham chiếu: vàng (chữ đen)
-  if(pct<=-6.5)return{bg:'rgb(59,130,246)',fg:'rgb(255,255,255)'}; // sàn: xanh da trời
+  if(pct>=6.5){const[r,g,b]=_tmVeil(168,85,247);return{bg:`rgb(${r},${g},${b})`,fg:'rgb(255,255,255)'};} // trần: tím
+  if(pct>-0.05&&pct<0.05){const[r,g,b]=_tmVeil(242,201,76);return{bg:`rgb(${r},${g},${b})`,fg:'rgb(15,15,15)'};} // tham chiếu: vàng
+  if(pct<=-6.5){const[r,g,b]=_tmVeil(59,130,246);return{bg:`rgb(${r},${g},${b})`,fg:'rgb(255,255,255)'};} // sàn: xanh da trời
   const{bg}=cellStyle(pct);
   const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
   if(!m)return{bg,fg:'rgb(255,255,255)'};
@@ -6157,7 +6164,7 @@ function renderSankey(data){
   sectors.forEach(sec=>{
     svg.appendChild(sankeyEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
     if(sec.h>16){
-      svg.appendChild(sankeyEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700},sec.name));
+      svg.appendChild(sankeyEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700},sectorLabel(sec.name)));
       svg.appendChild(sankeyEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':10},sankeyFmtNum(sec.weight)));
     }
   });
@@ -6226,6 +6233,11 @@ function tmSquarify(items,x,y,w,h,out){
   if(vertical)tmSquarify(rest,x+rowThick,y,w-rowThick,h,out);
   else tmSquarify(rest,x,y+rowThick,w,h-rowThick,out);
 }
+// Định dạng tên ngành dùng CHUNG cho cả Sankey và Treemap — sửa 1 chỗ này,
+// cả 2 view tự động đồng bộ theo (chỉ viết hoa chữ cái đầu, VD "NGÂN HÀNG" -> "Ngân hàng").
+function sectorLabel(name){
+  return name?name.charAt(0)+name.slice(1).toLowerCase():name;
+}
 function renderTreemap(data){
   const svg=DOM.treemapSvg;if(!svg)return;
   svg.innerHTML='';
@@ -6243,7 +6255,7 @@ function renderTreemap(data){
     svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
-      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#6b7280'},sec.item.name));
+      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#1f2937'},sectorLabel(sec.item.name)));
     }
     const stockLayout=[];
     tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
