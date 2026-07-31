@@ -739,7 +739,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
     momentum_score = _mh_percentile_score(momentum_raw)
     volatility_score = _mh_percentile_score(volatility_raw)
 
-    above_ma50, rsi14, new_high, new_low, vol_push, decline_today = {}, {}, {}, {}, {}, {}
+    above_ma50, rsi14, new_high, new_low, vol_push, decline_today, hoang_loan, ban_thao = {}, {}, {}, {}, {}, {}, {}, {}
     for sym, d in prepared.items():
         above_ma50[sym] = (d["close"] > d["MA50"]).astype(float)
         rsi14[sym] = d["RSI14"]
@@ -754,16 +754,25 @@ def compute_market_health_index(limit: int = 120) -> dict:
         excite = ((pct >= 2.5) & (v_ratio >= 1.5)).astype(float)
         panic = ((pct <= -2.5) & (v_ratio >= 1.5)).astype(float)
         vol_push[sym] = excite - panic
+        # 2 cờ riêng cho tag "Hoảng loạn" / "Bán tháo" — đều là sự kiện CẤP TÍNH trong
+        # 1 phiên (giảm sâu + volume xác nhận ≥1.3x TB 20 phiên), độc lập với band/xu
+        # hướng điểm HEALTH. Phân biệt theo biên độ giảm: 2,5%-4% là "Hoảng loạn" (mức
+        # nhẹ hơn), từ 4% trở lên là "Bán tháo" (mức nặng hơn, diện rộng thực sự).
+        hoang_loan[sym] = ((pct <= -2.5) & (pct > -4) & (v_ratio >= 1.3)).astype(float)
+        ban_thao[sym] = ((pct <= -4) & (v_ratio >= 1.3)).astype(float)
 
     dates = close_df.index[-max(limit, 30):]
     breadth_s = pd.concat(above_ma50, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
     decline_s = pd.concat(decline_today, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    hoang_loan_s = pd.concat(hoang_loan, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    ban_thao_s = pd.concat(ban_thao, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
     rsi_s = pd.concat(rsi14, axis=1).reindex(dates).median(axis=1, skipna=True).clip(0, 100)
     nh_s = pd.concat(new_high, axis=1).reindex(dates).sum(axis=1, skipna=True)
     nl_s = pd.concat(new_low, axis=1).reindex(dates).sum(axis=1, skipna=True)
     denom = (nh_s + nl_s).replace(0, np.nan)
     newhl_s = (50 + 50 * ((nh_s - nl_s) / denom)).fillna(50).clip(0, 100)
     vol_push_s = (50 + 50 * pd.concat(vol_push, axis=1).reindex(dates).mean(axis=1, skipna=True)).clip(0, 100)
+
 
     component_series = {
         "momentum": momentum_score.reindex(dates),
@@ -844,36 +853,70 @@ def compute_market_health_index(limit: int = 120) -> dict:
     falling_3 = len(history) >= 4 and history[-1]["score"] < history[-4]["score"]
 
     breadth_now = current_components.get("breadth") or 0
-    rsi_now = current_components.get("rsi") or 0
     decline_now = _mh_finite_float(decline_s.loc[cur_dt]) if cur_dt in decline_s.index else None
+    hoang_loan_now = _mh_finite_float(hoang_loan_s.loc[cur_dt]) if cur_dt in hoang_loan_s.index else None
+    ban_thao_now = _mh_finite_float(ban_thao_s.loc[cur_dt]) if cur_dt in ban_thao_s.index else None
 
     band = _mh_score_band(cur_score)
     delta = cur_score - prev_score
+
+    # Xu hướng ngắn hạn dùng chung cho các tag "đảo chiều"/"phân phối" bên dưới:
+    # reversing_top/recovering_bottom = đã XÁC NHẬN đổi chiều (falling_3/rising_3
+    # hoặc delta cùng dấu). Tách bạch với "chưa đổi chiều" để tag cảnh báo sớm
+    # (Dấu hiệu phân phối) và tag xác nhận đảo chiều (Điều chỉnh từ đỉnh) không
+    # lặp lại cùng một ý nghĩa ở 2 thời điểm khác nhau.
+    reversing_top = falling_3 or delta < 0
+    recovering_bottom = rising_3 or delta > 0
+    max_recent_10 = max(recent_scores)
+    min_recent_10 = min(recent_scores)
 
     tags = []
     if cur_score >= 90:
         tags.append("Cực kỳ hưng phấn")
     if cur_score <= 10:
         tags.append("Cực kỳ sợ hãi")
-    if high_streak >= 3 and breadth_now < 55:
-        tags.append("Cảnh báo phân phối")
-    if high_streak >= 3 and falling_3:
-        tags.append("Rủi ro tạo đỉnh")
-    if low_streak >= 3 and rising_3:
-        tags.append("Tín hiệu dò đáy")
-    MH_BROAD_DECLINE_PCT = 60  # ngưỡng % mã giảm giá trong phiên để coi là "giảm diện rộng"
-    if cur_score <= 35 and breadth_now < 35 and rsi_now < 40 and (decline_now or 0) >= MH_BROAD_DECLINE_PCT:
-        tags.append("Bán tháo/hoảng loạn")
-    if 45 <= cur_score <= 60 and abs(cur_score - prev_score) <= 4 and 40 <= breadth_now <= 60:
+    # "Dấu hiệu phân phối": cảnh báo SỚM — breadth đã yếu trong khi streak điểm cao
+    # vẫn đang giữ, giá CHƯA xác nhận giảm (not reversing_top). Cố ý không giới hạn
+    # trần cur_score nên có thể trùng với "Cực kỳ hưng phấn" (kịch bản "blow-off
+    # top": giá vẫn tăng rất mạnh nhưng độ rộng đã co hẹp) — đây là chủ đích, không
+    # phải lỗi.
+    if high_streak >= 3 and breadth_now < 55 and not reversing_top:
+        tags.append("Dấu hiệu phân phối")
+    # "Điều chỉnh từ đỉnh": gộp 2 tag cũ ("Rủi ro tạo đỉnh" + "Hạ nhiệt từ hưng
+    # phấn") vì cùng mô tả 1 quá trình (giá đảo chiều sau giai đoạn hưng phấn),
+    # chỉ khác lát cắt thời điểm đo:
+    #   - Nhánh A: điểm vẫn ≥75 (đang trong streak cao) nhưng đã bắt đầu giảm.
+    #   - Nhánh B: điểm đã rơi xuống band Lạc quan (60-80, hở 2 đầu để không đụng
+    #     "Tích lũy cân bằng" ở mốc 60 và không đụng "Cực kỳ hưng phấn" ở mốc 90)
+    #     nhưng gần đây (10 phiên) từng đạt Hưng phấn (≥80).
+    # Nhánh A không giới hạn trần điểm nên vẫn có thể trùng "Cực kỳ hưng phấn" —
+    # chủ đích, giữ nguyên như "Dấu hiệu phân phối" ở trên.
+    if (high_streak >= 3 and falling_3) or (
+        60 < cur_score < 80 and max_recent_10 >= 80 and reversing_top
+    ):
+        tags.append("Điều chỉnh từ đỉnh")
+    # "Phục hồi từ đáy": đối xứng với "Điều chỉnh từ đỉnh", gộp "Tín hiệu dò đáy" +
+    # "Hồi phục từ sợ hãi". Không có tag "cảnh báo sớm" đối xứng với "Dấu hiệu phân
+    # phối" ở phía đáy — có chủ đích, vì breadth cải thiện sớm ở vùng đáy không
+    # mang tính cảnh báo rủi ro như breadth suy yếu sớm ở vùng đỉnh.
+    if (low_streak >= 3 and rising_3) or (
+        20 <= cur_score < 40 and min_recent_10 <= 20 and recovering_bottom
+    ):
+        tags.append("Phục hồi từ đáy")
+    # "Hoảng loạn" / "Bán tháo" là sự kiện CẤP TÍNH trong 1 phiên (giảm sâu + volume
+    # xác nhận), không lệ thuộc band/xu hướng điểm HEALTH nhiều phiên trước đó — nên
+    # có thể xảy ra ngay cả khi thị trường đang uptrend (VD phiên phân phối đỉnh, RSI
+    # vẫn >80 là bình thường). Vì vậy KHÔNG dùng cur_score/breadth_now(MA50)/rsi_now ở
+    # đây, chỉ dùng % mã thỏa biên độ giảm + volume đột biến ≥1.3x TB 20 phiên trong
+    # chính phiên đó. Hai tag loại trừ lẫn nhau ở cấp độ từng mã (2,5%-4% vs ≥4%),
+    # nhưng vẫn có thể cùng xuất hiện nếu cả 2 nhóm mã đều đủ % ngưỡng diện rộng.
+    MH_PANIC_PCT = 60  # ngưỡng % mã thỏa điều kiện để coi là diện rộng, áp dụng cho cả 2 tag
+    if (hoang_loan_now or 0) >= MH_PANIC_PCT:
+        tags.append("Hoảng loạn")
+    if (ban_thao_now or 0) >= MH_PANIC_PCT:
+        tags.append("Bán tháo")
+    if 45 <= cur_score <= 60 and abs(delta) <= 4 and 40 <= breadth_now <= 60:
         tags.append("Tích lũy cân bằng")
-    # Band hiện tại chỉ phản ánh vị trí tuyệt đối theo ngưỡng điểm, không phản ánh
-    # hướng đi — nên "Lạc quan" sau khi rơi từ Hưng phấn và "Bi quan" sau khi hồi
-    # từ Sợ hãi trông giống hệt trường hợp đi lên/xuống từ Trung tính. 2 tag dưới
-    # đây bổ sung sắc thái đó mà không đụng vào nhãn band chính.
-    if band["key"] == "positive" and max(recent_scores[-10:]) >= 80 and (falling_3 or delta < 0):
-        tags.append("Hạ nhiệt từ hưng phấn")
-    if band["key"] == "negative" and min(recent_scores[-10:]) <= 20 and (rising_3 or delta > 0):
-        tags.append("Hồi phục từ sợ hãi")
     if not tags:
         tags.append("Theo dõi xu hướng")
 
@@ -894,36 +937,41 @@ def compute_market_health_index(limit: int = 120) -> dict:
     factors = [f"{p}." for p in factors]
     if decline_now is not None:
         factors.append(f"Trong phiên hôm nay có khoảng {decline_now:.0f}% cổ phiếu trong rổ giảm giá.")
-    top_warning = "Cảnh báo phân phối" in tags or "Rủi ro tạo đỉnh" in tags
-    cooling_from_euphoria = "Hạ nhiệt từ hưng phấn" in tags
-    bottom_signal = "Tín hiệu dò đáy" in tags
-    recovering_from_fear = "Hồi phục từ sợ hãi" in tags
-    if "Cực kỳ hưng phấn" in tags:
-        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
-    elif "Cực kỳ sợ hãi" in tags:
-        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán tháo cực đoan, thường là vùng dò đáy tiềm năng nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
-    elif top_warning and cooling_from_euphoria:
-        # Cùng lúc vừa cảnh báo đỉnh/phân phối vừa đã rời khỏi vùng Hưng phấn — gộp
-        # thành 1 ý duy nhất thay vì lặp lại "cẩn trọng" ở cả 2 nhánh riêng lẻ.
-        conclusion = "Kết luận: chỉ số vừa rời vùng hưng phấn xuống lạc quan nhưng nền tham gia vẫn chưa đủ rộng — rủi ro tạo đỉnh còn hiện hữu; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
-    elif top_warning:
-        conclusion = "Kết luận: ưu tiên quản trị rủi ro; thị trường có dấu hiệu hưng phấn nhưng nền tham gia không đủ rộng, cần cảnh giác vùng đỉnh/phân phối."
-    elif cooling_from_euphoria:
-        conclusion = "Kết luận: chỉ số vừa hạ nhiệt từ vùng hưng phấn xuống lạc quan — đà tăng vẫn còn nhưng đã bớt nóng, nên thận trọng với nhóm đã tăng mạnh, tránh mua đuổi."
-    elif bottom_signal and recovering_from_fear:
-        # Tương tự: vừa có tín hiệu dò đáy vừa hồi phục từ Sợ hãi — gộp lại,
-        # tránh nói 2 lần cùng một ý "lực bán yếu dần / đang hồi lên".
-        conclusion = "Kết luận: chỉ số vừa hồi phục từ vùng sợ hãi lên bi quan và độ rộng đang cải thiện — tín hiệu dò đáy rõ hơn, nhưng vẫn cần thêm phiên xác nhận trước khi giải ngân mạnh."
-    elif bottom_signal:
-        conclusion = "Kết luận: lực bán đang suy yếu sau vùng sợ hãi; phù hợp theo dõi quá trình tạo đáy, chưa coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện."
-    elif recovering_from_fear:
-        conclusion = "Kết luận: chỉ số đang hồi phục từ vùng sợ hãi lên bi quan — tâm lý bán tháo đã giảm bớt nhưng chưa đủ để coi là lạc quan, cần thêm xác nhận trước khi giải ngân."
-    elif "Bán tháo/hoảng loạn" in tags:
-        conclusion = "Kết luận: trạng thái bi quan cực đoan; tránh bán đuổi, chờ tín hiệu phục hồi của độ rộng và RSI để xác nhận đáy."
+    has_euphoria = "Cực kỳ hưng phấn" in tags
+    has_fear = "Cực kỳ sợ hãi" in tags
+    has_correction = "Điều chỉnh từ đỉnh" in tags
+    has_distribution = "Dấu hiệu phân phối" in tags
+    has_recovery = "Phục hồi từ đáy" in tags
+
+    if has_euphoria and has_correction:
+        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) và đã bắt đầu chững/quay đầu — rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng nóng, tránh mua đuổi."
+    elif has_euphoria and has_distribution:
+        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) nhưng độ rộng thị trường không theo kịp đà tăng giá — dấu hiệu phân phối sớm giữa lúc tăng nóng; rủi ro đảo chiều ngắn hạn cao, ưu tiên chốt lời/giảm tỷ trọng, tránh mua đuổi."
+    elif has_euphoria:
+        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn gia tăng; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
+    elif has_fear and has_recovery:
+        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) và đã có dấu hiệu hồi phục — tâm lý bán tháo đang dịu bớt, có thể là vùng dò đáy tiềm năng nhưng vẫn cần thêm phiên xác nhận độ rộng/RSI trước khi giải ngân, tránh bắt đáy sớm."
+    elif has_fear:
+        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán là chủ đạo, thường là vùng dò đáy tiềm năng, nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
+    elif has_correction:
+        conclusion = "Kết luận: chỉ số đang điều chỉnh từ vùng hưng phấn/lạc quan — đà tăng đã bớt nóng và bắt đầu suy yếu; ưu tiên chốt lời một phần ở nhóm tăng mạnh trước đó, hạn chế mua đuổi."
+    elif has_distribution:
+        conclusion = "Kết luận: điểm HEALTH vẫn ở vùng cao nhưng độ rộng thị trường đang thu hẹp — dấu hiệu phân phối sớm, nền tăng đang mỏng dần dù giá chưa xác nhận giảm; nên bắt đầu thận trọng, hạn chế mua mới, chưa cần bán vội nếu điểm HEALTH chưa giảm rõ."
+    elif has_recovery:
+        conclusion = "Kết luận: chỉ số đang phục hồi từ vùng sợ hãi/bi quan — lực bán đã suy yếu và tâm lý đang cải thiện; theo dõi quá trình tạo đáy, nhưng chưa nên coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện rõ."
     elif "Tích lũy cân bằng" in tags:
         conclusion = "Kết luận: thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
     else:
-        conclusion = "Kết luận: chưa có tín hiệu cực đoan đủ mạnh để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
+        conclusion = "Kết luận: chưa có tín hiệu cực đoan đủ mạnh theo band điểm HEALTH để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
+    # Hoảng loạn/Bán tháo là sự kiện CẤP TÍNH trong phiên, có thể trùng với BẤT KỲ tag/
+    # band nào ở trên (kể cả giữa uptrend) — thay vì lồng vào từng nhánh phía trên (dễ
+    # gây rối, khó bảo trì), luôn thêm 1 câu nhận xét ĐỘC LẬP ở cuối, tách bạch rõ ràng.
+    if "Bán tháo" in tags:
+        pct_str = f"~{ban_thao_now:.0f}%" if ban_thao_now is not None else "nhiều"
+        conclusion += f" Xuất hiện dấu hiệu bán tháo diện rộng ({pct_str} số mã giảm ≥4% kèm volume ≥1,3 lần TB20) — thận trọng khi giao dịch."
+    elif "Hoảng loạn" in tags:
+        pct_str = f"~{hoang_loan_now:.0f}%" if hoang_loan_now is not None else "nhiều"
+        conclusion += f" Xuất hiện dấu hiệu hoảng loạn diện rộng ({pct_str} số mã giảm 2,5%-4% kèm volume ≥1,3 lần TB20) — thận trọng khi giao dịch, tránh phản ứng thái quá."
 
     return {
         "ok": True,
