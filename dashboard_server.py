@@ -5354,14 +5354,14 @@ function treemapCellStyle(pct){
   const l=_tmLightness(+m[1],+m[2],+m[3]);
   let r,g,b;
   if(pct>=0.05){
-    // Xanh lá cây thật (hue cố định ~150°, tránh ngả lime), bớt sáng: đậm dần theo % tăng
+    // Xanh lá cây thật (hue ~150°): dải lightness hẹp, không quá mờ ở mức % nhỏ
     const t=Math.max(0,Math.min(1,(l-TM_POS_L_MIN)/(TM_POS_L_MAX-TM_POS_L_MIN)));
-    const ll=0.32+t*(0.52-0.32);
-    [r,g,b]=_tmHslToRgb(150/360,0.62,ll);
+    const ll=0.42+t*(0.52-0.42);
+    [r,g,b]=_tmHslToRgb(150/360,0.58,ll);
   }else{
-    // Đỏ thật (hue cố định 0°, không ngả hồng)
+    // Đỏ thật (hue cố định 0°, không ngả hồng): dải lightness hẹp
     const t=Math.max(0,Math.min(1,(l-TM_NEG_L_MIN)/(TM_NEG_L_MAX-TM_NEG_L_MIN)));
-    const ll=0.45+t*(0.58-0.45);
+    const ll=0.46+t*(0.54-0.46);
     [r,g,b]=_tmHslToRgb(0,0.68,ll);
   }
   return{bg:`rgb(${r},${g},${b})`,fg:'rgb(255,255,255)'};
