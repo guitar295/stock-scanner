@@ -5358,24 +5358,24 @@ function _tmHslToRgb(h,s,l){
 const TM_POS_L_MIN=0.714, TM_POS_L_MAX=0.947; // dải sáng gốc của thang xanh (đậm→nhạt theo %)
 const TM_NEG_L_MIN=0.755, TM_NEG_L_MAX=0.941; // dải sáng gốc của thang đỏ (đậm→nhạt theo %)
 function treemapCellStyle(pct){
+  if(pct>=6.5)return{bg:'rgb(168,85,247)',fg:'rgb(15,15,15)'}; // trần: tím
+  if(pct>-0.05&&pct<0.05)return{bg:'rgb(242,201,76)',fg:'rgb(15,15,15)'}; // tham chiếu: vàng
+  if(pct<=-6.5)return{bg:'rgb(59,130,246)',fg:'rgb(15,15,15)'}; // sàn: xanh da trời
   const{bg}=cellStyle(pct);
   const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
   if(!m)return{bg,fg:'rgb(15,15,15)'};
-  const[h,s,l]=_tmRgbToHsl(+m[1],+m[2],+m[3]);
+  const l=_tmRgbToHsl(+m[1],+m[2],+m[3])[2];
   let r,g,b;
-  if(pct>=0.05&&pct<6.5){
+  if(pct>=0.05){
     // Xanh lá cây thật (hue cố định ~142°), bớt sáng: đậm dần theo % tăng
     const t=Math.max(0,Math.min(1,(l-TM_POS_L_MIN)/(TM_POS_L_MAX-TM_POS_L_MIN)));
-    const ll=0.38+t*(0.68-0.38);
+    const ll=0.42+t*(0.68-0.42);
     [r,g,b]=_tmHslToRgb(142/360,0.68,ll);
-  }else if(pct<=-0.05&&pct>-6.5){
-    // Đỏ thật (hue cố định 0°, không ngả hồng), đậm hơn và bớt sáng hơn
-    const t=Math.max(0,Math.min(1,(l-TM_NEG_L_MIN)/(TM_NEG_L_MAX-TM_NEG_L_MIN)));
-    const ll=0.46+t*(0.74-0.46);
-    [r,g,b]=_tmHslToRgb(0,0.80,ll);
   }else{
-    // Trần/sàn/tham chiếu: giữ cách xử lý cũ (tăng bão hoà, hạ nhẹ sáng)
-    [r,g,b]=_tmHslToRgb(h,Math.min(1,s*2.6),Math.max(0.28,l-0.09));
+    // Đỏ thật (hue cố định 0°, không ngả hồng)
+    const t=Math.max(0,Math.min(1,(l-TM_NEG_L_MIN)/(TM_NEG_L_MAX-TM_NEG_L_MIN)));
+    const ll=0.60+t*(0.74-0.60);
+    [r,g,b]=_tmHslToRgb(0,0.80,ll);
   }
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
