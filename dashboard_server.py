@@ -1655,7 +1655,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
 .hmap-link-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hmap-link-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-#hmap-simplize-btn{color:var(--muted)}
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
@@ -2307,7 +2306,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
-        <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
       <span class="hmap-toggle-icon">▶</span>
@@ -2540,7 +2538,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="tri-tabs" id="tri-tabs">
         <span class="tri-tab on" data-tab="fireant">Fireant</span>
         <span class="tri-tab" data-tab="health">Mrk Health</span>
-        <span class="tri-tab" data-tab="marketwatch">Mrk Watch</span>
         <span class="tri-tab" data-tab="dinhgia">Định giá</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
@@ -2580,9 +2577,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             </div>
           </div>
         </div>
-      </div>
-      <div class="tri-content" id="tri-content-marketwatch">
-        <div class="frame-shrink"><iframe id="marketwatch-frame" src="about:blank" allowfullscreen></iframe></div>
       </div>
       <div class="tri-content" id="tri-content-dinhgia">
         <div class="frame-shrink"><iframe id="dinhgia-frame" src="about:blank" allowfullscreen></iframe></div>
@@ -2877,10 +2871,7 @@ let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
 let _isChartPanelOpen=false;
-let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
-const SIMPLIZE_ORIGIN='https://simplize.vn';
-function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
 const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
@@ -5289,7 +5280,6 @@ function _refreshChartModeUI(){
   chartBtn.classList.toggle('on',_hoverPreviewOn||_isPopoutMode);
   chartBtn.textContent=_isPopoutMode?'Chart: POP':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
   $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
-  $('hmap-simplize-btn').classList.toggle('on',_isSimplizeMode);
 }
 function _resetPopupChrome(){
   $('popup-phdr').style.display='';
@@ -5297,37 +5287,6 @@ function _resetPopupChrome(){
   DOM.mobTabRow.style.display='none';
   DOM.mobHdrLand.style.display='';
   DOM.mobClose.style.display='none';
-}
-function _stopSimplizeWatch(){
-  if(_simplizeWatch){clearInterval(_simplizeWatch);_simplizeWatch=null;}
-}
-function closeSimplizeWindow(){
-  _isSimplizeMode=false;
-  _stopSimplizeWatch();
-  if(_simplizeWin&&!_simplizeWin.closed)try{_simplizeWin.close();}catch(e){}
-  _simplizeWin=null;
-  _refreshChartModeUI();
-}
-function updateSimplize(sym){
-  if(!_simplizeWin||_simplizeWin.closed){
-    if(_isSimplizeMode)closeSimplizeWindow();
-    return;
-  }
-  try{_simplizeWin.location.href=simplizeUrl(sym);}catch(e){}
-}
-function quickSimplize(){
-  const sym=_hoverPreviewCurrent||_sym||'VNINDEX';
-  if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
-  const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),h=box.height;
-  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,0,0);
-  if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
-  _isSimplizeMode=true;
-  _refreshChartModeUI();
-  _stopSimplizeWatch();
-  _simplizeWatch=setInterval(()=>{
-    if(_simplizeWin&&_simplizeWin.closed)closeSimplizeWindow();
-  },1000);
 }
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
@@ -5392,7 +5351,6 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(cell.dataset.sym);
   updatePopout(cell.dataset.sym);
-  updateSimplize(cell.dataset.sym);
   _jumpLiteChart(cell.dataset.sym);
   openChart(cell.dataset.sym);
 });
@@ -5414,12 +5372,10 @@ function _hmapDesktopClick(sym){
   _hmapClickTimer=setTimeout(()=>{
     _syncHoverPreview(sym);
     updatePopout(sym);
-    updateSimplize(sym);
     _jumpLiteChart(sym);
     if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
     if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
-    if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
   },220);
 }
@@ -5433,7 +5389,6 @@ DOM.sigList.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(row.dataset.sym);
   updatePopout(row.dataset.sym);
-  updateSimplize(row.dataset.sym);
   _jumpLiteChart(row.dataset.sym);
   openChart(row.dataset.sym);
 });
@@ -5735,8 +5690,27 @@ async function copyHealthImage(btn){
   const svgEl=DOM.healthSvg;
   if(!svgEl)return;
   try{
-    const rect=svgEl.getBoundingClientRect();
-    const chartW=Math.max(1,Math.ceil(rect.width)),chartH=Math.max(1,Math.ceil(rect.height));
+    // Đo trực tiếp vị trí + kích thước THẬT của 2 khung (chart trái / score-card+nhận
+    // định phải) ngay trên DOM đang hiển thị, rồi vẽ lại đúng như vậy trên canvas —
+    // thay vì tự suy ra tỉ lệ cột. Nhờ vậy ảnh xuất ra luôn khớp 1:1 với layout thật
+    // của .health-layout (kể cả khi co về 1 cột trên màn hẹp, do @media ở dòng ~2021).
+    const layoutEl=svgEl.closest('.health-layout');
+    const chartBoxEl=svgEl.closest('.health-chartbox');
+    const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
+    if(!layoutEl||!chartBoxEl||!scoreCardEl)return;
+    const layoutRect=layoutEl.getBoundingClientRect();
+    const chartRect=chartBoxEl.getBoundingClientRect();
+    const cardRect=scoreCardEl.getBoundingClientRect();
+    const analysisRect=DOM.healthAnalysis.getBoundingClientRect();
+    const relX=r=>Math.round(r.left-layoutRect.left);
+    const relY=r=>Math.round(r.top-layoutRect.top);
+    const chartX=relX(chartRect),chartY=relY(chartRect);
+    const chartW=Math.max(1,Math.round(chartRect.width)),chartH=Math.max(1,Math.round(chartRect.height));
+    const cardX=relX(cardRect),cardY=relY(cardRect);
+    const cardW=Math.max(1,Math.round(cardRect.width)),cardH=Math.max(1,Math.round(cardRect.height));
+    const anaX=relX(analysisRect),anaY=relY(analysisRect);
+    const anaW=Math.max(1,Math.round(analysisRect.width)),anaH=Math.max(1,Math.round(analysisRect.height));
+
     const dpr=window.devicePixelRatio||1;
     const svgClone=svgEl.cloneNode(true);
     svgClone.setAttribute('width',chartW*dpr);
@@ -5748,28 +5722,43 @@ async function copyHealthImage(btn){
       chartImg.onload=res;chartImg.onerror=rej;
       chartImg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
     });
+
+    // Màu lấy từ đúng CSS variable đang dùng thật (--accent/--border/--muted), tránh
+    // hardcode lệch nếu theme đổi.
+    const cs=getComputedStyle(document.documentElement);
+    const cAccent=cs.getPropertyValue('--accent').trim()||'#1a56db';
+    const cBorder=cs.getPropertyValue('--border').trim()||'#dde3ee';
+    const cMuted=cs.getPropertyValue('--muted').trim()||'#6b7280';
+
     // Lấy nội dung khung phân tích trực tiếp từ DOM đang hiển thị (giá trị mới nhất đã render sẵn)
     const scoreText=DOM.healthScore?.textContent||'--';
-    const scoreColor=DOM.healthScore?.style.color||'#1f2937';
     const labelText=DOM.healthLabel?.textContent||'--';
     const dateText=DOM.healthDate?.textContent||'';
     const tags=Array.from(DOM.healthTags?.children||[]).map(el=>el.textContent||'');
     const paras=Array.from(DOM.healthAnalysis?.querySelectorAll('p')||[]).map(p=>p.textContent||'');
     const factors=Array.from(DOM.healthAnalysis?.querySelectorAll('li')||[]).map(li=>li.textContent||'');
     const summary=paras[0]||'',conclusion=paras.length>1?paras[paras.length-1]:'';
-    // Đo trước số dòng của phần nhận định (word-wrap) để tính chiều cao canvas cho khớp
+
     const measCanvas=document.createElement('canvas'),mctx=measCanvas.getContext('2d');
-    const padX=18,contentW=chartW-2*padX;
-    mctx.font='400 13px "IBM Plex Sans",sans-serif';
+
+    // Đo trước nội dung "Nhận định" theo đúng bề rộng thật của khung phải (anaW) —
+    // .health-analysis{padding:18px 20px} nên trừ đúng 20px mỗi bên.
+    const anaPadX=20,anaContentW=anaW-2*anaPadX;
+    mctx.font='400 15px "IBM Plex Sans",sans-serif';
     const bodyBlocks=[];
-    if(summary)bodyBlocks.push(_healthWrapText(mctx,summary,contentW));
-    factors.forEach(f=>bodyBlocks.push(_healthWrapText(mctx,'•  '+f,contentW)));
-    if(conclusion)bodyBlocks.push(_healthWrapText(mctx,conclusion,contentW));
-    const lineH=20,blockGap=6;
+    if(summary)bodyBlocks.push(_healthWrapText(mctx,summary,anaContentW));
+    mctx.font='400 14.5px "IBM Plex Sans",sans-serif';
+    factors.forEach(f=>bodyBlocks.push(_healthWrapText(mctx,'•  '+f,anaContentW)));
+    mctx.font='400 15px "IBM Plex Sans",sans-serif';
+    if(conclusion)bodyBlocks.push(_healthWrapText(mctx,conclusion,anaContentW));
+    const lineH=24,blockGap=8;
+    const titleH=15+12; // .health-analysis-title: font-size 15px + margin-bottom 12px
     const analysisLines=bodyBlocks.reduce((n,b)=>n+b.length,0);
-    const analysisH=bodyBlocks.length?(30+analysisLines*lineH+(bodyBlocks.length-1)*blockGap+16):0;
-    // Đo trước layout của các tag (toạ độ + số dòng thật sự cần) — tính 1 lần duy nhất, dùng lại
-    // y hệt khi vẽ ở dưới, tránh phải đo lại lần 2 (có nguy cơ lệch pha giữa lúc đo và lúc vẽ).
+    const contentH=bodyBlocks.length?(titleH+analysisLines*lineH+(bodyBlocks.length-1)*blockGap):0;
+
+    // Đo trước layout tag theo đúng bề rộng thật của score-card (cardW) —
+    // .health-score-card{padding:16px} nên trừ đúng 16px mỗi bên.
+    const cardPadX=16,cardContentW=cardW-2*cardPadX;
     const pillH=24,pillGap=6,pillRowGap=8;
     mctx.font='800 11px "IBM Plex Sans",sans-serif';
     const tagLayout=[];
@@ -5777,67 +5766,80 @@ async function copyHealthImage(btn){
       let tx=0,trow=0;
       tags.forEach(t=>{
         const tw=mctx.measureText(t).width+16;
-        if(tx+tw>contentW&&tx>0){tx=0;trow++;}
+        if(tx+tw>cardContentW&&tx>0){tx=0;trow++;}
         tagLayout.push({text:t,x:tx,row:trow,w:tw});
         tx+=tw+pillGap;
       });
     }
     const tagRows=tagLayout.length?tagLayout[tagLayout.length-1].row+1:0;
     const tagsH=tagRows?tagRows*pillH+(tagRows-1)*pillRowGap:0;
-    const headerH=70,gap=14;
-    const W=chartW+2*padX,H=Math.round(padX+headerH+gap+chartH+(tagsH?gap+tagsH:0)+(analysisH?gap+analysisH:0)+padX);
+
+    // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài
+    // khớp .health-body{padding:12px 14px}.
+    const outerPadX=14,outerPadY=12;
+    const W=Math.round(layoutRect.width),H=Math.round(layoutRect.height);
+    const canvasW=W+2*outerPadX,canvasH=H+2*outerPadY;
     const canvas=document.createElement('canvas');
-    canvas.width=W*dpr;canvas.height=H*dpr;
+    canvas.width=canvasW*dpr;canvas.height=canvasH*dpr;
     const ctx=canvas.getContext('2d');
     ctx.scale(dpr,dpr);
-    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);
-    let y=padX;
-    // Header: điểm số lớn + nhãn màu + ngày/delta
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvasW,canvasH);
     ctx.textBaseline='alphabetic';
-    ctx.fillStyle=scoreColor;
-    ctx.font='800 40px "IBM Plex Mono",monospace';
-    ctx.fillText(scoreText,padX,y+38);
+    const ox=outerPadX,oy=outerPadY;
+    const roundBox=(x,y,w,h,r,fill,stroke)=>{
+      if(fill){ctx.fillStyle=fill;if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();}else ctx.fillRect(x,y,w,h);}
+      if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x+.5,y+.5,w-1,h-1,r);ctx.stroke();}else ctx.strokeRect(x,y,w,h);}
+    };
+
+    // ── Cột trái: khung chart (rasterize thẳng từ SVG gốc, viền khớp .health-chartbox) ──
+    roundBox(ox+chartX,oy+chartY,chartW,chartH,8,'#ffffff',cBorder);
+    ctx.drawImage(chartImg,ox+chartX,oy+chartY,chartW,chartH);
+    roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
+
+    // ── Cột phải, khối trên: score-card (label/ngày/điểm + tags) ──
+    roundBox(ox+cardX,oy+cardY,cardW,cardH,8,'#fbfcff',cBorder);
+    ctx.fillStyle=cAccent;
+    ctx.font='800 20px "Barlow Condensed",sans-serif';
+    ctx.fillText(labelText.toUpperCase(),ox+cardX+cardPadX,oy+cardY+cardPadX+16);
+    ctx.fillStyle=cMuted;
+    ctx.font='400 13px "IBM Plex Mono",monospace';
+    ctx.fillText(dateText,ox+cardX+cardPadX,oy+cardY+cardPadX+34);
+    ctx.fillStyle=cAccent;
+    ctx.font='800 44px "Barlow Condensed",sans-serif';
     const scoreW=ctx.measureText(scoreText).width;
-    ctx.fillStyle='#1f2937';
-    ctx.font='800 16px "IBM Plex Sans",sans-serif';
-    ctx.fillText(labelText.toUpperCase(),padX+scoreW+14,y+22);
-    ctx.fillStyle='#6b7280';
-    ctx.font='400 12px "IBM Plex Mono",monospace';
-    ctx.fillText(dateText,padX+scoreW+14,y+42);
-    y+=headerH+gap;
-    // Biểu đồ HEALTH (rasterize trực tiếp từ SVG gốc)
-    ctx.drawImage(chartImg,padX,y,chartW,chartH);
-    ctx.strokeStyle='#e5e7eb';ctx.lineWidth=1;ctx.strokeRect(padX,y,chartW,chartH);
-    y+=chartH;
-    // Các thẻ (tags) — vẽ dạng pill nhỏ, dùng đúng layout đã tính ở bước đo phía trên
+    ctx.fillText(scoreText,ox+cardX+cardW-cardPadX-scoreW,oy+cardY+cardPadX+34);
     if(tagLayout.length){
-      y+=gap;
-      const tagsTop=y;
+      const tagsTop=oy+cardY+cardPadX+50;
       ctx.font='800 11px "IBM Plex Sans",sans-serif';
       tagLayout.forEach(p=>{
-        const px=padX+p.x,py=tagsTop+p.row*(pillH+pillRowGap);
+        const px=ox+cardX+cardPadX+p.x,py=tagsTop+p.row*(pillH+pillRowGap);
         ctx.fillStyle='#f8fafc';ctx.strokeStyle='#cbd5e1';ctx.lineWidth=1;
         if(ctx.roundRect){ctx.beginPath();ctx.roundRect(px,py,p.w,pillH,4);ctx.fill();ctx.stroke();}
         else{ctx.fillRect(px,py,p.w,pillH);ctx.strokeRect(px,py,p.w,pillH);}
         ctx.fillStyle='#334155';
         ctx.fillText(p.text,px+8,py+16);
       });
-      y+=tagsH;
     }
-    // Nhận định — tiêu đề + các đoạn/gạch đầu dòng đã word-wrap sẵn ở trên
+
+    // ── Cột phải, khối dưới: Nhận định — .health-analysis căn GIỮA theo chiều dọc
+    // (display:flex;flex-direction:column;justify-content:center), nên phải canh giữa
+    // nội dung trong anaH thay vì ghim lên đầu, để giống hệt cách hiển thị thật.
+    roundBox(ox+anaX,oy+anaY,anaW,anaH,8,'#ffffff',cBorder);
     if(bodyBlocks.length){
-      y+=gap;
-      ctx.fillStyle='#0f172a';
-      ctx.font='800 13px "IBM Plex Sans",sans-serif';
-      ctx.fillText('NHẬN ĐỊNH',padX,y+14);
-      let ly=y+34;
-      ctx.font='400 13px "IBM Plex Sans",sans-serif';
-      ctx.fillStyle='#1f2937';
-      bodyBlocks.forEach(block=>{
-        block.forEach(line=>{ctx.fillText(line,padX,ly);ly+=lineH;});
+      let ly=oy+anaY+Math.max(anaPadX,(anaH-contentH)/2)+titleH-12;
+      ctx.fillStyle=cAccent;
+      ctx.font='800 15px "Barlow Condensed",sans-serif';
+      ctx.fillText('NHẬN ĐỊNH',ox+anaX+anaPadX,ly);
+      ly+=12;
+      bodyBlocks.forEach((block,bi)=>{
+        const isFactor=summary&&bi>=1&&bi<=factors.length&&factors.length>0;
+        ctx.font=isFactor?'400 14.5px "IBM Plex Sans",sans-serif':'400 15px "IBM Plex Sans",sans-serif';
+        ctx.fillStyle='#1f2937';
+        block.forEach(line=>{ly+=lineH;ctx.fillText(line,ox+anaX+anaPadX,ly);});
         ly+=blockGap;
       });
     }
+
     const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
     if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
       try{
@@ -6074,13 +6076,11 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
   updatePopout(sym);
-  updateSimplize(sym);
   openChart(sym);
 });
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','health','marketwatch','dinhgia','sankey'];
+const TRI_TABS=['fireant','health','dinhgia','sankey'];
 const TRI_IFRAME_MAP={
-  marketwatch:{id:'marketwatch-frame',url:'https://trade.vndirect.com.vn/thong-tin-thi-truong/marketwatch'},
   dinhgia:{id:'dinhgia-frame',url:'https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong'}
 };
 function triActivateTab(tab){
@@ -6094,7 +6094,7 @@ function triActivateTab(tab){
   // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
   // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
   if(tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
-  // MarketWatch / Định giá: chỉ nạp iframe khi tab được kích hoạt lần đầu (lazy-load)
+  // Định giá: chỉ nạp iframe khi tab được kích hoạt lần đầu (lazy-load)
   if(TRI_IFRAME_MAP[tab]){
     const cfg=TRI_IFRAME_MAP[tab],f=document.getElementById(cfg.id);
     if(f&&f.src==='about:blank')f.src=cfg.url;
@@ -6117,7 +6117,7 @@ DOM.triHdr.addEventListener('click',e=>{
 // nếu đang active đúng tab đó thì chuyển sẵn sang HEALTH để mở thẻ ra không bị trống trơn.
 if(IS_MOBILE())triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
-  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
+  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...)
   // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
   if(e.target.closest('button,input,.hmap-search-wrap'))return;
   DOM.hmapPanel.classList.toggle('collapsed');
@@ -6487,7 +6487,6 @@ $('hmap-follow-btn').addEventListener('dblclick',function(e){
 });
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
-$('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
 $('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 $('journal-open-btn').addEventListener('click',()=>{
@@ -6902,7 +6901,7 @@ function _syncHoverPreview(sym,updateFrame=true){
 DOM.hpSymlist.addEventListener('click',e=>{
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
-  _syncHoverPreview(sym);updatePopout(sym);updateSimplize(sym);
+  _syncHoverPreview(sym);updatePopout(sym);
 });
 document.addEventListener('keydown',e=>{
   if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
@@ -6917,7 +6916,7 @@ document.addEventListener('keydown',e=>{
   if(next===cur&&cur!==-1)return;
   const sym=items[next].dataset.sym;_syncHoverPreview(sym,false);
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);updatePopout(sym);updateSimplize(sym);},300);
+  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);updatePopout(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
@@ -7191,7 +7190,6 @@ function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMess
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _syncHoverPreview(e.data.symbol);
-    updateSimplize(e.data.symbol);
   }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
@@ -7202,7 +7200,6 @@ window.addEventListener('message',e=>{
     if(_hoverPreviewOn)_syncHoverPreview(sym);
     else _syncHoverPreview(sym,false);
     updatePopout(sym);
-    updateSimplize(sym);
     openChart(sym);
   }else if(e.data.type==='JOURNAL_CLOSE'){
     closeJournal();
