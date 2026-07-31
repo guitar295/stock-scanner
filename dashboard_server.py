@@ -6253,9 +6253,9 @@ function renderTreemap(data){
       const cx=cell.x,cy=cell.y,cw=Math.max(0,cell.w-2),ch=Math.max(0,cell.h-2);
       if(cw<=0||ch<=0)return;
       const grp=sankeyEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
-      grp.appendChild(sankeyEl('rect',{x:cx,y:cy,width:cw,height:ch,rx:4,ry:4,fill:bg,stroke:'#fff','stroke-width':1}));
+      grp.appendChild(sankeyEl('rect',{x:cx,y:cy,width:cw,height:ch,rx:4,ry:4,fill:bg}));
       if(cw>36&&ch>16){
-        const fs=Math.min(32,Math.max(10,Math.min(cw/4.5,ch/3)));
+        const fs=Math.min(26,Math.max(10,Math.min(cw/4.5,ch/3)));
         const fs2=Math.max(11,fs*0.62);
         grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2-fs*0.25,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
         if(ch>28){
