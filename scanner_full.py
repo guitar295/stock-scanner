@@ -724,7 +724,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
         return {
             "ok": False,
             "error": "not_enough_cache",
-            "message": f"Chưa đủ cache để tính HEALTH ({len(prepared)} mã hợp lệ).",
+            "message": f"Chưa đủ cache để tính Mrk Health ({len(prepared)} mã hợp lệ).",
             "history": [],
             "components": [],
         }
@@ -789,7 +789,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
         return {
             "ok": False,
             "error": "not_enough_history",
-            "message": "Cache chưa đủ lịch sử để tính HEALTH.",
+            "message": "Cache chưa đủ lịch sử để tính Mrk Health.",
             "history": [],
             "components": [],
         }
@@ -920,7 +920,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
         tags.append("Theo dõi xu hướng")
 
     summary = (
-        f"HEALTH hiện ở vùng {band['label']} ({cur_score:.1f}/100), "
+        f"Mrk Health hiện ở vùng {band['label']} ({cur_score:.1f}/100), "
         f"{'tăng' if delta >= 0 else 'giảm'} {abs(delta):.1f} điểm so với phiên trước."
     )
     factors = [
@@ -943,25 +943,25 @@ def compute_market_health_index(limit: int = 120) -> dict:
     has_recovery = "Phục hồi từ đáy" in tags
 
     if has_euphoria and has_correction:
-        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) và đã bắt đầu chững/quay đầu — rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng nóng, tránh mua đuổi."
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) và đã bắt đầu chững/quay đầu — rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng nóng, tránh mua đuổi."
     elif has_euphoria and has_distribution:
-        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) nhưng độ rộng thị trường không theo kịp đà tăng giá — dấu hiệu phân phối sớm giữa lúc tăng nóng; rủi ro đảo chiều ngắn hạn cao, ưu tiên chốt lời/giảm tỷ trọng, tránh mua đuổi."
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) nhưng độ rộng thị trường không theo kịp đà tăng giá — dấu hiệu phân phối sớm giữa lúc tăng nóng; rủi ro đảo chiều ngắn hạn cao, ưu tiên chốt lời/giảm tỷ trọng, tránh mua đuổi."
     elif has_euphoria:
-        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn gia tăng; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn gia tăng; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
     elif has_fear and has_recovery:
-        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) và đã có dấu hiệu hồi phục — tâm lý bán tháo đang dịu bớt, có thể là vùng dò đáy tiềm năng nhưng vẫn cần thêm phiên xác nhận độ rộng/RSI trước khi giải ngân, tránh bắt đáy sớm."
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) và đã có dấu hiệu hồi phục — tâm lý bán tháo đang dịu bớt, có thể là vùng dò đáy tiềm năng nhưng vẫn cần thêm phiên xác nhận độ rộng/RSI trước khi giải ngân, tránh bắt đáy sớm."
     elif has_fear:
-        conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán là chủ đạo, thường là vùng dò đáy tiềm năng, nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán là chủ đạo, thường là vùng dò đáy tiềm năng, nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
     elif has_correction:
-        conclusion = "Kết luận: chỉ số đang điều chỉnh từ vùng hưng phấn/lạc quan — đà tăng đã bớt nóng và bắt đầu suy yếu; ưu tiên chốt lời một phần ở nhóm tăng mạnh trước đó, hạn chế mua đuổi."
+        conclusion = "Kết luận: Chỉ số đang điều chỉnh từ vùng hưng phấn/lạc quan — đà tăng đã bớt nóng và bắt đầu suy yếu; ưu tiên chốt lời một phần ở nhóm tăng mạnh trước đó, hạn chế mua đuổi."
     elif has_distribution:
-        conclusion = "Kết luận: điểm HEALTH vẫn ở vùng cao nhưng độ rộng thị trường đang thu hẹp — dấu hiệu phân phối sớm, nền tăng đang mỏng dần dù giá chưa xác nhận giảm; nên bắt đầu thận trọng, hạn chế mua mới, chưa cần bán vội nếu điểm HEALTH chưa giảm rõ."
+        conclusion = "Kết luận: Điểm Mrk Health vẫn ở vùng cao nhưng độ rộng thị trường đang thu hẹp — dấu hiệu phân phối sớm, nền tăng đang mỏng dần dù giá chưa xác nhận giảm; nên bắt đầu thận trọng, hạn chế mua mới, chưa cần bán vội nếu điểm Mrk Health chưa giảm rõ."
     elif has_recovery:
-        conclusion = "Kết luận: chỉ số đang phục hồi từ vùng sợ hãi/bi quan — lực bán đã suy yếu và tâm lý đang cải thiện; theo dõi quá trình tạo đáy, nhưng chưa nên coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện rõ."
+        conclusion = "Kết luận: Chỉ số đang phục hồi từ vùng sợ hãi/bi quan — lực bán đã suy yếu và tâm lý đang cải thiện; theo dõi quá trình tạo đáy, nhưng chưa nên coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện rõ."
     elif "Tích lũy cân bằng" in tags:
-        conclusion = "Kết luận: thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
+        conclusion = "Kết luận: Thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
     else:
-        conclusion = "Kết luận: chưa có tín hiệu cực đoan đủ mạnh theo band điểm HEALTH để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
+        conclusion = "Kết luận: Chưa có tín hiệu cực đoan đủ mạnh theo band điểm Mrk Health để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
     # Hoảng loạn/Bán tháo là sự kiện CẤP TÍNH trong phiên, có thể trùng với BẤT KỲ tag/
     # band nào ở trên (kể cả giữa uptrend) — thay vì lồng vào từng nhánh phía trên (dễ
     # gây rối, khó bảo trì), luôn thêm 1 câu nhận xét ĐỘC LẬP ở cuối, tách bạch rõ ràng.
