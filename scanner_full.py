@@ -592,11 +592,11 @@ def _mh_score_band(score: float) -> dict:
     if score >= 80:
         return {"key": "euphoria", "label": "Hưng phấn", "tone": "purple"}
     if score >= 60:
-        return {"key": "positive", "label": "Tích cực", "tone": "green"}
+        return {"key": "positive", "label": "Lạc quan", "tone": "green"}
     if score >= 40:
         return {"key": "neutral", "label": "Trung tính", "tone": "yellow"}
     if score >= 20:
-        return {"key": "negative", "label": "Tiêu cực", "tone": "red"}
+        return {"key": "negative", "label": "Bi quan", "tone": "red"}
     return {"key": "fear", "label": "Sợ hãi", "tone": "cyan"}
 
 
@@ -634,7 +634,7 @@ def _mh_component_phrase(key: str, value) -> str:
         return ""
     if key == "momentum":
         if v >= 80: return "Đà thị trường đang tăng rất mạnh so với giai đoạn gần đây"
-        if v >= 60: return "Đà thị trường nghiêng tích cực"
+        if v >= 60: return "Đà thị trường nghiêng lạc quan"
         if v >= 40: return "Đà thị trường trung tính, chưa có xu hướng rõ ràng"
         if v >= 20: return "Đà thị trường đang suy yếu"
         return "Đà thị trường rất yếu, thấp hơn hẳn xu hướng gần đây"
@@ -666,9 +666,9 @@ def _mh_component_phrase(key: str, value) -> str:
         # RSI dùng ngưỡng quy ước riêng (70/30) thay vì thang 20-40-60-80 chung,
         # vì RSI vốn đã là chỉ báo có ý nghĩa chuẩn hoá quen thuộc với người đọc.
         if v >= 70: return "RSI trung vị đã vào vùng quá mua"
-        if v >= 55: return "RSI trung vị nghiêng tích cực"
+        if v >= 55: return "RSI trung vị nghiêng lạc quan"
         if v >= 45: return "RSI trung vị ở vùng trung tính"
-        if v >= 30: return "RSI trung vị nghiêng tiêu cực"
+        if v >= 30: return "RSI trung vị nghiêng bi quan"
         return "RSI trung vị đã vào vùng quá bán"
     return ""
 
@@ -867,7 +867,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
     if 45 <= cur_score <= 60 and abs(cur_score - prev_score) <= 4 and 40 <= breadth_now <= 60:
         tags.append("Tích lũy cân bằng")
     # Band hiện tại chỉ phản ánh vị trí tuyệt đối theo ngưỡng điểm, không phản ánh
-    # hướng đi — nên "Tích cực" sau khi rơi từ Hưng phấn và "Tiêu cực" sau khi hồi
+    # hướng đi — nên "Lạc quan" sau khi rơi từ Hưng phấn và "Bi quan" sau khi hồi
     # từ Sợ hãi trông giống hệt trường hợp đi lên/xuống từ Trung tính. 2 tag dưới
     # đây bổ sung sắc thái đó mà không đụng vào nhãn band chính.
     if band["key"] == "positive" and max(recent_scores[-10:]) >= 80 and (falling_3 or delta < 0):
@@ -905,21 +905,21 @@ def compute_market_health_index(limit: int = 120) -> dict:
     elif top_warning and cooling_from_euphoria:
         # Cùng lúc vừa cảnh báo đỉnh/phân phối vừa đã rời khỏi vùng Hưng phấn — gộp
         # thành 1 ý duy nhất thay vì lặp lại "cẩn trọng" ở cả 2 nhánh riêng lẻ.
-        conclusion = "Kết luận: chỉ số vừa rời vùng hưng phấn xuống tích cực nhưng nền tham gia vẫn chưa đủ rộng — rủi ro tạo đỉnh còn hiện hữu; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
+        conclusion = "Kết luận: chỉ số vừa rời vùng hưng phấn xuống lạc quan nhưng nền tham gia vẫn chưa đủ rộng — rủi ro tạo đỉnh còn hiện hữu; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
     elif top_warning:
         conclusion = "Kết luận: ưu tiên quản trị rủi ro; thị trường có dấu hiệu hưng phấn nhưng nền tham gia không đủ rộng, cần cảnh giác vùng đỉnh/phân phối."
     elif cooling_from_euphoria:
-        conclusion = "Kết luận: chỉ số vừa hạ nhiệt từ vùng hưng phấn xuống tích cực — đà tăng vẫn còn nhưng đã bớt nóng, nên thận trọng với nhóm đã tăng mạnh, tránh mua đuổi."
+        conclusion = "Kết luận: chỉ số vừa hạ nhiệt từ vùng hưng phấn xuống lạc quan — đà tăng vẫn còn nhưng đã bớt nóng, nên thận trọng với nhóm đã tăng mạnh, tránh mua đuổi."
     elif bottom_signal and recovering_from_fear:
         # Tương tự: vừa có tín hiệu dò đáy vừa hồi phục từ Sợ hãi — gộp lại,
         # tránh nói 2 lần cùng một ý "lực bán yếu dần / đang hồi lên".
-        conclusion = "Kết luận: chỉ số vừa hồi phục từ vùng sợ hãi lên tiêu cực và độ rộng đang cải thiện — tín hiệu dò đáy rõ hơn, nhưng vẫn cần thêm phiên xác nhận trước khi giải ngân mạnh."
+        conclusion = "Kết luận: chỉ số vừa hồi phục từ vùng sợ hãi lên bi quan và độ rộng đang cải thiện — tín hiệu dò đáy rõ hơn, nhưng vẫn cần thêm phiên xác nhận trước khi giải ngân mạnh."
     elif bottom_signal:
         conclusion = "Kết luận: lực bán đang suy yếu sau vùng sợ hãi; phù hợp theo dõi quá trình tạo đáy, chưa coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện."
     elif recovering_from_fear:
-        conclusion = "Kết luận: chỉ số đang hồi phục từ vùng sợ hãi lên tiêu cực — tâm lý bán tháo đã giảm bớt nhưng chưa đủ để coi là tích cực, cần thêm xác nhận trước khi giải ngân."
+        conclusion = "Kết luận: chỉ số đang hồi phục từ vùng sợ hãi lên bi quan — tâm lý bán tháo đã giảm bớt nhưng chưa đủ để coi là lạc quan, cần thêm xác nhận trước khi giải ngân."
     elif "Bán tháo/hoảng loạn" in tags:
-        conclusion = "Kết luận: trạng thái tiêu cực cực đoan; tránh bán đuổi, chờ tín hiệu phục hồi của độ rộng và RSI để xác nhận đáy."
+        conclusion = "Kết luận: trạng thái bi quan cực đoan; tránh bán đuổi, chờ tín hiệu phục hồi của độ rộng và RSI để xác nhận đáy."
     elif "Tích lũy cân bằng" in tags:
         conclusion = "Kết luận: thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
     else:
