@@ -1075,7 +1075,7 @@ try{
 }catch(e){}
 </script>
 <style>
-:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
@@ -1336,7 +1336,7 @@ JOURNAL_HTML = r"""<!DOCTYPE html>
 <title>Note</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+:root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:0 1px 5px rgba(0,0,0,.06)}
@@ -1655,7 +1655,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
 .hmap-link-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hmap-link-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-#hmap-simplize-btn{color:var(--muted)}
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
@@ -1719,6 +1718,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+.treemap-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
+.treemap-svg{width:100%;height:100%;display:block;background:#fff;border:none}
+.treemap-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 .tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
 .tri-tabs{display:flex;align-items:center;gap:4px}
 .tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;padding:3px 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
@@ -1734,8 +1736,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-vni-toggle{position:absolute;top:6px;left:88.4%;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
-.health-body{padding:12px 14px;background:#fff}
-.health-layout{display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
+.health-body{padding:12px 14px;background:#fff;height:720px;display:flex;align-items:center;overflow:auto}
+#tri-content-health{position:relative}
+.health-copy-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border)}
+.health-copy-btn:hover{background:#f1f5f9}
+.health-layout{width:100%;display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:#fbfcff}
@@ -1774,6 +1779,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel.collapsed>.pbar-wrap,
 .hmap-panel.collapsed>.panel-body{display:none}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
+.frame-shrink{width:100%;height:720px;overflow:hidden;position:relative;background:#fff}
+.frame-shrink iframe{position:absolute;top:0;left:0;width:125%;height:125%;border:none;background:#fff;transform:scale(.8);transform-origin:0 0}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
 #lite-chart{width:100%;height:540px}
@@ -1895,7 +1902,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
    ═══════════════════════════════════════════ */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
-.pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:99vw;max-width:1800px;height:94vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease}
+.pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:99vw;max-width:1800px;height:94vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease;outline:none}
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 .phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 .phdr-left{display:flex;align-items:center;gap:8px}
@@ -2014,6 +2021,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   }
   .hmap-ts-wrap::-webkit-scrollbar{display:none}
   .health-layout{grid-template-columns:1fr}
+  .health-body{height:auto;display:block;overflow:visible}
   .health-chartbox{height:280px}
   .health-score{font-size:36px}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
@@ -2035,7 +2043,14 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     aspect-ratio:16/9;
     height:auto;
   }
+  .treemap-wrap{
+    width:100% !important;
+    margin-left:0 !important;
+    aspect-ratio:16/9;
+    height:auto;
+  }
   .market-frame{height:70vh}
+  .frame-shrink{height:70vh}
   .tri-tabs [data-tab="fireant"],
   #tri-content-fireant{display:none !important}
 
@@ -2300,7 +2315,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
         <button id="hover-preview-btn">Chart: OFF</button>
         <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
-        <button class="hmap-link-btn" id="hmap-simplize-btn">SZ</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
       <span class="hmap-toggle-icon">▶</span>
@@ -2533,6 +2547,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="tri-tabs" id="tri-tabs">
         <span class="tri-tab on" data-tab="fireant">Fireant</span>
         <span class="tri-tab" data-tab="health">Mrk Health</span>
+        <span class="tri-tab" data-tab="dinhgia">Định giá</span>
+        <span class="tri-tab" data-tab="treemap">Treemap</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
       <span class="tri-toggle" id="tri-toggle">▶</span>
@@ -2542,6 +2558,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
       </div>
       <div class="tri-content" id="tri-content-health">
+        <button class="lite-draw-btn health-copy-btn" id="health-copy-btn" title="Sao chép ảnh Mrk Health vào clipboard" aria-label="Sao chép ảnh Mrk Health vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
         <div class="health-body" id="health-body">
           <div class="health-layout">
@@ -2570,6 +2587,12 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             </div>
           </div>
         </div>
+      </div>
+      <div class="tri-content" id="tri-content-dinhgia">
+        <div class="frame-shrink"><iframe id="dinhgia-frame" src="about:blank" allowfullscreen></iframe></div>
+      </div>
+      <div class="tri-content" id="tri-content-treemap">
+        <div class="treemap-wrap" id="treemap-wrap"><svg class="treemap-svg" id="treemap-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
       <div class="tri-content" id="tri-content-sankey">
         <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
@@ -2727,6 +2750,7 @@ const DOM={
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
   sankeyWrap:$('sankey-wrap'),
+  treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
@@ -2767,7 +2791,7 @@ const DOM={
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
   liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
-  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),
+  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),healthCopyBtn:$('health-copy-btn'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   // Desktop popup header
@@ -2861,10 +2885,7 @@ let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
 let _isChartPanelOpen=false;
-let _isSimplizeMode=false,_simplizeWin=null,_simplizeWatch=null;
 let _iframeDelay=null,_keyThrottle=false;
-const SIMPLIZE_ORIGIN='https://simplize.vn';
-function simplizeUrl(sym){return `${SIMPLIZE_ORIGIN}/chart?ticker=${encodeURIComponent((sym||'VNINDEX').toUpperCase())}`;}
 const LITE_IND_KEY='dashboard_lite_indicators';
 const LITE_IND_COLOR_KEY='dashboard_lite_ind_colors';
 const LITE_TREND_MODE_KEY='dashboard_lite_trend_mode';
@@ -5273,7 +5294,6 @@ function _refreshChartModeUI(){
   chartBtn.classList.toggle('on',_hoverPreviewOn||_isPopoutMode);
   chartBtn.textContent=_isPopoutMode?'Chart: POP':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
   $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
-  $('hmap-simplize-btn').classList.toggle('on',_isSimplizeMode);
 }
 function _resetPopupChrome(){
   $('popup-phdr').style.display='';
@@ -5281,37 +5301,6 @@ function _resetPopupChrome(){
   DOM.mobTabRow.style.display='none';
   DOM.mobHdrLand.style.display='';
   DOM.mobClose.style.display='none';
-}
-function _stopSimplizeWatch(){
-  if(_simplizeWatch){clearInterval(_simplizeWatch);_simplizeWatch=null;}
-}
-function closeSimplizeWindow(){
-  _isSimplizeMode=false;
-  _stopSimplizeWatch();
-  if(_simplizeWin&&!_simplizeWin.closed)try{_simplizeWin.close();}catch(e){}
-  _simplizeWin=null;
-  _refreshChartModeUI();
-}
-function updateSimplize(sym){
-  if(!_simplizeWin||_simplizeWin.closed){
-    if(_isSimplizeMode)closeSimplizeWindow();
-    return;
-  }
-  try{_simplizeWin.location.href=simplizeUrl(sym);}catch(e){}
-}
-function quickSimplize(){
-  const sym=_hoverPreviewCurrent||_sym||'VNINDEX';
-  if(_isSimplizeMode&&_simplizeWin&&!_simplizeWin.closed){updateSimplize(sym);_simplizeWin.focus();return;}
-  const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),h=box.height;
-  _simplizeWin=_openMaximizedWindow(simplizeUrl(sym),'ScannerSimplize',w,h,0,0);
-  if(!_simplizeWin){alert('Trình duyệt chặn popup!');closeSimplizeWindow();return;}
-  _isSimplizeMode=true;
-  _refreshChartModeUI();
-  _stopSimplizeWatch();
-  _simplizeWatch=setInterval(()=>{
-    if(_simplizeWin&&_simplizeWin.closed)closeSimplizeWindow();
-  },1000);
 }
 // ═══════════════════════════════════════════════════════
 // HEATMAP DATA
@@ -5329,6 +5318,53 @@ function cellStyle(pct){
   else if(pct>-0.05){r=245;g=245;b=200}else if(pct>=-6.5){[r,g,b]=neg[Math.min(neg.length-1,Math.floor(Math.abs(pct)*2))]}
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
+}
+// Treemap dùng bảng màu riêng, tách khỏi Heatmap:
+// - Trần (>=+6.5%) / tham chiếu (~0%) / sàn (<=-6.5%): màu phẳng cố định, đo trực
+//   tiếp từ bảng màu mẫu (tím/vàng/xanh dương).
+// - Còn lại (xanh lá tăng giá / đỏ giảm giá): hue cố định đúng "xanh lá thật" (142°)
+//   và "đỏ thật" (0°), độ sáng nội suy theo đúng bậc đậm-nhạt 13 mức của cellStyle
+//   gốc (dùng lại mảng pos/neg đó làm nguồn "độ đậm theo %", không định nghĩa lại).
+function _tmLightness(r,g,b){return(Math.max(r,g,b)+Math.min(r,g,b))/510;}
+function _tmHue2Rgb(p,q,t){
+  if(t<0)t+=1;if(t>1)t-=1;
+  if(t<1/6)return p+(q-p)*6*t;
+  if(t<1/2)return q;
+  if(t<2/3)return p+(q-p)*(2/3-t)*6;
+  return p;
+}
+function _tmHslToRgb(h,s,l){
+  let r,g,b;
+  if(s===0){r=g=b=l;}
+  else{
+    const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
+    r=_tmHue2Rgb(p,q,h+1/3);g=_tmHue2Rgb(p,q,h);b=_tmHue2Rgb(p,q,h-1/3);
+  }
+  return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+}
+const TM_POS_L_MIN=0.714, TM_POS_L_MAX=0.947; // dải sáng gốc của thang xanh (đậm→nhạt theo %)
+const TM_NEG_L_MIN=0.755, TM_NEG_L_MAX=0.941; // dải sáng gốc của thang đỏ (đậm→nhạt theo %)
+function treemapCellStyle(pct){
+  if(pct>=6.5)return{bg:'rgb(168,85,247)',fg:'rgb(255,255,255)'}; // trần: tím
+  if(pct>-0.05&&pct<0.05)return{bg:'rgb(242,201,76)',fg:'rgb(15,15,15)'}; // tham chiếu: vàng (chữ đen)
+  if(pct<=-6.5)return{bg:'rgb(59,130,246)',fg:'rgb(255,255,255)'}; // sàn: xanh da trời
+  const{bg}=cellStyle(pct);
+  const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
+  if(!m)return{bg,fg:'rgb(255,255,255)'};
+  const l=_tmLightness(+m[1],+m[2],+m[3]);
+  let r,g,b;
+  if(pct>=0.05){
+    // Xanh lá cây thật (hue cố định ~142°), bớt sáng: đậm dần theo % tăng
+    const t=Math.max(0,Math.min(1,(l-TM_POS_L_MIN)/(TM_POS_L_MAX-TM_POS_L_MIN)));
+    const ll=0.42+t*(0.68-0.42);
+    [r,g,b]=_tmHslToRgb(142/360,0.68,ll);
+  }else{
+    // Đỏ thật (hue cố định 0°, không ngả hồng)
+    const t=Math.max(0,Math.min(1,(l-TM_NEG_L_MIN)/(TM_NEG_L_MAX-TM_NEG_L_MIN)));
+    const ll=0.60+t*(0.74-0.60);
+    [r,g,b]=_tmHslToRgb(0,0.80,ll);
+  }
+  return{bg:`rgb(${r},${g},${b})`,fg:'rgb(255,255,255)'};
 }
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
 function sortByPct(syms,d){return[...syms].sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0));}
@@ -5376,7 +5412,6 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(cell.dataset.sym);
   updatePopout(cell.dataset.sym);
-  updateSimplize(cell.dataset.sym);
   _jumpLiteChart(cell.dataset.sym);
   openChart(cell.dataset.sym);
 });
@@ -5398,12 +5433,10 @@ function _hmapDesktopClick(sym){
   _hmapClickTimer=setTimeout(()=>{
     _syncHoverPreview(sym);
     updatePopout(sym);
-    updateSimplize(sym);
     _jumpLiteChart(sym);
     if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
     if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
-    if(_isSimplizeMode&&!_hoverPreviewOn)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
   },220);
 }
@@ -5417,7 +5450,6 @@ DOM.sigList.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(row.dataset.sym);
   updatePopout(row.dataset.sym);
-  updateSimplize(row.dataset.sym);
   _jumpLiteChart(row.dataset.sym);
   openChart(row.dataset.sym);
 });
@@ -5433,12 +5465,18 @@ DOM.signalHeader.addEventListener('click',e=>{
 // MARKET HEALTH RENDER
 // ═══════════════════════════════════════════════════════
 function healthEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Nhãn trục thời gian dưới chart HEALTH chỉ cần Tháng/Năm (ngày cụ thể đã có sẵn
+// qua crosshair khi hover/chạm) — đổi "YYYY-MM-DD" thành "MM/YYYY".
+function healthAxisDate(dateStr){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr||''));
+  return m?`${m[2]}/${m[1]}`:String(dateStr||'');
+}
 function healthBand(score){
   const s=Number(score);
   if(s>=80)return{label:'Hưng phấn',fill:'#7e22ce'};
-  if(s>=60)return{label:'Tích cực',fill:'#16a34a'};
+  if(s>=60)return{label:'Lạc quan',fill:'#16a34a'};
   if(s>=40)return{label:'Trung tính',fill:'#ca8a04'};
-  if(s>=20)return{label:'Tiêu cực',fill:'#dc2626'};
+  if(s>=20)return{label:'Bi quan',fill:'#dc2626'};
   return{label:'Sợ hãi',fill:'#0284c7'};
 }
 // ── State cửa sổ xem + zoom của biểu đồ HEALTH ──────────────────────────────
@@ -5497,9 +5535,9 @@ function _healthRenderWindow(){
   DOM.healthSvg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const bands=[
     {from:80,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
-    {from:60,to:80,c1:'#dcfce7',c2:'#16a34a',label:'Tích cực'},
+    {from:60,to:80,c1:'#dcfce7',c2:'#16a34a',label:'Lạc quan'},
     {from:40,to:60,c1:'#fef9c3',c2:'#ca8a04',label:'Trung tính'},
-    {from:20,to:40,c1:'#fee2e2',c2:'#dc2626',label:'Tiêu cực'},
+    {from:20,to:40,c1:'#fee2e2',c2:'#dc2626',label:'Bi quan'},
     {from:0,to:20,c1:'#e0f2fe',c2:'#0284c7',label:'Sợ hãi'},
   ];
   const y=v=>T+(100-v)/100*plotH;
@@ -5540,7 +5578,7 @@ function _healthRenderWindow(){
   const tickIdxs=[...new Set(tickCount<=1?[0]:Array.from({length:tickCount},(_,k)=>Math.round(k*(h.length-1)/(tickCount-1))))];
   const xLabels=tickIdxs.map(i=>{
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
-    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${h[i].date}</text>`;
+    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${healthAxisDate(h[i].date)}</text>`;
   }).join('');
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
@@ -5697,6 +5735,230 @@ function _healthOnMove(evt){
   if(idx!=null)_healthShowCrosshair(idx);
 }
 function _healthOnUp(){_healthDrag=null;_healthPinch=null;}
+// ── Nút camera copy ảnh khung Mrk Health — tái dùng _liteCopyFeedback / _litePngBlobFromDataUrl ──
+// LƯU Ý: bản đầu dùng kỹ thuật SVG<foreignObject> để chụp cả khối HTML — kỹ thuật này nổi tiếng
+// không ổn định (nhiều trình duyệt, đặc biệt Chrome, coi canvas vẽ từ ảnh SVG có foreignObject là
+// "tainted" và chặn xuất ảnh bằng lỗi bảo mật). Cách làm dưới đây tránh hẳn foreignObject:
+// (1) rasterize thẳng SVG biểu đồ (health-svg) — SVG thuần, không phụ thuộc CSS ngoài nên an toàn;
+// (2) phần điểm số/nhãn/thẻ/nhận định được VẼ TAY bằng fillText, theo đúng cách đã dùng cho
+// tiêu đề/badge bên Chart (_liteDrawTitleSegments/_liteDrawSignalBadge) — không đụng canvas "bẩn".
+function _healthWrapText(ctx,text,maxWidth){
+  const words=String(text||'').split(/\s+/).filter(Boolean);
+  const lines=[];let line='';
+  for(const w of words){
+    const test=line?line+' '+w:w;
+    if(ctx.measureText(test).width>maxWidth&&line){lines.push(line);line=w;}
+    else line=test;
+  }
+  if(line)lines.push(line);
+  return lines.length?lines:[''];
+}
+async function copyHealthImage(btn){
+  const svgEl=DOM.healthSvg;
+  if(!svgEl)return;
+  try{
+    // Đo trực tiếp vị trí + kích thước THẬT của 2 khung (chart trái / score-card+nhận
+    // định phải) ngay trên DOM đang hiển thị, rồi vẽ lại đúng như vậy trên canvas —
+    // thay vì tự suy ra tỉ lệ cột. Nhờ vậy ảnh xuất ra luôn khớp 1:1 với layout thật
+    // của .health-layout (kể cả khi co về 1 cột trên màn hẹp, do @media ở dòng ~2021).
+    const layoutEl=svgEl.closest('.health-layout');
+    const chartBoxEl=svgEl.closest('.health-chartbox');
+    const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
+    if(!layoutEl||!chartBoxEl||!scoreCardEl)return;
+    const layoutRect=layoutEl.getBoundingClientRect();
+    const chartRect=chartBoxEl.getBoundingClientRect();
+    const cardRect=scoreCardEl.getBoundingClientRect();
+    const analysisRect=DOM.healthAnalysis.getBoundingClientRect();
+    const relX=r=>Math.round(r.left-layoutRect.left);
+    const relY=r=>Math.round(r.top-layoutRect.top);
+    const chartX=relX(chartRect),chartY=relY(chartRect);
+    const chartW=Math.max(1,Math.round(chartRect.width)),chartH=Math.max(1,Math.round(chartRect.height));
+    const cardX=relX(cardRect),cardY=relY(cardRect);
+    const cardW=Math.max(1,Math.round(cardRect.width)),cardH=Math.max(1,Math.round(cardRect.height));
+    const anaX=relX(analysisRect),anaY=relY(analysisRect);
+    const anaW=Math.max(1,Math.round(analysisRect.width)),anaH=Math.max(1,Math.round(analysisRect.height));
+
+    const dpr=window.devicePixelRatio||1;
+    const svgClone=svgEl.cloneNode(true);
+    svgClone.setAttribute('width',chartW*dpr);
+    svgClone.setAttribute('height',chartH*dpr);
+    svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const svgXml=new XMLSerializer().serializeToString(svgClone);
+    const chartImg=new Image();
+    await new Promise((res,rej)=>{
+      chartImg.onload=res;chartImg.onerror=rej;
+      chartImg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
+    });
+
+    // Màu lấy từ đúng CSS variable đang dùng thật (--accent/--border/--muted), tránh
+    // hardcode lệch nếu theme đổi.
+    const cs=getComputedStyle(document.documentElement);
+    const cAccent=cs.getPropertyValue('--accent').trim()||'#1a56db';
+    const cBorder=cs.getPropertyValue('--border').trim()||'#dde3ee';
+    const cMuted=cs.getPropertyValue('--muted').trim()||'#6b7280';
+    // Điểm số (health-score) được tô màu ĐỘNG theo band (xanh/vàng/đỏ/tím/xanh dương —
+    // xem renderHealth: DOM.healthScore.style.color=localBand.fill), KHÁC với nhãn
+    // (health-label) vốn luôn dùng màu accent cố định. Lấy đúng màu đang hiển thị
+    // thật trên DOM thay vì hardcode cAccent để ảnh copy khớp 100% với dashboard.
+    const cScore=DOM.healthScore?getComputedStyle(DOM.healthScore).color:cAccent;
+
+    // Lấy nội dung khung phân tích trực tiếp từ DOM đang hiển thị (giá trị mới nhất đã render sẵn)
+    const scoreText=DOM.healthScore?.textContent||'--';
+    const labelText=DOM.healthLabel?.textContent||'--';
+    const dateText=DOM.healthDate?.textContent||'';
+    const tags=Array.from(DOM.healthTags?.children||[]).map(el=>el.textContent||'');
+    const paras=Array.from(DOM.healthAnalysis?.querySelectorAll('p')||[]).map(p=>p.textContent||'');
+    const factors=Array.from(DOM.healthAnalysis?.querySelectorAll('li')||[]).map(li=>li.textContent||'');
+    const summary=paras[0]||'',conclusion=paras.length>1?paras[paras.length-1]:'';
+
+    const measCanvas=document.createElement('canvas'),mctx=measCanvas.getContext('2d');
+
+    // Đo trước nội dung "Nhận định" theo đúng bề rộng thật của khung phải (anaW) —
+    // .health-analysis{padding:18px 20px} nên trừ đúng 20px mỗi bên.
+    const anaPadX=20,anaContentW=anaW-2*anaPadX;
+    mctx.font='400 15px "IBM Plex Sans",sans-serif';
+    const bodyBlocks=[];
+    if(summary)bodyBlocks.push(_healthWrapText(mctx,summary,anaContentW));
+    mctx.font='400 14.5px "IBM Plex Sans",sans-serif';
+    factors.forEach(f=>bodyBlocks.push(_healthWrapText(mctx,'•  '+f,anaContentW)));
+    mctx.font='400 15px "IBM Plex Sans",sans-serif';
+    if(conclusion)bodyBlocks.push(_healthWrapText(mctx,conclusion,anaContentW));
+    const lineH=24,blockGap=8;
+    const titleH=15+12; // .health-analysis-title: font-size 15px + margin-bottom 12px
+    const analysisLines=bodyBlocks.reduce((n,b)=>n+b.length,0);
+    const contentH=bodyBlocks.length?(titleH+analysisLines*lineH+(bodyBlocks.length-1)*blockGap):0;
+
+    // Đo trước layout tag theo đúng bề rộng thật của score-card (cardW) —
+    // .health-score-card{padding:16px} nên trừ đúng 16px mỗi bên.
+    const cardPadX=16,cardContentW=cardW-2*cardPadX;
+    const pillH=24,pillGap=6,pillRowGap=8;
+    mctx.font='800 11px "IBM Plex Sans",sans-serif';
+    const tagLayout=[];
+    if(tags.length){
+      let tx=0,trow=0;
+      tags.forEach(t=>{
+        const tw=mctx.measureText(t).width+16;
+        if(tx+tw>cardContentW&&tx>0){tx=0;trow++;}
+        tagLayout.push({text:t,x:tx,row:trow,w:tw});
+        tx+=tw+pillGap;
+      });
+    }
+    const tagRows=tagLayout.length?tagLayout[tagLayout.length-1].row+1:0;
+    const tagsH=tagRows?tagRows*pillH+(tagRows-1)*pillRowGap:0;
+
+    // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài
+    // khớp .health-body{padding:12px 14px}.
+    const outerPadX=14,outerPadY=12;
+    const W=Math.round(layoutRect.width),H=Math.round(layoutRect.height);
+    const canvasW=W+2*outerPadX,canvasH=H+2*outerPadY;
+    const canvas=document.createElement('canvas');
+    canvas.width=canvasW*dpr;canvas.height=canvasH*dpr;
+    const ctx=canvas.getContext('2d');
+    ctx.scale(dpr,dpr);
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvasW,canvasH);
+    ctx.textBaseline='alphabetic';
+    const ox=outerPadX,oy=outerPadY;
+    const roundBox=(x,y,w,h,r,fill,stroke)=>{
+      if(fill){ctx.fillStyle=fill;if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();}else ctx.fillRect(x,y,w,h);}
+      if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x+.5,y+.5,w-1,h-1,r);ctx.stroke();}else ctx.strokeRect(x,y,w,h);}
+    };
+
+    // ── Cột trái: khung chart (rasterize thẳng từ SVG gốc, viền khớp .health-chartbox) ──
+    roundBox(ox+chartX,oy+chartY,chartW,chartH,8,'#ffffff',cBorder);
+    ctx.drawImage(chartImg,ox+chartX,oy+chartY,chartW,chartH);
+    roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
+
+    // ── Checkbox "VNINDEX" (label.health-vni-toggle, position:absolute top:6px
+    // left:88.4% trong .health-chartbox — xem CSS) — đây là overlay HTML nằm NGOÀI
+    // SVG nên rasterize chartImg ở trên không có nó; phải vẽ tay để ảnh copy khớp
+    // 100% với hiển thị thật, kể cả trạng thái tick/disable hiện tại.
+    const vniChecked=!!DOM.healthVniCheckbox?.checked;
+    const vniDisabled=!!DOM.healthVniCheckbox?.disabled;
+    const vx=ox+chartX+chartW*0.884,vy=oy+chartY+6,boxSize=13;
+    ctx.fillStyle=vniDisabled?'#f1f5f9':'#ffffff';
+    ctx.strokeStyle='#94a3b8';ctx.lineWidth=1;
+    if(ctx.roundRect){ctx.beginPath();ctx.roundRect(vx,vy,boxSize,boxSize,3);ctx.fill();ctx.stroke();}
+    else{ctx.fillRect(vx,vy,boxSize,boxSize);ctx.strokeRect(vx,vy,boxSize,boxSize);}
+    if(vniChecked){
+      ctx.strokeStyle=cAccent;ctx.lineWidth=1.6;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.beginPath();
+      ctx.moveTo(vx+2.5,vy+7);ctx.lineTo(vx+5.3,vy+9.8);ctx.lineTo(vx+10.5,vy+3.5);
+      ctx.stroke();
+    }
+    const swX=vx+boxSize+5,swY=vy+boxSize/2;
+    ctx.strokeStyle='#f97316';ctx.lineWidth=2;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(swX,swY);ctx.lineTo(swX+12,swY);ctx.stroke();
+    ctx.fillStyle='#334155';
+    ctx.font='400 11px "IBM Plex Sans",sans-serif';
+    ctx.fillText('VNINDEX',swX+17,vy+boxSize-2);
+
+    // ── Cột phải, khối trên: score-card (label/ngày/điểm + tags) ──
+    roundBox(ox+cardX,oy+cardY,cardW,cardH,8,'#fbfcff',cBorder);
+    ctx.fillStyle=cAccent;
+    ctx.font='800 20px "Barlow Condensed",sans-serif';
+    ctx.fillText(labelText.toUpperCase(),ox+cardX+cardPadX,oy+cardY+cardPadX+16);
+    ctx.fillStyle=cMuted;
+    ctx.font='400 13px "IBM Plex Mono",monospace';
+    ctx.fillText(dateText,ox+cardX+cardPadX,oy+cardY+cardPadX+34);
+    ctx.fillStyle=cScore;
+    ctx.font='800 44px "Barlow Condensed",sans-serif';
+    const scoreW=ctx.measureText(scoreText).width;
+    ctx.fillText(scoreText,ox+cardX+cardW-cardPadX-scoreW,oy+cardY+cardPadX+34);
+    if(tagLayout.length){
+      const tagsTop=oy+cardY+cardPadX+50;
+      ctx.font='800 11px "IBM Plex Sans",sans-serif';
+      tagLayout.forEach(p=>{
+        const px=ox+cardX+cardPadX+p.x,py=tagsTop+p.row*(pillH+pillRowGap);
+        ctx.fillStyle='#f8fafc';ctx.strokeStyle='#cbd5e1';ctx.lineWidth=1;
+        if(ctx.roundRect){ctx.beginPath();ctx.roundRect(px,py,p.w,pillH,4);ctx.fill();ctx.stroke();}
+        else{ctx.fillRect(px,py,p.w,pillH);ctx.strokeRect(px,py,p.w,pillH);}
+        ctx.fillStyle='#334155';
+        ctx.fillText(p.text,px+8,py+16);
+      });
+    }
+
+    // ── Cột phải, khối dưới: Nhận định — .health-analysis căn GIỮA theo chiều dọc
+    // (display:flex;flex-direction:column;justify-content:center), nên phải canh giữa
+    // nội dung trong anaH thay vì ghim lên đầu, để giống hệt cách hiển thị thật.
+    roundBox(ox+anaX,oy+anaY,anaW,anaH,8,'#ffffff',cBorder);
+    if(bodyBlocks.length){
+      let ly=oy+anaY+Math.max(anaPadX,(anaH-contentH)/2)+titleH-12;
+      ctx.fillStyle=cAccent;
+      ctx.font='800 15px "Barlow Condensed",sans-serif';
+      ctx.fillText('NHẬN ĐỊNH',ox+anaX+anaPadX,ly);
+      ly+=12;
+      bodyBlocks.forEach((block,bi)=>{
+        const isFactor=summary&&bi>=1&&bi<=factors.length&&factors.length>0;
+        ctx.font=isFactor?'400 14.5px "IBM Plex Sans",sans-serif':'400 15px "IBM Plex Sans",sans-serif';
+        // .health-analysis p{color:#1f2937} vs .health-analysis ul{color:#374151} — dùng đúng
+        // màu tương ứng cho từng loại dòng thay vì gộp chung 1 màu như trước.
+        ctx.fillStyle=isFactor?'#374151':'#1f2937';
+        block.forEach(line=>{ly+=lineH;ctx.fillText(line,ox+anaX+anaPadX,ly);});
+        ly+=blockGap;
+      });
+    }
+
+    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
+        _liteCopyFeedback(btn,'copied');
+        return;
+      }catch(e){console.warn('Copy ảnh Mrk Health vào clipboard lỗi, chuyển sang tải PNG:',e);}
+    }
+    const dlUrl=URL.createObjectURL(pngBlob);
+    const link=document.createElement('a');
+    link.href=dlUrl;link.download=`mrk_health_${_sym||''}.png`;
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
+    _liteCopyFeedback(btn,'downloaded');
+  }catch(e){console.error('copyHealthImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
+}
+DOM.healthCopyBtn?.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  copyHealthImage(e.currentTarget);
+});
 DOM.healthSvg.addEventListener('mousemove',_healthOnMove);
 DOM.healthSvg.addEventListener('mousedown',_healthOnDown);
 DOM.healthSvg.addEventListener('mouseleave',()=>{_healthHideCrosshair();_healthDrag=null;});
@@ -5912,11 +6174,118 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
   updatePopout(sym);
-  updateSimplize(sym);
+  openChart(sym);
+});
+// ═══════════════════════════════════════════════════════
+// TREEMAP RENDER — dùng lại đúng nguồn dữ liệu của Sankey/Heatmap
+// (SANKEY_SECTORS, sankeyWeight, SANKEY_MIN_WEIGHT) và màu ô đúng bảng màu
+// của Heatmap (cellStyle) để 3 view luôn đồng nhất khi user đối chiếu qua lại.
+// ═══════════════════════════════════════════════════════
+function treemapDataset(data){
+  return SANKEY_SECTORS.map(g=>{
+    const stocks=g.syms.map(sym=>{
+      const entry=data[sym],weight=sankeyWeight(entry);
+      return{sym,pct:Number(entry?.pct),weight};
+    }).filter(x=>x.weight>SANKEY_MIN_WEIGHT).sort((a,b)=>b.weight-a.weight);
+    return{name:g.name,stocks,weight:stocks.reduce((s,x)=>s+x.weight,0)};
+  }).filter(sec=>sec.weight>0).sort((a,b)=>b.weight-a.weight);
+}
+// Squarified treemap (Bruls et al.) — items cần field .weight>0, out nhận {item,x,y,w,h}.
+function tmSquarify(items,x,y,w,h,out){
+  if(!items.length)return;
+  if(items.length===1){out.push({item:items[0],x,y,w,h});return;}
+  const total=items.reduce((s,it)=>s+it.weight,0);
+  const vertical=w>=h;
+  const worstOf=(row,rowLen)=>row.reduce((wo,it)=>{
+    const area=it.weight/total*w*h;
+    const s=Math.max(rowLen,area/rowLen),r=Math.min(rowLen,area/rowLen);
+    return Math.max(wo,s/r);
+  },0);
+  let sum=0,row=[],i=0;
+  while(i<items.length){
+    row.push(items[i]);sum+=items[i].weight;
+    const rowLen=sum/total*(vertical?w:h);
+    const worst=worstOf(row,rowLen);
+    if(i+1<items.length){
+      const next=[...row,items[i+1]],sum2=sum+items[i+1].weight;
+      const rowLen2=sum2/total*(vertical?w:h);
+      if(worstOf(next,rowLen2)<=worst){i++;continue;}
+    }
+    break;
+  }
+  const rowSum=row.reduce((s,it)=>s+it.weight,0);
+  const rowThick=rowSum/total*(vertical?w:h);
+  let pos=vertical?y:x;
+  row.forEach(it=>{
+    const len=it.weight/rowSum*(vertical?h:w);
+    if(vertical)out.push({item:it,x,y:pos,w:rowThick,h:len});
+    else out.push({item:it,x:pos,y,w:len,h:rowThick});
+    pos+=len;
+  });
+  const rest=items.slice(row.length);
+  if(vertical)tmSquarify(rest,x+rowThick,y,w-rowThick,h,out);
+  else tmSquarify(rest,x,y+rowThick,w,h-rowThick,out);
+}
+function renderTreemap(data){
+  const svg=DOM.treemapSvg;if(!svg)return;
+  svg.innerHTML='';
+  const sectors=treemapDataset(data||{});
+  if(!sectors.length){
+    const fo=sankeyEl('foreignObject',{x:0,y:0,width:1600,height:900});
+    const div=document.createElement('div');
+    div.className='treemap-empty';div.textContent='Chưa có dữ liệu heatmap để dựng Treemap';
+    fo.appendChild(div);svg.appendChild(fo);return;
+  }
+  const W=1600,H=900,GAP=4;
+  const secLayout=[];tmSquarify(sectors,0,0,W,H,secLayout);
+  secLayout.forEach(sec=>{
+    const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
+    svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
+    const headerH=(sw>40&&sh>18)?22:0;
+    if(headerH){
+      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#6b7280'},sec.item.name));
+    }
+    const stockLayout=[];
+    tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
+    stockLayout.forEach(cell=>{
+      const pct=Number.isFinite(cell.item.pct)?cell.item.pct:0;
+      const{bg,fg}=treemapCellStyle(pct);
+      const cx=cell.x,cy=cell.y,cw=Math.max(0,cell.w-2),ch=Math.max(0,cell.h-2);
+      if(cw<=0||ch<=0)return;
+      const grp=sankeyEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
+      grp.appendChild(sankeyEl('rect',{x:cx,y:cy,width:cw,height:ch,rx:4,ry:4,fill:bg}));
+      if(cw>36&&ch>16){
+        const fs=Math.min(26,Math.max(10,Math.min(cw/4.5,ch/3)));
+        const fs2=Math.max(11,fs*0.62);
+        grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2-fs*0.25,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
+        if(ch>28){
+          const sign=pct>=0?'+':'';
+          grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+fs*0.62+4,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs2.toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
+        }
+      }
+      svg.appendChild(grp);
+    });
+  });
+}
+DOM.treemapSvg.addEventListener('click',e=>{
+  const node=e.target.closest('[data-sym]');if(!node)return;
+  const sym=node.dataset.sym;
+  if(IS_MOBILE()){openChart(sym);return;}
+  _hmapDesktopClick(sym);
+});
+DOM.treemapSvg.addEventListener('dblclick',e=>{
+  const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  const sym=node.dataset.sym;
+  _syncHoverPreview(sym);
+  updatePopout(sym);
   openChart(sym);
 });
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','health','sankey'];
+const TRI_TABS=['fireant','health','dinhgia','treemap','sankey'];
+const TRI_IFRAME_MAP={
+  dinhgia:{id:'dinhgia-frame',url:'https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong'}
+};
 function triActivateTab(tab){
   if(!TRI_TABS.includes(tab))return;
   DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
@@ -5928,6 +6297,11 @@ function triActivateTab(tab){
   // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
   // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
   if(tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+  // Định giá: chỉ nạp iframe khi tab được kích hoạt lần đầu (lazy-load)
+  if(TRI_IFRAME_MAP[tab]){
+    const cfg=TRI_IFRAME_MAP[tab],f=document.getElementById(cfg.id);
+    if(f&&f.src==='about:blank')f.src=cfg.url;
+  }
 }
 DOM.triTabs.addEventListener('click',e=>{
   const btn=e.target.closest('.tri-tab');
@@ -5946,7 +6320,7 @@ DOM.triHdr.addEventListener('click',e=>{
 // nếu đang active đúng tab đó thì chuyển sẵn sang HEALTH để mở thẻ ra không bị trống trơn.
 if(IS_MOBILE())triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
-  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW/SZ, ô tìm mã, nút popout...)
+  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...)
   // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
   if(e.target.closest('button,input,.hmap-search-wrap'))return;
   DOM.hmapPanel.classList.toggle('collapsed');
@@ -6019,6 +6393,7 @@ async function fetchHmap(){
     window._lastHmapData=j.data||{};
     renderHeatmap(j.data||{});
     renderSankey(j.data||{});
+    renderTreemap(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
     if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
       _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
@@ -6316,7 +6691,6 @@ $('hmap-follow-btn').addEventListener('dblclick',function(e){
 });
 $('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
 $('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
-$('hmap-simplize-btn').addEventListener('click',function(){ quickSimplize(); this.blur(); });
 $('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 $('journal-open-btn').addEventListener('click',()=>{
@@ -6731,7 +7105,7 @@ function _syncHoverPreview(sym,updateFrame=true){
 DOM.hpSymlist.addEventListener('click',e=>{
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
-  _syncHoverPreview(sym);updatePopout(sym);updateSimplize(sym);
+  _syncHoverPreview(sym);updatePopout(sym);
 });
 document.addEventListener('keydown',e=>{
   if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
@@ -6746,7 +7120,7 @@ document.addEventListener('keydown',e=>{
   if(next===cur&&cur!==-1)return;
   const sym=items[next].dataset.sym;_syncHoverPreview(sym,false);
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);updatePopout(sym);updateSimplize(sym);},300);
+  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);updatePopout(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
@@ -7020,7 +7394,6 @@ function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMess
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _syncHoverPreview(e.data.symbol);
-    updateSimplize(e.data.symbol);
   }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
@@ -7031,7 +7404,6 @@ window.addEventListener('message',e=>{
     if(_hoverPreviewOn)_syncHoverPreview(sym);
     else _syncHoverPreview(sym,false);
     updatePopout(sym);
-    updateSimplize(sym);
     openChart(sym);
   }else if(e.data.type==='JOURNAL_CLOSE'){
     closeJournal();
