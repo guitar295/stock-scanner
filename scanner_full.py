@@ -689,8 +689,12 @@ def compute_market_health_index(limit: int = 120) -> dict:
     # phiên gần nhất nên hạ ngưỡng là an toàn, không làm giảm chất lượng tính.
     MH_MIN_ROWS = 60
     with cache_lock:
+        # Không .copy() ở đây: chỉ giữ reference để thoát lock nhanh. An toàn vì
+        # history_cache chỉ bị thay bằng cách gán lại key (history_cache[sym] = df_moi)
+        # ở nơi khác trong file, không có chỗ nào sửa in-place lên DataFrame đang tồn tại
+        # — nên object df đang giữ reference ở đây sẽ không bị đổi ngầm sau khi thoát lock.
         raw_cache = {
-            sym: df.copy()
+            sym: df
             for sym, df in history_cache.items()
             if sym in cache_symbol_set and df is not None and len(df) >= MH_MIN_ROWS
         }
@@ -706,9 +710,13 @@ def compute_market_health_index(limit: int = 120) -> dict:
                 d["volume"] = 0
             d.index = pd.to_datetime(d.index).normalize()
             d = d[~d.index.duplicated(keep="last")]
+            # Check độ dài NGAY SAU dedup (trước compute_indicators): dedup là bước
+            # duy nhất có thể làm giảm số dòng ở đây, nên lọc sớm để khỏi tốn công
+            # tính ~20 cột indicator (MA/EMA/RSI/MACD) cho các mã vừa bị loại.
+            if len(d) < MH_MIN_ROWS:
+                continue
             d = compute_indicators(d)
-            if len(d) >= MH_MIN_ROWS:
-                prepared[sym] = d
+            prepared[sym] = d
         except Exception:
             continue
 
@@ -837,9 +845,6 @@ def compute_market_health_index(limit: int = 120) -> dict:
 
     breadth_now = current_components.get("breadth") or 0
     rsi_now = current_components.get("rsi") or 0
-    vol_now = current_components.get("volume") or 50
-    momentum_now = current_components.get("momentum") or 50
-    newhl_now = current_components.get("new_high_low") or 50
     decline_now = _mh_finite_float(decline_s.loc[cur_dt]) if cur_dt in decline_s.index else None
 
     band = _mh_score_band(cur_score)
