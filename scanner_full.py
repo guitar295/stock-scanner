@@ -773,7 +773,6 @@ def compute_market_health_index(limit: int = 120) -> dict:
     newhl_s = (50 + 50 * ((nh_s - nl_s) / denom)).fillna(50).clip(0, 100)
     vol_push_s = (50 + 50 * pd.concat(vol_push, axis=1).reindex(dates).mean(axis=1, skipna=True)).clip(0, 100)
 
-
     component_series = {
         "momentum": momentum_score.reindex(dates),
         "volatility": volatility_score.reindex(dates),
