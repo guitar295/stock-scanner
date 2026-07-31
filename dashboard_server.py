@@ -1735,6 +1735,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
 .health-body{padding:12px 14px;background:#fff;height:720px;display:flex;align-items:center;overflow:auto}
+#tri-content-health{position:relative}
+.health-copy-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border)}
+.health-copy-btn:hover{background:#f1f5f9}
 .health-layout{width:100%;display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
@@ -2548,6 +2551,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
       </div>
       <div class="tri-content" id="tri-content-health">
+        <button class="lite-draw-btn health-copy-btn" id="health-copy-btn" title="Sao chép ảnh Mrk Health vào clipboard" aria-label="Sao chép ảnh Mrk Health vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
         <div class="health-body" id="health-body">
           <div class="health-layout">
@@ -4554,6 +4558,57 @@ async function copyLiteChartImage(btn){
     _liteCopyFeedback(btn,'downloaded');
   }catch(e){console.error('copyLiteChartImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
+// ── MRK HEALTH: nút camera copy ảnh — tái dùng _liteCopyFeedback / _litePngBlobFromDataUrl ──
+// Khác với copyLiteChartImage (chụp canvas của thư viện chart), khung Mrk Health là DOM thường
+// (SVG + các div điểm số/nhận định) nên cần dựng ảnh qua kỹ thuật SVG<foreignObject> rồi vẽ ra
+// canvas — không có canvas gốc để .takeScreenshot() như bên Chart.
+async function copyHealthImage(btn){
+  const el=document.getElementById('health-body');
+  if(!el)return;
+  try{
+    const rect=el.getBoundingClientRect();
+    const w=Math.ceil(rect.width),h=Math.ceil(rect.height);
+    const dpr=window.devicePixelRatio||1;
+    const cssText=Array.from(document.styleSheets).map(ss=>{
+      try{return Array.from(ss.cssRules).map(r=>r.cssText).join('\n');}catch(e){return '';}
+    }).join('\n');
+    const clone=el.cloneNode(true);
+    clone.style.margin='0';clone.style.height=h+'px';clone.style.width=w+'px';
+    const svgData=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
+      +`<foreignObject width="100%" height="100%">`
+      +`<div xmlns="http://www.w3.org/1999/xhtml"><style>${cssText}</style>${clone.outerHTML}</div>`
+      +`</foreignObject></svg>`;
+    const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
+    const svgUrl=URL.createObjectURL(svgBlob);
+    const img=new Image();
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=svgUrl;});
+    const canvas=document.createElement('canvas');
+    canvas.width=w*dpr;canvas.height=h*dpr;
+    const ctx=canvas.getContext('2d');
+    ctx.scale(dpr,dpr);
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);
+    ctx.drawImage(img,0,0,w,h);
+    URL.revokeObjectURL(svgUrl);
+    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
+        _liteCopyFeedback(btn,'copied');
+        return;
+      }catch(e){console.warn('Copy ảnh Mrk Health vào clipboard lỗi, chuyển sang tải PNG:',e);}
+    }
+    const dlUrl=URL.createObjectURL(pngBlob);
+    const link=document.createElement('a');
+    link.href=dlUrl;link.download=`mrk_health_${_sym||''}.png`;
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
+    _liteCopyFeedback(btn,'downloaded');
+  }catch(e){console.error('copyHealthImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
+}
+document.getElementById('health-copy-btn')?.addEventListener('click',e=>{
+  e.stopPropagation();
+  copyHealthImage(e.currentTarget);
+});
 function bindLiteDrawToolbar(){
   resizeLiteDrawCanvas();
   _liteDrawColor=_liteLSGet(LITE_DRAW_COLOR_KEY,'#1a56db');
