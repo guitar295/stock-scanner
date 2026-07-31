@@ -1075,7 +1075,7 @@ try{
 }catch(e){}
 </script>
 <style>
-:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
@@ -1336,7 +1336,7 @@ JOURNAL_HTML = r"""<!DOCTYPE html>
 <title>Note</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--yellow:#b45309;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+:root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:0 1px 5px rgba(0,0,0,.06)}
@@ -5319,14 +5319,47 @@ function cellStyle(pct){
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-// Treemap dùng riêng bản màu đậm hơn Heatmap 10% (cùng thang màu cellStyle nhưng
-// nhân từng kênh RGB với 0.9 để tông màu đậm/rõ hơn) — chỉ áp dụng cho Treemap,
-// không đụng tới cellStyle gốc (Heatmap vẫn giữ nguyên tông màu như cũ).
+// Treemap dùng riêng bản màu SÁNG/RỰC hơn Heatmap một chút — không phải làm tối đi
+// (thử nhân RGB xuống 0.9 lúc trước khiến màu bị xám/xỉn vì giảm luôn cả độ sáng),
+// mà chuyển sang không gian HSL để tăng ĐỘ BÃO HOÀ (màu rực/rõ hơn) đồng thời tăng
+// nhẹ ĐỘ SÁNG, giữ đúng sắc (hue) như cellStyle gốc. Heatmap không đụng tới, vẫn
+// giữ nguyên tông màu cũ.
+function _tmRgbToHsl(r,g,b){
+  r/=255;g/=255;b/=255;
+  const max=Math.max(r,g,b),min=Math.min(r,g,b);
+  let h=0,s=0;const l=(max+min)/2;
+  if(max!==min){
+    const d=max-min;
+    s=l>0.5?d/(2-max-min):d/(max+min);
+    if(max===r)h=(g-b)/d+(g<b?6:0);
+    else if(max===g)h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h/=6;
+  }
+  return[h,s,l];
+}
+function _tmHue2Rgb(p,q,t){
+  if(t<0)t+=1;if(t>1)t-=1;
+  if(t<1/6)return p+(q-p)*6*t;
+  if(t<1/2)return q;
+  if(t<2/3)return p+(q-p)*(2/3-t)*6;
+  return p;
+}
+function _tmHslToRgb(h,s,l){
+  let r,g,b;
+  if(s===0){r=g=b=l;}
+  else{
+    const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
+    r=_tmHue2Rgb(p,q,h+1/3);g=_tmHue2Rgb(p,q,h);b=_tmHue2Rgb(p,q,h-1/3);
+  }
+  return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+}
 function treemapCellStyle(pct){
   const{bg}=cellStyle(pct);
   const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
   if(!m)return{bg,fg:'rgb(15,15,15)'};
-  const r=Math.round(+m[1]*0.9),g=Math.round(+m[2]*0.9),b=Math.round(+m[3]*0.9);
+  const[h,s,l]=_tmRgbToHsl(+m[1],+m[2],+m[3]);
+  const[r,g,b]=_tmHslToRgb(h,Math.min(1,s*1.3),Math.min(1,l+0.03));
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
