@@ -5559,11 +5559,11 @@ function _healthRenderWindow(){
     const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
     // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải),
     // giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
-    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="700">${b.label}</text>`;
+    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Sans, sans-serif" font-size="${fs}" font-weight="700">${b.label}</text>`;
   }).join('');
   // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi
   // ngưỡng phân vùng màu ở trên — hai việc khác nhau.
-  const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${v}</text>`).join('');
+  const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Sans, sans-serif" font-size="${fs}">${v}</text>`).join('');
   const lineW=(1.75*scale).toFixed(2); // HEALTH và VNINDEX dùng chung độ dày nét
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
   // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
@@ -5590,7 +5590,7 @@ function _healthRenderWindow(){
   const tickIdxs=[...new Set(tickCount<=1?[0]:Array.from({length:tickCount},(_,k)=>Math.round(k*(h.length-1)/(tickCount-1))))];
   const xLabels=tickIdxs.map(i=>{
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
-    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${healthAxisDate(h[i].date)}</text>`;
+    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Sans, sans-serif" font-size="${fs}">${healthAxisDate(h[i].date)}</text>`;
   }).join('');
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
