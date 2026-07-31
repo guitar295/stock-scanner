@@ -842,6 +842,9 @@ def compute_market_health_index(limit: int = 120) -> dict:
     newhl_now = current_components.get("new_high_low") or 50
     decline_now = _mh_finite_float(decline_s.loc[cur_dt]) if cur_dt in decline_s.index else None
 
+    band = _mh_score_band(cur_score)
+    delta = cur_score - prev_score
+
     tags = []
     if cur_score >= 90:
         tags.append("Cực kỳ hưng phấn")
@@ -858,11 +861,17 @@ def compute_market_health_index(limit: int = 120) -> dict:
         tags.append("Bán tháo/hoảng loạn")
     if 45 <= cur_score <= 60 and abs(cur_score - prev_score) <= 4 and 40 <= breadth_now <= 60:
         tags.append("Tích lũy cân bằng")
+    # Band hiện tại chỉ phản ánh vị trí tuyệt đối theo ngưỡng điểm, không phản ánh
+    # hướng đi — nên "Tích cực" sau khi rơi từ Hưng phấn và "Tiêu cực" sau khi hồi
+    # từ Sợ hãi trông giống hệt trường hợp đi lên/xuống từ Trung tính. 2 tag dưới
+    # đây bổ sung sắc thái đó mà không đụng vào nhãn band chính.
+    if band["key"] == "positive" and max(recent_scores[-10:]) >= 80 and (falling_3 or delta < 0):
+        tags.append("Hạ nhiệt từ hưng phấn")
+    if band["key"] == "negative" and min(recent_scores[-10:]) <= 20 and (rising_3 or delta > 0):
+        tags.append("Hồi phục từ sợ hãi")
     if not tags:
         tags.append("Theo dõi xu hướng")
 
-    band = _mh_score_band(cur_score)
-    delta = cur_score - prev_score
     summary = (
         f"HEALTH hiện ở vùng {band['label']} ({cur_score:.1f}/100), "
         f"{'tăng' if delta >= 0 else 'giảm'} {abs(delta):.1f} điểm so với phiên trước."
@@ -880,14 +889,30 @@ def compute_market_health_index(limit: int = 120) -> dict:
     factors = [f"{p}." for p in factors]
     if decline_now is not None:
         factors.append(f"Trong phiên hôm nay có khoảng {decline_now:.0f}% cổ phiếu trong rổ giảm giá.")
+    top_warning = "Cảnh báo phân phối" in tags or "Rủi ro tạo đỉnh" in tags
+    cooling_from_euphoria = "Hạ nhiệt từ hưng phấn" in tags
+    bottom_signal = "Tín hiệu dò đáy" in tags
+    recovering_from_fear = "Hồi phục từ sợ hãi" in tags
     if "Cực kỳ hưng phấn" in tags:
         conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
     elif "Cực kỳ sợ hãi" in tags:
         conclusion = "Kết luận: chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán tháo cực đoan, thường là vùng dò đáy tiềm năng nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
-    elif "Cảnh báo phân phối" in tags or "Rủi ro tạo đỉnh" in tags:
+    elif top_warning and cooling_from_euphoria:
+        # Cùng lúc vừa cảnh báo đỉnh/phân phối vừa đã rời khỏi vùng Hưng phấn — gộp
+        # thành 1 ý duy nhất thay vì lặp lại "cẩn trọng" ở cả 2 nhánh riêng lẻ.
+        conclusion = "Kết luận: chỉ số vừa rời vùng hưng phấn xuống tích cực nhưng nền tham gia vẫn chưa đủ rộng — rủi ro tạo đỉnh còn hiện hữu; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
+    elif top_warning:
         conclusion = "Kết luận: ưu tiên quản trị rủi ro; thị trường có dấu hiệu hưng phấn nhưng nền tham gia không đủ rộng, cần cảnh giác vùng đỉnh/phân phối."
-    elif "Tín hiệu dò đáy" in tags:
+    elif cooling_from_euphoria:
+        conclusion = "Kết luận: chỉ số vừa hạ nhiệt từ vùng hưng phấn xuống tích cực — đà tăng vẫn còn nhưng đã bớt nóng, nên thận trọng với nhóm đã tăng mạnh, tránh mua đuổi."
+    elif bottom_signal and recovering_from_fear:
+        # Tương tự: vừa có tín hiệu dò đáy vừa hồi phục từ Sợ hãi — gộp lại,
+        # tránh nói 2 lần cùng một ý "lực bán yếu dần / đang hồi lên".
+        conclusion = "Kết luận: chỉ số vừa hồi phục từ vùng sợ hãi lên tiêu cực và độ rộng đang cải thiện — tín hiệu dò đáy rõ hơn, nhưng vẫn cần thêm phiên xác nhận trước khi giải ngân mạnh."
+    elif bottom_signal:
         conclusion = "Kết luận: lực bán đang suy yếu sau vùng sợ hãi; phù hợp theo dõi quá trình tạo đáy, chưa coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện."
+    elif recovering_from_fear:
+        conclusion = "Kết luận: chỉ số đang hồi phục từ vùng sợ hãi lên tiêu cực — tâm lý bán tháo đã giảm bớt nhưng chưa đủ để coi là tích cực, cần thêm xác nhận trước khi giải ngân."
     elif "Bán tháo/hoảng loạn" in tags:
         conclusion = "Kết luận: trạng thái tiêu cực cực đoan; tránh bán đuổi, chờ tín hiệu phục hồi của độ rộng và RSI để xác nhận đáy."
     elif "Tích lũy cân bằng" in tags:
