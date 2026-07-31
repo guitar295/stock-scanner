@@ -1716,11 +1716,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
+#tri-content-sankey{position:relative}
+.sankey-copy-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border)}
+.sankey-copy-btn:hover{background:#f1f5f9}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 .treemap-wrap{width:calc(100% - 48px);aspect-ratio:16/9;height:auto;margin:0 24px;background:#fff}
 .treemap-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .treemap-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+#tri-content-treemap{position:relative}
+.treemap-copy-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border)}
+.treemap-copy-btn:hover{background:#f1f5f9}
 .tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
 .tri-tabs{display:flex;align-items:center;gap:4px}
 .tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;padding:3px 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
@@ -2592,9 +2598,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <div class="frame-shrink"><iframe id="dinhgia-frame" src="about:blank" allowfullscreen></iframe></div>
       </div>
       <div class="tri-content" id="tri-content-treemap">
+        <button class="lite-draw-btn treemap-copy-btn" id="treemap-copy-btn" title="Sao chép ảnh Treemap vào clipboard" aria-label="Sao chép ảnh Treemap vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="treemap-wrap" id="treemap-wrap"><svg class="treemap-svg" id="treemap-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
       <div class="tri-content" id="tri-content-sankey">
+        <button class="lite-draw-btn sankey-copy-btn" id="sankey-copy-btn" title="Sao chép ảnh Sankey vào clipboard" aria-label="Sao chép ảnh Sankey vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
     </div>
@@ -2749,8 +2757,8 @@ const DOM={
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
-  sankeyWrap:$('sankey-wrap'),
-  treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),
+  sankeyWrap:$('sankey-wrap'),sankeyCopyBtn:$('sankey-copy-btn'),
+  treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),treemapCopyBtn:$('treemap-copy-btn'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
@@ -6183,6 +6191,51 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   updatePopout(sym);
   openChart(sym);
 });
+// ── Nút camera copy ảnh Sankey — cùng cơ chế với Treemap (SVG thuần, rasterize
+// thẳng theo đúng kích thước hiển thị thật của sankey-wrap) ──
+async function copySankeyImage(btn){
+  const svgEl=DOM.sankeySvg;
+  if(!svgEl)return;
+  try{
+    const wrapRect=DOM.sankeyWrap.getBoundingClientRect();
+    const W=Math.max(1,Math.round(wrapRect.width)),H=Math.max(1,Math.round(wrapRect.height));
+    const dpr=window.devicePixelRatio||1;
+    const svgClone=svgEl.cloneNode(true);
+    svgClone.setAttribute('width',W*dpr);
+    svgClone.setAttribute('height',H*dpr);
+    svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const svgXml=new XMLSerializer().serializeToString(svgClone);
+    const img=new Image();
+    await new Promise((res,rej)=>{
+      img.onload=res;img.onerror=rej;
+      img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
+    });
+    const canvas=document.createElement('canvas');
+    canvas.width=W*dpr;canvas.height=H*dpr;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
+        _liteCopyFeedback(btn,'copied');
+        return;
+      }catch(e){console.warn('Copy ảnh Sankey vào clipboard lỗi, chuyển sang tải PNG:',e);}
+    }
+    const dlUrl=URL.createObjectURL(pngBlob);
+    const link=document.createElement('a');
+    link.href=dlUrl;link.download='sankey.png';
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
+    _liteCopyFeedback(btn,'downloaded');
+  }catch(e){console.error('copySankeyImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
+}
+DOM.sankeyCopyBtn?.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  copySankeyImage(e.currentTarget);
+});
 // ═══════════════════════════════════════════════════════
 // TREEMAP RENDER — dùng lại đúng nguồn dữ liệu của Sankey/Heatmap
 // (SANKEY_SECTORS, sankeyWeight, SANKEY_MIN_WEIGHT) và màu ô đúng bảng màu
@@ -6292,6 +6345,52 @@ DOM.treemapSvg.addEventListener('dblclick',e=>{
   _syncHoverPreview(sym);
   updatePopout(sym);
   openChart(sym);
+});
+// ── Nút camera copy ảnh Treemap — Treemap là SVG thuần (không lai HTML overlay như
+// Mrk Health) nên chỉ cần rasterize thẳng #treemap-svg theo đúng kích thước hiển thị
+// thật (treemap-wrap), không cần vẽ tay thêm phần nào khác.
+async function copyTreemapImage(btn){
+  const svgEl=DOM.treemapSvg;
+  if(!svgEl)return;
+  try{
+    const wrapRect=DOM.treemapWrap.getBoundingClientRect();
+    const W=Math.max(1,Math.round(wrapRect.width)),H=Math.max(1,Math.round(wrapRect.height));
+    const dpr=window.devicePixelRatio||1;
+    const svgClone=svgEl.cloneNode(true);
+    svgClone.setAttribute('width',W*dpr);
+    svgClone.setAttribute('height',H*dpr);
+    svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const svgXml=new XMLSerializer().serializeToString(svgClone);
+    const img=new Image();
+    await new Promise((res,rej)=>{
+      img.onload=res;img.onerror=rej;
+      img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
+    });
+    const canvas=document.createElement('canvas');
+    canvas.width=W*dpr;canvas.height=H*dpr;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
+        _liteCopyFeedback(btn,'copied');
+        return;
+      }catch(e){console.warn('Copy ảnh Treemap vào clipboard lỗi, chuyển sang tải PNG:',e);}
+    }
+    const dlUrl=URL.createObjectURL(pngBlob);
+    const link=document.createElement('a');
+    link.href=dlUrl;link.download='treemap.png';
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
+    _liteCopyFeedback(btn,'downloaded');
+  }catch(e){console.error('copyTreemapImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
+}
+DOM.treemapCopyBtn?.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  copyTreemapImage(e.currentTarget);
 });
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
 const TRI_TABS=['fireant','health','dinhgia','treemap','sankey'];
