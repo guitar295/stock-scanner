@@ -2312,8 +2312,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <div class="hmap-panel-hdr" id="hmap-toggle">
       <div class="hmap-hdr-row1">
         <span class="panel-title">Heatmap</span>
-        <button class="hmap-link-btn" id="btn-market">MARKET</button>
-        <button class="hmap-link-btn" id="btn-vnindex">VNINDEX</button>
         <div class="hmap-search-wrap">
           <span class="s-icon">🔍</span>
           <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
@@ -2725,7 +2723,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="tpanel" id="panel-vnd-news"><iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-sum"><iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-24h"><iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe></div>
-      <div class="tpanel" id="panel-url"><iframe id="iframe-url" src="about:blank" allowfullscreen></iframe></div>
     </div>
   </div>
 </div>
@@ -2830,7 +2827,7 @@ const DOM={
 // ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h','url'];
+const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
   'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
   'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
@@ -6805,8 +6802,6 @@ $('hmap-follow-btn').addEventListener('dblclick',function(e){
   editFollowSymbols();
   this.blur();
 });
-$('btn-market').addEventListener('click',()=>openUrl('https://dstock.vndirect.com.vn','MARKET'));
-$('btn-vnindex').addEventListener('click',()=>openUrl('https://24hmoney.vn/indices/vn-index','VNINDEX'));
 $('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 $('journal-open-btn').addEventListener('click',()=>{
@@ -6964,7 +6959,7 @@ function openChart(sym,tab='vs'){
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
-  ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _resetScannerUI();
   _activateTab(tab);
   _openPopup();
@@ -6972,26 +6967,12 @@ function openChart(sym,tab='vs'){
   // Clear search inputs
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
-function openUrl(url,label){
-  _resetPopupChrome();
-  _sym=label||'WEB';
-  _updateSymDisplay(label||'🌐');
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode=vnindex';
-  $('iframe-url').src=url;
-  _resetScannerUI();
-  TABS_ALL.forEach(t=>{
-    const p=document.getElementById('panel-'+t);if(p)p.classList.toggle('on',t==='url');
-    DOM.popupCtabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab==='url'));
-  });
-  _openPopup();
-}
 function closePopup(){
   const pbox=DOM.pbox;
   _resetPopupChrome();
   pbox.style.visibility='hidden';
   DOM.ifVs.src='about:blank';
-  ['vnd-cs','vnd-news','vnd-sum','24h','url'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   pbox.style.animation='none';
   DOM.overlay.classList.remove('on');
   document.body.style.overflow='';
