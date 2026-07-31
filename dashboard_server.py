@@ -1717,7 +1717,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
 #tri-content-sankey{position:relative}
-.sankey-copy-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border)}
+.sankey-copy-btn{position:absolute;top:8px;right:5px;z-index:5;background:#fff;border:1px solid var(--border)}
 .sankey-copy-btn:hover{background:#f1f5f9}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
@@ -1725,7 +1725,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .treemap-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .treemap-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 #tri-content-treemap{position:relative}
-.treemap-copy-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border)}
+.treemap-copy-btn{position:absolute;top:8px;right:5px;z-index:5;background:#fff;border:1px solid var(--border)}
 .treemap-copy-btn:hover{background:#f1f5f9}
 .tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
 .tri-tabs{display:flex;align-items:center;gap:4px}
@@ -1744,7 +1744,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
 .health-body{padding:12px 14px;background:#fff;height:720px;display:flex;align-items:center;overflow:auto}
 #tri-content-health{position:relative}
-.health-copy-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border)}
+.health-copy-btn{position:absolute;top:8px;right:5px;z-index:5;background:#fff;border:1px solid var(--border)}
 .health-copy-btn:hover{background:#f1f5f9}
 .health-layout{width:100%;display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
@@ -6308,7 +6308,12 @@ function renderTreemap(data){
     svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
-      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#1f2937'},sectorLabel(sec.item.name)));
+      // Cắt bớt tên ngành + thêm dấu "…" nếu không đủ chỗ trong khung, tránh tràn ra ngoài
+      // (đặc biệt các ô ngành nhỏ ở góc dưới cùng bên phải). ~7.3px/ký tự với font-size 12 monospace.
+      const label=sectorLabel(sec.item.name);
+      const maxChars=Math.max(3,Math.floor((sw-12)/7.3));
+      const shown=label.length>maxChars?label.slice(0,Math.max(1,maxChars-1))+'…':label;
+      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#1f2937'},shown));
     }
     const stockLayout=[];
     tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
