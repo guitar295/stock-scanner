@@ -5319,6 +5319,16 @@ function cellStyle(pct){
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
+// Treemap dùng riêng bản màu đậm hơn Heatmap 10% (cùng thang màu cellStyle nhưng
+// nhân từng kênh RGB với 0.9 để tông màu đậm/rõ hơn) — chỉ áp dụng cho Treemap,
+// không đụng tới cellStyle gốc (Heatmap vẫn giữ nguyên tông màu như cũ).
+function treemapCellStyle(pct){
+  const{bg}=cellStyle(pct);
+  const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
+  if(!m)return{bg,fg:'rgb(15,15,15)'};
+  const r=Math.round(+m[1]*0.9),g=Math.round(+m[2]*0.9),b=Math.round(+m[3]*0.9);
+  return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
+}
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
 function sortByPct(syms,d){return[...syms].sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0));}
 function fmtP(p){return(!p||p<=0)?'—':(p<100?p.toFixed(2):p.toFixed(1));}
@@ -5418,12 +5428,18 @@ DOM.signalHeader.addEventListener('click',e=>{
 // MARKET HEALTH RENDER
 // ═══════════════════════════════════════════════════════
 function healthEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Nhãn trục thời gian dưới chart HEALTH chỉ cần Tháng/Năm (ngày cụ thể đã có sẵn
+// qua crosshair khi hover/chạm) — đổi "YYYY-MM-DD" thành "MM/YYYY".
+function healthAxisDate(dateStr){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr||''));
+  return m?`${m[2]}/${m[1]}`:String(dateStr||'');
+}
 function healthBand(score){
   const s=Number(score);
   if(s>=80)return{label:'Hưng phấn',fill:'#7e22ce'};
-  if(s>=60)return{label:'Tích cực',fill:'#16a34a'};
+  if(s>=60)return{label:'Lạc quan',fill:'#16a34a'};
   if(s>=40)return{label:'Trung tính',fill:'#ca8a04'};
-  if(s>=20)return{label:'Tiêu cực',fill:'#dc2626'};
+  if(s>=20)return{label:'Bi quan',fill:'#dc2626'};
   return{label:'Sợ hãi',fill:'#0284c7'};
 }
 // ── State cửa sổ xem + zoom của biểu đồ HEALTH ──────────────────────────────
@@ -5482,9 +5498,9 @@ function _healthRenderWindow(){
   DOM.healthSvg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const bands=[
     {from:80,to:100,c1:'#f5e8ff',c2:'#7e22ce',label:'Hưng phấn'},
-    {from:60,to:80,c1:'#dcfce7',c2:'#16a34a',label:'Tích cực'},
+    {from:60,to:80,c1:'#dcfce7',c2:'#16a34a',label:'Lạc quan'},
     {from:40,to:60,c1:'#fef9c3',c2:'#ca8a04',label:'Trung tính'},
-    {from:20,to:40,c1:'#fee2e2',c2:'#dc2626',label:'Tiêu cực'},
+    {from:20,to:40,c1:'#fee2e2',c2:'#dc2626',label:'Bi quan'},
     {from:0,to:20,c1:'#e0f2fe',c2:'#0284c7',label:'Sợ hãi'},
   ];
   const y=v=>T+(100-v)/100*plotH;
@@ -5525,7 +5541,7 @@ function _healthRenderWindow(){
   const tickIdxs=[...new Set(tickCount<=1?[0]:Array.from({length:tickCount},(_,k)=>Math.round(k*(h.length-1)/(tickCount-1))))];
   const xLabels=tickIdxs.map(i=>{
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
-    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${h[i].date}</text>`;
+    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${healthAxisDate(h[i].date)}</text>`;
   }).join('');
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
@@ -5743,6 +5759,11 @@ async function copyHealthImage(btn){
     const cAccent=cs.getPropertyValue('--accent').trim()||'#1a56db';
     const cBorder=cs.getPropertyValue('--border').trim()||'#dde3ee';
     const cMuted=cs.getPropertyValue('--muted').trim()||'#6b7280';
+    // Điểm số (health-score) được tô màu ĐỘNG theo band (xanh/vàng/đỏ/tím/xanh dương —
+    // xem renderHealth: DOM.healthScore.style.color=localBand.fill), KHÁC với nhãn
+    // (health-label) vốn luôn dùng màu accent cố định. Lấy đúng màu đang hiển thị
+    // thật trên DOM thay vì hardcode cAccent để ảnh copy khớp 100% với dashboard.
+    const cScore=DOM.healthScore?getComputedStyle(DOM.healthScore).color:cAccent;
 
     // Lấy nội dung khung phân tích trực tiếp từ DOM đang hiển thị (giá trị mới nhất đã render sẵn)
     const scoreText=DOM.healthScore?.textContent||'--';
@@ -5810,6 +5831,30 @@ async function copyHealthImage(btn){
     ctx.drawImage(chartImg,ox+chartX,oy+chartY,chartW,chartH);
     roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
 
+    // ── Checkbox "VNINDEX" (label.health-vni-toggle, position:absolute top:6px
+    // left:88.4% trong .health-chartbox — xem CSS) — đây là overlay HTML nằm NGOÀI
+    // SVG nên rasterize chartImg ở trên không có nó; phải vẽ tay để ảnh copy khớp
+    // 100% với hiển thị thật, kể cả trạng thái tick/disable hiện tại.
+    const vniChecked=!!DOM.healthVniCheckbox?.checked;
+    const vniDisabled=!!DOM.healthVniCheckbox?.disabled;
+    const vx=ox+chartX+chartW*0.884,vy=oy+chartY+6,boxSize=13;
+    ctx.fillStyle=vniDisabled?'#f1f5f9':'#ffffff';
+    ctx.strokeStyle='#94a3b8';ctx.lineWidth=1;
+    if(ctx.roundRect){ctx.beginPath();ctx.roundRect(vx,vy,boxSize,boxSize,3);ctx.fill();ctx.stroke();}
+    else{ctx.fillRect(vx,vy,boxSize,boxSize);ctx.strokeRect(vx,vy,boxSize,boxSize);}
+    if(vniChecked){
+      ctx.strokeStyle=cAccent;ctx.lineWidth=1.6;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.beginPath();
+      ctx.moveTo(vx+2.5,vy+7);ctx.lineTo(vx+5.3,vy+9.8);ctx.lineTo(vx+10.5,vy+3.5);
+      ctx.stroke();
+    }
+    const swX=vx+boxSize+5,swY=vy+boxSize/2;
+    ctx.strokeStyle='#f97316';ctx.lineWidth=2;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(swX,swY);ctx.lineTo(swX+12,swY);ctx.stroke();
+    ctx.fillStyle='#334155';
+    ctx.font='400 11px "IBM Plex Sans",sans-serif';
+    ctx.fillText('VNINDEX',swX+17,vy+boxSize-2);
+
     // ── Cột phải, khối trên: score-card (label/ngày/điểm + tags) ──
     roundBox(ox+cardX,oy+cardY,cardW,cardH,8,'#fbfcff',cBorder);
     ctx.fillStyle=cAccent;
@@ -5818,7 +5863,7 @@ async function copyHealthImage(btn){
     ctx.fillStyle=cMuted;
     ctx.font='400 13px "IBM Plex Mono",monospace';
     ctx.fillText(dateText,ox+cardX+cardPadX,oy+cardY+cardPadX+34);
-    ctx.fillStyle=cAccent;
+    ctx.fillStyle=cScore;
     ctx.font='800 44px "Barlow Condensed",sans-serif';
     const scoreW=ctx.measureText(scoreText).width;
     ctx.fillText(scoreText,ox+cardX+cardW-cardPadX-scoreW,oy+cardY+cardPadX+34);
@@ -5848,7 +5893,9 @@ async function copyHealthImage(btn){
       bodyBlocks.forEach((block,bi)=>{
         const isFactor=summary&&bi>=1&&bi<=factors.length&&factors.length>0;
         ctx.font=isFactor?'400 14.5px "IBM Plex Sans",sans-serif':'400 15px "IBM Plex Sans",sans-serif';
-        ctx.fillStyle='#1f2937';
+        // .health-analysis p{color:#1f2937} vs .health-analysis ul{color:#374151} — dùng đúng
+        // màu tương ứng cho từng loại dòng thay vì gộp chung 1 màu như trước.
+        ctx.fillStyle=isFactor?'#374151':'#1f2937';
         block.forEach(line=>{ly+=lineH;ctx.fillText(line,ox+anaX+anaPadX,ly);});
         ly+=blockGap;
       });
@@ -6165,7 +6212,7 @@ function renderTreemap(data){
     tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
     stockLayout.forEach(cell=>{
       const pct=Number.isFinite(cell.item.pct)?cell.item.pct:0;
-      const{bg,fg}=cellStyle(pct);
+      const{bg,fg}=treemapCellStyle(pct);
       const cx=cell.x,cy=cell.y,cw=Math.max(0,cell.w-2),ch=Math.max(0,cell.h-2);
       if(cw<=0||ch<=0)return;
       const grp=sankeyEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
