@@ -41,6 +41,7 @@ from dashboard_server import (
     start_dashboard,
     get_active_price_alert_rules,
     record_price_alert_event,
+    warm_market_health_cache,
 )
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
@@ -575,6 +576,425 @@ def compute_indicators(df):
     df['A']                = df['close'].pct_change()
     return df
 
+
+# =============================================================================
+# BƯỚC 5A2: MARKET HEALTH / FEAR-GREED INDEX
+# =============================================================================
+def _mh_finite_float(value, default=None):
+    try:
+        value = float(value)
+        return value if np.isfinite(value) else default
+    except Exception:
+        return default
+
+
+def _mh_score_band(score: float) -> dict:
+    if score >= 80:
+        return {"key": "euphoria", "label": "Hưng phấn", "tone": "purple"}
+    if score >= 60:
+        return {"key": "positive", "label": "Lạc quan", "tone": "green"}
+    if score >= 40:
+        return {"key": "neutral", "label": "Trung tính", "tone": "yellow"}
+    if score >= 20:
+        return {"key": "negative", "label": "Bi quan", "tone": "red"}
+    return {"key": "fear", "label": "Sợ hãi", "tone": "cyan"}
+
+
+def _mh_percentile_score(series: pd.Series, window: int = 60) -> pd.Series:
+    series = pd.to_numeric(series, errors="coerce")
+
+    def _rank(x):
+        x = pd.Series(x).dropna()
+        if len(x) < 20:
+            return np.nan
+        return 100.0 * (x <= x.iloc[-1]).mean()
+
+    return series.rolling(window, min_periods=20).apply(_rank, raw=False).clip(0, 100)
+
+
+def _mh_last_streak(values, pred) -> int:
+    n = 0
+    for v in reversed(list(values)):
+        if pred(v):
+            n += 1
+        else:
+            break
+    return n
+
+
+def _mh_component_phrase(key: str, value) -> str:
+    """
+    Chuyển điểm số 0-100 của từng thành phần HEALTH thành một câu mô tả bằng
+    ngôn ngữ thường, dùng để đưa vào phần NHẬN ĐỊNH thay cho việc hiển thị số
+    dạng "X/100" trên thanh ngang — người đọc không cần hiểu ý nghĩa thang điểm
+    nội bộ, chỉ cần đọc câu là hiểu ngay tình trạng thị trường.
+    """
+    v = _mh_finite_float(value)
+    if v is None:
+        return ""
+    if key == "momentum":
+        if v >= 80: return "Đà thị trường đang tăng rất mạnh so với giai đoạn gần đây"
+        if v >= 60: return "Đà thị trường nghiêng lạc quan"
+        if v >= 40: return "Đà thị trường trung tính, chưa có xu hướng rõ ràng"
+        if v >= 20: return "Đà thị trường đang suy yếu"
+        return "Đà thị trường rất yếu, thấp hơn hẳn xu hướng gần đây"
+    if key == "volatility":
+        if v >= 80: return "Biến động giá đang rất thấp, thị trường ổn định"
+        if v >= 60: return "Biến động giá ở mức thấp"
+        if v >= 40: return "Biến động giá ở mức bình thường"
+        if v >= 20: return "Biến động giá đang cao hơn bình thường"
+        return "Biến động giá đang rất cao, thị trường dao động mạnh bất thường"
+    if key == "breadth":
+        if v >= 70: return "Phần lớn cổ phiếu trong rổ vẫn giữ vững xu hướng tăng"
+        if v >= 50: return "Đa số cổ phiếu còn giữ xu hướng tăng"
+        if v >= 30: return "Số cổ phiếu giữ xu hướng tăng và giảm khá cân bằng"
+        if v >= 15: return "Phần lớn cổ phiếu đã gãy xu hướng tăng"
+        return "Hầu hết cổ phiếu trong rổ đã mất xu hướng tăng"
+    if key == "new_high_low":
+        if v >= 80: return "Số mã phá đỉnh 52 tuần áp đảo, không có mã phá đáy đáng kể"
+        if v >= 60: return "Số mã phá đỉnh nhỉnh hơn số mã phá đáy"
+        if v >= 40: return "Chưa có làn sóng phá đỉnh hay phá đáy đáng chú ý"
+        if v >= 20: return "Số mã phá đáy 52 tuần nhỉnh hơn số mã phá đỉnh"
+        return "Có mã phá đáy 52 tuần trong khi không có mã nào phá đỉnh"
+    if key == "volume":
+        if v >= 80: return "Dòng tiền đổ vào rất mạnh, nhiều mã tăng kèm khối lượng đột biến"
+        if v >= 60: return "Dòng tiền nghiêng về mua chủ động"
+        if v >= 40: return "Dòng tiền theo khối lượng chưa rõ xu hướng"
+        if v >= 20: return "Dòng tiền nghiêng về bán, xuất hiện phiên giảm kèm khối lượng lớn"
+        return "Áp lực bán rất mạnh, nhiều mã giảm sâu kèm khối lượng đột biến"
+    if key == "rsi":
+        # RSI dùng ngưỡng quy ước riêng (70/30) thay vì thang 20-40-60-80 chung,
+        # vì RSI vốn đã là chỉ báo có ý nghĩa chuẩn hoá quen thuộc với người đọc.
+        if v >= 70: return "RSI trung vị đã vào vùng quá mua"
+        if v >= 55: return "RSI trung vị nghiêng lạc quan"
+        if v >= 45: return "RSI trung vị ở vùng trung tính"
+        if v >= 30: return "RSI trung vị nghiêng bi quan"
+        return "RSI trung vị đã vào vùng quá bán"
+    return ""
+
+
+def compute_market_health_index(limit: int = 120) -> dict:
+    """
+    Chỉ số HEALTH/Fear-Greed dùng hoàn toàn dữ liệu đang có trong history_cache.
+    Mỗi phiên được chấm 0-100 từ momentum proxy, volatility, breadth, new high/low,
+    RSI trung vị và volume stress của rổ HEATMAP/TRADING.
+    """
+    # NGƯỠNG ĐỘ DÀI TỐI THIỂU: đồng bộ với build_history_cache() (dòng ~848) —
+    # nơi coi 1 mã là "đã cache hợp lệ" khi có >= 60 phiên. Trước đây HEALTH tự
+    # đòi >= 80 phiên, khiến mọi mã có 60-79 phiên (mã mới niêm yết, mã bị giới
+    # hạn lịch sử từ nguồn dữ liệu...) bị coi là "đã cache" ở MỌI nơi khác trong
+    # hệ thống nhưng lại bị âm thầm loại khỏi HEALTH — dễ gây hiểu lầm "cache đủ
+    # rồi mà vẫn báo thiếu". Với 60 phiên, các chỉ báo HEALTH đang dùng (MA50,
+    # RSI14, VMA20, rolling 252 với min_periods=60) vẫn tính đủ giá trị hợp lệ ở
+    # phiên gần nhất nên hạ ngưỡng là an toàn, không làm giảm chất lượng tính.
+    MH_MIN_ROWS = 60
+    with cache_lock:
+        # Không .copy() ở đây: chỉ giữ reference để thoát lock nhanh. An toàn vì
+        # history_cache chỉ bị thay bằng cách gán lại key (history_cache[sym] = df_moi)
+        # ở nơi khác trong file, không có chỗ nào sửa in-place lên DataFrame đang tồn tại
+        # — nên object df đang giữ reference ở đây sẽ không bị đổi ngầm sau khi thoát lock.
+        raw_cache = {
+            sym: df
+            for sym, df in history_cache.items()
+            if sym in cache_symbol_set and df is not None and len(df) >= MH_MIN_ROWS
+        }
+
+    prepared = {}
+    for sym, df in raw_cache.items():
+        try:
+            cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+            if "close" not in cols:
+                continue
+            d = df[cols].copy().sort_index()
+            if "volume" not in d.columns:
+                d["volume"] = 0
+            d.index = pd.to_datetime(d.index).normalize()
+            d = d[~d.index.duplicated(keep="last")]
+            # Check độ dài NGAY SAU dedup (trước compute_indicators): dedup là bước
+            # duy nhất có thể làm giảm số dòng ở đây, nên lọc sớm để khỏi tốn công
+            # tính ~20 cột indicator (MA/EMA/RSI/MACD) cho các mã vừa bị loại.
+            if len(d) < MH_MIN_ROWS:
+                continue
+            d = compute_indicators(d)
+            prepared[sym] = d
+        except Exception:
+            continue
+
+    if len(prepared) < 20:
+        return {
+            "ok": False,
+            "error": "not_enough_cache",
+            "message": f"Chưa đủ cache để tính Mrk Health ({len(prepared)} mã hợp lệ).",
+            "history": [],
+            "components": [],
+        }
+
+    close_df = pd.concat({sym: d["close"] for sym, d in prepared.items()}, axis=1).sort_index()
+    close_df = close_df.dropna(how="all").tail(360)
+    returns = close_df.pct_change(fill_method=None)
+    eq_ret = returns.mean(axis=1, skipna=True).fillna(0)
+    market_proxy = (1 + eq_ret).cumprod() * 100
+    momentum_raw = (market_proxy / market_proxy.rolling(20, min_periods=12).mean() - 1) * 100
+    volatility_raw = -eq_ret.rolling(10, min_periods=5).std() * np.sqrt(252) * 100
+    momentum_score = _mh_percentile_score(momentum_raw)
+    volatility_score = _mh_percentile_score(volatility_raw)
+
+    above_ma50, rsi14, new_high, new_low, vol_push, decline_today, hoang_loan, ban_thao = {}, {}, {}, {}, {}, {}, {}, {}
+    for sym, d in prepared.items():
+        above_ma50[sym] = (d["close"] > d["MA50"]).astype(float)
+        rsi14[sym] = d["RSI14"]
+        new_high[sym] = (d["close"] >= d["close"].rolling(252, min_periods=60).max()).astype(float)
+        new_low[sym] = (d["close"] <= d["close"].rolling(252, min_periods=60).min()).astype(float)
+        pct = d["close"].pct_change() * 100
+        # Cờ "giảm giá trong phiên" (bất kể mức độ) — dùng riêng để đo diện rộng của
+        # phiên giảm, KHÔNG gộp vào score_df vì đây là điều kiện phụ cho nhãn cảnh
+        # báo, không phải một thành phần chấm điểm HEALTH.
+        decline_today[sym] = (pct < 0).astype(float)
+        v_ratio = d["volume"] / d["VMA20"].replace(0, np.nan)
+        excite = ((pct >= 2.5) & (v_ratio >= 1.5)).astype(float)
+        panic = ((pct <= -2.5) & (v_ratio >= 1.5)).astype(float)
+        vol_push[sym] = excite - panic
+        # 2 cờ riêng cho tag "Hoảng loạn" / "Bán tháo" — đều là sự kiện CẤP TÍNH trong
+        # 1 phiên (giảm sâu + volume xác nhận ≥1.3x TB 20 phiên), độc lập với band/xu
+        # hướng điểm HEALTH. Phân biệt theo biên độ giảm: 2,5%-4% là "Hoảng loạn" (mức
+        # nhẹ hơn), từ 4% trở lên là "Bán tháo" (mức nặng hơn, diện rộng thực sự).
+        hoang_loan[sym] = ((pct <= -2.5) & (pct > -4) & (v_ratio >= 1.3)).astype(float)
+        ban_thao[sym] = ((pct <= -4) & (v_ratio >= 1.3)).astype(float)
+
+    dates = close_df.index[-max(limit, 30):]
+    breadth_s = pd.concat(above_ma50, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    decline_s = pd.concat(decline_today, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    hoang_loan_s = pd.concat(hoang_loan, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    ban_thao_s = pd.concat(ban_thao, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
+    rsi_s = pd.concat(rsi14, axis=1).reindex(dates).median(axis=1, skipna=True).clip(0, 100)
+    nh_s = pd.concat(new_high, axis=1).reindex(dates).sum(axis=1, skipna=True)
+    nl_s = pd.concat(new_low, axis=1).reindex(dates).sum(axis=1, skipna=True)
+    denom = (nh_s + nl_s).replace(0, np.nan)
+    newhl_s = (50 + 50 * ((nh_s - nl_s) / denom)).fillna(50).clip(0, 100)
+    vol_push_s = (50 + 50 * pd.concat(vol_push, axis=1).reindex(dates).mean(axis=1, skipna=True)).clip(0, 100)
+
+    component_series = {
+        "momentum": momentum_score.reindex(dates),
+        "volatility": volatility_score.reindex(dates),
+        "breadth": breadth_s,
+        "new_high_low": newhl_s,
+        "rsi": rsi_s,
+        "volume": vol_push_s,
+    }
+    score_df = pd.DataFrame(component_series)
+    score = score_df.mean(axis=1, skipna=True).clip(0, 100)
+
+    usable = score.dropna()
+    if usable.empty:
+        return {
+            "ok": False,
+            "error": "not_enough_history",
+            "message": "Cache chưa đủ lịch sử để tính Mrk Health.",
+            "history": [],
+            "components": [],
+        }
+
+    # VNINDEX không nằm trong cache_symbol_set (rổ dùng để tính HEALTH), nên phải
+    # tự đảm bảo có dữ liệu — dùng lại đúng cơ chế ensure-on-demand mà CHART tab
+    # đang dùng khi người dùng xem chart VNINDEX, tránh viết thêm luồng fetch riêng.
+    try:
+        ensure_symbol_live_in_cache("VNINDEX")
+    except Exception:
+        pass
+    with cache_lock:
+        _vni_df = history_cache.get("VNINDEX")
+    vni_close = None
+    if _vni_df is not None and not _vni_df.empty and "close" in _vni_df.columns:
+        vni_close = _vni_df["close"].copy()
+        vni_close.index = pd.to_datetime(vni_close.index).normalize()
+        vni_close = vni_close[~vni_close.index.duplicated(keep="last")]
+
+    last_dates = list(usable.tail(limit).index)
+    history = []
+    for dt in last_dates:
+        entry = {
+            "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
+            "score": round(float(score.loc[dt]), 1),
+        }
+        if vni_close is not None:
+            v = vni_close.get(dt)
+            entry["vnindex"] = round(float(v), 2) if v is not None and pd.notna(v) else None
+        history.append(entry)
+
+    cur_dt = last_dates[-1]
+    cur_score = float(score.loc[cur_dt])
+    prev_score = float(score.loc[last_dates[-2]]) if len(last_dates) >= 2 else cur_score
+    current_components = {
+        k: _mh_finite_float(v.loc[cur_dt])
+        for k, v in component_series.items()
+    }
+    component_labels = {
+        "momentum": "Đà thị trường",
+        "volatility": "Biến động",
+        "breadth": "Độ rộng",
+        "new_high_low": "Đỉnh/đáy 52 tuần",
+        "rsi": "RSI trung vị",
+        "volume": "Dòng tiền/volume",
+    }
+    components = [
+        {
+            "key": k,
+            "label": component_labels[k],
+            "score": round(v, 1) if v is not None else None,
+        }
+        for k, v in current_components.items()
+    ]
+
+    recent_scores = [x["score"] for x in history[-10:]]
+    high_streak = _mh_last_streak(recent_scores, lambda x: x >= 75)
+    low_streak = _mh_last_streak(recent_scores, lambda x: x <= 25)
+    rising_3 = len(history) >= 4 and history[-1]["score"] > history[-4]["score"]
+    falling_3 = len(history) >= 4 and history[-1]["score"] < history[-4]["score"]
+
+    breadth_now = current_components.get("breadth") or 0
+    decline_now = _mh_finite_float(decline_s.loc[cur_dt]) if cur_dt in decline_s.index else None
+    hoang_loan_now = _mh_finite_float(hoang_loan_s.loc[cur_dt]) if cur_dt in hoang_loan_s.index else None
+    ban_thao_now = _mh_finite_float(ban_thao_s.loc[cur_dt]) if cur_dt in ban_thao_s.index else None
+
+    band = _mh_score_band(cur_score)
+    delta = cur_score - prev_score
+
+    # Xu hướng ngắn hạn dùng chung cho các tag "đảo chiều"/"phân phối" bên dưới:
+    # reversing_top/recovering_bottom = đã XÁC NHẬN đổi chiều (falling_3/rising_3
+    # hoặc delta cùng dấu). Tách bạch với "chưa đổi chiều" để tag cảnh báo sớm
+    # (Dấu hiệu phân phối) và tag xác nhận đảo chiều (Điều chỉnh từ đỉnh) không
+    # lặp lại cùng một ý nghĩa ở 2 thời điểm khác nhau.
+    reversing_top = falling_3 or delta < 0
+    recovering_bottom = rising_3 or delta > 0
+    max_recent_10 = max(recent_scores)
+    min_recent_10 = min(recent_scores)
+
+    tags = []
+    if cur_score >= 90:
+        tags.append("Cực kỳ hưng phấn")
+    if cur_score <= 10:
+        tags.append("Cực kỳ sợ hãi")
+    # "Dấu hiệu phân phối": cảnh báo SỚM — breadth đã yếu trong khi streak điểm cao
+    # vẫn đang giữ, giá CHƯA xác nhận giảm (not reversing_top). Cố ý không giới hạn
+    # trần cur_score nên có thể trùng với "Cực kỳ hưng phấn" (kịch bản "blow-off
+    # top": giá vẫn tăng rất mạnh nhưng độ rộng đã co hẹp) — đây là chủ đích, không
+    # phải lỗi.
+    if high_streak >= 3 and breadth_now < 55 and not reversing_top:
+        tags.append("Dấu hiệu phân phối")
+    # "Điều chỉnh từ đỉnh": gộp 2 tag cũ ("Rủi ro tạo đỉnh" + "Hạ nhiệt từ hưng
+    # phấn") vì cùng mô tả 1 quá trình (giá đảo chiều sau giai đoạn hưng phấn),
+    # chỉ khác lát cắt thời điểm đo:
+    #   - Nhánh A: điểm vẫn ≥75 (đang trong streak cao) nhưng đã bắt đầu giảm.
+    #   - Nhánh B: điểm đã rơi xuống band Lạc quan (60-80, hở 2 đầu để không đụng
+    #     "Tích lũy cân bằng" ở mốc 60 và không đụng "Cực kỳ hưng phấn" ở mốc 90)
+    #     nhưng gần đây (10 phiên) từng đạt Hưng phấn (≥80).
+    # Nhánh A không giới hạn trần điểm nên vẫn có thể trùng "Cực kỳ hưng phấn" —
+    # chủ đích, giữ nguyên như "Dấu hiệu phân phối" ở trên.
+    if (high_streak >= 3 and falling_3) or (
+        60 < cur_score < 80 and max_recent_10 >= 80 and reversing_top
+    ):
+        tags.append("Điều chỉnh từ đỉnh")
+    # "Phục hồi từ đáy": đối xứng với "Điều chỉnh từ đỉnh", gộp "Tín hiệu dò đáy" +
+    # "Hồi phục từ sợ hãi". Không có tag "cảnh báo sớm" đối xứng với "Dấu hiệu phân
+    # phối" ở phía đáy — có chủ đích, vì breadth cải thiện sớm ở vùng đáy không
+    # mang tính cảnh báo rủi ro như breadth suy yếu sớm ở vùng đỉnh.
+    if (low_streak >= 3 and rising_3) or (
+        20 <= cur_score < 40 and min_recent_10 <= 20 and recovering_bottom
+    ):
+        tags.append("Phục hồi từ đáy")
+    # "Hoảng loạn" / "Bán tháo" là sự kiện CẤP TÍNH trong 1 phiên (giảm sâu + volume
+    # xác nhận), không lệ thuộc band/xu hướng điểm HEALTH nhiều phiên trước đó — nên
+    # có thể xảy ra ngay cả khi thị trường đang uptrend (VD phiên phân phối đỉnh, RSI
+    # vẫn >80 là bình thường). Vì vậy KHÔNG dùng cur_score/breadth_now(MA50)/rsi_now ở
+    # đây, chỉ dùng % mã thỏa biên độ giảm + volume đột biến ≥1.3x TB 20 phiên trong
+    # chính phiên đó. Hai tag loại trừ lẫn nhau ở cấp độ từng mã (2,5%-4% vs ≥4%),
+    # nhưng vẫn có thể cùng xuất hiện nếu cả 2 nhóm mã đều đủ % ngưỡng diện rộng.
+    MH_PANIC_PCT = 60  # ngưỡng % mã thỏa điều kiện để coi là diện rộng, áp dụng cho cả 2 tag
+    if (hoang_loan_now or 0) >= MH_PANIC_PCT:
+        tags.append("Hoảng loạn")
+    if (ban_thao_now or 0) >= MH_PANIC_PCT:
+        tags.append("Bán tháo")
+    if 45 <= cur_score <= 60 and abs(delta) <= 4 and 40 <= breadth_now <= 60:
+        tags.append("Tích lũy cân bằng")
+    if not tags:
+        tags.append("Theo dõi xu hướng")
+
+    summary = (
+        f"Mrk Health hiện ở vùng {band['label']} ({cur_score:.1f}/100), "
+        f"{'tăng' if delta >= 0 else 'giảm'} {abs(delta):.1f} điểm so với phiên trước."
+    )
+    factors = [
+        p for p in (
+            _mh_component_phrase("momentum", current_components.get("momentum")),
+            _mh_component_phrase("volatility", current_components.get("volatility")),
+            _mh_component_phrase("breadth", current_components.get("breadth")),
+            _mh_component_phrase("new_high_low", current_components.get("new_high_low")),
+            _mh_component_phrase("volume", current_components.get("volume")),
+            _mh_component_phrase("rsi", current_components.get("rsi")),
+        ) if p
+    ]
+    factors = [f"{p}." for p in factors]
+    if decline_now is not None:
+        factors.append(f"Trong phiên hôm nay có khoảng {decline_now:.0f}% cổ phiếu trong rổ giảm giá.")
+    has_euphoria = "Cực kỳ hưng phấn" in tags
+    has_fear = "Cực kỳ sợ hãi" in tags
+    has_correction = "Điều chỉnh từ đỉnh" in tags
+    has_distribution = "Dấu hiệu phân phối" in tags
+    has_recovery = "Phục hồi từ đáy" in tags
+
+    if has_euphoria and has_correction:
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) và đã bắt đầu chững/quay đầu — rủi ro đảo chiều ngắn hạn cao; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng nóng, tránh mua đuổi."
+    elif has_euphoria and has_distribution:
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) nhưng độ rộng thị trường không theo kịp đà tăng giá — dấu hiệu phân phối sớm giữa lúc tăng nóng; rủi ro đảo chiều ngắn hạn cao, ưu tiên chốt lời/giảm tỷ trọng, tránh mua đuổi."
+    elif has_euphoria:
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ hưng phấn (≥90/100) — thị trường tăng nóng, rủi ro đảo chiều ngắn hạn gia tăng; ưu tiên chốt lời/giảm tỷ trọng ở nhóm đã tăng mạnh, hạn chế mua đuổi."
+    elif has_fear and has_recovery:
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) và đã có dấu hiệu hồi phục — tâm lý bán tháo đang dịu bớt, có thể là vùng dò đáy tiềm năng nhưng vẫn cần thêm phiên xác nhận độ rộng/RSI trước khi giải ngân, tránh bắt đáy sớm."
+    elif has_fear:
+        conclusion = "Kết luận: Chỉ số đang ở vùng cực kỳ sợ hãi (≤10/100) — tâm lý bán là chủ đạo, thường là vùng dò đáy tiềm năng, nhưng cần chờ xác nhận độ rộng/RSI cải thiện trước khi giải ngân, tránh bắt đáy sớm."
+    elif has_correction:
+        conclusion = "Kết luận: Chỉ số đang điều chỉnh từ vùng hưng phấn/lạc quan — đà tăng đã bớt nóng và bắt đầu suy yếu; ưu tiên chốt lời một phần ở nhóm tăng mạnh trước đó, hạn chế mua đuổi."
+    elif has_distribution:
+        conclusion = "Kết luận: Điểm Mrk Health vẫn ở vùng cao nhưng độ rộng thị trường đang thu hẹp — dấu hiệu phân phối sớm, nền tăng đang mỏng dần dù giá chưa xác nhận giảm; nên bắt đầu thận trọng, hạn chế mua mới, chưa cần bán vội nếu điểm Mrk Health chưa giảm rõ."
+    elif has_recovery:
+        conclusion = "Kết luận: Chỉ số đang phục hồi từ vùng sợ hãi/bi quan — lực bán đã suy yếu và tâm lý đang cải thiện; theo dõi quá trình tạo đáy, nhưng chưa nên coi là xác nhận đảo chiều nếu độ rộng chưa cải thiện rõ."
+    elif "Tích lũy cân bằng" in tags:
+        conclusion = "Kết luận: Thị trường nghiêng về tích lũy/cân bằng; chưa có xác nhận đỉnh hoặc đáy rõ ràng."
+    else:
+        conclusion = "Kết luận: Chưa có tín hiệu cực đoan đủ mạnh theo band điểm Mrk Health để kết luận đỉnh hoặc đáy; tiếp tục theo dõi breadth và volume."
+    # Hoảng loạn/Bán tháo là sự kiện CẤP TÍNH trong phiên, có thể trùng với BẤT KỲ tag/
+    # band nào ở trên (kể cả giữa uptrend) — thay vì lồng vào từng nhánh phía trên (dễ
+    # gây rối, khó bảo trì), luôn thêm 1 câu nhận xét ĐỘC LẬP ở cuối, tách bạch rõ ràng.
+    if "Bán tháo" in tags:
+        pct_str = f"~{ban_thao_now:.0f}%" if ban_thao_now is not None else "nhiều"
+        conclusion += f" Xuất hiện dấu hiệu bán tháo diện rộng ({pct_str} số mã giảm ≥4% kèm volume ≥1,3 lần TB20) — thận trọng khi giao dịch."
+    elif "Hoảng loạn" in tags:
+        pct_str = f"~{hoang_loan_now:.0f}%" if hoang_loan_now is not None else "nhiều"
+        conclusion += f" Xuất hiện dấu hiệu hoảng loạn diện rộng ({pct_str} số mã giảm 2,5%-4% kèm volume ≥1,3 lần TB20) — thận trọng khi giao dịch, tránh phản ứng thái quá."
+
+    return {
+        "ok": True,
+        "as_of": pd.Timestamp(cur_dt).strftime("%Y-%m-%d"),
+        "updated_at": datetime.now(TZ_VN).strftime("%Y-%m-%d %H:%M:%S"),
+        "score": round(cur_score, 1),
+        "delta": round(delta, 1),
+        "band": band,
+        "tags": tags,
+        "history": history,
+        "components": components,
+        "vnindex_available": vni_close is not None,
+        "analysis": {
+            "summary": summary,
+            "factors": factors,
+            "conclusion": conclusion,
+        },
+        "meta": {
+            "symbols": len(prepared),
+            "lookback_sessions": len(last_dates),
+            "source": "history_cache",
+        },
+    }
+
 # =============================================================================
 # BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
@@ -691,6 +1111,12 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         new_last = sample_df2.index[-1].date()
         ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
         print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
+    # KHÔNG warm HEALTH chủ động ở đây: hàm này chỉ chạy NGOÀI giờ giao dịch
+    # (tối đa 1 lần/30 phút), lúc gần như không ai theo dõi HEALTH sát sao. Nhờ
+    # Fix A trong dashboard_server.py (_refresh_market_health không đóng dấu
+    # "cache mới" khi tính lỗi), lần request thật sự tiếp theo từ client sẽ tự
+    # tính lại đúng trên cache vừa rebuild — không cần tốn thêm 1 lần tính toán
+    # HEALTH (khá nặng, phải chạy trên toàn bộ rổ mã) mà không ai xem tới.
     return False
 
 def fetch_today_bar(symbol: str, current_date: date):
@@ -2159,6 +2585,20 @@ _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
 listener_thread.start()
 
+# ─── (Đã BỎ ý tưởng đảo thứ tự start_dashboard/build_history_cache) ────────
+# Ban đầu định đảo build_history_cache() lên trước start_dashboard() để tránh
+# HEALTH tính trên cache rỗng lúc khởi động. Nhưng làm vậy khiến Flask KHÔNG
+# mở cổng cho tới khi cache load xong (1-3 phút) → HEATMAP/MARKET/CHART cũng
+# không truy cập được trong lúc đó, dù các panel này vốn có cơ chế fallback
+# "fetch tươi" khi cache chưa có (xem ensure_symbol_live_in_cache, fetch_today_bar)
+# và KHÔNG cần cache sẵn để hoạt động. Đánh đổi đó không đáng — nên GIỮ NGUYÊN
+# thứ tự gốc: mở dashboard trước để HEATMAP/CHART dùng được ngay (chậm hơn do
+# fetch tươi), còn HEALTH tự khắc phục nhờ 2 cơ chế bên dưới:
+#   (1) Fix A trong dashboard_server.py: kết quả lỗi "0 mã hợp lệ" không bị
+#       đóng dấu "cache mới" → không kẹt 30 phút, tự thử lại ở lần gọi sau.
+#   (2) warm_market_health_cache() được gọi CHỦ ĐỘNG ngay khi build_history_cache()
+#       xong (xem bên dưới) → HEALTH có dữ liệu đúng chỉ vài giây sau khi cache
+#       sẵn sàng, không cần đợi ai request hay đợi TTL.
 start_dashboard(
     alerted_today_ref = lambda: alerted_today,
     history_cache_ref = lambda: history_cache,
@@ -2171,8 +2611,18 @@ start_dashboard(
     ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
     chart_symbol_status_fn = chart_symbol_status,
     momentum_today_ref = lambda: momentum_today,
+    fetch_market_health_fn = compute_market_health_index,
     port              = 8888,
 )
+
+print("\n🔧 Đang load cache lịch sử lần đầu...")
+build_history_cache(symbols_to_cache, last_run_date)
+
+# Cache lịch sử vừa load xong → chủ động tính HEALTH ngay, không đợi client
+# đầu tiên tự trigger. Trong khoảng thời gian build_history_cache() đang chạy
+# ở trên, dashboard vẫn phản hồi HEATMAP/CHART bình thường (qua fallback fetch
+# tươi); nếu có ai request HEALTH đúng lúc đó thì Fix A đảm bảo không bị kẹt.
+warm_market_health_cache()
 
 print("\n" + "="*60)
 print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
@@ -2194,9 +2644,6 @@ print(f"   Cache check : Tự động trước mỗi chu kỳ quét")
 print(f"   On-demand   : Ưu tiên cache, fallback fetch fresh")
 print(f"   Nghỉ quét   : Thứ 7 và Chủ nhật")
 print("="*60)
-
-print("\n🔧 Đang load cache lịch sử lần đầu...")
-build_history_cache(symbols_to_cache, last_run_date)
 
 # =============================================================================
 # VÒNG LẶP CHÍNH
@@ -2223,6 +2670,9 @@ while True:
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
             print("🔧 Reload cache lịch sử cho ngày mới...")
             build_history_cache(symbols_to_cache, current_date)
+            # Cache vừa reset cho phiên mới → warm lại HEALTH ngay, tránh 30 phút
+            # đầu ngày dashboard hiển thị HEALTH tính trên dữ liệu của phiên hôm trước.
+            warm_market_health_cache()
 
         if not _is_trading_session_time(current_date, now_time):
             # Tự dò + tự sửa cache lệch phiên — CHỈ chạy ngoài giờ giao dịch, với nhịp
@@ -2249,6 +2699,7 @@ while True:
         if cache_empty:
             print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
             build_history_cache(symbols_to_cache, current_date)
+            warm_market_health_cache()
 
         print(f"\n{'='*60}")
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
