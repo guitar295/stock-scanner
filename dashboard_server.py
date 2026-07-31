@@ -1718,6 +1718,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
 .sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+.treemap-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
+.treemap-svg{width:100%;height:100%;display:block;background:#fff;border:none}
+.treemap-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 .tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
 .tri-tabs{display:flex;align-items:center;gap:4px}
 .tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;padding:3px 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
@@ -2035,6 +2038,12 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     border-color: var(--border) !important;
   }
   .sankey-wrap{
+    width:100% !important;
+    margin-left:0 !important;
+    aspect-ratio:16/9;
+    height:auto;
+  }
+  .treemap-wrap{
     width:100% !important;
     margin-left:0 !important;
     aspect-ratio:16/9;
@@ -2539,6 +2548,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <span class="tri-tab on" data-tab="fireant">Fireant</span>
         <span class="tri-tab" data-tab="health">Mrk Health</span>
         <span class="tri-tab" data-tab="dinhgia">Định giá</span>
+        <span class="tri-tab" data-tab="treemap">Treemap</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
       <span class="tri-toggle" id="tri-toggle">▶</span>
@@ -2580,6 +2590,9 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       </div>
       <div class="tri-content" id="tri-content-dinhgia">
         <div class="frame-shrink"><iframe id="dinhgia-frame" src="about:blank" allowfullscreen></iframe></div>
+      </div>
+      <div class="tri-content" id="tri-content-treemap">
+        <div class="treemap-wrap" id="treemap-wrap"><svg class="treemap-svg" id="treemap-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
       <div class="tri-content" id="tri-content-sankey">
         <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
@@ -2737,6 +2750,7 @@ const DOM={
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
   sankeyWrap:$('sankey-wrap'),
+  treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
@@ -6078,8 +6092,112 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   updatePopout(sym);
   openChart(sym);
 });
+// ═══════════════════════════════════════════════════════
+// TREEMAP RENDER — dùng lại đúng nguồn dữ liệu của Sankey/Heatmap
+// (SANKEY_SECTORS, sankeyWeight, SANKEY_MIN_WEIGHT) và màu ô đúng bảng màu
+// của Heatmap (cellStyle) để 3 view luôn đồng nhất khi user đối chiếu qua lại.
+// ═══════════════════════════════════════════════════════
+function treemapDataset(data){
+  return SANKEY_SECTORS.map(g=>{
+    const stocks=g.syms.map(sym=>{
+      const entry=data[sym],weight=sankeyWeight(entry);
+      return{sym,pct:Number(entry?.pct),weight};
+    }).filter(x=>x.weight>SANKEY_MIN_WEIGHT).sort((a,b)=>b.weight-a.weight);
+    return{name:g.name,stocks,weight:stocks.reduce((s,x)=>s+x.weight,0)};
+  }).filter(sec=>sec.weight>0).sort((a,b)=>b.weight-a.weight);
+}
+// Squarified treemap (Bruls et al.) — items cần field .weight>0, out nhận {item,x,y,w,h}.
+function tmSquarify(items,x,y,w,h,out){
+  if(!items.length)return;
+  if(items.length===1){out.push({item:items[0],x,y,w,h});return;}
+  const total=items.reduce((s,it)=>s+it.weight,0);
+  const vertical=w>=h;
+  const worstOf=(row,rowLen)=>row.reduce((wo,it)=>{
+    const area=it.weight/total*w*h;
+    const s=Math.max(rowLen,area/rowLen),r=Math.min(rowLen,area/rowLen);
+    return Math.max(wo,s/r);
+  },0);
+  let sum=0,row=[],i=0;
+  while(i<items.length){
+    row.push(items[i]);sum+=items[i].weight;
+    const rowLen=sum/total*(vertical?w:h);
+    const worst=worstOf(row,rowLen);
+    if(i+1<items.length){
+      const next=[...row,items[i+1]],sum2=sum+items[i+1].weight;
+      const rowLen2=sum2/total*(vertical?w:h);
+      if(worstOf(next,rowLen2)<=worst){i++;continue;}
+    }
+    break;
+  }
+  const rowSum=row.reduce((s,it)=>s+it.weight,0);
+  const rowThick=rowSum/total*(vertical?w:h);
+  let pos=vertical?y:x;
+  row.forEach(it=>{
+    const len=it.weight/rowSum*(vertical?h:w);
+    if(vertical)out.push({item:it,x,y:pos,w:rowThick,h:len});
+    else out.push({item:it,x:pos,y,w:len,h:rowThick});
+    pos+=len;
+  });
+  const rest=items.slice(row.length);
+  if(vertical)tmSquarify(rest,x+rowThick,y,w-rowThick,h,out);
+  else tmSquarify(rest,x,y+rowThick,w,h-rowThick,out);
+}
+function renderTreemap(data){
+  const svg=DOM.treemapSvg;if(!svg)return;
+  svg.innerHTML='';
+  const sectors=treemapDataset(data||{});
+  if(!sectors.length){
+    const fo=sankeyEl('foreignObject',{x:0,y:0,width:1600,height:900});
+    const div=document.createElement('div');
+    div.className='treemap-empty';div.textContent='Chưa có dữ liệu heatmap để dựng Treemap';
+    fo.appendChild(div);svg.appendChild(fo);return;
+  }
+  const W=1600,H=900,GAP=4;
+  const secLayout=[];tmSquarify(sectors,0,0,W,H,secLayout);
+  secLayout.forEach(sec=>{
+    const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
+    svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
+    const headerH=(sw>40&&sh>18)?22:0;
+    if(headerH){
+      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#6b7280'},sec.item.name));
+    }
+    const stockLayout=[];
+    tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
+    stockLayout.forEach(cell=>{
+      const pct=Number.isFinite(cell.item.pct)?cell.item.pct:0;
+      const{bg,fg}=cellStyle(pct);
+      const cx=cell.x,cy=cell.y,cw=Math.max(0,cell.w-2),ch=Math.max(0,cell.h-2);
+      if(cw<=0||ch<=0)return;
+      const grp=sankeyEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
+      grp.appendChild(sankeyEl('rect',{x:cx,y:cy,width:cw,height:ch,fill:bg,stroke:'#fff','stroke-width':1}));
+      if(cw>36&&ch>16){
+        const fs=Math.min(13,Math.max(9,Math.min(cw/5,ch/2.2)));
+        grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2-1,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
+        if(ch>28){
+          const sign=pct>=0?'+':'';
+          grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+13,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':Math.max(9,fs-2).toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
+        }
+      }
+      svg.appendChild(grp);
+    });
+  });
+}
+DOM.treemapSvg.addEventListener('click',e=>{
+  const node=e.target.closest('[data-sym]');if(!node)return;
+  const sym=node.dataset.sym;
+  if(IS_MOBILE()){openChart(sym);return;}
+  _hmapDesktopClick(sym);
+});
+DOM.treemapSvg.addEventListener('dblclick',e=>{
+  const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  const sym=node.dataset.sym;
+  _syncHoverPreview(sym);
+  updatePopout(sym);
+  openChart(sym);
+});
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','health','dinhgia','sankey'];
+const TRI_TABS=['fireant','health','dinhgia','treemap','sankey'];
 const TRI_IFRAME_MAP={
   dinhgia:{id:'dinhgia-frame',url:'https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong'}
 };
@@ -6190,6 +6308,7 @@ async function fetchHmap(){
     window._lastHmapData=j.data||{};
     renderHeatmap(j.data||{});
     renderSankey(j.data||{});
+    renderTreemap(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
     if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
       _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
