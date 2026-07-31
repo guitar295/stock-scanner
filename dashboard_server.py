@@ -6238,18 +6238,12 @@ function renderTreemap(data){
   }
   const W=1600,H=900,GAP=4;
   const secLayout=[];tmSquarify(sectors,0,0,W,H,secLayout);
-  const defs=sankeyEl('defs',{});svg.appendChild(defs);
-  secLayout.forEach((sec,secIdx)=>{
+  secLayout.forEach(sec=>{
     const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
-    const clipId=`tm-sec-clip-${secIdx}`;
-    const clipPath=sankeyEl('clipPath',{id:clipId});
-    clipPath.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10}));
-    defs.appendChild(clipPath);
     svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
-    const secGrp=sankeyEl('g',{'clip-path':`url(#${clipId})`});
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
-      secGrp.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#6b7280'},sec.item.name));
+      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#6b7280'},sec.item.name));
     }
     const stockLayout=[];
     tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
@@ -6261,16 +6255,16 @@ function renderTreemap(data){
       const grp=sankeyEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
       grp.appendChild(sankeyEl('rect',{x:cx,y:cy,width:cw,height:ch,rx:4,ry:4,fill:bg,stroke:'#fff','stroke-width':1}));
       if(cw>36&&ch>16){
-        const fs=Math.min(14,Math.max(10,Math.min(cw/5,ch/2.2)));
-        grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2-1,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
+        const fs=Math.min(32,Math.max(10,Math.min(cw/4.5,ch/3)));
+        const fs2=Math.max(11,fs*0.62);
+        grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2-fs*0.25,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
         if(ch>28){
           const sign=pct>=0?'+':'';
-          grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+13,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':Math.max(10,fs-2).toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
+          grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+fs*0.62+4,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs2.toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
         }
       }
-      secGrp.appendChild(grp);
+      svg.appendChild(grp);
     });
-    svg.appendChild(secGrp);
   });
 }
 DOM.treemapSvg.addEventListener('click',e=>{
