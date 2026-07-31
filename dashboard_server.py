@@ -1756,9 +1756,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-meta{margin-top:6px;font-size:13px;color:var(--muted)}
 .health-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .health-tag{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:4px 8px;color:#334155;background:#f8fafc}
-.health-tag-critical{border-color:#dc2626;color:#fff;background:#dc2626;box-shadow:0 0 0 0 rgba(220,38,38,.55);animation:healthTagPulse 1.4s ease-in-out infinite}
-.health-tag-warning{border-color:#d97706;color:#7c2d12;background:#fde68a}
-@keyframes healthTagPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.55)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0)}}
 .health-analysis{border:1px solid var(--border);border-radius:8px;padding:18px 20px;background:#fff;min-height:120px;display:flex;flex-direction:column;justify-content:center}
 .health-analysis-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
 .health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:1.65;margin:0 0 12px;color:#1f2937}
@@ -2553,8 +2550,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <span class="panel-title">MARKET</span>
       <div class="tri-tabs" id="tri-tabs">
         <span class="tri-tab on" data-tab="fireant">Fireant</span>
+        <span class="tri-tab" data-tab="dinhgia">Vndstock</span>
         <span class="tri-tab" data-tab="health">Mrk Health</span>
-        <span class="tri-tab" data-tab="dinhgia">Định giá</span>
         <span class="tri-tab" data-tab="treemap">Treemap</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
@@ -2589,7 +2586,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
               </div>
               <div class="health-analysis" id="health-analysis">
                 <div class="health-analysis-title">Nhận định</div>
-                <div class="health-empty">Đang tải dữ liệu HEALTH...</div>
+                <div class="health-empty">Đang tải dữ liệu Mrk Health...</div>
               </div>
             </div>
           </div>
@@ -5521,7 +5518,7 @@ function _healthClampWindow(len){
 function _healthRenderWindow(){
   const total=_healthFullHistory.length;
   if(!total){
-    DOM.healthSvg.innerHTML='<foreignObject x="0" y="0" width="900" height="360"><div class="health-empty">Chưa có dữ liệu HEALTH</div></foreignObject>';
+    DOM.healthSvg.innerHTML='<foreignObject x="0" y="0" width="900" height="360"><div class="health-empty">Chưa có dữ liệu Mrk Health</div></foreignObject>';
     _healthLayout=null;
     return;
   }
@@ -6005,7 +6002,7 @@ function renderHealth(data){
     DOM.healthLabel.textContent='--';
     DOM.healthDate.textContent='--';
     DOM.healthTags.innerHTML='';
-    DOM.healthAnalysis.innerHTML='<div class="health-analysis-title">Nhận định</div><div class="health-empty">'+healthEsc(d.message||'Chưa có dữ liệu HEALTH')+'</div>';
+    DOM.healthAnalysis.innerHTML='<div class="health-analysis-title">Nhận định</div><div class="health-empty">'+healthEsc(d.message||'Chưa có dữ liệu Mrk Health')+'</div>';
     renderHealthChart([]);
     return;
   }
@@ -6021,10 +6018,7 @@ function renderHealth(data){
   DOM.healthScore.style.color=localBand.fill;
   DOM.healthLabel.textContent=band.label||localBand.label;
   DOM.healthDate.textContent=`Phiên ${d.as_of||'--'} • ${delta>=0?'+':''}${delta.toFixed(1)} điểm`;
-  DOM.healthTags.innerHTML=(d.tags||[]).map(t=>{
-    const cls=t==='Bán tháo'?'health-tag health-tag-critical':(t==='Hoảng loạn'?'health-tag health-tag-warning':'health-tag');
-    return `<span class="${cls}">${healthEsc(t)}</span>`;
-  }).join('');
+  DOM.healthTags.innerHTML=(d.tags||[]).map(t=>`<span class="health-tag">${healthEsc(t)}</span>`).join('');
   const a=d.analysis||{};
   DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
   renderHealthChart(d.history||[]);
@@ -6050,7 +6044,7 @@ async function fetchHealth(){
     }
   }catch(e){
     console.error('fetchHealth:',e);
-    renderHealth({ok:false,message:'Không tải được dữ liệu HEALTH'});
+    renderHealth({ok:false,message:'Không tải được dữ liệu Mrk Health'});
     if(_healthRetryTimer)clearTimeout(_healthRetryTimer);
     startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
     _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
@@ -6311,6 +6305,11 @@ function renderTreemap(data){
     svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'none',stroke:'#d8d6cc','stroke-width':1}));
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
+      // Nền header tách biệt với nền trắng chung của Treemap — màu xám-xanh rất
+      // nhạt (#f4f6f9) + đường kẻ phân cách (#e4e8ec) bên dưới, giúp tên ngành
+      // nổi rõ hơn so với các ô mã cổ phiếu bên dưới.
+      svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:headerH,fill:'#f4f6f9'}));
+      svg.appendChild(sankeyEl('line',{x1:sx,y1:sy+headerH,x2:sx+sw,y2:sy+headerH,stroke:'#e4e8ec','stroke-width':1}));
       // Cắt bớt tên ngành + thêm dấu "…" nếu không đủ chỗ trong khung, tránh tràn ra ngoài
       // (đặc biệt các ô ngành nhỏ ở góc dưới cùng bên phải). ~7.3px/ký tự với font-size 12 monospace.
       const label=sectorLabel(sec.item.name);
@@ -6401,7 +6400,7 @@ DOM.treemapCopyBtn?.addEventListener('click',e=>{
   copyTreemapImage(e.currentTarget);
 });
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','health','dinhgia','treemap','sankey'];
+const TRI_TABS=['fireant','dinhgia','health','treemap','sankey'];
 const TRI_IFRAME_MAP={
   dinhgia:{id:'dinhgia-frame',url:'https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong'}
 };
@@ -6477,7 +6476,7 @@ function tick(){
 setInterval(tick,1000);tick();
 async function loadConfig(){
   try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;HEALTH_TTL=j.market_health_ttl_sec||1800;}catch(e){}
-  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • HEALTH ${Math.round(HEALTH_TTL/60)} phút`;
+  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • Mrk Health ${Math.round(HEALTH_TTL/60)} phút`;
 }
 // ═══════════════════════════════════════════════════════
 // FETCH
