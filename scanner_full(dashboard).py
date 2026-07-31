@@ -148,8 +148,8 @@ HEATMAP_COLUMNS = [
         {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
     ]},
     {"col": 5, "groups": [
-        {"name": "BAN LE",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW"]},
-        {"name": "THUY SAN",  "symbols": ["ANV","FMC","CMX","VHC","IDI"]},
+        {"name": "BAN LE",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW","VNM"]},
+        {"name": "THUY SAN",  "symbols": ["ANV","CMX","VHC","IDI"]},
         {"name": "CANG BIEN", "symbols": ["HAH","GMD","SGP","VSC"]},
         {"name": "CAO SU",    "symbols": ["GVR","DPR","DRI","PHR","DRC"]},
         {"name": "NHUA",      "symbols": ["AAA","BMP","NTP"]},
