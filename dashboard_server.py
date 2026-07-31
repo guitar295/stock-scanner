@@ -1902,7 +1902,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
    ═══════════════════════════════════════════ */
 .overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.on{display:flex}
-.pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:99vw;max-width:1800px;height:94vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease}
+.pbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.15);width:99vw;max-width:1800px;height:94vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease;outline:none}
 @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
 .phdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:7px 14px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
 .phdr-left{display:flex;align-items:center;gap:8px}
@@ -5319,11 +5319,12 @@ function cellStyle(pct){
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-// Treemap dùng riêng bản màu SÁNG/RỰC hơn Heatmap một chút — không phải làm tối đi
-// (thử nhân RGB xuống 0.9 lúc trước khiến màu bị xám/xỉn vì giảm luôn cả độ sáng),
-// mà chuyển sang không gian HSL để tăng ĐỘ BÃO HOÀ (màu rực/rõ hơn) đồng thời tăng
-// nhẹ ĐỘ SÁNG, giữ đúng sắc (hue) như cellStyle gốc. Heatmap không đụng tới, vẫn
-// giữ nguyên tông màu cũ.
+// Treemap dùng riêng bản màu tương phản/rực hơn Heatmap — không phải làm tối đi
+// kiểu xám xịt (thử nhân RGB xuống 0.9 lúc trước làm mất luôn cả độ bão hoà nên
+// nhìn xỉn màu), mà chuyển sang không gian HSL để tăng MẠNH ĐỘ BÃO HOÀ (xanh/đỏ/
+// vàng rõ và đậm hơn hẳn) và hạ nhẹ độ sáng (để màu "chắc" hơn thay vì nhạt/pastel),
+// vẫn giữ đúng sắc (hue) như cellStyle gốc. Heatmap không đụng tới, vẫn giữ nguyên
+// tông màu cũ.
 function _tmRgbToHsl(r,g,b){
   r/=255;g/=255;b/=255;
   const max=Math.max(r,g,b),min=Math.min(r,g,b);
@@ -5359,7 +5360,7 @@ function treemapCellStyle(pct){
   const m=/rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(bg);
   if(!m)return{bg,fg:'rgb(15,15,15)'};
   const[h,s,l]=_tmRgbToHsl(+m[1],+m[2],+m[3]);
-  const[r,g,b]=_tmHslToRgb(h,Math.min(1,s*1.3),Math.min(1,l+0.03));
+  const[r,g,b]=_tmHslToRgb(h,Math.min(1,s*1.7),Math.max(0,l-0.04));
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
 function avgPct(syms,d){let s=0,c=0;for(const k of syms)if(d[k]){s+=d[k].pct||0;c++;}return c?s/c:0;}
