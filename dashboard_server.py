@@ -1827,14 +1827,17 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-ind-group.open .lite-ind-dropdown{display:flex}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
-.lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
-.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
+.lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
+.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal.on{display:flex}
+/* Khi sidebar nhóm ngành mở, dịch title/tín hiệu sang phải để không bị cột che mất */
+.lite-groups-sidebar.on+.lite-chart-title,
+.lite-groups-sidebar.on~.lite-chart-signal{left:192px}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
 /* Sidebar nhóm ngành / mã (overlay bên trái CHART) — không đụng layout/resize chart */
-.lite-groups-sidebar{position:absolute;top:0;left:0;bottom:0;width:236px;background:rgba(255,255,255,.98);border-right:1px solid var(--border);z-index:9;display:none;flex-direction:column;box-shadow:2px 0 14px rgba(17,24,39,.12)}
+.lite-groups-sidebar{position:absolute;top:0;left:0;bottom:0;width:180px;background:rgba(255,255,255,.98);border-right:1px solid var(--border);z-index:9;display:none;flex-direction:column;box-shadow:2px 0 14px rgba(17,24,39,.12)}
 .lite-groups-sidebar.on{display:flex}
 .lg-toolbar{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid var(--border);background:#f8fafc;flex-shrink:0}
 .lg-toolbar-title{font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--muted)}
@@ -1842,23 +1845,31 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lg-sort-btn:hover{color:var(--accent);border-color:var(--accent)}
 .lite-groups-list{flex:1;overflow-y:auto;scrollbar-width:thin}
 .lg-group{border-bottom:1px solid var(--border)}
-.lg-ghdr{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text);user-select:none;background:#f8fafc}
+.lg-ghdr{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:7px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text);user-select:none;background:#f8fafc}
 .lg-ghdr:hover{color:var(--accent)}
+.lg-ghdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.lg-add-btn{width:16px;height:16px;line-height:14px;text-align:center;padding:0;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--accent);font-size:12px;font-weight:800;cursor:pointer}
+.lg-add-btn:hover{background:#eef3ff;border-color:var(--accent)}
 .lg-caret{font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lg-group.open .lg-caret{transform:rotate(90deg)}
 .lg-symlist{display:flex;flex-direction:column}
-.lg-sym-item{display:flex;align-items:center;gap:6px;padding:5px 8px 5px 12px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
+.lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
 .lg-sym-item:hover{background:#eef3ff}
 .lg-sym-item.on{background:#dbe8ff}
 .lg-sym-item[draggable="true"]{cursor:grab}
 .lg-sym-item.dragging{opacity:.35}
 .lg-sym-item.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
-.lg-star{flex-shrink:0;width:16px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
+.lg-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
 .lg-star.on{color:#f59e0b}
-.lg-sym-name{width:44px;flex-shrink:0;font-weight:700}
-.lg-sym-pct{width:50px;flex-shrink:0;text-align:right}
-.lg-sym-price{flex:1;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lg-sym-name{width:36px;flex-shrink:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg-sym-pct{width:40px;flex-shrink:0;text-align:right}
+.lg-sym-price{width:48px;flex-shrink:0;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lg-empty-hint{padding:14px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-align:center}
+/* Khu vực FOLLOW bên trong FAVORITE: nền xanh mờ nhạt hơn màu nền header, để phân khai rõ với khu vực Favorite thường */
+.lg-sym-item.lg-follow{background:#f5f8fd}
+.lg-sym-item.lg-follow:hover{background:#eaf1fd}
+.lg-sym-item.lg-follow.on{background:#dbe8ff}
+.lg-sym-item.lg-follow+.lg-sym-item:not(.lg-follow){border-top:1px solid var(--border)}
 .lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
 .lite-chart-status.on{opacity:1}
 .lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
@@ -2368,6 +2379,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <span class="s-icon">🔍</span>
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
         </div>
+        <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
@@ -2508,7 +2520,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
               <div class="lite-alert-list" id="lite-alert-list"></div>
             </div>
           </div>
-          <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
           <button class="lite-draw-btn" id="lite-chart-popout-btn" title="Mở CHART trong cửa sổ riêng" aria-label="Mở CHART trong cửa sổ riêng">⧉</button>
         </div>
       </div>
@@ -6489,7 +6500,7 @@ DOM.liteChartToggle.addEventListener('click',e=>{
   // vẫn phải bấm được bình thường — chỉ coi là "bấm vào thẻ để thu/mở" khi không bấm
   // trúng các vùng control đó. Khi thẻ đang thu gọn thì các vùng đó đã ẩn (display:none)
   // nên toàn bộ header luôn hoạt động như nút mở ra, giống hệt SANKEY.
-  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar'))return;
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
@@ -7203,6 +7214,24 @@ const _hvGroups=[];
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')_hvGroups.push({name:g.name,syms:g.syms});}));
 })();
 // ═══════════════════════════════════════════════════════
+// Helper dùng chung giữa cột NHÓM NGÀNH (CHART) và HOVER PREVIEW (HEATMAP) —
+// cả hai đều đọc từ window._lastHmapData nên gộp vào 1 chỗ, tránh phải sửa
+// nhiều nơi khi đổi công thức định dạng %/màu hoặc thứ tự sort.
+// ═══════════════════════════════════════════════════════
+function _symDisplayFields(sym,data){
+  const entry=(data||window._lastHmapData||{})[sym];
+  const pct=entry&&typeof entry.pct==='number'?entry.pct:null;
+  const price=entry&&typeof entry.price==='number'?fmtP(entry.price):'—';
+  const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
+  const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
+  return{pct,price,pctStr,color};
+}
+function _sortSymsByMode(syms,alpha){
+  if(alpha)return[...syms].sort((a,b)=>a.localeCompare(b));
+  const d=window._lastHmapData||{};
+  return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+}
+// ═══════════════════════════════════════════════════════
 // CHART — SIDEBAR NHÓM NGÀNH / FAVORITE (overlay, không đụng logic vẽ chart)
 // ═══════════════════════════════════════════════════════
 const LG_FAVORITE_KEY='dashboard_favorite_symbols';
@@ -7217,16 +7246,23 @@ function _lgFollowFirstOrder(syms){
   const rest=syms.filter(s=>!FOLLOW.includes(s));
   return [...inFollow,...rest];
 }
+// Chèn 1 mã mới vào LG_FAVORITES đúng vị trí: mã thuộc FOLLOW → chèn vào cuối khối Follow
+// (khối này luôn nằm ở đầu danh sách); mã không thuộc FOLLOW → thêm xuống cuối danh sách.
+// Dùng chung cho: đồng bộ Follow, bấm sao (★), và nhập nhanh nhiều mã.
+function _lgInsertFavorite(sym){
+  if(FOLLOW.includes(sym)){
+    let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
+    LG_FAVORITES.splice(pos,0,sym);
+  }else{
+    LG_FAVORITES.push(sym);
+  }
+}
 // Danh sách FOLLOW tự động được gắn ⭐ (thêm vào FAVORITE), xếp thành khối ở đầu danh sách.
 // Không tự bỏ sao nếu người dùng gỡ mã khỏi FOLLOW hoặc tự tay bỏ sao trong FAVORITE.
 function _lgSyncFollowIntoFavorites(){
   let changed=false;
   FOLLOW.forEach(sym=>{
-    if(!LG_FAVORITES.includes(sym)){
-      let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
-      LG_FAVORITES.splice(pos,0,sym);
-      changed=true;
-    }
+    if(!LG_FAVORITES.includes(sym)){_lgInsertFavorite(sym);changed=true;}
   });
   const reordered=_lgFollowFirstOrder(LG_FAVORITES);
   if(reordered.join(',')!==LG_FAVORITES.join(',')){LG_FAVORITES=reordered;changed=true;}
@@ -7236,43 +7272,32 @@ _lgSyncFollowIntoFavorites();
 function _lgToggleFavorite(sym){
   sym=String(sym||'').toUpperCase();if(!sym)return;
   const i=LG_FAVORITES.indexOf(sym);
-  if(i===-1){
-    if(FOLLOW.includes(sym)){
-      // Mã thuộc Follow: chèn vào cuối khối Follow đang nằm ở đầu danh sách
-      let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
-      LG_FAVORITES.splice(pos,0,sym);
-    }else{
-      LG_FAVORITES.push(sym); // mã mới thêm (không thuộc Follow) hiển thị dưới cùng
-    }
-  }else{
-    LG_FAVORITES.splice(i,1);
-  }
+  if(i===-1)_lgInsertFavorite(sym);
+  else LG_FAVORITES.splice(i,1);
   _lgSaveFavorites();_lgRenderList();
 }
 function _lgReorderFavorite(dragSym,targetSym){
+  // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường —
+  // hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
+  if(FOLLOW.includes(dragSym)!==FOLLOW.includes(targetSym))return;
   const from=LG_FAVORITES.indexOf(dragSym);if(from===-1)return;
   LG_FAVORITES.splice(from,1);
   let to=LG_FAVORITES.indexOf(targetSym);if(to===-1)to=LG_FAVORITES.length;
   LG_FAVORITES.splice(to,0,dragSym);
   _lgSaveFavorites();_lgRenderList();
 }
-let _lgSortAlpha=false,_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null;
+let _lgSortAlpha=false,_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
 function _lgGetGroups(){
   return [{name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},..._hvGroups];
 }
 function _lgSortSyms(syms){
-  const d=window._lastHmapData||{};
-  if(_lgSortAlpha)return[...syms].sort((a,b)=>a.localeCompare(b));
-  return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+  return _sortSymsByMode(syms,_lgSortAlpha);
 }
 function _lgSymRow(sym,draggable){
-  const d=window._lastHmapData||{};
-  const entry=d[sym],pct=entry&&typeof entry.pct==='number'?entry.pct:null;
-  const price=entry&&typeof entry.price==='number'?fmtP(entry.price):'—';
-  const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
-  const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
+  const{price,pctStr,color}=_symDisplayFields(sym);
   const starred=LG_FAVORITES.includes(sym);
-  return `<div class="lg-sym-item${sym===_lgActiveSym?' on':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
+  const isFollow=FOLLOW.includes(sym);
+  return `<div class="lg-sym-item${sym===_lgActiveSym?' on':''}${isFollow?' lg-follow':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
     +`<span class="lg-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
     +`<span class="lg-sym-name">${sym}</span>`
     +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
@@ -7290,11 +7315,24 @@ function _lgRenderList(){
       else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms)).map(s=>_lgSymRow(s,!!g.isFavorite)).join('');
     }
     return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
-      +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-caret">▸</span></div>`
+      +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':''}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
   }).join('');
   // FAVORITE không cần chức năng sort — chỉ hiện nút sort khi đang mở nhóm khác
   if(DOM.lgSortBtn)DOM.lgSortBtn.style.display=(_lgActiveGroupName&&_lgActiveGroupName!=='FAVORITE')?'':'none';
+}
+function _lgQuickAddFavorites(){
+  const raw=prompt('Nhập các mã muốn thêm vào FAVORITE, cách nhau bằng dấu phẩy hoặc khoảng trắng:','');
+  if(raw===null)return;
+  const syms=parseFollowSymbols(raw); // dùng chung parser với ô nhập FOLLOW (viết hoa, tách theo ký tự không phải chữ/số)
+  if(!syms.length)return;
+  let changed=false;
+  syms.forEach(sym=>{
+    if(LG_FAVORITES.includes(sym))return;
+    _lgInsertFavorite(sym);
+    changed=true;
+  });
+  if(changed){_lgSaveFavorites();_lgRenderList();}
 }
 DOM.lgToggleBtn?.addEventListener('click',e=>{
   e.stopPropagation();
@@ -7312,6 +7350,8 @@ DOM.lgSortBtn?.addEventListener('click',e=>{
 DOM.lgList?.addEventListener('click',e=>{
   const star=e.target.closest('.lg-star');
   if(star){_lgToggleFavorite(star.dataset.star);return;}
+  const addBtn=e.target.closest('[data-add-fav]');
+  if(addBtn){e.stopPropagation();_lgQuickAddFavorites();return;}
   const hdr=e.target.closest('.lg-ghdr');
   if(hdr){_lgActiveGroupName=(_lgActiveGroupName===hdr.dataset.ghdr)?null:hdr.dataset.ghdr;_lgRenderList();return;}
   const item=e.target.closest('.lg-sym-item');
@@ -7332,17 +7372,19 @@ DOM.lgList?.addEventListener('dragstart',e=>{
 DOM.lgList?.addEventListener('dragend',e=>{
   const item=e.target.closest('.lg-sym-item');
   if(item)item.classList.remove('dragging');
-  DOM.lgList.querySelectorAll('.lg-sym-item.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  if(_lgDragOverEl){_lgDragOverEl.classList.remove('drag-over');_lgDragOverEl=null;}
   _lgDragSym=null;
 });
 DOM.lgList?.addEventListener('dragover',e=>{
   if(!_lgDragSym)return;
   const item=e.target.closest('.lg-sym-item[draggable="true"]');
   if(!item||item.dataset.sym===_lgDragSym)return;
+  if(FOLLOW.includes(_lgDragSym)!==FOLLOW.includes(item.dataset.sym))return;
   e.preventDefault();
   try{e.dataTransfer.dropEffect='move';}catch(err){}
-  DOM.lgList.querySelectorAll('.lg-sym-item.drag-over').forEach(el=>{if(el!==item)el.classList.remove('drag-over');});
+  if(_lgDragOverEl&&_lgDragOverEl!==item)_lgDragOverEl.classList.remove('drag-over');
   item.classList.add('drag-over');
+  _lgDragOverEl=item;
 });
 DOM.lgList?.addEventListener('drop',e=>{
   if(!_lgDragSym)return;
@@ -7350,6 +7392,7 @@ DOM.lgList?.addEventListener('drop',e=>{
   if(!item){return;}
   e.preventDefault();
   item.classList.remove('drag-over');
+  if(_lgDragOverEl===item)_lgDragOverEl=null;
   const targetSym=item.dataset.sym;
   if(targetSym!==_lgDragSym)_lgReorderFavorite(_lgDragSym,targetSym);
 });
@@ -7387,30 +7430,24 @@ function _hvSelectGroup(idx){
 }
 function _hvGetSorted(){
   const g=_hvGroups[_hvActiveGroup];if(!g)return[];
-  const d=window._lastHmapData||{};
-  if(_hvSortAlpha)return[...g.syms].sort((a,b)=>a.localeCompare(b));
-  return[...g.syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+  return _sortSymsByMode(g.syms,_hvSortAlpha);
 }
 DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
 function _hvRenderSymList(){
   if(_hvActiveGroup===-1)return;
-  const d=window._lastHmapData||{};
   DOM.hpSymlist.innerHTML=_hvGetSorted().map(sym=>{
-    const entry=d[sym],pct=entry&&typeof entry.pct==='number'?entry.pct:null;
-    const price=entry&&typeof entry.price==='number'?fmtP(entry.price):'—';
-    const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
-    const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
+    const{price,pctStr,color}=_symDisplayFields(sym);
     return`<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}"><span class="hv-sym-name">${sym}</span><span class="hv-sym-pct" style="color:${color}">${pctStr}</span><span class="hv-sym-price">${price}</span></div>`;
   }).join('');
 }
 function _hvPatchSymList(newData){
   if(_hvActiveGroup===-1)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>{
-    const sym=el.dataset.sym,d=newData[sym];if(!d)return;
-    const pct=typeof d.pct==='number'?d.pct:null;
+    const sym=el.dataset.sym;if(!newData[sym])return;
+    const{pct,price,pctStr,color}=_symDisplayFields(sym,newData);
     const pEl=el.querySelector('.hv-sym-pct'),prEl=el.querySelector('.hv-sym-price');
-    if(pEl&&pct!==null){pEl.textContent=(pct>=0?'+':'')+pct.toFixed(1)+'%';pEl.style.color=pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';}
-    if(prEl&&typeof d.price==='number')prEl.textContent=fmtP(d.price);
+    if(pEl&&pct!==null){pEl.textContent=pctStr;pEl.style.color=color;}
+    if(prEl&&typeof newData[sym].price==='number')prEl.textContent=price;
   });
 }
 function _syncHoverPreview(sym,updateFrame=true){
