@@ -1833,6 +1833,32 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
+/* Sidebar nhóm ngành / mã (overlay bên trái CHART) — không đụng layout/resize chart */
+.lite-groups-sidebar{position:absolute;top:0;left:0;bottom:0;width:236px;background:rgba(255,255,255,.98);border-right:1px solid var(--border);z-index:9;display:none;flex-direction:column;box-shadow:2px 0 14px rgba(17,24,39,.12)}
+.lite-groups-sidebar.on{display:flex}
+.lg-toolbar{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid var(--border);background:#f8fafc;flex-shrink:0}
+.lg-toolbar-title{font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--muted)}
+.lg-sort-btn{height:22px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
+.lg-sort-btn:hover{color:var(--accent);border-color:var(--accent)}
+.lite-groups-list{flex:1;overflow-y:auto;scrollbar-width:thin}
+.lg-group{border-bottom:1px solid var(--border)}
+.lg-ghdr{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text);user-select:none;background:#f8fafc}
+.lg-ghdr:hover{color:var(--accent)}
+.lg-caret{font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.lg-group.open .lg-caret{transform:rotate(90deg)}
+.lg-symlist{display:flex;flex-direction:column}
+.lg-sym-item{display:flex;align-items:center;gap:6px;padding:5px 8px 5px 12px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
+.lg-sym-item:hover{background:#eef3ff}
+.lg-sym-item.on{background:#dbe8ff}
+.lg-sym-item[draggable="true"]{cursor:grab}
+.lg-sym-item.dragging{opacity:.35}
+.lg-sym-item.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
+.lg-star{flex-shrink:0;width:16px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
+.lg-star.on{color:#f59e0b}
+.lg-sym-name{width:44px;flex-shrink:0;font-weight:700}
+.lg-sym-pct{width:50px;flex-shrink:0;text-align:right}
+.lg-sym-price{flex:1;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lg-empty-hint{padding:14px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-align:center}
 .lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
 .lite-chart-status.on{opacity:1}
 .lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
@@ -2482,12 +2508,20 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
               <div class="lite-alert-list" id="lite-alert-list"></div>
             </div>
           </div>
+          <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
           <button class="lite-draw-btn" id="lite-chart-popout-btn" title="Mở CHART trong cửa sổ riêng" aria-label="Mở CHART trong cửa sổ riêng">⧉</button>
         </div>
       </div>
       <span class="lite-chart-toggle-icon">▶</span>
     </div>
     <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
+      <div class="lite-groups-sidebar" id="lite-groups-sidebar">
+        <div class="lg-toolbar">
+          <span class="lg-toolbar-title">NHÓM NGÀNH</span>
+          <button class="lg-sort-btn" id="lg-sort-btn">%↕</button>
+        </div>
+        <div class="lite-groups-list" id="lite-groups-list"></div>
+      </div>
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
       <span class="lite-chart-signal" id="lite-chart-signal"></span>
       <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
@@ -2821,6 +2855,8 @@ const DOM={
   lb:$('mob-lightbox'),lbStrip:$('lb-strip'),
   lbLabel:$('mob-lightbox-label'),lbCounter:$('mob-lightbox-counter'),
   lbZoomHint:$('lb-zoom-hint'),
+  lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
+  lgList:$('lite-groups-list'),lgSortBtn:$('lg-sort-btn'),
 };
 // ═══════════════════════════════════════════════════════
 // HELPERS
@@ -2882,6 +2918,7 @@ function editFollowSymbols(){
   if(raw===null)return false;
   FOLLOW_ON=true;
   saveFollowSymbols(parseFollowSymbols(raw));
+  if(typeof _lgSyncFollowIntoFavorites==='function')_lgSyncFollowIntoFavorites();
   renderHeatmap(window._lastHmapData||{});
   return true;
 }
@@ -6517,6 +6554,7 @@ async function fetchHmap(){
     renderSankey(j.data||{});
     renderTreemap(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
+    if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
     if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
       _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
   }catch(e){console.error('fetchHmap:',e);}
@@ -7164,6 +7202,179 @@ const _hvGroups=[];
   _hvGroups.push({name:'VN30',syms:HMAP_COLS[0].groups[0].syms});
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')_hvGroups.push({name:g.name,syms:g.syms});}));
 })();
+// ═══════════════════════════════════════════════════════
+// CHART — SIDEBAR NHÓM NGÀNH / FAVORITE (overlay, không đụng logic vẽ chart)
+// ═══════════════════════════════════════════════════════
+const LG_FAVORITE_KEY='dashboard_favorite_symbols';
+let LG_FAVORITES=_lgLoadFavorites();
+function _lgLoadFavorites(){
+  try{return JSON.parse(localStorage.getItem(LG_FAVORITE_KEY)||'[]').filter(Boolean).map(s=>String(s).toUpperCase());}catch(e){return[];}
+}
+function _lgSaveFavorites(){try{localStorage.setItem(LG_FAVORITE_KEY,JSON.stringify(LG_FAVORITES));}catch(e){}}
+// Đẩy các mã đang có trong FOLLOW lên đầu, giữ nguyên thứ tự tương đối còn lại
+function _lgFollowFirstOrder(syms){
+  const inFollow=syms.filter(s=>FOLLOW.includes(s));
+  const rest=syms.filter(s=>!FOLLOW.includes(s));
+  return [...inFollow,...rest];
+}
+// Danh sách FOLLOW tự động được gắn ⭐ (thêm vào FAVORITE), xếp thành khối ở đầu danh sách.
+// Không tự bỏ sao nếu người dùng gỡ mã khỏi FOLLOW hoặc tự tay bỏ sao trong FAVORITE.
+function _lgSyncFollowIntoFavorites(){
+  let changed=false;
+  FOLLOW.forEach(sym=>{
+    if(!LG_FAVORITES.includes(sym)){
+      let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
+      LG_FAVORITES.splice(pos,0,sym);
+      changed=true;
+    }
+  });
+  const reordered=_lgFollowFirstOrder(LG_FAVORITES);
+  if(reordered.join(',')!==LG_FAVORITES.join(',')){LG_FAVORITES=reordered;changed=true;}
+  if(changed){_lgSaveFavorites();if(DOM.lgList)_lgRenderList();}
+}
+_lgSyncFollowIntoFavorites();
+function _lgToggleFavorite(sym){
+  sym=String(sym||'').toUpperCase();if(!sym)return;
+  const i=LG_FAVORITES.indexOf(sym);
+  if(i===-1){
+    if(FOLLOW.includes(sym)){
+      // Mã thuộc Follow: chèn vào cuối khối Follow đang nằm ở đầu danh sách
+      let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
+      LG_FAVORITES.splice(pos,0,sym);
+    }else{
+      LG_FAVORITES.push(sym); // mã mới thêm (không thuộc Follow) hiển thị dưới cùng
+    }
+  }else{
+    LG_FAVORITES.splice(i,1);
+  }
+  _lgSaveFavorites();_lgRenderList();
+}
+function _lgReorderFavorite(dragSym,targetSym){
+  const from=LG_FAVORITES.indexOf(dragSym);if(from===-1)return;
+  LG_FAVORITES.splice(from,1);
+  let to=LG_FAVORITES.indexOf(targetSym);if(to===-1)to=LG_FAVORITES.length;
+  LG_FAVORITES.splice(to,0,dragSym);
+  _lgSaveFavorites();_lgRenderList();
+}
+let _lgSortAlpha=false,_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null;
+function _lgGetGroups(){
+  return [{name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},..._hvGroups];
+}
+function _lgSortSyms(syms){
+  const d=window._lastHmapData||{};
+  if(_lgSortAlpha)return[...syms].sort((a,b)=>a.localeCompare(b));
+  return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+}
+function _lgSymRow(sym,draggable){
+  const d=window._lastHmapData||{};
+  const entry=d[sym],pct=entry&&typeof entry.pct==='number'?entry.pct:null;
+  const price=entry&&typeof entry.price==='number'?fmtP(entry.price):'—';
+  const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
+  const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
+  const starred=LG_FAVORITES.includes(sym);
+  return `<div class="lg-sym-item${sym===_lgActiveSym?' on':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
+    +`<span class="lg-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
+    +`<span class="lg-sym-name">${sym}</span>`
+    +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
+    +`<span class="lg-sym-price">${price}</span></div>`;
+}
+function _lgRenderList(){
+  if(!DOM.lgList)return;
+  const groups=_lgGetGroups();
+  DOM.lgList.innerHTML=groups.map(g=>{
+    const open=g.name===_lgActiveGroupName;
+    let body='';
+    if(open){
+      if(!g.syms.length)body='<div class="lg-empty-hint">Chưa có mã nào</div>';
+      // FAVORITE: giữ nguyên thứ tự lưu (Follow đã ở đầu, mã mới thêm ở cuối, có thể kéo-thả) — không sort
+      else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms)).map(s=>_lgSymRow(s,!!g.isFavorite)).join('');
+    }
+    return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
+      +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-caret">▸</span></div>`
+      +`<div class="lg-symlist">${body}</div></div>`;
+  }).join('');
+  // FAVORITE không cần chức năng sort — chỉ hiện nút sort khi đang mở nhóm khác
+  if(DOM.lgSortBtn)DOM.lgSortBtn.style.display=(_lgActiveGroupName&&_lgActiveGroupName!=='FAVORITE')?'':'none';
+}
+DOM.lgToggleBtn?.addEventListener('click',e=>{
+  e.stopPropagation();
+  DOM.lgSidebar.classList.toggle('on');
+  if(DOM.lgSidebar.classList.contains('on')){
+    _lgActiveSym=_liteSymbol||_lgActiveSym;
+    if(!_lgActiveGroupName)_lgActiveGroupName='FAVORITE';
+    _lgRenderList();
+  }
+});
+DOM.lgSortBtn?.addEventListener('click',e=>{
+  e.stopPropagation();
+  _lgSortAlpha=!_lgSortAlpha;DOM.lgSortBtn.textContent=_lgSortAlpha?'A↕Z':'%↕';_lgRenderList();
+});
+DOM.lgList?.addEventListener('click',e=>{
+  const star=e.target.closest('.lg-star');
+  if(star){_lgToggleFavorite(star.dataset.star);return;}
+  const hdr=e.target.closest('.lg-ghdr');
+  if(hdr){_lgActiveGroupName=(_lgActiveGroupName===hdr.dataset.ghdr)?null:hdr.dataset.ghdr;_lgRenderList();return;}
+  const item=e.target.closest('.lg-sym-item');
+  if(item){
+    _lgActiveSym=item.dataset.sym;
+    loadLiteChart(_lgActiveSym);
+    DOM.lgList.querySelectorAll('.lg-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===_lgActiveSym));
+  }
+});
+// Kéo-thả để tự sắp xếp thứ tự trong FAVORITE (chỉ áp dụng cho các dòng có draggable="true")
+DOM.lgList?.addEventListener('dragstart',e=>{
+  const item=e.target.closest('.lg-sym-item[draggable="true"]');
+  if(!item){e.preventDefault();return;}
+  _lgDragSym=item.dataset.sym;
+  item.classList.add('dragging');
+  try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',_lgDragSym);}catch(err){}
+});
+DOM.lgList?.addEventListener('dragend',e=>{
+  const item=e.target.closest('.lg-sym-item');
+  if(item)item.classList.remove('dragging');
+  DOM.lgList.querySelectorAll('.lg-sym-item.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  _lgDragSym=null;
+});
+DOM.lgList?.addEventListener('dragover',e=>{
+  if(!_lgDragSym)return;
+  const item=e.target.closest('.lg-sym-item[draggable="true"]');
+  if(!item||item.dataset.sym===_lgDragSym)return;
+  e.preventDefault();
+  try{e.dataTransfer.dropEffect='move';}catch(err){}
+  DOM.lgList.querySelectorAll('.lg-sym-item.drag-over').forEach(el=>{if(el!==item)el.classList.remove('drag-over');});
+  item.classList.add('drag-over');
+});
+DOM.lgList?.addEventListener('drop',e=>{
+  if(!_lgDragSym)return;
+  const item=e.target.closest('.lg-sym-item[draggable="true"]');
+  if(!item){return;}
+  e.preventDefault();
+  item.classList.remove('drag-over');
+  const targetSym=item.dataset.sym;
+  if(targetSym!==_lgDragSym)_lgReorderFavorite(_lgDragSym,targetSym);
+});
+// Điều hướng phím lên/xuống trong nhóm đang mở — giống hệt hành vi ở POP-OUT
+let _lgKeyThrottle=false;
+document.addEventListener('keydown',e=>{
+  if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on')||!_lgActiveGroupName)return;
+  if(document.activeElement&&['INPUT','TEXTAREA'].includes(document.activeElement.tagName))return;
+  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
+  if(DOM.overlay&&DOM.overlay.classList.contains('on'))return;
+  e.preventDefault();
+  if(_lgKeyThrottle)return;_lgKeyThrottle=true;setTimeout(()=>{_lgKeyThrottle=false;},60);
+  const items=[...DOM.lgList.querySelectorAll('.lg-group.open .lg-sym-item')];
+  if(!items.length)return;
+  let cur=items.findIndex(el=>el.dataset.sym===_lgActiveSym);
+  let next=cur===-1?0:(e.key==='ArrowDown'?cur+1:cur-1);
+  next=Math.max(0,Math.min(next,items.length-1));
+  if(next===cur&&cur!==-1)return;
+  _lgActiveSym=items[next].dataset.sym;
+  loadLiteChart(_lgActiveSym);
+  items.forEach((el,i)=>el.classList.toggle('on',i===next));
+  const el=items[next],relTop=el.offsetTop-DOM.lgList.offsetTop,h=el.offsetHeight;
+  if(relTop-h<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h);
+  else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
+});
 function _hvBuildTabs(){
   DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`).join('');
 }
