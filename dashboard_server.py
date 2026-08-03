@@ -25,6 +25,7 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 _get_alerted_today = None
 _get_momentum_today = None
+_get_signal_session_date = None
 _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
@@ -465,6 +466,9 @@ def _serve_chart_images(symbol, fetch_fn, cache_key, label):
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     momentum = _get_momentum_today() if _get_momentum_today else {}
+    session_date = _get_signal_session_date() if _get_signal_session_date else None
+    today_vn = datetime.now(TZ_VN).date()
+    session_stale = bool(session_date) and session_date != today_vn
     result = []
     for sym, entry in alerted.items():
         sig = entry["signal"] if isinstance(entry, dict) else entry
@@ -491,6 +495,8 @@ def api_signals():
         "momentum": momentum_result,
         "momentum_count": len(momentum_result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
+        "session_date": session_date.strftime("%d/%m/%Y") if session_date else None,
+        "session_stale": session_stale,
     })
 
 @app.route("/api/heatmap")
@@ -1032,11 +1038,13 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_chart_fn=None, fetch_chart_15m_fn=None,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
-                    momentum_today_ref=None, fetch_market_health_fn=None, port=8888):
-    global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
+                    momentum_today_ref=None, fetch_market_health_fn=None,
+                    signal_session_date_ref=None, port=8888):
+    global _get_alerted_today, _get_momentum_today, _get_signal_session_date, _get_history_cache, _cache_lock
     global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
+    _get_signal_session_date = signal_session_date_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
@@ -1823,7 +1831,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-ind-group.open .lite-ind-dropdown{display:flex}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
-#lite-vietstock-toggle-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#lite-vietstock-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 #lite-vietstock-toggle-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
 .lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
@@ -1858,7 +1866,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
 .lg-sym-item:hover{background:#eef3ff}
 .lg-sym-item.on{background:#dbe8ff}
-.lg-sym-item.dragging{opacity:.35;cursor:grabbing}
+.lg-sym-item.dragging{opacity:.35}
 .lg-sym-item.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
 .lg-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
 .lg-star.on{color:#f59e0b}
@@ -6542,7 +6550,9 @@ async function loadConfig(){
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
-    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
+    DOM.sigMeta.textContent=j.session_stale&&j.session_date
+      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`
+      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
     // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung
     // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
