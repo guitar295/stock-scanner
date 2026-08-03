@@ -1719,8 +1719,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hmap-row{display:inline-flex;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
-.hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
+.hmap-col{position:relative;display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
 .hmap-group{display:flex;flex-direction:column;gap:2px}
+/* Khối FOLLOW đè lên (overlay) phần cuối cột VN30 thay vì nối thêm xuống dưới —
+   neo đáy, tự cao dần lên khi FOLLOW có thêm mã, không cộng thêm chiều cao vào
+   layout tổng thể của hàng Heatmap (cột VN30 vẫn giữ nguyên chiều cao gốc). */
+.hmap-follow-overlay{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:4px 4px 0 0;box-shadow:0 -3px 10px rgba(0,0,0,.16);z-index:3}
 .hmap-ghdr{display:flex;align-items:center;justify-content:center;padding:0 8px;height:24px;border-radius:4px;background:rgb(220,228,250);border:1px solid rgb(160,180,230);gap:16px}
 .hmap-gname{font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hmap-gavg{font-family:var(--font-mono);font-size:9px;flex-shrink:0}
@@ -5474,7 +5478,7 @@ function mkSectorCol(d){
 }
 function mkFollowGroup(d){
   if(!FOLLOW.length||!FOLLOW_ON)return'';
-  return `<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div>`;
+  return `<div class="hmap-group hmap-follow-overlay"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
 function renderHeatmap(d){
   if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
