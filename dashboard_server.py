@@ -7436,7 +7436,7 @@ DOM.lgList?.addEventListener('drop',e=>{
   if(targetSym!==_lgDragSym)_lgReorderFavorite(_lgDragSym,targetSym);
 });
 // Điều hướng phím lên/xuống trong nhóm đang mở — giống hệt hành vi ở POP-OUT
-let _lgKeyThrottle=false;
+let _lgKeyThrottle=false,_lgKeyLoadTimer=null;
 document.addEventListener('keydown',e=>{
   if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on')||!_lgActiveGroupName)return;
   if(document.activeElement&&['INPUT','TEXTAREA'].includes(document.activeElement.tagName))return;
@@ -7451,11 +7451,14 @@ document.addEventListener('keydown',e=>{
   next=Math.max(0,Math.min(next,items.length-1));
   if(next===cur&&cur!==-1)return;
   _lgActiveSym=items[next].dataset.sym;
-  loadLiteChart(_lgActiveSym);
   items.forEach((el,i)=>el.classList.toggle('on',i===next));
   const el=items[next],relTop=el.offsetTop-DOM.lgList.offsetTop,h=el.offsetHeight;
   if(relTop-h<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
+  // Debounce load giống POP-OUT (_kd, 300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại,
+  // không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
+  clearTimeout(_lgKeyLoadTimer);
+  _lgKeyLoadTimer=setTimeout(()=>loadLiteChart(_lgActiveSym),300);
 });
 // Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, TRADING, VN30, nhóm ngành...)
 // để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
