@@ -25,6 +25,7 @@ import numpy as np
 import requests
 import time
 import mplfinance as mpf
+import matplotlib
 import matplotlib.pyplot as plt
 import logging
 import os
@@ -200,12 +201,25 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
         draw.line([x1, y0+r, x1, y1-r], fill=outline, width=lw)
 
 def _hmap_load_fonts():
+    # Fix: font hệ thống (dejavu/liberation) có thể KHÔNG được cài trong image Docker
+    # (nhiều base image Python tối giản không có gói fonts-dejavu-core/fonts-liberation),
+    # khiến bold/reg = None → rơi về ImageFont.load_default() (bitmap, không có dấu
+    # tiếng Việt) → "tên ngành" (chữ duy nhất có dấu trong ảnh heatmap) bị lỗi phông.
+    # Ưu tiên dùng DejaVu Sans đóng gói SẴN bên trong matplotlib (đã là dependency của
+    # scanner qua `import matplotlib.pyplot as plt`) nên luôn tồn tại bất kể môi trường,
+    # không phụ thuộc font hệ thống nữa. Giữ path hệ thống làm fallback dự phòng.
+    try:
+        _mpl_font_dir = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+    except Exception:
+        _mpl_font_dir = ""
     bold_paths = [
+        os.path.join(_mpl_font_dir, "DejaVuSans-Bold.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "C:/Windows/Fonts/arialbd.ttf",
     ]
     reg_paths = [
+        os.path.join(_mpl_font_dir, "DejaVuSans.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "C:/Windows/Fonts/arial.ttf",
@@ -2541,7 +2555,16 @@ def telegram_listener(stop_event: threading.Event):
 # gửi" và bắn lại từ đầu. Giờ ghi xuống đĩa kèm "phiên giao dịch" mà nó thuộc về,
 # để khi restart cùng phiên thì đọc lại và KHÔNG gửi trùng; chỉ thực sự xoá khi
 # một phiên giao dịch MỚI thực sự bắt đầu (xem đoạn reset trong vòng lặp chính).
-SIGNAL_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'signal_state_cache.json')
+# LƯU Ý: đặt trong DASHBOARD_DATA_DIR (mặc định /data/trade-journal) — đây là
+# thư mục đã được mount làm volume trong lệnh `docker run` (-v ...:/data/trade-journal),
+# giống trade_journal.sqlite/market_warning.txt. Nếu để cạnh source code như trước,
+# file sẽ nằm trong writable layer của container và bị xoá mỗi khi tạo lại container
+# (docker rm + build lại image), khiến "Tín hiệu hôm nay"/"Động lượng" mất sau restart.
+_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
+if not os.path.isdir(_SIGNAL_STATE_DIR):
+    # Fallback khi chạy ngoài Docker (không có /data/trade-journal) để không vỡ local dev.
+    _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
+SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 _signal_state_lock = threading.Lock()
 
 def _load_signal_state():
