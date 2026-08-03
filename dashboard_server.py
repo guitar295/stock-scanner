@@ -1765,7 +1765,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title),
+.lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
 /* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
 body.chart-popout-mode>header,
@@ -1775,7 +1775,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none}
+.hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none!important}
 .hmap-panel.collapsed .hmap-ts-wrap{display:none}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.pbar-wrap,
@@ -1826,6 +1826,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 #lite-vietstock-toggle-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
 .lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
+.lite-groups-sidebar.on~.lite-vietstock-iframe{left:180px;width:calc(100% - 180px)}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal.on{display:flex}
@@ -2382,7 +2383,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
         </div>
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
-        <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">VS</button>
+        <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
@@ -7612,17 +7613,17 @@ function _buildPopoutHTML(initSym){
     +'.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}'
     +'.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}'
     +'#main{display:flex;height:calc(100% - 42px);overflow:hidden}'
-    +'#symlist{width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
+    +'#symlist{width:190px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
     +'#symlist::-webkit-scrollbar{width:3px}'
     +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
-    +'.si{display:grid;grid-template-columns:16px 35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:2px}'
+    +'.si{display:grid;grid-template-columns:18px 40px 44px 1fr;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:4px}'
     +'.si:hover,.si.on{background:#dce8ff}'
     +'.si.on .sn{color:#0f3fb3;font-weight:800}'
     +'.star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}'
     +'.star.on{color:#f59e0b}'
-    +'.sn{font-size:11px;font-weight:700}'
-    +'.sp{font-size:10px;text-align:right;font-weight:700}'
-    +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600}'
+    +'.sn{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+    +'.sp{font-size:10px;text-align:right;font-weight:700;white-space:nowrap}'
+    +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600;white-space:nowrap}'
     +'.pos{color:var(--green)}.neg{color:var(--red)}.zer{color:#b45309}'
     +'#cw{flex:1;overflow:hidden;position:relative;background:#fff}'
     +'#cf{width:100%;height:100%;border:none;display:block}'
