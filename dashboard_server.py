@@ -1765,10 +1765,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.lite-chart-panel.collapsed .lite-chart-search-wrap,
-.lite-chart-panel.collapsed .lite-tf-tabs,
-.lite-chart-panel.collapsed .lite-indicators,
-.lite-chart-panel.collapsed .lite-draw-toolbar,
+.lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title):not(#lite-groups-toggle-btn),
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
 /* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
 body.chart-popout-mode>header,
@@ -1839,10 +1836,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 /* Sidebar nhóm ngành / mã (overlay bên trái CHART) — không đụng layout/resize chart */
 .lite-groups-sidebar{position:absolute;top:0;left:0;bottom:0;width:180px;background:rgba(255,255,255,.98);border-right:1px solid var(--border);z-index:9;display:none;flex-direction:column;box-shadow:2px 0 14px rgba(17,24,39,.12)}
 .lite-groups-sidebar.on{display:flex}
-.lg-toolbar{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid var(--border);background:#f8fafc;flex-shrink:0}
+.lg-toolbar{display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);background:#f8fafc;flex-shrink:0}
 .lg-toolbar-title{font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--muted)}
 .lg-sort-btn{height:22px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
 .lg-sort-btn:hover{color:var(--accent);border-color:var(--accent)}
+.lg-ghdr .lg-sort-btn{height:18px;padding:0 6px;font-size:9.5px}
 .lite-groups-list{flex:1;overflow-y:auto;scrollbar-width:thin}
 .lg-group{border-bottom:1px solid var(--border)}
 .lg-ghdr{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:7px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text);user-select:none;background:#f8fafc}
@@ -2007,9 +2005,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hv-symlist{width:120px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hv-sym-item{display:grid;grid-template-columns:35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:2px}
+.hv-sym-item{display:grid;grid-template-columns:16px 35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:2px}
 .hv-sym-item:hover,.hv-sym-item.on{background:#e8effd}
 .hv-sym-item.on .hv-sym-name{color:#0f3fb3;font-weight:800}
+.hv-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}
+.hv-star.on{color:#f59e0b}
 .hv-sym-name{font-family:var(--font-mono);font-size:11px;font-weight:700}
 .hv-sym-pct{font-family:var(--font-mono);font-size:10px;text-align:right;font-weight:700}
 .hv-sym-price{font-family:var(--font-mono);font-size:10px;text-align:right;color:#374151}
@@ -2529,7 +2529,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="lite-groups-sidebar" id="lite-groups-sidebar">
         <div class="lg-toolbar">
           <span class="lg-toolbar-title">NHÓM NGÀNH</span>
-          <button class="lg-sort-btn" id="lg-sort-btn">%↕</button>
         </div>
         <div class="lite-groups-list" id="lite-groups-list"></div>
       </div>
@@ -2867,7 +2866,7 @@ const DOM={
   lbLabel:$('mob-lightbox-label'),lbCounter:$('mob-lightbox-counter'),
   lbZoomHint:$('lb-zoom-hint'),
   lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
-  lgList:$('lite-groups-list'),lgSortBtn:$('lg-sort-btn'),
+  lgList:$('lite-groups-list'),
 };
 // ═══════════════════════════════════════════════════════
 // HELPERS
@@ -2893,6 +2892,7 @@ const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
 // SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
+let _momentumTodayMap=new Map();
 let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -6542,6 +6542,7 @@ async function fetchSigs(){
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
     const momentum=j.momentum||[];
+    _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
     if(!momentum.length){
       DOM.momentumList.innerHTML='';
     }else{
@@ -6553,6 +6554,7 @@ async function fetchSigs(){
     }
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></div>`).join('');
+    if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
   }catch(e){console.error('fetchSigs:',e);}
 }
 async function fetchHmap(){
@@ -7275,6 +7277,14 @@ function _lgToggleFavorite(sym){
   if(i===-1)_lgInsertFavorite(sym);
   else LG_FAVORITES.splice(i,1);
   _lgSaveFavorites();_lgRenderList();
+  _broadcastFavorites();
+}
+// Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ, và sang cửa sổ POP-OUT
+// (cửa sổ riêng, không dùng chung localStorage nên phải gửi qua postMessage).
+function _broadcastFavorites(){
+  if(typeof _hvBuildTabs==='function'&&DOM.hpGrouptabs)_hvBuildTabs();
+  if(typeof _hvRenderSymList==='function'&&_hvActiveGroup!==-1)_hvRenderSymList();
+  if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'SYNC_FAVORITES',favorites:LG_FAVORITES},'*');
 }
 function _lgReorderFavorite(dragSym,targetSym){
   // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường —
@@ -7288,7 +7298,12 @@ function _lgReorderFavorite(dragSym,targetSym){
 }
 let _lgSortAlpha=false,_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
 function _lgGetGroups(){
-  return [{name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},..._hvGroups];
+  return [
+    {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
+    {name:'SIGNAL',syms:[..._sigTodayMap.keys()]},
+    {name:'MOMENTUM',syms:[..._momentumTodayMap.keys()]},
+    ..._hvGroups
+  ];
 }
 function _lgSortSyms(syms){
   return _sortSymsByMode(syms,_lgSortAlpha);
@@ -7314,12 +7329,13 @@ function _lgRenderList(){
       // FAVORITE: giữ nguyên thứ tự lưu (Follow đã ở đầu, mã mới thêm ở cuối, có thể kéo-thả) — không sort
       else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms)).map(s=>_lgSymRow(s,!!g.isFavorite)).join('');
     }
+    const addBtn=(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':'';
+    // Nút sắp xếp đặt ngay sau tên nhóm khi nhóm đó đang mở (trừ FAVORITE, vốn giữ thứ tự thủ công)
+    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle title="Đổi kiểu sắp xếp">${_lgSortAlpha?'A↕Z':'%↕'}</button>`:'';
     return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
-      +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':''}<span class="lg-caret">▸</span></span></div>`
+      +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
   }).join('');
-  // FAVORITE không cần chức năng sort — chỉ hiện nút sort khi đang mở nhóm khác
-  if(DOM.lgSortBtn)DOM.lgSortBtn.style.display=(_lgActiveGroupName&&_lgActiveGroupName!=='FAVORITE')?'':'none';
 }
 function _lgQuickAddFavorites(){
   const raw=prompt('Nhập các mã muốn thêm vào FAVORITE, cách nhau bằng dấu phẩy hoặc khoảng trắng:','');
@@ -7343,15 +7359,13 @@ DOM.lgToggleBtn?.addEventListener('click',e=>{
     _lgRenderList();
   }
 });
-DOM.lgSortBtn?.addEventListener('click',e=>{
-  e.stopPropagation();
-  _lgSortAlpha=!_lgSortAlpha;DOM.lgSortBtn.textContent=_lgSortAlpha?'A↕Z':'%↕';_lgRenderList();
-});
 DOM.lgList?.addEventListener('click',e=>{
   const star=e.target.closest('.lg-star');
   if(star){_lgToggleFavorite(star.dataset.star);return;}
   const addBtn=e.target.closest('[data-add-fav]');
   if(addBtn){e.stopPropagation();_lgQuickAddFavorites();return;}
+  const sortBtn=e.target.closest('[data-sort-toggle]');
+  if(sortBtn){e.stopPropagation();_lgSortAlpha=!_lgSortAlpha;_lgRenderList();return;}
   const hdr=e.target.closest('.lg-ghdr');
   if(hdr){_lgActiveGroupName=(_lgActiveGroupName===hdr.dataset.ghdr)?null:hdr.dataset.ghdr;_lgRenderList();return;}
   const item=e.target.closest('.lg-sym-item');
@@ -7418,26 +7432,34 @@ document.addEventListener('keydown',e=>{
   if(relTop-h<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
 });
+// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, TRADING, VN30, nhóm ngành...)
+// để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
 function _hvBuildTabs(){
-  DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`).join('');
+  const groups=_lgGetGroups();
+  DOM.hpGrouptabs.innerHTML=groups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</button>`).join('');
 }
 DOM.hpGrouptabs.addEventListener('click',e=>{const btn=e.target.closest('.hv-gtab');if(btn)_hvSelectGroup(+btn.dataset.idx);});
 function _hvSelectGroup(idx){
   if(_hvActiveGroup===idx){_hvActiveGroup=-1;DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach(b=>b.classList.remove('on'));DOM.hpSymlist.style.display='none';DOM.hpSortBtn.style.display='none';return;}
   _hvActiveGroup=idx;
   DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===idx));
-  DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
+  const g=_lgGetGroups()[idx];
+  DOM.hpSortBtn.style.display=(g&&g.isFavorite)?'none':'';
+  DOM.hpSymlist.style.display='';_hvRenderSymList();
 }
 function _hvGetSorted(){
-  const g=_hvGroups[_hvActiveGroup];if(!g)return[];
-  return _sortSymsByMode(g.syms,_hvSortAlpha);
+  const g=_lgGetGroups()[_hvActiveGroup];if(!g)return[];
+  return g.isFavorite?g.syms.slice():_sortSymsByMode(g.syms,_hvSortAlpha);
 }
 DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
 function _hvRenderSymList(){
   if(_hvActiveGroup===-1)return;
   DOM.hpSymlist.innerHTML=_hvGetSorted().map(sym=>{
     const{price,pctStr,color}=_symDisplayFields(sym);
-    return`<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}"><span class="hv-sym-name">${sym}</span><span class="hv-sym-pct" style="color:${color}">${pctStr}</span><span class="hv-sym-price">${price}</span></div>`;
+    const starred=LG_FAVORITES.includes(sym);
+    return`<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}">`
+      +`<span class="hv-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
+      +`<span class="hv-sym-name">${sym}</span><span class="hv-sym-pct" style="color:${color}">${pctStr}</span><span class="hv-sym-price">${price}</span></div>`;
   }).join('');
 }
 function _hvPatchSymList(newData){
@@ -7457,6 +7479,8 @@ function _syncHoverPreview(sym,updateFrame=true){
   if(updateFrame)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
 }
 DOM.hpSymlist.addEventListener('click',e=>{
+  const star=e.target.closest('.hv-star');
+  if(star){_lgToggleFavorite(star.dataset.star);return;}
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
   _syncHoverPreview(sym);updatePopout(sym);
@@ -7529,8 +7553,9 @@ function popOutHover(){
   const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)closePopoutWindow();}},1000);
 }
 function _buildPopoutHTML(initSym){
-  const gJ=JSON.stringify(_hvGroups.map(g=>({name:g.name,syms:g.syms})));
+  const gJ=JSON.stringify(_lgGetGroups().map(g=>({name:g.name,syms:g.syms,isFavorite:!!g.isFavorite})));
   const dJ=JSON.stringify(window._lastHmapData||{});
+  const favJ=JSON.stringify(LG_FAVORITES);
   const ig=_hvActiveGroup>=0?_hvActiveGroup:0;
   return '<!DOCTYPE html><html><head>'
     +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
@@ -7564,9 +7589,11 @@ function _buildPopoutHTML(initSym){
     +'#symlist{width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
     +'#symlist::-webkit-scrollbar{width:3px}'
     +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
-    +'.si{display:grid;grid-template-columns:35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:2px}'
+    +'.si{display:grid;grid-template-columns:16px 35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:2px}'
     +'.si:hover,.si.on{background:#dce8ff}'
     +'.si.on .sn{color:#0f3fb3;font-weight:800}'
+    +'.star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}'
+    +'.star.on{color:#f59e0b}'
     +'.sn{font-size:11px;font-weight:700}'
     +'.sp{font-size:10px;text-align:right;font-weight:700}'
     +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600}'
@@ -7596,6 +7623,7 @@ function _buildPopoutHTML(initSym){
     +'var _$=function(id){return document.getElementById(id);};'
     +'var groups='+gJ+';'
     +'var hdata='+dJ+';'
+    +'var favs='+favJ+';'
     +'var ag='+ig+';'
     +'var sa='+(_hvSortAlpha?'true':'false')+';'
     +'var cur="'+initSym+'";'
@@ -7604,17 +7632,21 @@ function _buildPopoutHTML(initSym){
     +'function buildTabs(){'
     +'  var el=_$("gtabs");'
     +'  var html=groups.map(function(g,i){'
-    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+g.name+"</button>";'
+    +'    var lbl=g.name+(g.isFavorite?" ("+favs.length+")":"");'
+    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+lbl+"</button>";'
     +'  }).join("");'
     +'  el.innerHTML=html;'
     +'}'
     +'function selGroup(idx){'
     +'  ag=idx;'
     +'  document.querySelectorAll(".gtab").forEach(function(b,i){b.classList.toggle("on",i===idx);});'
+    +'  var g=groups[idx];'
+    +'  _$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";'
     +'  render();'
     +'}'
     +'function getSorted(){'
     +'  var g=groups[ag];if(!g)return [];'
+    +'  if(g.isFavorite)return favs.slice();'
     +'  if(sa)return g.syms.slice().sort(function(a,b){return a.localeCompare(b);});'
     +'  return g.syms.slice().sort(function(a,b){'
     +'    var pa=hdata[a]?hdata[a].pct||0:-999;'
@@ -7629,7 +7661,10 @@ function _buildPopoutHTML(initSym){
     +'    var pct=d&&typeof d.pct==="number"?d.pct:null;'
     +'    var pctStr=pct!==null?((pct>=0?"+":"")+pct.toFixed(1)+"%"):"--";'
     +'    var cls=pct===null?"zer":pct>0?"pos":pct<0?"neg":"zer";'
-    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'"><span class="sn">\'+sym+"</span>"'
+    +'    var st=favs.indexOf(sym)!==-1;'
+    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'">\''
+    +'      +\'<span class="star\'+(st?" on":"")+\'" data-star="\'+sym+\'" title="Thêm/bỏ khỏi Favorite">\'+(st?"★":"☆")+"</span>"'
+    +'      +\'<span class="sn">\'+sym+"</span>"'
     +'      +\'<span class="sp \'+cls+\'">\'+pctStr+"</span>"'
     +'      +\'<span class="spr">\'+fp(d&&d.price)+"</span></div>";'
     +'  }).join("");'
@@ -7665,6 +7700,14 @@ function _buildPopoutHTML(initSym){
     +'  selGroup(parseInt(b.dataset.idx));'
     +'});'
     +'_$("symlist").addEventListener("click",function(e){'
+    +'  var star=e.target.closest(".star");'
+    +'  if(star){'
+    +'    var sym=star.dataset.star,i=favs.indexOf(sym);'
+    +'    if(i===-1)favs.push(sym);else favs.splice(i,1);'
+    +'    buildTabs();render();'
+    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_TOGGLE_FAVORITE",symbol:sym},"*");'
+    +'    return;'
+    +'  }'
     +'  var item=e.target.closest(".si");if(!item)return;'
     +'  clickSym(item.dataset.sym);'
     +'});'
@@ -7716,10 +7759,11 @@ function _buildPopoutHTML(initSym){
     +'window.addEventListener("message",function(e){'
     +'  if(e.data.type==="UPDATE_CHART"){cur=e.data.symbol;setSym(cur);render();}'
     +'  if(e.data.type==="UPDATE_HEATMAP"){patch(e.data.data||{});}'
+    +'  if(e.data.type==="SYNC_FAVORITES"){favs=e.data.favorites||[];buildTabs();render();}'
     +'  if(e.data.type==="EMBEDDED_FULL_SYMBOL"){cur=(e.data.symbol||cur).toUpperCase();_$("sym").textContent=cur;render();}'
     +'  if(e.data.type==="EMBEDDED_FULL_CLOSE"){full=false;cur=(e.data.symbol||cur).toUpperCase();setSym(cur);render();}'
     +'});'
-    +'buildTabs();render();setSym(cur);'
+    +'buildTabs();(function(){var g=groups[ag];_$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";})();render();setSym(cur);'
     +'<\/script></body></html>';
 }
 
@@ -7731,7 +7775,9 @@ function minimizePopout(){
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
   if(_hvActiveGroup>=0){
     DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===_hvActiveGroup));
-    DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
+    const g=_lgGetGroups()[_hvActiveGroup];
+    DOM.hpSortBtn.style.display=(g&&g.isFavorite)?'none':'';
+    DOM.hpSymlist.style.display='';_hvRenderSymList();
   }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
   if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
@@ -7748,6 +7794,8 @@ function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMess
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _syncHoverPreview(e.data.symbol);
+  }else if(e.data.type==='POPOUT_TOGGLE_FAVORITE'&&e.data.symbol){
+    _lgToggleFavorite(e.data.symbol);
   }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
