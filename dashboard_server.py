@@ -5474,7 +5474,7 @@ function mkSectorCol(d){
 }
 function mkFollowGroup(d){
   if(!FOLLOW.length||!FOLLOW_ON)return'';
-  return `<div class="hmap-col"><div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div></div>`;
+  return `<div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
 function renderHeatmap(d){
   if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
@@ -5483,9 +5483,9 @@ function renderHeatmap(d){
   const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
   HMAP_COLS.forEach((cd,i)=>{
     const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
-    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${extra}</div>`);
+    const followExtra=i===0?mkFollowGroup(d):'';
+    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${followExtra}${extra}</div>`);
   });
-  const follow=mkFollowGroup(d);if(follow)parts.push(follow);
   DOM.hmapGrid.innerHTML=parts.join('');
 }
 // Event delegation heatmap
