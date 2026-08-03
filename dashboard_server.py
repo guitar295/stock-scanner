@@ -7282,8 +7282,7 @@ function _lgToggleFavorite(sym){
 // Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ, và sang cửa sổ POP-OUT
 // (cửa sổ riêng, không dùng chung localStorage nên phải gửi qua postMessage).
 function _broadcastFavorites(){
-  if(typeof _hvBuildTabs==='function'&&DOM.hpGrouptabs)_hvBuildTabs();
-  if(typeof _hvRenderSymList==='function'&&_hvActiveGroup!==-1)_hvRenderSymList();
+  if(_hoverPreviewOn){_hvBuildTabs();if(_hvActiveGroup!==-1)_hvRenderSymList();}
   if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'SYNC_FAVORITES',favorites:LG_FAVORITES},'*');
 }
 function _lgReorderFavorite(dragSym,targetSym){
@@ -7443,18 +7442,18 @@ function _hvSelectGroup(idx){
   if(_hvActiveGroup===idx){_hvActiveGroup=-1;DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach(b=>b.classList.remove('on'));DOM.hpSymlist.style.display='none';DOM.hpSortBtn.style.display='none';return;}
   _hvActiveGroup=idx;
   DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===idx));
-  const g=_lgGetGroups()[idx];
-  DOM.hpSortBtn.style.display=(g&&g.isFavorite)?'none':'';
   DOM.hpSymlist.style.display='';_hvRenderSymList();
 }
-function _hvGetSorted(){
-  const g=_lgGetGroups()[_hvActiveGroup];if(!g)return[];
-  return g.isFavorite?g.syms.slice():_sortSymsByMode(g.syms,_hvSortAlpha);
-}
 DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
+// Vẽ lại danh sách mã của nhóm đang mở, đồng thời tự ẩn/hiện nút sort (FAVORITE giữ thứ tự
+// thủ công nên không cho sort) — gộp về đây để mọi nơi gọi hàm này (mở nhóm, đổi sort,
+// quay lại từ POP-OUT, đổi Favorite...) đều nhận đúng trạng thái mà không cần lặp lại logic.
 function _hvRenderSymList(){
   if(_hvActiveGroup===-1)return;
-  DOM.hpSymlist.innerHTML=_hvGetSorted().map(sym=>{
+  const g=_lgGetGroups()[_hvActiveGroup];if(!g)return;
+  DOM.hpSortBtn.style.display=g.isFavorite?'none':'';
+  const syms=g.isFavorite?g.syms:_sortSymsByMode(g.syms,_hvSortAlpha);
+  DOM.hpSymlist.innerHTML=syms.map(sym=>{
     const{price,pctStr,color}=_symDisplayFields(sym);
     const starred=LG_FAVORITES.includes(sym);
     return`<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}">`
@@ -7775,8 +7774,6 @@ function minimizePopout(){
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
   if(_hvActiveGroup>=0){
     DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===_hvActiveGroup));
-    const g=_lgGetGroups()[_hvActiveGroup];
-    DOM.hpSortBtn.style.display=(g&&g.isFavorite)?'none':'';
     DOM.hpSymlist.style.display='';_hvRenderSymList();
   }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
