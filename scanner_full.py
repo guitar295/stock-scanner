@@ -42,6 +42,8 @@ from dashboard_server import (
     get_active_price_alert_rules,
     record_price_alert_event,
     warm_market_health_cache,
+    TS_POOL_CONFIG,
+    HMAP_COLS_CONFIG,
 )
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
@@ -114,56 +116,24 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # =============================================================================
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
-TRADING_STOCKS_POOL = [
-    "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVB","BVH","BWE","VCK","CII",
-    "CKG","CRE","CTD","CTG","CTI","CTR","CTS","ORS","DBC","DCM","DGW","DIG",
-    "DPG","DPM","DRC","DRH","DXG","FCN","FPT","FRT","FTS","GAS","GEG","GEX",
-    "GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","HDG","HNG","HPG","HSG",
-    "HTN","HVN","IDC","IJC","DSE","KBC","KDH","KSB","LDG","LPB","D2D","LTG",
-    "MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET",
-    "PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT",
-    "SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2",
-    "VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE",
-]
+# NGUỒN DUY NHẤT nằm ở dashboard_server.TS_POOL_CONFIG — import ở đầu file.
+# KHÔNG khai báo lại danh sách mã ở đây nữa, tránh lặp lại lỗi lệch 2 danh sách
+# (BAF/BMI/LCG từng bị thiếu bên fetch giá khiến cột Trading hiện "--" dù đã
+# có trong danh sách hiển thị). Muốn thêm/bớt mã: sửa TS_POOL_CONFIG bên
+# dashboard_server.py, scanner_full.py tự động dùng theo qua alias dưới đây.
+TRADING_STOCKS_POOL = TS_POOL_CONFIG
 
+# NGUỒN DUY NHẤT nằm ở dashboard_server.HMAP_COLS_CONFIG (import ở đầu file) —
+# cùng lý do và cùng cách làm với TRADING_STOCKS_POOL: tránh lệch dữ liệu giữa
+# sidebar dashboard và ảnh heatmap của scanner khi có người sửa 1 bên quên sửa
+# bên kia. HMAP_COLS_CONFIG dùng tên nhóm tiếng Việt có dấu (đẹp hơn khi vẽ lên
+# ảnh) và khoá "syms" (khớp định dạng dashboard cần) — dòng dưới đây tự suy ra
+# đúng cấu trúc HEATMAP_COLUMNS mà code vẽ ảnh heatmap của scanner cần (thêm số
+# thứ tự cột "col", đổi khoá "syms" -> "symbols"). Muốn thêm/bớt mã hay đổi tên
+# nhóm: chỉ sửa HMAP_COLS_CONFIG bên dashboard_server.py.
 HEATMAP_COLUMNS = [
-    {"col": 1, "groups": [
-        {"name": "VN30", "symbols": [
-            "FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ",
-            "BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN",
-            "SSI","ACB","BVH","GVR","TPB",
-        ]},
-    ]},
-    {"col": 2, "groups": [
-        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
-        {"name": "DAU KHI",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
-    ]},
-    {"col": 3, "groups": [
-        {"name": "CHUNG KHOAN", "symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
-        {"name": "XAY DUNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
-    ]},
-    {"col": 4, "groups": [
-        {"name": "BAT DONG SAN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
-        {"name": "PHAN BON",     "symbols": ["BFC","DCM","DPM"]},
-        {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
-    ]},
-    {"col": 5, "groups": [
-        {"name": "BAN LE",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW","VNM"]},
-        {"name": "THUY SAN",  "symbols": ["ANV","CMX","VHC","IDI"]},
-        {"name": "CANG BIEN", "symbols": ["HAH","GMD","SGP","VSC"]},
-        {"name": "CAO SU",    "symbols": ["GVR","DPR","DRI","PHR","DRC"]},
-        {"name": "NHUA",      "symbols": ["AAA","BMP","NTP"]},
-    ]},
-    {"col": 6, "groups": [
-        {"name": "DIEN NUOC",  "symbols": ["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},
-        {"name": "DET MAY",    "symbols": ["TCM","TNG","VGT","MSH"]},
-        {"name": "HANG KHONG", "symbols": ["NCT","ACV","AST","HVN","SCS","VJC"]},
-        {"name": "BAO HIEM",   "symbols": ["BMI","MIG","BVH"]},
-        {"name": "MIA DUONG",  "symbols": ["LSS","SBT","QNS"]},
-    ]},
-    {"col": 7, "groups": [
-        {"name": "DAU TU CONG", "symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
-    ]},
+    {"col": idx + 1, "groups": [{"name": g["name"], "symbols": g["syms"]} for g in col["groups"]]}
+    for idx, col in enumerate(HMAP_COLS_CONFIG)
 ]
 
 HMAP_POS_COLORS = [
