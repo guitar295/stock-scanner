@@ -1843,8 +1843,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
 #lite-vietstock-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
-#lite-vietstock-toggle-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
-#lite-vietstock-toggle-btn{font-size:10px;font-weight:700}
+#lite-vietstock-toggle-btn{font-size:10px;font-weight:700;color:var(--muted);background:#f8fafc;border:1px solid var(--border);min-width:28px}
+#lite-vietstock-toggle-btn:hover:not(.on){background:#f8fafc}
 .lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
 .lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
 .lite-groups-sidebar.on~.lite-vietstock-iframe{left:180px;width:calc(100% - 180px)}
