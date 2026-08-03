@@ -5162,6 +5162,7 @@ function showLiteChartStatus(status){
 }
 async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
+  _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
   if(DOM.liteChartInput)DOM.liteChartInput.value='';
@@ -5187,7 +5188,6 @@ async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
-    _updateVietstockIframeIfActive();
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
     }else if(!skipPopoutSync){
@@ -7366,9 +7366,9 @@ DOM.lgToggleBtn?.addEventListener('click',e=>{
 });
 // Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để
 // luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
-function _updateVietstockIframeIfActive(){
+function _updateVietstockIframeIfActive(sym){
   if(!DOM.liteChartFrame.classList.contains('vietstock-mode'))return;
-  DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(_liteSymbol||'VNINDEX').toLowerCase();
+  DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(sym||_liteSymbol||'VNINDEX').toLowerCase();
 }
 function _setVietstockMode(on){
   DOM.liteChartFrame.classList.toggle('vietstock-mode',on);
