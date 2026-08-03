@@ -1765,7 +1765,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title):not(#lite-groups-toggle-btn),
+.lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title),
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
 /* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
 body.chart-popout-mode>header,
@@ -1776,7 +1776,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none}
-.hmap-panel.collapsed .hmap-hdr-row1 #hover-preview-btn{display:none}
 .hmap-panel.collapsed .hmap-ts-wrap{display:none}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.pbar-wrap,
@@ -1824,6 +1823,9 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-ind-group.open .lite-ind-dropdown{display:flex}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
+#lite-vietstock-toggle-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
+.lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal.on{display:flex}
@@ -2002,17 +2004,17 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hv-gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hv-body{display:flex;flex:1;overflow:hidden}
-.hv-symlist{width:120px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.hv-symlist{width:190px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hv-sym-item{display:grid;grid-template-columns:16px 35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:2px}
+.hv-sym-item{display:grid;grid-template-columns:18px 40px 44px 1fr;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px}
 .hv-sym-item:hover,.hv-sym-item.on{background:#e8effd}
 .hv-sym-item.on .hv-sym-name{color:#0f3fb3;font-weight:800}
 .hv-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}
 .hv-star.on{color:#f59e0b}
-.hv-sym-name{font-family:var(--font-mono);font-size:11px;font-weight:700}
-.hv-sym-pct{font-family:var(--font-mono);font-size:10px;text-align:right;font-weight:700}
-.hv-sym-price{font-family:var(--font-mono);font-size:10px;text-align:right;color:#374151}
+.hv-sym-name{font-family:var(--font-mono);font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hv-sym-pct{font-family:var(--font-mono);font-size:10px;text-align:right;font-weight:700;white-space:nowrap}
+.hv-sym-price{font-family:var(--font-mono);font-size:10px;text-align:right;color:#374151;white-space:nowrap}
 #hover-preview-iframe-wrap{flex:1;overflow:hidden;position:relative}
 #hover-preview-iframe-wrap iframe{width:100%;height:100%;border:none;display:block}
 .hv-ctrl{height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;white-space:nowrap;flex-shrink:0}
@@ -2374,12 +2376,13 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   <div class="panel lite-chart-panel collapsed" id="lite-chart-panel">
     <div class="panel-hdr" id="lite-chart-toggle">
       <div class="lite-chart-toolbar">
-        <span class="panel-title">CHART</span>
+        <span class="panel-title" id="lite-chart-title-label" title="Bấm để quay lại chart tự vẽ mặc định">CHART</span>
         <div class="lite-chart-search-wrap">
           <span class="s-icon">🔍</span>
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
         </div>
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
+        <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">VS</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
@@ -2580,6 +2583,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div id="lite-rsi-chart"></div>
       <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
       <div id="lite-macd-chart"></div>
+      <iframe id="lite-vietstock-iframe" class="lite-vietstock-iframe" src="about:blank" title="Vietstock chart"></iframe>
       <div class="lite-xhair-v" id="lite-xhair-v"></div>
       <div class="lite-xhair-h" id="lite-xhair-h"></div>
       <div class="lite-xhair-price" id="lite-xhair-price"></div>
@@ -2801,6 +2805,8 @@ const DOM={
   sankeyWrap:$('sankey-wrap'),sankeyCopyBtn:$('sankey-copy-btn'),
   treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),treemapCopyBtn:$('treemap-copy-btn'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
+  liteChartTitleLabel:$('lite-chart-title-label'),
+  liteVietstockToggleBtn:$('lite-vietstock-toggle-btn'),liteVietstockIframe:$('lite-vietstock-iframe'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
   liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
@@ -5180,6 +5186,7 @@ async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
+    _updateVietstockIframeIfActive();
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
     }else if(!skipPopoutSync){
@@ -6500,7 +6507,7 @@ DOM.liteChartToggle.addEventListener('click',e=>{
   // vẫn phải bấm được bình thường — chỉ coi là "bấm vào thẻ để thu/mở" khi không bấm
   // trúng các vùng control đó. Khi thẻ đang thu gọn thì các vùng đó đã ẩn (display:none)
   // nên toàn bộ header luôn hoạt động như nút mở ra, giống hệt SANKEY.
-  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn'))return;
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
@@ -7357,6 +7364,26 @@ DOM.lgToggleBtn?.addEventListener('click',e=>{
     if(!_lgActiveGroupName)_lgActiveGroupName='FAVORITE';
     _lgRenderList();
   }
+});
+// Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để
+// luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
+function _updateVietstockIframeIfActive(){
+  if(!DOM.liteChartFrame.classList.contains('vietstock-mode'))return;
+  DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(_liteSymbol||'VNINDEX').toLowerCase();
+}
+function _setVietstockMode(on){
+  DOM.liteChartFrame.classList.toggle('vietstock-mode',on);
+  DOM.liteVietstockToggleBtn.classList.toggle('on',on);
+  if(on)_updateVietstockIframeIfActive();
+  else DOM.liteVietstockIframe.src='about:blank';
+}
+DOM.liteVietstockToggleBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  _setVietstockMode(!DOM.liteChartFrame.classList.contains('vietstock-mode'));
+});
+DOM.liteChartTitleLabel.addEventListener('click',e=>{
+  e.stopPropagation();
+  _setVietstockMode(false);
 });
 DOM.lgList?.addEventListener('click',e=>{
   const star=e.target.closest('.lg-star');
