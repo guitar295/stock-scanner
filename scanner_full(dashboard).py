@@ -25,6 +25,7 @@ import numpy as np
 import requests
 import time
 import mplfinance as mpf
+import matplotlib
 import matplotlib.pyplot as plt
 import logging
 import os
@@ -42,6 +43,8 @@ from dashboard_server import (
     get_active_price_alert_rules,
     record_price_alert_event,
     warm_market_health_cache,
+    TS_POOL_CONFIG,
+    HMAP_COLS_CONFIG,
 )
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
@@ -114,56 +117,24 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # =============================================================================
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
-TRADING_STOCKS_POOL = [
-    "AAA","ACB","AGG","ANV","BFC","BID","BSR","BVB","BVH","BWE","VCK","CII",
-    "CKG","CRE","CTD","CTG","CTI","CTR","CTS","ORS","DBC","DCM","DGW","DIG",
-    "DPG","DPM","DRC","DRH","DXG","FCN","FPT","FRT","FTS","GAS","GEG","GEX",
-    "GMD","GVR","HAG","HAX","HBC","HCM","HDB","HDC","HDG","HNG","HPG","HSG",
-    "HTN","HVN","IDC","IJC","DSE","KBC","KDH","KSB","LDG","LPB","D2D","LTG",
-    "MBB","MBS","MSB","MSN","MWG","NKG","NLG","NTL","NVL","PC1","PDR","PET",
-    "PHR","PLC","PLX","PNJ","POW","PTB","PVD","PVS","PVT","QNS","REE","SBT",
-    "SCR","SHB","SHS","SSI","STB","SZC","TCB","TDM","TIG","TNG","TPB","TV2",
-    "VCB","VCI","VCS","VGT","VHC","VHM","VIB","VIC","VJC","VNM","VPB","VRE",
-]
+# NGUỒN DUY NHẤT nằm ở dashboard_server.TS_POOL_CONFIG — import ở đầu file.
+# KHÔNG khai báo lại danh sách mã ở đây nữa, tránh lặp lại lỗi lệch 2 danh sách
+# (BAF/BMI/LCG từng bị thiếu bên fetch giá khiến cột Trading hiện "--" dù đã
+# có trong danh sách hiển thị). Muốn thêm/bớt mã: sửa TS_POOL_CONFIG bên
+# dashboard_server.py, scanner_full.py tự động dùng theo qua alias dưới đây.
+TRADING_STOCKS_POOL = TS_POOL_CONFIG
 
+# NGUỒN DUY NHẤT nằm ở dashboard_server.HMAP_COLS_CONFIG (import ở đầu file) —
+# cùng lý do và cùng cách làm với TRADING_STOCKS_POOL: tránh lệch dữ liệu giữa
+# sidebar dashboard và ảnh heatmap của scanner khi có người sửa 1 bên quên sửa
+# bên kia. HMAP_COLS_CONFIG dùng tên nhóm tiếng Việt có dấu (đẹp hơn khi vẽ lên
+# ảnh) và khoá "syms" (khớp định dạng dashboard cần) — dòng dưới đây tự suy ra
+# đúng cấu trúc HEATMAP_COLUMNS mà code vẽ ảnh heatmap của scanner cần (thêm số
+# thứ tự cột "col", đổi khoá "syms" -> "symbols"). Muốn thêm/bớt mã hay đổi tên
+# nhóm: chỉ sửa HMAP_COLS_CONFIG bên dashboard_server.py.
 HEATMAP_COLUMNS = [
-    {"col": 1, "groups": [
-        {"name": "VN30", "symbols": [
-            "FPT","GAS","NVL","VNM","VCB","PLX","TCB","MWG","STB","HPG","PNJ",
-            "BID","CTG","HDB","VJC","VPB","KDH","MBB","VHM","POW","VRE","MSN",
-            "SSI","ACB","BVH","GVR","TPB",
-        ]},
-    ]},
-    {"col": 2, "groups": [
-        {"name": "NGAN HANG", "symbols": ["VCB","BID","CTG","MBB","ACB","TCB","TPB","HDB","SHB","STB","VIB","VPB","MSB","ABB","BVB","LPB"]},
-        {"name": "DAU KHI",   "symbols": ["GAS","PVD","PVS","BSR","OIL","PVB","PVC","PLX","PET","PVT"]},
-    ]},
-    {"col": 3, "groups": [
-        {"name": "CHUNG KHOAN", "symbols": ["SSI","VND","CTS","FTS","HCM","MBS","DSE","BSI","SHS","VCI","VCK","ORS"]},
-        {"name": "XAY DUNG",    "symbols": ["C47","C32","L14","CII","CTD","CTI","FCN","HBC","HUT","LCG","PC1","DPG","PHC","VCG"]},
-    ]},
-    {"col": 4, "groups": [
-        {"name": "BAT DONG SAN", "symbols": ["VHM","AGG","IJC","LDG","CEO","D2D","DIG","DXG","HDC","HDG","KDH","NLG","NTL","NVL","PDR","SCR","TIG","KBC","SZC"]},
-        {"name": "PHAN BON",     "symbols": ["BFC","DCM","DPM"]},
-        {"name": "THEP",         "symbols": ["HPG","HSG","NKG"]},
-    ]},
-    {"col": 5, "groups": [
-        {"name": "BAN LE",    "symbols": ["MSN","FPT","FRT","MWG","PNJ","DGW","VNM"]},
-        {"name": "THUY SAN",  "symbols": ["ANV","CMX","VHC","IDI"]},
-        {"name": "CANG BIEN", "symbols": ["HAH","GMD","SGP","VSC"]},
-        {"name": "CAO SU",    "symbols": ["GVR","DPR","DRI","PHR","DRC"]},
-        {"name": "NHUA",      "symbols": ["AAA","BMP","NTP"]},
-    ]},
-    {"col": 6, "groups": [
-        {"name": "DIEN NUOC",  "symbols": ["NT2","PC1","GEG","GEX","POW","TDM","BWE"]},
-        {"name": "DET MAY",    "symbols": ["TCM","TNG","VGT","MSH"]},
-        {"name": "HANG KHONG", "symbols": ["NCT","ACV","AST","HVN","SCS","VJC"]},
-        {"name": "BAO HIEM",   "symbols": ["BMI","MIG","BVH"]},
-        {"name": "MIA DUONG",  "symbols": ["LSS","SBT","QNS"]},
-    ]},
-    {"col": 7, "groups": [
-        {"name": "DAU TU CONG", "symbols": ["FCN","HHV","LCG","VCG","C4G","CTD","HBC","HSG","NKG","HPG","KSB","PLC"]},
-    ]},
+    {"col": idx + 1, "groups": [{"name": g["name"], "symbols": g["syms"]} for g in col["groups"]]}
+    for idx, col in enumerate(HMAP_COLS_CONFIG)
 ]
 
 HMAP_POS_COLORS = [
@@ -230,12 +201,25 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
         draw.line([x1, y0+r, x1, y1-r], fill=outline, width=lw)
 
 def _hmap_load_fonts():
+    # Fix: font hệ thống (dejavu/liberation) có thể KHÔNG được cài trong image Docker
+    # (nhiều base image Python tối giản không có gói fonts-dejavu-core/fonts-liberation),
+    # khiến bold/reg = None → rơi về ImageFont.load_default() (bitmap, không có dấu
+    # tiếng Việt) → "tên ngành" (chữ duy nhất có dấu trong ảnh heatmap) bị lỗi phông.
+    # Ưu tiên dùng DejaVu Sans đóng gói SẴN bên trong matplotlib (đã là dependency của
+    # scanner qua `import matplotlib.pyplot as plt`) nên luôn tồn tại bất kể môi trường,
+    # không phụ thuộc font hệ thống nữa. Giữ path hệ thống làm fallback dự phòng.
+    try:
+        _mpl_font_dir = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+    except Exception:
+        _mpl_font_dir = ""
     bold_paths = [
+        os.path.join(_mpl_font_dir, "DejaVuSans-Bold.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "C:/Windows/Fonts/arialbd.ttf",
     ]
     reg_paths = [
+        os.path.join(_mpl_font_dir, "DejaVuSans.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "C:/Windows/Fonts/arial.ttf",
@@ -2493,7 +2477,10 @@ def telegram_listener(stop_event: threading.Event):
                             sig   = v["signal"] if isinstance(v, dict) else v
                             emoji = SIGNAL_EMOJI.get(sig, '📌')
                             buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
-                        reply = "📋 <b>Tín hiệu hôm nay:</b>"
+                        if signal_session_date == datetime.now(TZ_VN).date():
+                            reply = "📋 <b>Tín hiệu hôm nay:</b>"
+                        else:
+                            reply = f"📋 <b>Tín hiệu phiên gần nhất ({signal_session_date.strftime('%d/%m')}):</b>"
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
                         buttons = []
@@ -2561,6 +2548,63 @@ def telegram_listener(stop_event: threading.Event):
     print("🛑 Listener đã dừng.")
 
 # =============================================================================
+# BƯỚC 8D: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
+# =============================================================================
+# Mục đích: alerted_today trước đây chỉ sống trong RAM → mỗi lần restart server
+# giữa ngày/phiên sẽ mất sạch, khiến các mã đã gửi tin nhắn rồi bị coi là "chưa
+# gửi" và bắn lại từ đầu. Giờ ghi xuống đĩa kèm "phiên giao dịch" mà nó thuộc về,
+# để khi restart cùng phiên thì đọc lại và KHÔNG gửi trùng; chỉ thực sự xoá khi
+# một phiên giao dịch MỚI thực sự bắt đầu (xem đoạn reset trong vòng lặp chính).
+# LƯU Ý: đặt trong DASHBOARD_DATA_DIR (mặc định /data/trade-journal) — đây là
+# thư mục đã được mount làm volume trong lệnh `docker run` (-v ...:/data/trade-journal),
+# giống trade_journal.sqlite/market_warning.txt. Nếu để cạnh source code như trước,
+# file sẽ nằm trong writable layer của container và bị xoá mỗi khi tạo lại container
+# (docker rm + build lại image), khiến "Tín hiệu hôm nay"/"Động lượng" mất sau restart.
+_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
+if not os.path.isdir(_SIGNAL_STATE_DIR):
+    # Fallback khi chạy ngoài Docker (không có /data/trade-journal) để không vỡ local dev.
+    _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
+SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
+_signal_state_lock = threading.Lock()
+
+def _load_signal_state():
+    """
+    Đọc lại alerted_today + momentum_today + ngày phiên giao dịch đã lưu từ lần
+    chạy trước. Trả về (alerted_dict, momentum_dict, session_date). session_date
+    =None nếu chưa từng lưu (lần đầu chạy) hoặc file lỗi — khi đó coi như chưa có
+    gì, sẽ tự đồng bộ lại ngay trong lần khởi tạo bên dưới.
+    """
+    try:
+        with open(SIGNAL_STATE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        session_date_str = data.get('session_date')
+        session_date = datetime.strptime(session_date_str, '%Y-%m-%d').date() if session_date_str else None
+        alerted  = data.get('alerted', {}) or {}
+        momentum = data.get('momentum', {}) or {}
+        print(f"  💾 Đã đọc trạng thái đã lưu: {len(alerted)} tín hiệu, {len(momentum)} động lượng, phiên {session_date_str or '?'}")
+        return alerted, momentum, session_date
+    except FileNotFoundError:
+        return {}, {}, None
+    except Exception as e:
+        print(f"  ⚠️  Lỗi đọc {SIGNAL_STATE_FILE}: {e} → bỏ qua, coi như chưa có dữ liệu lưu.")
+        return {}, {}, None
+
+def _save_signal_state(alerted: dict, momentum: dict, session_date: date):
+    """Ghi đè toàn bộ trạng thái tín hiệu + động lượng của phiên hiện tại xuống đĩa (ghi an toàn qua file tạm)."""
+    try:
+        with _signal_state_lock:
+            tmp_path = SIGNAL_STATE_FILE + '.tmp'
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'session_date': session_date.strftime('%Y-%m-%d') if session_date else None,
+                    'alerted': alerted,
+                    'momentum': momentum,
+                }, f, ensure_ascii=False)
+            os.replace(tmp_path, SIGNAL_STATE_FILE)
+    except Exception as e:
+        print(f"  ⚠️  Lỗi lưu {SIGNAL_STATE_FILE}: {e}")
+
+# =============================================================================
 # BƯỚC 9: KHỞI ĐỘNG
 # =============================================================================
 try:
@@ -2576,9 +2620,14 @@ try:
 except NameError:
     pass
 
-alerted_today = {}
-momentum_today = {}
+alerted_today, momentum_today, signal_session_date = _load_signal_state()
 last_run_date = datetime.now(TZ_VN).date()
+if signal_session_date is None:
+    # Lần đầu chạy (chưa từng có file lưu) → coi phiên hiện tại là "phiên của
+    # alerted_today/momentum_today" (rỗng). Vòng lặp chính bên dưới sẽ tự reset
+    # đúng lúc nếu thời điểm khởi động đã là 1 phiên mới so với lần lưu gần nhất.
+    signal_session_date = last_run_date
+    _save_signal_state(alerted_today, momentum_today, signal_session_date)
 _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
 
 _stop_listener  = threading.Event()
@@ -2612,6 +2661,7 @@ start_dashboard(
     chart_symbol_status_fn = chart_symbol_status,
     momentum_today_ref = lambda: momentum_today,
     fetch_market_health_fn = compute_market_health_index,
+    signal_session_date_ref = lambda: signal_session_date,
     port              = 8888,
 )
 
@@ -2664,13 +2714,15 @@ while True:
             continue
 
         if current_date > last_run_date:
-            alerted_today.clear()
-            momentum_today.clear()
             last_run_date = current_date
-            print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
-            print("🔧 Reload cache lịch sử cho ngày mới...")
+            print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reload cache lịch sử.")
+            # LƯU Ý: KHÔNG reset alerted_today/momentum_today ở đây. Sang ngày mới
+            # nhưng chưa vào giờ giao dịch thì vẫn chưa có dữ liệu phiên mới — danh
+            # sách tín hiệu của phiên gần nhất (signal_session_date) vẫn cần giữ
+            # nguyên để hiển thị. Việc reset chỉ diễn ra khi phiên giao dịch mới
+            # THỰC SỰ bắt đầu — xem đoạn kiểm tra signal_session_date bên dưới.
             build_history_cache(symbols_to_cache, current_date)
-            # Cache vừa reset cho phiên mới → warm lại HEALTH ngay, tránh 30 phút
+            # Cache vừa reload cho ngày mới → warm lại HEALTH ngay, tránh 30 phút
             # đầu ngày dashboard hiển thị HEALTH tính trên dữ liệu của phiên hôm trước.
             warm_market_health_cache()
 
@@ -2684,9 +2736,23 @@ while True:
                 check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
 
             next_open = _next_trading_session_label(now_time)
-            print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
+            if signal_session_date < current_date:
+                print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. "
+                      f"Đang hiển thị dữ liệu phiên {signal_session_date.strftime('%d/%m/%Y')} (chưa có phiên mới). Listener + Dashboard vẫn chạy.")
+            else:
+                print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
             time.sleep(SCAN_INTERVAL_SEC)
             continue
+
+        # ── PHIÊN GIAO DỊCH MỚI THỰC SỰ BẮT ĐẦU ─────────────────────────────
+        # Chỉ tới đây (đã qua ngày mới VÀ đang trong giờ giao dịch, tức có dữ liệu
+        # phiên mới) mới reset danh sách tín hiệu đã gửi + lưu lại trạng thái mới.
+        if current_date > signal_session_date:
+            alerted_today.clear()
+            momentum_today.clear()
+            signal_session_date = current_date
+            _save_signal_state(alerted_today, momentum_today, signal_session_date)
+            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi.")
 
         # Trong giờ giao dịch: KHÔNG chạy check_and_rebuild_cache_if_stale ở đây nữa
         # (rebuild toàn bộ có thể tốn 45s-vài phút, làm chậm/nghẽn chu kỳ quét tín hiệu).
@@ -2712,6 +2778,10 @@ while True:
             print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
         else:
             print(f"[{ts}] Không có tín hiệu mới.")
+        # Lưu lại xuống đĩa sau MỖI chu kỳ quét (không chỉ khi có tín hiệu mới) vì
+        # momentum_today được tính lại toàn bộ mỗi chu kỳ — cần đồng bộ liên tục để
+        # khi restart giữa/ngoài phiên vẫn khôi phục được bảng "Động lượng" gần nhất.
+        _save_signal_state(alerted_today, momentum_today, signal_session_date)
         if triggered_alerts:
             print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
 
