@@ -25,6 +25,7 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 _get_alerted_today = None
 _get_momentum_today = None
+_get_signal_session_date = None
 _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
@@ -103,6 +104,11 @@ JOURNAL_ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
 _journal_lock = threading.Lock()
 _price_alert_lock = threading.Lock()
 
+# NGUỒN DUY NHẤT cho cấu hình nhóm ngành heatmap — dùng chung cho cả dashboard
+# (sidebar JS, qua __HMAP_COLS_CONFIG__) VÀ scanner_full.py (vẽ ảnh heatmap PNG,
+# tự suy ra HEATMAP_COLUMNS từ đây — xem `from dashboard_server import ...
+# HMAP_COLS_CONFIG` ở scanner_full.py). Thêm/bớt mã hay đổi tên nhóm: chỉ sửa
+# ở đây, cả 2 nơi tự động đồng bộ theo.
 HMAP_COLS_CONFIG = [
     {"groups": [{"name": "VN30", "syms": ["FPT", "GAS", "NVL", "VNM", "VCB", "PLX", "TCB", "MWG", "STB", "HPG", "PNJ", "BID", "CTG", "HDB", "VJC", "VPB", "KDH", "MBB", "VHM", "POW", "VRE", "MSN", "SSI", "ACB", "BVH", "GVR", "TPB"]}]},
     {"groups": [{"name": "NGÂN HÀNG", "syms": ["VCB", "BID", "CTG", "MBB", "ACB", "TCB", "TPB", "HDB", "SHB", "STB", "VIB", "VPB", "MSB", "ABB", "BVB", "LPB"]}, {"name": "DẦU KHÍ", "syms": ["GAS", "PVD", "PVS", "BSR", "OIL", "PVB", "PVC", "PLX", "PET", "PVT"]}]},
@@ -113,7 +119,13 @@ HMAP_COLS_CONFIG = [
     {"groups": [{"name": "ĐẦU TƯ CÔNG", "syms": ["FCN", "HHV", "LCG", "VCG", "C4G", "CTD", "HBC", "HSG", "NKG", "HPG", "KSB", "PLC"]}]},
 ]
 
-TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BFC", "BID", "BMI", "BSR", "BVB", "BVH", "BWE", "CII", "CKG", "CRE", "CTD", "CTG", "CTI", "CTR", "CTS", "D2D", "DBC", "DCM", "DSE", "DGW", "DIG", "DPG", "DPM", "DRC", "DRH", "DXG", "FCN", "FMC", "FPT", "FRT", "FTS", "GAS", "GEG", "GEX", "GMD", "GVR", "HAG", "HAX", "HBC", "HCM", "HDB", "HDC", "VCK", "HDG", "HNG", "HPG", "HSG", "HTN", "HVN", "IDC", "IJC", "KBC", "KDH", "KSB", "LCG", "LDG", "LPB", "LTG", "MBB", "MBS", "MSB", "MSN", "MWG", "NKG", "NLG", "NTL", "NVL", "PC1", "PDR", "PET", "PHR", "PLC", "PLX", "PNJ", "POW", "PTB", "PVD", "PVS", "PVT", "QNS", "REE", "SBT", "SCR", "SHB", "SHS", "SSI", "STB", "SZC", "TCB", "TDM", "TIG", "TNG", "TPB", "TV2", "VCB", "VCI", "VCS", "VGT", "VHC", "VHM", "VIB", "VIC", "VJC", "VNM", "VPB", "VRE"]
+# NGUỒN DUY NHẤT cho "danh sách mã Trading" — dùng chung cho cả dashboard (hiển thị
+# sidebar/heatmap) VÀ scanner_full.py (fetch giá qua price_board). scanner_full.py
+# import trực tiếp biến này (xem `from dashboard_server import ... TS_POOL_CONFIG`)
+# thay vì tự khai báo một bản sao — để KHÔNG BAO GIỜ bị lệch 2 danh sách như trước
+# (BAF/BMI/LCG từng bị thiếu bên fetch giá, khiến cột Trading hiện "--").
+# Thêm/bớt mã: chỉ sửa ở đây, cả 2 nơi tự động đồng bộ theo.
+TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BFC", "BID", "BMI", "BSR", "BVB", "BVH", "BWE", "BAF", "CII", "CKG", "CRE", "CTD", "CTG", "CTI", "CTR", "CTS", "ORS", "D2D", "DBC", "DCM", "DSE", "DGW", "DIG", "DPG", "DPM", "DRC", "DRH", "DXG", "FCN", "FPT", "FRT", "FTS", "GAS", "GEG", "GEX", "GMD", "GVR", "HAG", "HAX", "HBC", "HCM", "HDB", "HDC", "VCK", "HDG", "HNG", "HPG", "HSG", "HTN", "HVN", "IDC", "IJC", "KBC", "KDH", "KSB", "LCG", "LDG", "LPB", "LTG", "MBB", "MBS", "MSB", "MSN", "MWG", "NKG", "NLG", "NTL", "NVL", "PC1", "PDR", "PET", "PHR", "PLC", "PLX", "PNJ", "POW", "PTB", "PVD", "PVS", "PVT", "QNS", "REE", "SBT", "SCR", "SHB", "SHS", "SSI", "STB", "SZC", "TCB", "TDM", "TIG", "TNG", "TPB", "TV2", "VCB", "VCI", "VCS", "VGT", "VHC", "VHM", "VIB", "VIC", "VJC", "VNM", "VPB", "VRE"]
 
 
 def _now_vn_iso():
@@ -465,6 +477,9 @@ def _serve_chart_images(symbol, fetch_fn, cache_key, label):
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     momentum = _get_momentum_today() if _get_momentum_today else {}
+    session_date = _get_signal_session_date() if _get_signal_session_date else None
+    today_vn = datetime.now(TZ_VN).date()
+    session_stale = bool(session_date) and session_date != today_vn
     result = []
     for sym, entry in alerted.items():
         sig = entry["signal"] if isinstance(entry, dict) else entry
@@ -491,6 +506,8 @@ def api_signals():
         "momentum": momentum_result,
         "momentum_count": len(momentum_result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
+        "session_date": session_date.strftime("%d/%m/%Y") if session_date else None,
+        "session_stale": session_stale,
     })
 
 @app.route("/api/heatmap")
@@ -1032,11 +1049,13 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_chart_fn=None, fetch_chart_15m_fn=None,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
-                    momentum_today_ref=None, fetch_market_health_fn=None, port=8888):
-    global _get_alerted_today, _get_momentum_today, _get_history_cache, _cache_lock
+                    momentum_today_ref=None, fetch_market_health_fn=None,
+                    signal_session_date_ref=None, port=8888):
+    global _get_alerted_today, _get_momentum_today, _get_signal_session_date, _get_history_cache, _cache_lock
     global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
+    _get_signal_session_date = signal_session_date_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
@@ -1765,10 +1784,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.lite-chart-panel.collapsed .lite-chart-search-wrap,
-.lite-chart-panel.collapsed .lite-tf-tabs,
-.lite-chart-panel.collapsed .lite-indicators,
-.lite-chart-panel.collapsed .lite-draw-toolbar,
+.lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
 /* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
 body.chart-popout-mode>header,
@@ -1778,8 +1794,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none}
-.hmap-panel.collapsed .hmap-hdr-row1 #hover-preview-btn{display:none}
+.hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none!important}
 .hmap-panel.collapsed .hmap-ts-wrap{display:none}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.pbar-wrap,
@@ -1827,12 +1842,54 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-ind-group.open .lite-ind-dropdown{display:flex}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
-.lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
-.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none}
+#lite-vietstock-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
+#lite-vietstock-toggle-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
+.lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
+.lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
+.lite-groups-sidebar.on~.lite-vietstock-iframe{left:180px;width:calc(100% - 180px)}
+.lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
+.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:5px;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal.on{display:flex}
+/* Khi sidebar nhóm ngành mở, dịch title/tín hiệu sang phải để không bị cột che mất */
+.lite-groups-sidebar.on+.lite-chart-title,
+.lite-groups-sidebar.on~.lite-chart-signal{left:192px}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
+/* Sidebar nhóm ngành / mã (overlay bên trái CHART) — không đụng layout/resize chart */
+.lite-groups-sidebar{position:absolute;top:0;left:0;bottom:0;width:180px;background:rgba(255,255,255,.98);border-right:1px solid var(--border);z-index:9;display:none;flex-direction:column;box-shadow:2px 0 14px rgba(17,24,39,.12)}
+.lite-groups-sidebar.on{display:flex}
+.lg-toolbar{display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);background:#f8fafc;flex-shrink:0}
+.lg-toolbar-title{font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--muted)}
+.lg-sort-btn{height:22px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
+.lg-sort-btn:hover{color:var(--accent);border-color:var(--accent)}
+.lg-ghdr .lg-sort-btn{height:18px;padding:0 6px;font-size:9.5px}
+.lite-groups-list{flex:1;overflow-y:auto;scrollbar-width:thin}
+.lg-group{border-bottom:1px solid var(--border)}
+.lg-ghdr{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:7px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text);user-select:none;background:#f8fafc}
+.lg-ghdr:hover{color:var(--accent)}
+.lg-ghdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.lg-add-btn{width:16px;height:16px;line-height:14px;text-align:center;padding:0;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--accent);font-size:12px;font-weight:800;cursor:pointer}
+.lg-add-btn:hover{background:#eef3ff;border-color:var(--accent)}
+.lg-caret{font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.lg-group.open .lg-caret{transform:rotate(90deg)}
+.lg-symlist{display:flex;flex-direction:column}
+.lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
+.lg-sym-item:hover{background:#eef3ff}
+.lg-sym-item.on{background:#dbe8ff}
+.lg-sym-item.dragging{opacity:.35}
+.lg-sym-item.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
+.lg-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
+.lg-star.on{color:#f59e0b}
+.lg-sym-name{width:36px;flex-shrink:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg-sym-pct{width:40px;flex-shrink:0;text-align:right}
+.lg-sym-price{width:48px;flex-shrink:0;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lg-empty-hint{padding:14px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-align:center}
+/* Khu vực FOLLOW bên trong FAVORITE: nền xanh mờ nhạt hơn màu nền header, để phân khai rõ với khu vực Favorite thường */
+.lg-sym-item.lg-follow{background:#f5f8fd}
+.lg-sym-item.lg-follow:hover{background:#eaf1fd}
+.lg-sym-item.lg-follow.on{background:#dbe8ff}
+.lg-sym-item.lg-follow+.lg-sym-item:not(.lg-follow){border-top:1px solid var(--border)}
 .lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
 .lite-chart-status.on{opacity:1}
 .lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
@@ -1967,15 +2024,17 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hv-gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hv-gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .hv-body{display:flex;flex:1;overflow:hidden}
-.hv-symlist{width:120px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.hv-symlist{width:190px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .hv-symlist::-webkit-scrollbar{width:3px}
 .hv-symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.hv-sym-item{display:grid;grid-template-columns:35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:2px}
+.hv-sym-item{display:grid;grid-template-columns:18px 40px 44px 1fr;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .1s;gap:4px}
 .hv-sym-item:hover,.hv-sym-item.on{background:#e8effd}
 .hv-sym-item.on .hv-sym-name{color:#0f3fb3;font-weight:800}
-.hv-sym-name{font-family:var(--font-mono);font-size:11px;font-weight:700}
-.hv-sym-pct{font-family:var(--font-mono);font-size:10px;text-align:right;font-weight:700}
-.hv-sym-price{font-family:var(--font-mono);font-size:10px;text-align:right;color:#374151}
+.hv-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}
+.hv-star.on{color:#f59e0b}
+.hv-sym-name{font-family:var(--font-mono);font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hv-sym-pct{font-family:var(--font-mono);font-size:10px;text-align:right;font-weight:700;white-space:nowrap}
+.hv-sym-price{font-family:var(--font-mono);font-size:10px;text-align:right;color:#374151;white-space:nowrap}
 #hover-preview-iframe-wrap{flex:1;overflow:hidden;position:relative}
 #hover-preview-iframe-wrap iframe{width:100%;height:100%;border:none;display:block}
 .hv-ctrl{height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-family:var(--font-mono);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;white-space:nowrap;flex-shrink:0}
@@ -2337,11 +2396,13 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   <div class="panel lite-chart-panel collapsed" id="lite-chart-panel">
     <div class="panel-hdr" id="lite-chart-toggle">
       <div class="lite-chart-toolbar">
-        <span class="panel-title">CHART</span>
+        <span class="panel-title" id="lite-chart-title-label" title="Bấm để quay lại chart tự vẽ mặc định">CHART</span>
         <div class="lite-chart-search-wrap">
           <span class="s-icon">🔍</span>
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
         </div>
+        <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
+        <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
@@ -2488,6 +2549,12 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <span class="lite-chart-toggle-icon">▶</span>
     </div>
     <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
+      <div class="lite-groups-sidebar" id="lite-groups-sidebar">
+        <div class="lg-toolbar">
+          <span class="lg-toolbar-title">NHÓM NGÀNH</span>
+        </div>
+        <div class="lite-groups-list" id="lite-groups-list"></div>
+      </div>
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
       <span class="lite-chart-signal" id="lite-chart-signal"></span>
       <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
@@ -2536,6 +2603,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div id="lite-rsi-chart"></div>
       <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
       <div id="lite-macd-chart"></div>
+      <iframe id="lite-vietstock-iframe" class="lite-vietstock-iframe" src="about:blank" title="Vietstock chart"></iframe>
       <div class="lite-xhair-v" id="lite-xhair-v"></div>
       <div class="lite-xhair-h" id="lite-xhair-h"></div>
       <div class="lite-xhair-price" id="lite-xhair-price"></div>
@@ -2757,6 +2825,8 @@ const DOM={
   sankeyWrap:$('sankey-wrap'),sankeyCopyBtn:$('sankey-copy-btn'),
   treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),treemapCopyBtn:$('treemap-copy-btn'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
+  liteChartTitleLabel:$('lite-chart-title-label'),
+  liteVietstockToggleBtn:$('lite-vietstock-toggle-btn'),liteVietstockIframe:$('lite-vietstock-iframe'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
   liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
@@ -2821,6 +2891,8 @@ const DOM={
   lb:$('mob-lightbox'),lbStrip:$('lb-strip'),
   lbLabel:$('mob-lightbox-label'),lbCounter:$('mob-lightbox-counter'),
   lbZoomHint:$('lb-zoom-hint'),
+  lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
+  lgList:$('lite-groups-list'),
 };
 // ═══════════════════════════════════════════════════════
 // HELPERS
@@ -2846,6 +2918,7 @@ const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
 // SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
+let _momentumTodayMap=new Map();
 let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -2882,6 +2955,7 @@ function editFollowSymbols(){
   if(raw===null)return false;
   FOLLOW_ON=true;
   saveFollowSymbols(parseFollowSymbols(raw));
+  if(typeof _lgSyncFollowIntoFavorites==='function')_lgSyncFollowIntoFavorites();
   renderHeatmap(window._lastHmapData||{});
   return true;
 }
@@ -5107,6 +5181,7 @@ function showLiteChartStatus(status){
 }
 async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
+  _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
   if(DOM.liteChartInput)DOM.liteChartInput.value='';
@@ -5559,11 +5634,11 @@ function _healthRenderWindow(){
     const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
     // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải),
     // giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
-    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Mono, monospace" font-size="${fs}" font-weight="700">${b.label}</text>`;
+    return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Sans, sans-serif" font-size="${fs}" font-weight="700">${b.label}</text>`;
   }).join('');
   // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi
   // ngưỡng phân vùng màu ở trên — hai việc khác nhau.
-  const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${v}</text>`).join('');
+  const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Sans, sans-serif" font-size="${fs}">${v}</text>`).join('');
   const lineW=(1.75*scale).toFixed(2); // HEALTH và VNINDEX dùng chung độ dày nét
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
   // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
@@ -5590,7 +5665,7 @@ function _healthRenderWindow(){
   const tickIdxs=[...new Set(tickCount<=1?[0]:Array.from({length:tickCount},(_,k)=>Math.round(k*(h.length-1)/(tickCount-1))))];
   const xLabels=tickIdxs.map(i=>{
     const anchor=i===0?'start':(i===h.length-1?'end':'middle');
-    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Mono, monospace" font-size="${fs}">${healthAxisDate(h[i].date)}</text>`;
+    return `<text x="${x(i)}" y="${H-10}" text-anchor="${anchor}" fill="#64748b" font-family="IBM Plex Sans, sans-serif" font-size="${fs}">${healthAxisDate(h[i].date)}</text>`;
   }).join('');
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
@@ -5855,8 +5930,6 @@ async function copyHealthImage(btn){
         tx+=tw+pillGap;
       });
     }
-    const tagRows=tagLayout.length?tagLayout[tagLayout.length-1].row+1:0;
-    const tagsH=tagRows?tagRows*pillH+(tagRows-1)*pillRowGap:0;
 
     // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài
     // khớp .health-body{padding:12px 14px}.
@@ -6452,7 +6525,7 @@ DOM.liteChartToggle.addEventListener('click',e=>{
   // vẫn phải bấm được bình thường — chỉ coi là "bấm vào thẻ để thu/mở" khi không bấm
   // trúng các vùng control đó. Khi thẻ đang thu gọn thì các vùng đó đã ẩn (display:none)
   // nên toàn bộ header luôn hoạt động như nút mở ra, giống hệt SANKEY.
-  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar'))return;
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
@@ -6488,12 +6561,15 @@ async function loadConfig(){
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
-    DOM.sigMeta.textContent=`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
+    DOM.sigMeta.textContent=j.session_stale&&j.session_date
+      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`
+      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
     // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung
     // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
     const momentum=j.momentum||[];
+    _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
     if(!momentum.length){
       DOM.momentumList.innerHTML='';
     }else{
@@ -6505,6 +6581,7 @@ async function fetchSigs(){
     }
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></div>`).join('');
+    if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
   }catch(e){console.error('fetchSigs:',e);}
 }
 async function fetchHmap(){
@@ -6517,6 +6594,7 @@ async function fetchHmap(){
     renderSankey(j.data||{});
     renderTreemap(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
+    if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
     if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
       _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
   }catch(e){console.error('fetchHmap:',e);}
@@ -7164,42 +7242,290 @@ const _hvGroups=[];
   _hvGroups.push({name:'VN30',syms:HMAP_COLS[0].groups[0].syms});
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')_hvGroups.push({name:g.name,syms:g.syms});}));
 })();
+// ═══════════════════════════════════════════════════════
+// Helper dùng chung giữa cột NHÓM NGÀNH (CHART) và HOVER PREVIEW (HEATMAP) —
+// cả hai đều đọc từ window._lastHmapData nên gộp vào 1 chỗ, tránh phải sửa
+// nhiều nơi khi đổi công thức định dạng %/màu hoặc thứ tự sort.
+// ═══════════════════════════════════════════════════════
+function _symDisplayFields(sym,data){
+  const entry=(data||window._lastHmapData||{})[sym];
+  const pct=entry&&typeof entry.pct==='number'?entry.pct:null;
+  const price=entry&&typeof entry.price==='number'?fmtP(entry.price):'—';
+  const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
+  const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
+  return{pct,price,pctStr,color};
+}
+function _sortSymsByMode(syms,alpha){
+  if(alpha)return[...syms].sort((a,b)=>a.localeCompare(b));
+  const d=window._lastHmapData||{};
+  return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+}
+// ═══════════════════════════════════════════════════════
+// CHART — SIDEBAR NHÓM NGÀNH / FAVORITE (overlay, không đụng logic vẽ chart)
+// ═══════════════════════════════════════════════════════
+const LG_FAVORITE_KEY='dashboard_favorite_symbols';
+let LG_FAVORITES=_lgLoadFavorites();
+function _lgLoadFavorites(){
+  try{return JSON.parse(localStorage.getItem(LG_FAVORITE_KEY)||'[]').filter(Boolean).map(s=>String(s).toUpperCase());}catch(e){return[];}
+}
+function _lgSaveFavorites(){try{localStorage.setItem(LG_FAVORITE_KEY,JSON.stringify(LG_FAVORITES));}catch(e){}}
+// Đẩy các mã đang có trong FOLLOW lên đầu, giữ nguyên thứ tự tương đối còn lại
+function _lgFollowFirstOrder(syms){
+  const inFollow=syms.filter(s=>FOLLOW.includes(s));
+  const rest=syms.filter(s=>!FOLLOW.includes(s));
+  return [...inFollow,...rest];
+}
+// Chèn 1 mã mới vào LG_FAVORITES đúng vị trí: mã thuộc FOLLOW → chèn vào cuối khối Follow
+// (khối này luôn nằm ở đầu danh sách); mã không thuộc FOLLOW → thêm xuống cuối danh sách.
+// Dùng chung cho: đồng bộ Follow, bấm sao (★), và nhập nhanh nhiều mã.
+function _lgInsertFavorite(sym){
+  if(FOLLOW.includes(sym)){
+    let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
+    LG_FAVORITES.splice(pos,0,sym);
+  }else{
+    LG_FAVORITES.push(sym);
+  }
+}
+// Danh sách FOLLOW tự động được gắn ⭐ (thêm vào FAVORITE), xếp thành khối ở đầu danh sách.
+// Không tự bỏ sao nếu người dùng gỡ mã khỏi FOLLOW hoặc tự tay bỏ sao trong FAVORITE.
+function _lgSyncFollowIntoFavorites(){
+  let changed=false;
+  FOLLOW.forEach(sym=>{
+    if(!LG_FAVORITES.includes(sym)){_lgInsertFavorite(sym);changed=true;}
+  });
+  const reordered=_lgFollowFirstOrder(LG_FAVORITES);
+  if(reordered.join(',')!==LG_FAVORITES.join(',')){LG_FAVORITES=reordered;changed=true;}
+  if(changed){_lgSaveFavorites();if(DOM.lgList)_lgRenderList();}
+}
+_lgSyncFollowIntoFavorites();
+function _lgToggleFavorite(sym){
+  sym=String(sym||'').toUpperCase();if(!sym)return;
+  const i=LG_FAVORITES.indexOf(sym);
+  if(i===-1)_lgInsertFavorite(sym);
+  else LG_FAVORITES.splice(i,1);
+  _lgSaveFavorites();_lgRenderList();
+  _broadcastFavorites();
+}
+// Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ, và sang cửa sổ POP-OUT
+// (cửa sổ riêng, không dùng chung localStorage nên phải gửi qua postMessage).
+function _broadcastFavorites(){
+  if(_hoverPreviewOn){_hvBuildTabs();if(_hvActiveGroup!==-1)_hvRenderSymList();}
+  if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'SYNC_FAVORITES',favorites:LG_FAVORITES},'*');
+}
+function _lgReorderFavorite(dragSym,targetSym){
+  // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường —
+  // hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
+  if(FOLLOW.includes(dragSym)!==FOLLOW.includes(targetSym))return;
+  const from=LG_FAVORITES.indexOf(dragSym);if(from===-1)return;
+  LG_FAVORITES.splice(from,1);
+  let to=LG_FAVORITES.indexOf(targetSym);if(to===-1)to=LG_FAVORITES.length;
+  LG_FAVORITES.splice(to,0,dragSym);
+  _lgSaveFavorites();_lgRenderList();
+}
+let _lgSortAlpha=false,_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
+function _lgGetGroups(){
+  return [
+    {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
+    {name:'SIGNAL',syms:[..._sigTodayMap.keys()]},
+    {name:'MOMENTUM',syms:[..._momentumTodayMap.keys()]},
+    ..._hvGroups
+  ];
+}
+function _lgSortSyms(syms){
+  return _sortSymsByMode(syms,_lgSortAlpha);
+}
+function _lgSymRow(sym,draggable){
+  const{price,pctStr,color}=_symDisplayFields(sym);
+  const starred=LG_FAVORITES.includes(sym);
+  const isFollow=FOLLOW.includes(sym);
+  return `<div class="lg-sym-item${sym===_lgActiveSym?' on':''}${isFollow?' lg-follow':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
+    +`<span class="lg-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
+    +`<span class="lg-sym-name">${sym}</span>`
+    +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
+    +`<span class="lg-sym-price">${price}</span></div>`;
+}
+function _lgRenderList(){
+  if(!DOM.lgList)return;
+  const groups=_lgGetGroups();
+  DOM.lgList.innerHTML=groups.map(g=>{
+    const open=g.name===_lgActiveGroupName;
+    let body='';
+    if(open){
+      if(!g.syms.length)body='<div class="lg-empty-hint">Chưa có mã nào</div>';
+      // FAVORITE: giữ nguyên thứ tự lưu (Follow đã ở đầu, mã mới thêm ở cuối, có thể kéo-thả) — không sort
+      else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms)).map(s=>_lgSymRow(s,!!g.isFavorite)).join('');
+    }
+    const addBtn=(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':'';
+    // Nút sắp xếp đặt ngay sau tên nhóm khi nhóm đó đang mở (trừ FAVORITE, vốn giữ thứ tự thủ công)
+    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle title="Đổi kiểu sắp xếp">${_lgSortAlpha?'A↕Z':'%↕'}</button>`:'';
+    return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
+      +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
+      +`<div class="lg-symlist">${body}</div></div>`;
+  }).join('');
+}
+function _lgQuickAddFavorites(){
+  const raw=prompt('Nhập các mã muốn thêm vào FAVORITE, cách nhau bằng dấu phẩy hoặc khoảng trắng:','');
+  if(raw===null)return;
+  const syms=parseFollowSymbols(raw); // dùng chung parser với ô nhập FOLLOW (viết hoa, tách theo ký tự không phải chữ/số)
+  if(!syms.length)return;
+  let changed=false;
+  syms.forEach(sym=>{
+    if(LG_FAVORITES.includes(sym))return;
+    _lgInsertFavorite(sym);
+    changed=true;
+  });
+  if(changed){_lgSaveFavorites();_lgRenderList();}
+}
+DOM.lgToggleBtn?.addEventListener('click',e=>{
+  e.stopPropagation();
+  DOM.lgSidebar.classList.toggle('on');
+  if(DOM.lgSidebar.classList.contains('on')){
+    _lgActiveSym=_liteSymbol||_lgActiveSym;
+    if(!_lgActiveGroupName)_lgActiveGroupName='FAVORITE';
+    _lgRenderList();
+  }
+});
+// Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để
+// luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
+function _updateVietstockIframeIfActive(sym){
+  if(!DOM.liteChartFrame.classList.contains('vietstock-mode'))return;
+  DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(sym||_liteSymbol||'VNINDEX').toLowerCase();
+}
+function _setVietstockMode(on){
+  DOM.liteChartFrame.classList.toggle('vietstock-mode',on);
+  DOM.liteVietstockToggleBtn.classList.toggle('on',on);
+  if(on)_updateVietstockIframeIfActive();
+  else DOM.liteVietstockIframe.src='about:blank';
+}
+DOM.liteVietstockToggleBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  _setVietstockMode(!DOM.liteChartFrame.classList.contains('vietstock-mode'));
+});
+DOM.liteChartTitleLabel.addEventListener('click',e=>{
+  e.stopPropagation();
+  _setVietstockMode(false);
+});
+DOM.lgList?.addEventListener('click',e=>{
+  const star=e.target.closest('.lg-star');
+  if(star){_lgToggleFavorite(star.dataset.star);return;}
+  const addBtn=e.target.closest('[data-add-fav]');
+  if(addBtn){e.stopPropagation();_lgQuickAddFavorites();return;}
+  const sortBtn=e.target.closest('[data-sort-toggle]');
+  if(sortBtn){e.stopPropagation();_lgSortAlpha=!_lgSortAlpha;_lgRenderList();return;}
+  const hdr=e.target.closest('.lg-ghdr');
+  if(hdr){_lgActiveGroupName=(_lgActiveGroupName===hdr.dataset.ghdr)?null:hdr.dataset.ghdr;_lgRenderList();return;}
+  const item=e.target.closest('.lg-sym-item');
+  if(item){
+    _lgActiveSym=item.dataset.sym;
+    loadLiteChart(_lgActiveSym);
+    DOM.lgList.querySelectorAll('.lg-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===_lgActiveSym));
+  }
+});
+// Kéo-thả để tự sắp xếp thứ tự trong FAVORITE (chỉ áp dụng cho các dòng có draggable="true")
+DOM.lgList?.addEventListener('dragstart',e=>{
+  const item=e.target.closest('.lg-sym-item[draggable="true"]');
+  if(!item){e.preventDefault();return;}
+  _lgDragSym=item.dataset.sym;
+  item.classList.add('dragging');
+  try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',_lgDragSym);}catch(err){}
+});
+DOM.lgList?.addEventListener('dragend',e=>{
+  const item=e.target.closest('.lg-sym-item');
+  if(item)item.classList.remove('dragging');
+  if(_lgDragOverEl){_lgDragOverEl.classList.remove('drag-over');_lgDragOverEl=null;}
+  _lgDragSym=null;
+});
+DOM.lgList?.addEventListener('dragover',e=>{
+  if(!_lgDragSym)return;
+  const item=e.target.closest('.lg-sym-item[draggable="true"]');
+  if(!item||item.dataset.sym===_lgDragSym)return;
+  if(FOLLOW.includes(_lgDragSym)!==FOLLOW.includes(item.dataset.sym))return;
+  e.preventDefault();
+  try{e.dataTransfer.dropEffect='move';}catch(err){}
+  if(_lgDragOverEl&&_lgDragOverEl!==item)_lgDragOverEl.classList.remove('drag-over');
+  item.classList.add('drag-over');
+  _lgDragOverEl=item;
+});
+DOM.lgList?.addEventListener('drop',e=>{
+  if(!_lgDragSym)return;
+  const item=e.target.closest('.lg-sym-item[draggable="true"]');
+  if(!item){return;}
+  e.preventDefault();
+  item.classList.remove('drag-over');
+  if(_lgDragOverEl===item)_lgDragOverEl=null;
+  const targetSym=item.dataset.sym;
+  if(targetSym!==_lgDragSym)_lgReorderFavorite(_lgDragSym,targetSym);
+});
+// Điều hướng phím lên/xuống trong nhóm đang mở — giống hệt hành vi ở POP-OUT
+let _lgKeyThrottle=false,_lgKeyLoadTimer=null;
+document.addEventListener('keydown',e=>{
+  if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on')||!_lgActiveGroupName)return;
+  if(document.activeElement&&['INPUT','TEXTAREA'].includes(document.activeElement.tagName))return;
+  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
+  if(DOM.overlay&&DOM.overlay.classList.contains('on'))return;
+  e.preventDefault();
+  if(_lgKeyThrottle)return;_lgKeyThrottle=true;setTimeout(()=>{_lgKeyThrottle=false;},60);
+  const items=[...DOM.lgList.querySelectorAll('.lg-group.open .lg-sym-item')];
+  if(!items.length)return;
+  let cur=items.findIndex(el=>el.dataset.sym===_lgActiveSym);
+  let next=cur===-1?0:(e.key==='ArrowDown'?cur+1:cur-1);
+  next=Math.max(0,Math.min(next,items.length-1));
+  if(next===cur&&cur!==-1)return;
+  _lgActiveSym=items[next].dataset.sym;
+  items.forEach((el,i)=>el.classList.toggle('on',i===next));
+  const el=items[next],relTop=el.offsetTop-DOM.lgList.offsetTop,h=el.offsetHeight;
+  if(relTop-h<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h);
+  else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
+  // Debounce load giống POP-OUT (_kd, 300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại,
+  // không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
+  clearTimeout(_lgKeyLoadTimer);
+  _lgKeyLoadTimer=setTimeout(()=>loadLiteChart(_lgActiveSym),300);
+});
+// Click ra ngoài khu vực sidebar (ví dụ vào khung chart) sau khi đã lướt mã bằng phím lên/xuống:
+// bỏ nền xanh (bỏ focus) khỏi ô mã cuối cùng đang được tô trong cột danh sách.
+document.addEventListener('click',e=>{
+  if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
+  if(DOM.lgSidebar.contains(e.target))return;
+  DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
+});
+// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, TRADING, VN30, nhóm ngành...)
+// để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
 function _hvBuildTabs(){
-  DOM.hpGrouptabs.innerHTML=_hvGroups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}</button>`).join('');
+  const groups=_lgGetGroups();
+  DOM.hpGrouptabs.innerHTML=groups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</button>`).join('');
 }
 DOM.hpGrouptabs.addEventListener('click',e=>{const btn=e.target.closest('.hv-gtab');if(btn)_hvSelectGroup(+btn.dataset.idx);});
 function _hvSelectGroup(idx){
   if(_hvActiveGroup===idx){_hvActiveGroup=-1;DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach(b=>b.classList.remove('on'));DOM.hpSymlist.style.display='none';DOM.hpSortBtn.style.display='none';return;}
   _hvActiveGroup=idx;
   DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===idx));
-  DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
-}
-function _hvGetSorted(){
-  const g=_hvGroups[_hvActiveGroup];if(!g)return[];
-  const d=window._lastHmapData||{};
-  if(_hvSortAlpha)return[...g.syms].sort((a,b)=>a.localeCompare(b));
-  return[...g.syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+  DOM.hpSymlist.style.display='';_hvRenderSymList();
 }
 DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
+// Vẽ lại danh sách mã của nhóm đang mở, đồng thời tự ẩn/hiện nút sort (FAVORITE giữ thứ tự
+// thủ công nên không cho sort) — gộp về đây để mọi nơi gọi hàm này (mở nhóm, đổi sort,
+// quay lại từ POP-OUT, đổi Favorite...) đều nhận đúng trạng thái mà không cần lặp lại logic.
 function _hvRenderSymList(){
   if(_hvActiveGroup===-1)return;
-  const d=window._lastHmapData||{};
-  DOM.hpSymlist.innerHTML=_hvGetSorted().map(sym=>{
-    const entry=d[sym],pct=entry&&typeof entry.pct==='number'?entry.pct:null;
-    const price=entry&&typeof entry.price==='number'?fmtP(entry.price):'—';
-    const pctStr=pct!==null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—';
-    const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
-    return`<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}"><span class="hv-sym-name">${sym}</span><span class="hv-sym-pct" style="color:${color}">${pctStr}</span><span class="hv-sym-price">${price}</span></div>`;
+  const g=_lgGetGroups()[_hvActiveGroup];if(!g)return;
+  DOM.hpSortBtn.style.display=g.isFavorite?'none':'';
+  const syms=g.isFavorite?g.syms:_sortSymsByMode(g.syms,_hvSortAlpha);
+  DOM.hpSymlist.innerHTML=syms.map(sym=>{
+    const{price,pctStr,color}=_symDisplayFields(sym);
+    const starred=LG_FAVORITES.includes(sym);
+    return`<div class="hv-sym-item${sym===_hoverPreviewCurrent?' on':''}" data-sym="${sym}">`
+      +`<span class="hv-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
+      +`<span class="hv-sym-name">${sym}</span><span class="hv-sym-pct" style="color:${color}">${pctStr}</span><span class="hv-sym-price">${price}</span></div>`;
   }).join('');
 }
 function _hvPatchSymList(newData){
   if(_hvActiveGroup===-1)return;
   DOM.hpSymlist.querySelectorAll('.hv-sym-item').forEach(el=>{
-    const sym=el.dataset.sym,d=newData[sym];if(!d)return;
-    const pct=typeof d.pct==='number'?d.pct:null;
+    const sym=el.dataset.sym;if(!newData[sym])return;
+    const{pct,price,pctStr,color}=_symDisplayFields(sym,newData);
     const pEl=el.querySelector('.hv-sym-pct'),prEl=el.querySelector('.hv-sym-price');
-    if(pEl&&pct!==null){pEl.textContent=(pct>=0?'+':'')+pct.toFixed(1)+'%';pEl.style.color=pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';}
-    if(prEl&&typeof d.price==='number')prEl.textContent=fmtP(d.price);
+    if(pEl&&pct!==null){pEl.textContent=pctStr;pEl.style.color=color;}
+    if(prEl&&typeof newData[sym].price==='number')prEl.textContent=price;
   });
 }
 function _syncHoverPreview(sym,updateFrame=true){
@@ -7209,6 +7535,8 @@ function _syncHoverPreview(sym,updateFrame=true){
   if(updateFrame)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+sym.toLowerCase();
 }
 DOM.hpSymlist.addEventListener('click',e=>{
+  const star=e.target.closest('.hv-star');
+  if(star){_lgToggleFavorite(star.dataset.star);return;}
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
   _syncHoverPreview(sym);updatePopout(sym);
@@ -7281,8 +7609,9 @@ function popOutHover(){
   const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)closePopoutWindow();}},1000);
 }
 function _buildPopoutHTML(initSym){
-  const gJ=JSON.stringify(_hvGroups.map(g=>({name:g.name,syms:g.syms})));
+  const gJ=JSON.stringify(_lgGetGroups().map(g=>({name:g.name,syms:g.syms,isFavorite:!!g.isFavorite})));
   const dJ=JSON.stringify(window._lastHmapData||{});
+  const favJ=JSON.stringify(LG_FAVORITES);
   const ig=_hvActiveGroup>=0?_hvActiveGroup:0;
   return '<!DOCTYPE html><html><head>'
     +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
@@ -7313,15 +7642,17 @@ function _buildPopoutHTML(initSym){
     +'.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}'
     +'.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}'
     +'#main{display:flex;height:calc(100% - 42px);overflow:hidden}'
-    +'#symlist{width:120px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
+    +'#symlist{width:190px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
     +'#symlist::-webkit-scrollbar{width:3px}'
     +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
-    +'.si{display:grid;grid-template-columns:35px 30px 1fr;align-items:center;padding:5px 6px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:2px}'
+    +'.si{display:grid;grid-template-columns:18px 40px 44px 1fr;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:4px}'
     +'.si:hover,.si.on{background:#dce8ff}'
     +'.si.on .sn{color:#0f3fb3;font-weight:800}'
-    +'.sn{font-size:11px;font-weight:700}'
-    +'.sp{font-size:10px;text-align:right;font-weight:700}'
-    +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600}'
+    +'.star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}'
+    +'.star.on{color:#f59e0b}'
+    +'.sn{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+    +'.sp{font-size:10px;text-align:right;font-weight:700;white-space:nowrap}'
+    +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600;white-space:nowrap}'
     +'.pos{color:var(--green)}.neg{color:var(--red)}.zer{color:#b45309}'
     +'#cw{flex:1;overflow:hidden;position:relative;background:#fff}'
     +'#cf{width:100%;height:100%;border:none;display:block}'
@@ -7348,6 +7679,7 @@ function _buildPopoutHTML(initSym){
     +'var _$=function(id){return document.getElementById(id);};'
     +'var groups='+gJ+';'
     +'var hdata='+dJ+';'
+    +'var favs='+favJ+';'
     +'var ag='+ig+';'
     +'var sa='+(_hvSortAlpha?'true':'false')+';'
     +'var cur="'+initSym+'";'
@@ -7356,17 +7688,21 @@ function _buildPopoutHTML(initSym){
     +'function buildTabs(){'
     +'  var el=_$("gtabs");'
     +'  var html=groups.map(function(g,i){'
-    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+g.name+"</button>";'
+    +'    var lbl=g.name+(g.isFavorite?" ("+favs.length+")":"");'
+    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+lbl+"</button>";'
     +'  }).join("");'
     +'  el.innerHTML=html;'
     +'}'
     +'function selGroup(idx){'
     +'  ag=idx;'
     +'  document.querySelectorAll(".gtab").forEach(function(b,i){b.classList.toggle("on",i===idx);});'
+    +'  var g=groups[idx];'
+    +'  _$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";'
     +'  render();'
     +'}'
     +'function getSorted(){'
     +'  var g=groups[ag];if(!g)return [];'
+    +'  if(g.isFavorite)return favs.slice();'
     +'  if(sa)return g.syms.slice().sort(function(a,b){return a.localeCompare(b);});'
     +'  return g.syms.slice().sort(function(a,b){'
     +'    var pa=hdata[a]?hdata[a].pct||0:-999;'
@@ -7381,7 +7717,10 @@ function _buildPopoutHTML(initSym){
     +'    var pct=d&&typeof d.pct==="number"?d.pct:null;'
     +'    var pctStr=pct!==null?((pct>=0?"+":"")+pct.toFixed(1)+"%"):"--";'
     +'    var cls=pct===null?"zer":pct>0?"pos":pct<0?"neg":"zer";'
-    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'"><span class="sn">\'+sym+"</span>"'
+    +'    var st=favs.indexOf(sym)!==-1;'
+    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'">\''
+    +'      +\'<span class="star\'+(st?" on":"")+\'" data-star="\'+sym+\'" title="Thêm/bỏ khỏi Favorite">\'+(st?"★":"☆")+"</span>"'
+    +'      +\'<span class="sn">\'+sym+"</span>"'
     +'      +\'<span class="sp \'+cls+\'">\'+pctStr+"</span>"'
     +'      +\'<span class="spr">\'+fp(d&&d.price)+"</span></div>";'
     +'  }).join("");'
@@ -7417,6 +7756,14 @@ function _buildPopoutHTML(initSym){
     +'  selGroup(parseInt(b.dataset.idx));'
     +'});'
     +'_$("symlist").addEventListener("click",function(e){'
+    +'  var star=e.target.closest(".star");'
+    +'  if(star){'
+    +'    var sym=star.dataset.star,i=favs.indexOf(sym);'
+    +'    if(i===-1)favs.push(sym);else favs.splice(i,1);'
+    +'    buildTabs();render();'
+    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_TOGGLE_FAVORITE",symbol:sym},"*");'
+    +'    return;'
+    +'  }'
     +'  var item=e.target.closest(".si");if(!item)return;'
     +'  clickSym(item.dataset.sym);'
     +'});'
@@ -7468,10 +7815,11 @@ function _buildPopoutHTML(initSym){
     +'window.addEventListener("message",function(e){'
     +'  if(e.data.type==="UPDATE_CHART"){cur=e.data.symbol;setSym(cur);render();}'
     +'  if(e.data.type==="UPDATE_HEATMAP"){patch(e.data.data||{});}'
+    +'  if(e.data.type==="SYNC_FAVORITES"){favs=e.data.favorites||[];buildTabs();render();}'
     +'  if(e.data.type==="EMBEDDED_FULL_SYMBOL"){cur=(e.data.symbol||cur).toUpperCase();_$("sym").textContent=cur;render();}'
     +'  if(e.data.type==="EMBEDDED_FULL_CLOSE"){full=false;cur=(e.data.symbol||cur).toUpperCase();setSym(cur);render();}'
     +'});'
-    +'buildTabs();render();setSym(cur);'
+    +'buildTabs();(function(){var g=groups[ag];_$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";})();render();setSym(cur);'
     +'<\/script></body></html>';
 }
 
@@ -7483,7 +7831,7 @@ function minimizePopout(){
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
   if(_hvActiveGroup>=0){
     DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===_hvActiveGroup));
-    DOM.hpSortBtn.style.display='';DOM.hpSymlist.style.display='';_hvRenderSymList();
+    DOM.hpSymlist.style.display='';_hvRenderSymList();
   }else _hvSelectGroup(0);
   DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
   if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
@@ -7500,6 +7848,8 @@ function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMess
 window.addEventListener('message',e=>{
   if(e.data.type==='POPOUT_SYM_SELECT'){
     _syncHoverPreview(e.data.symbol);
+  }else if(e.data.type==='POPOUT_TOGGLE_FAVORITE'&&e.data.symbol){
+    _lgToggleFavorite(e.data.symbol);
   }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
