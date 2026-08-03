@@ -5911,8 +5911,6 @@ async function copyHealthImage(btn){
         tx+=tw+pillGap;
       });
     }
-    const tagRows=tagLayout.length?tagLayout[tagLayout.length-1].row+1:0;
-    const tagsH=tagRows?tagRows*pillH+(tagRows-1)*pillRowGap:0;
 
     // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài
     // khớp .health-body{padding:12px 14px}.
