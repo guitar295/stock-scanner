@@ -2493,7 +2493,10 @@ def telegram_listener(stop_event: threading.Event):
                             sig   = v["signal"] if isinstance(v, dict) else v
                             emoji = SIGNAL_EMOJI.get(sig, '📌')
                             buttons.append([{"text": f"{emoji} #{k}: {sig}", "callback_data": f"chart_{k}"}])
-                        reply = "📋 <b>Tín hiệu hôm nay:</b>"
+                        if signal_session_date == datetime.now(TZ_VN).date():
+                            reply = "📋 <b>Tín hiệu hôm nay:</b>"
+                        else:
+                            reply = f"📋 <b>Tín hiệu phiên gần nhất ({signal_session_date.strftime('%d/%m')}):</b>"
                     else:
                         reply   = "📋 Chưa có tín hiệu nào hôm nay."
                         buttons = []
@@ -2561,6 +2564,54 @@ def telegram_listener(stop_event: threading.Event):
     print("🛑 Listener đã dừng.")
 
 # =============================================================================
+# BƯỚC 8D: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
+# =============================================================================
+# Mục đích: alerted_today trước đây chỉ sống trong RAM → mỗi lần restart server
+# giữa ngày/phiên sẽ mất sạch, khiến các mã đã gửi tin nhắn rồi bị coi là "chưa
+# gửi" và bắn lại từ đầu. Giờ ghi xuống đĩa kèm "phiên giao dịch" mà nó thuộc về,
+# để khi restart cùng phiên thì đọc lại và KHÔNG gửi trùng; chỉ thực sự xoá khi
+# một phiên giao dịch MỚI thực sự bắt đầu (xem đoạn reset trong vòng lặp chính).
+SIGNAL_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'signal_state_cache.json')
+_signal_state_lock = threading.Lock()
+
+def _load_signal_state():
+    """
+    Đọc lại alerted_today + momentum_today + ngày phiên giao dịch đã lưu từ lần
+    chạy trước. Trả về (alerted_dict, momentum_dict, session_date). session_date
+    =None nếu chưa từng lưu (lần đầu chạy) hoặc file lỗi — khi đó coi như chưa có
+    gì, sẽ tự đồng bộ lại ngay trong lần khởi tạo bên dưới.
+    """
+    try:
+        with open(SIGNAL_STATE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        session_date_str = data.get('session_date')
+        session_date = datetime.strptime(session_date_str, '%Y-%m-%d').date() if session_date_str else None
+        alerted  = data.get('alerted', {}) or {}
+        momentum = data.get('momentum', {}) or {}
+        print(f"  💾 Đã đọc trạng thái đã lưu: {len(alerted)} tín hiệu, {len(momentum)} động lượng, phiên {session_date_str or '?'}")
+        return alerted, momentum, session_date
+    except FileNotFoundError:
+        return {}, {}, None
+    except Exception as e:
+        print(f"  ⚠️  Lỗi đọc {SIGNAL_STATE_FILE}: {e} → bỏ qua, coi như chưa có dữ liệu lưu.")
+        return {}, {}, None
+
+def _save_signal_state(alerted: dict, momentum: dict, session_date: date):
+    """Ghi đè toàn bộ trạng thái tín hiệu + động lượng của phiên hiện tại xuống đĩa (ghi an toàn qua file tạm)."""
+    try:
+        with _signal_state_lock:
+            tmp_path = SIGNAL_STATE_FILE + '.tmp'
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'session_date': session_date.strftime('%Y-%m-%d') if session_date else None,
+                    'alerted': alerted,
+                    'momentum': momentum,
+                }, f, ensure_ascii=False)
+            os.replace(tmp_path, SIGNAL_STATE_FILE)
+    except Exception as e:
+        print(f"  ⚠️  Lỗi lưu {SIGNAL_STATE_FILE}: {e}")
+
+# =============================================================================
 # BƯỚC 9: KHỞI ĐỘNG
 # =============================================================================
 try:
@@ -2576,9 +2627,14 @@ try:
 except NameError:
     pass
 
-alerted_today = {}
-momentum_today = {}
+alerted_today, momentum_today, signal_session_date = _load_signal_state()
 last_run_date = datetime.now(TZ_VN).date()
+if signal_session_date is None:
+    # Lần đầu chạy (chưa từng có file lưu) → coi phiên hiện tại là "phiên của
+    # alerted_today/momentum_today" (rỗng). Vòng lặp chính bên dưới sẽ tự reset
+    # đúng lúc nếu thời điểm khởi động đã là 1 phiên mới so với lần lưu gần nhất.
+    signal_session_date = last_run_date
+    _save_signal_state(alerted_today, momentum_today, signal_session_date)
 _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
 
 _stop_listener  = threading.Event()
@@ -2612,6 +2668,7 @@ start_dashboard(
     chart_symbol_status_fn = chart_symbol_status,
     momentum_today_ref = lambda: momentum_today,
     fetch_market_health_fn = compute_market_health_index,
+    signal_session_date_ref = lambda: signal_session_date,
     port              = 8888,
 )
 
@@ -2664,13 +2721,15 @@ while True:
             continue
 
         if current_date > last_run_date:
-            alerted_today.clear()
-            momentum_today.clear()
             last_run_date = current_date
-            print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reset tín hiệu.")
-            print("🔧 Reload cache lịch sử cho ngày mới...")
+            print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reload cache lịch sử.")
+            # LƯU Ý: KHÔNG reset alerted_today/momentum_today ở đây. Sang ngày mới
+            # nhưng chưa vào giờ giao dịch thì vẫn chưa có dữ liệu phiên mới — danh
+            # sách tín hiệu của phiên gần nhất (signal_session_date) vẫn cần giữ
+            # nguyên để hiển thị. Việc reset chỉ diễn ra khi phiên giao dịch mới
+            # THỰC SỰ bắt đầu — xem đoạn kiểm tra signal_session_date bên dưới.
             build_history_cache(symbols_to_cache, current_date)
-            # Cache vừa reset cho phiên mới → warm lại HEALTH ngay, tránh 30 phút
+            # Cache vừa reload cho ngày mới → warm lại HEALTH ngay, tránh 30 phút
             # đầu ngày dashboard hiển thị HEALTH tính trên dữ liệu của phiên hôm trước.
             warm_market_health_cache()
 
@@ -2684,9 +2743,23 @@ while True:
                 check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
 
             next_open = _next_trading_session_label(now_time)
-            print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
+            if signal_session_date < current_date:
+                print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. "
+                      f"Đang hiển thị dữ liệu phiên {signal_session_date.strftime('%d/%m/%Y')} (chưa có phiên mới). Listener + Dashboard vẫn chạy.")
+            else:
+                print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
             time.sleep(SCAN_INTERVAL_SEC)
             continue
+
+        # ── PHIÊN GIAO DỊCH MỚI THỰC SỰ BẮT ĐẦU ─────────────────────────────
+        # Chỉ tới đây (đã qua ngày mới VÀ đang trong giờ giao dịch, tức có dữ liệu
+        # phiên mới) mới reset danh sách tín hiệu đã gửi + lưu lại trạng thái mới.
+        if current_date > signal_session_date:
+            alerted_today.clear()
+            momentum_today.clear()
+            signal_session_date = current_date
+            _save_signal_state(alerted_today, momentum_today, signal_session_date)
+            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi.")
 
         # Trong giờ giao dịch: KHÔNG chạy check_and_rebuild_cache_if_stale ở đây nữa
         # (rebuild toàn bộ có thể tốn 45s-vài phút, làm chậm/nghẽn chu kỳ quét tín hiệu).
@@ -2712,6 +2785,10 @@ while True:
             print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
         else:
             print(f"[{ts}] Không có tín hiệu mới.")
+        # Lưu lại xuống đĩa sau MỖI chu kỳ quét (không chỉ khi có tín hiệu mới) vì
+        # momentum_today được tính lại toàn bộ mỗi chu kỳ — cần đồng bộ liên tục để
+        # khi restart giữa/ngoài phiên vẫn khôi phục được bảng "Động lượng" gần nhất.
+        _save_signal_state(alerted_today, momentum_today, signal_session_date)
         if triggered_alerts:
             print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
 
