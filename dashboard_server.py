@@ -1824,6 +1824,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
 #lite-vietstock-toggle-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#lite-vietstock-toggle-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 .lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
 .lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
 .lite-groups-sidebar.on~.lite-vietstock-iframe{left:180px;width:calc(100% - 180px)}
@@ -1857,8 +1858,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
 .lg-sym-item:hover{background:#eef3ff}
 .lg-sym-item.on{background:#dbe8ff}
-.lg-sym-item[draggable="true"]{cursor:grab}
-.lg-sym-item.dragging{opacity:.35}
+.lg-sym-item.dragging{opacity:.35;cursor:grabbing}
 .lg-sym-item.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
 .lg-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
 .lg-star.on{color:#f59e0b}
@@ -7459,6 +7459,13 @@ document.addEventListener('keydown',e=>{
   // không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
   clearTimeout(_lgKeyLoadTimer);
   _lgKeyLoadTimer=setTimeout(()=>loadLiteChart(_lgActiveSym),300);
+});
+// Click ra ngoài khu vực sidebar (ví dụ vào khung chart) sau khi đã lướt mã bằng phím lên/xuống:
+// bỏ nền xanh (bỏ focus) khỏi ô mã cuối cùng đang được tô trong cột danh sách.
+document.addEventListener('click',e=>{
+  if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
+  if(DOM.lgSidebar.contains(e.target))return;
+  DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
 });
 // Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, TRADING, VN30, nhóm ngành...)
 // để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
