@@ -58,6 +58,8 @@ def _gzip_response(response):
 
 _get_alerted_today = None
 _get_momentum_today = None
+_get_attent_today = None
+_get_breakvol_today = None
 _get_signal_session_date = None
 _get_history_cache = None
 _cache_lock = None
@@ -543,6 +545,8 @@ def _serve_chart_images(symbol, fetch_fn, cache_key, label):
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     momentum = _get_momentum_today() if _get_momentum_today else {}
+    attent = _get_attent_today() if _get_attent_today else {}
+    breakvol = _get_breakvol_today() if _get_breakvol_today else {}
     session_date = _get_signal_session_date() if _get_signal_session_date else None
     today_vn = datetime.now(TZ_VN).date()
     session_stale = bool(session_date) and session_date != today_vn
@@ -566,11 +570,23 @@ def api_signals():
             pct = entry.get("pct") if isinstance(entry, dict) else None
             rows.append({"symbol": sym, "signal": sig, "pct": pct})
         momentum_result.extend(rows)
+    attent_result = [
+        {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
+        for sym, entry in sorted(attent.items())
+    ]
+    breakvol_result = [
+        {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
+        for sym, entry in sorted(breakvol.items())
+    ]
     return jsonify({
         "signals": result,
         "count":   len(result),
         "momentum": momentum_result,
         "momentum_count": len(momentum_result),
+        "attent": attent_result,
+        "attent_count": len(attent_result),
+        "breakvol": breakvol_result,
+        "breakvol_count": len(breakvol_result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
         "session_date": session_date.strftime("%d/%m/%Y") if session_date else None,
         "session_stale": session_stale,
@@ -1165,11 +1181,14 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
                     momentum_today_ref=None, fetch_market_health_fn=None,
-                    signal_session_date_ref=None, port=8888):
-    global _get_alerted_today, _get_momentum_today, _get_signal_session_date, _get_history_cache, _cache_lock
+                    signal_session_date_ref=None, port=8888,
+                    attent_today_ref=None, breakvol_today_ref=None):
+    global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
     global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
+    _get_attent_today = attent_today_ref
+    _get_breakvol_today = breakvol_today_ref
     _get_signal_session_date = signal_session_date_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
@@ -3048,6 +3067,8 @@ const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 // SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
+let _attentTodayMap=new Map();
+let _breakvolTodayMap=new Map();
 let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -6753,6 +6774,8 @@ async function fetchSigs(){
     _liteApplyBuySignal();
     const momentum=j.momentum||[];
     _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
+    _attentTodayMap=new Map((j.attent||[]).map(s=>[s.symbol,s]));
+    _breakvolTodayMap=new Map((j.breakvol||[]).map(s=>[s.symbol,s]));
     if(!momentum.length){
       DOM.momentumList.innerHTML='';
     }else{
@@ -7511,6 +7534,8 @@ function _lgGetGroups(){
     {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
     {name:'SIGNAL',syms:[..._sigTodayMap.keys()]},
     {name:'MOMENTUM',syms:[..._momentumTodayMap.keys()]},
+    {name:'ATTENT',syms:[..._attentTodayMap.keys()]},
+    {name:'BREAKVOL',syms:[..._breakvolTodayMap.keys()]},
     ..._hvGroups
   ];
 }
@@ -7671,7 +7696,7 @@ document.addEventListener('click',e=>{
   if(DOM.lgSidebar.contains(e.target))return;
   DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
 });
-// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, TRADING, VN30, nhóm ngành...)
+// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, ATTENT, BREAKVOL, TRADING, VN30, nhóm ngành...)
 // để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
 function _hvBuildTabs(){
   const groups=_lgGetGroups();
