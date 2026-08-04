@@ -5320,11 +5320,13 @@ function renderLiteIndicators(){
   if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
   redrawLiteDrawings();
 }
-function _liteVolColorFor(volBar){
+function _liteVolColorFor(volBar,showVpa){
   // checkbox "volcolor" (nhóm Signal) BẬT → dùng nguyên màu server tính (kể cả cờ VPA
   // xanh dương/tím). TẮT → phớt lờ cờ VPA, trả về màu xanh/đỏ mặc định theo close/open,
   // giống hệt quy ước màu mặc định phía backend khi vpa_flag=0.
-  if(_liteChecked('volcolor'))return volBar.color;
+  // showVpa truyền vào từ ngoài (đọc DOM 1 lần/lượt vẽ) để tránh querySelector lặp lại
+  // cho từng bar khi map qua cả nghìn nến.
+  if(showVpa)return volBar.color;
   const cd=_liteDataByTime.get(liteTimeKey(volBar.time));
   return cd?(cd.close>=cd.open?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR):volBar.color;
 }
@@ -5334,7 +5336,8 @@ function _liteRefreshVolumeTop(){
   try{_liteChart.removeSeries(_liteVolume);}catch(e){}
   _liteVolume=_liteChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v)})));
+  const showVpaVol=_liteChecked('volcolor');
+  _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v,showVpaVol)})));
 }
 function showLiteChartStatus(status){
   if(!DOM.liteChartStatus)return;
@@ -5397,7 +5400,9 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     // (nhóm Signal) — xem _liteVolColorFor(), áp dụng ở _liteRefreshVolumeTop().
     _liteVolumeData=j.volume||[];
     _liteCandle.setData(_liteData);
-    _liteVolume.setData(_liteVolumeData);
+    // Không setData cho _liteVolume ở đây: renderLiteIndicators() gọi ngay bên dưới
+    // sẽ chạy _liteRefreshVolumeTop() — hàm đó xoá + tạo lại series volume rồi tự
+    // setData (có áp dụng toggle "volcolor") nên gọi ở đây trước đó chỉ phí công.
     _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
@@ -5450,7 +5455,7 @@ async function _liteQuietRefreshChart(){
       // rawVol.color đã đúng màu (kể cả cờ VPA) do server tính — giữ nguyên trong
       // _liteVolumeData (dữ liệu gốc); màu THỰC vẽ ra tuỳ checkbox "volcolor" (nhóm Signal).
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
-      _liteVolume.update({...rawVol,color:_liteVolColorFor(rawVol)});
+      _liteVolume.update({...rawVol,color:_liteVolColorFor(rawVol,_liteChecked('volcolor'))});
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
     renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
