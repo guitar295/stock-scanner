@@ -2032,7 +2032,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-groups-sidebar.on~.lite-chart-signal{left:192px}
 /* Giá phóng to — đặt sát cạnh trên, canh giữa theo chiều ngang khung chart (kiểu "Magnified
    Market Price" của AmiBroker): dòng 1 là giá lớn, dòng 2 là biến động/khối lượng nhỏ hơn. */
-.lite-chart-bigprice{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:3;display:none;flex-direction:column;align-items:center;gap:1px;background:rgba(255,255,255,.78);padding:3px 10px;border-radius:6px;pointer-events:none;transition:left .15s;white-space:nowrap}
+.lite-chart-bigprice{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:3;display:none;flex-direction:column;align-items:center;gap:1px;pointer-events:none;transition:left .15s;white-space:nowrap}
 .lite-chart-bigprice.on{display:flex}
 .lite-chart-bigprice .bp-price{font-family:"Times New Roman",var(--font-mono);font-size:20px;font-weight:700;line-height:1.1}
 .lite-chart-bigprice .bp-sub{font-family:var(--font-mono);font-size:11px;line-height:1.2}
@@ -3540,7 +3540,7 @@ function updateLiteBigPrice(bar){
   el.classList.add('on');
   el.innerHTML=
     `<span class="bp-price" style="color:${col}">${fmtLiteNum(bar.close)}</span>`+
-    `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)} (${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
+    `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
   // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
@@ -5621,18 +5621,21 @@ function bindLiteChartControls(){
   });
   DOM.liteIndicators?.addEventListener('change',(e)=>{
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
-    // Cả 3 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal) và
-    // "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng mũi tên+badge tín hiệu
-    // (_liteApplyBuySignal) và/hoặc màu volume (_liteRefreshVolumeTop). Chúng KHÔNG đụng tới
-    // MA/EMA/BB/RSI/MACD hay pane layout, nên không gọi renderLiteIndicators() đầy đủ ở đây —
-    // hàm đó luôn chạy applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và
-    // xoá/dựng lại toàn bộ chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
+    // Cả 4 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal),
+    // "bigprice" (Giá phóng to) và "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng
+    // mũi tên+badge tín hiệu (_liteApplyBuySignal), màu volume (_liteRefreshVolumeTop) và/hoặc
+    // khối giá phóng to (updateLiteBigPrice). Chúng KHÔNG đụng tới MA/EMA/BB/RSI/MACD hay pane
+    // layout, nên không gọi renderLiteIndicators() đầy đủ ở đây — hàm đó luôn chạy
+    // applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và xoá/dựng lại toàn bộ
+    // chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
     const val=e.target?.value;
     if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
       if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
       if(val==='bigprice'||val==='signalgrp_on')updateLiteBigPrice(_liteData&&_liteData.length?_liteData[_liteData.length-1]:null);
-      _liteApplyBuySignal();
-      redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
+      if(val!=='bigprice'){ // bigprice riêng lẻ không đụng tới marker tín hiệu hay hình vẽ tay — khỏi vẽ lại thừa
+        _liteApplyBuySignal();
+        redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
+      }
     }else{
       renderLiteIndicators();
       _liteApplyBuySignal();
