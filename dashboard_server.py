@@ -5490,7 +5490,15 @@ function bindLiteChartControls(){
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
-  DOM.liteIndicators?.addEventListener('change',()=>{saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();_liteApplyBuySignal();});
+  DOM.liteIndicators?.addEventListener('change',(e)=>{
+    saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
+    // "Buy-Signal" (value="signal") chỉ ảnh hưởng mũi tên + badge tín hiệu, xử lý riêng ở
+    // _liteApplyBuySignal() bên dưới — không đụng tới MA/EMA/BB/RSI/MACD/Volume hay pane
+    // layout. Gọi renderLiteIndicators() ở đây sẽ ép applyLitePaneLayout() tính lại autoScale
+    // cho cả chart một cách vô ích, khiến chart bị co/giãn không cần thiết mỗi lần bấm.
+    if(e.target?.value!=='signal')renderLiteIndicators();
+    _liteApplyBuySignal();
+  });
   DOM.liteChartFrame?.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
     // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
