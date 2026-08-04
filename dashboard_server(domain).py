@@ -69,6 +69,7 @@ _fetch_chart_fn = None
 _fetch_chart_15m_fn = None
 _ensure_chart_symbol_fn = None
 _chart_symbol_status_fn = None
+_vol_forecast_fn = None
 _signal_emoji = {}
 _signal_rank = {}
 
@@ -661,6 +662,21 @@ def api_lightweight_chart_status(symbol):
     return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
                     "reason": "fallback_check"})
 
+@app.route("/api/vol_forecast/<symbol>")
+def api_vol_forecast(symbol):
+    """NGUỒN DUY NHẤT cho khối 'Giá phóng to' (bp-price/bp-sub) trên panel CHART —
+    trả progress (% thời gian phiên đã trôi qua, tính bằng đồng hồ SERVER, giờ VN)
+    và ratio_prev/ratio_ma50 (đã tính sẵn từ VMA50 dùng chung với tín hiệu
+    ATTENT/BREAKVOL) từ scanner_full.dashboard_vol_forecast_fn — JS phía trước
+    KHÔNG tự tính lại múi giờ hay MA50 nữa, chỉ hiển thị nguyên số server trả về."""
+    symbol = symbol.upper().strip()
+    if not _vol_forecast_fn:
+        return jsonify({"symbol": symbol, "error": "unavailable"}), 503
+    try:
+        return jsonify(_vol_forecast_fn(symbol))
+    except Exception as exc:
+        return jsonify({"symbol": symbol, "error": "exception", "detail": str(exc)}), 500
+
 _chart_ensure_inflight: set = set()
 _chart_ensure_inflight_lock = threading.Lock()
 
@@ -1191,11 +1207,12 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_chart_fn=None, fetch_chart_15m_fn=None,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
+                    vol_forecast_fn=None,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _vol_forecast_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -1209,6 +1226,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _fetch_chart_15m_fn = fetch_chart_15m_fn
     _ensure_chart_symbol_fn = ensure_chart_symbol_fn
     _chart_symbol_status_fn = chart_symbol_status_fn
+    _vol_forecast_fn   = vol_forecast_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
 
@@ -2012,6 +2030,16 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 /* Khi sidebar nhóm ngành mở, dịch title/tín hiệu sang phải để không bị cột che mất */
 .lite-groups-sidebar.on+.lite-chart-title,
 .lite-groups-sidebar.on~.lite-chart-signal{left:192px}
+/* Giá phóng to — đặt sát cạnh trên, canh giữa theo chiều ngang khung chart (kiểu "Magnified
+   Market Price" của AmiBroker): dòng 1 là giá lớn, dòng 2 là biến động/khối lượng nhỏ hơn. */
+.lite-chart-bigprice{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:3;display:none;flex-direction:column;align-items:center;gap:1px;pointer-events:none;transition:left .15s;white-space:nowrap}
+.lite-chart-bigprice.on{display:flex}
+.lite-chart-bigprice .bp-price{font-family:"Times New Roman",var(--font-mono);font-size:20px;font-weight:700;line-height:1.1}
+.lite-chart-bigprice .bp-sub{font-family:var(--font-mono);font-size:11px;line-height:1.2}
+/* Khi sidebar nhóm ngành mở: dịch phải đúng bằng nửa bề rộng sidebar (180px) để canh lại giữa
+   phần khung chart còn hiển thị (không bị sidebar che), thay vì dịch hẳn 192px như title/tín
+   hiệu (2 khối đó neo theo left tuyệt đối chứ không canh giữa). */
+.lite-groups-sidebar.on~.lite-chart-bigprice{left:calc(50% + 90px)}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
@@ -2573,6 +2601,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <div class="lite-ind-dropdown" data-dropdown="signalgrp">
               <label><input type="checkbox" value="signal">Buy-Signal</label>
               <label><input type="checkbox" value="volcolor">Volume-Signal</label>
+              <label><input type="checkbox" value="bigprice">Giá phóng to</label>
             </div>
           </div>
           <div class="lite-ind-group" data-group="maema">
@@ -2723,6 +2752,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       </div>
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
       <span class="lite-chart-signal" id="lite-chart-signal"></span>
+      <span class="lite-chart-bigprice" id="lite-chart-bigprice" title="Giá phóng to + biến động/khối lượng (ước tính hết phiên)"></span>
       <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
       <div class="lite-rect-tooltip" id="lite-rect-tooltip"></div>
       <div class="lite-shape-bar" id="lite-shape-bar">
@@ -3001,6 +3031,7 @@ const DOM={
   liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
   liteChartSignal:$('lite-chart-signal'),
+  liteChartBigPrice:$('lite-chart-bigprice'),
   liteChartStatus:$('lite-chart-status'),
   liteRectTooltip:$('lite-rect-tooltip'),
   liteXhairV:$('lite-xhair-v'),liteXhairH:$('lite-xhair-h'),liteXhairPrice:$('lite-xhair-price'),liteXhairTime:$('lite-xhair-time'),
@@ -3430,7 +3461,7 @@ function loadLiteIndicatorPrefs(){
     // maema_on, signalgrp_on và volcolor mặc định BẬT (giữ hành vi cũ trước khi có
     // checkbox này — MA/EMA hiển thị sẵn, Volume tô màu VPA sẵn) cho user chưa có key
     // này trong localStorage. Các checkbox khác giữ quy ước cũ (mặc định TẮT).
-    cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
+    cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor'||cb.value==='bigprice')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
 }
@@ -3466,6 +3497,50 @@ function _liteTitleSegments(bar){
     {text:`${sign}${pct.toFixed(2)}%`,color:col},
     {text:')',color:'#111827'}
   ];
+}
+// ═══════════════════════════════════════════════════════
+// GIÁ PHÓNG TO (kiểu "Magnified Market Price" của AmiBroker) — hiển thị giá lớn + biến động/khối
+// lượng ngay giữa cạnh trên khung CHART. ratio_prev/ratio_ma50/progress KHÔNG tự tính ở đây nữa —
+// lấy nguyên từ /api/vol_forecast/<symbol> (scanner_full.dashboard_vol_forecast_fn), vốn dùng lại
+// CHÍNH XÁC VMA50 + _session_time_progress() mà tín hiệu ATTENT/BREAKVOL đang dùng, và progress
+// tính theo đồng hồ SERVER (giờ VN) thay vì đồng hồ trình duyệt — tránh 2 bản logic lệch nhau.
+// ═══════════════════════════════════════════════════════
+let _liteVolForecast=null,_liteVolForecastReqId=0;
+async function _liteFetchVolForecast(sym){
+  const reqId=++_liteVolForecastReqId; // chặn trường hợp 2 lượt fetch chồng nhau (đổi mã nhanh +
+  try{                                 // đúng lúc quiet-refresh) trả về không đúng thứ tự, khiến
+    const r=await fetch('/api/vol_forecast/'+encodeURIComponent(sym)); // kết quả cũ ghi đè lên mới
+    const j=await r.json();
+    if(reqId!==_liteVolForecastReqId||sym!==_liteSymbol)return; // đã có lượt fetch mới hơn hoặc đổi mã — bỏ kết quả này
+    _liteVolForecast=(j&&!j.error)?j:null;
+  }catch(e){
+    if(reqId===_liteVolForecastReqId&&sym===_liteSymbol)_liteVolForecast=null;
+  }
+  if(reqId===_liteVolForecastReqId&&sym===_liteSymbol)updateLiteBigPrice(_liteData[_liteData.length-1]);
+}
+function updateLiteBigPrice(bar){
+  const el=DOM.liteChartBigPrice;
+  if(!el)return;
+  if(!bar||!_liteChecked('signalgrp_on')||!_liteChecked('bigprice')){el.classList.remove('on');el.innerHTML='';return;}
+  const pct=Number.isFinite(bar.pct)?bar.pct:0;
+  const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)&&pct!==0
+    ?bar.close-bar.close/(1+pct/100):(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close-bar.open:0);
+  // Chỉ 2 màu xanh/đỏ — không còn màu xám: bằng tham chiếu (pct===0, hoặc close>=open) tính là xanh.
+  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
+  const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
+  const sign=pct>0?'+':(pct<0?'':'');
+  const fc=_liteVolForecast; // {ratio_prev, ratio_ma50, progress, symbol, ...} từ server, hoặc null nếu chưa có/lỗi
+  const sameSym=fc&&fc.symbol===_liteSymbol;
+  const progress=sameSym&&Number.isFinite(fc.progress)?fc.progress:null;
+  const fmtEst=v=>(Number.isFinite(v)&&progress>0.001)?(v/progress).toFixed(2):'--';
+  // Tỉ lệ tiến độ phiên hiển thị dạng số thập phân (tối đa 1) thay vì phần trăm, bỏ số 0 thừa (1 thay vì 1.00).
+  const fmtProgress=v=>Number.isFinite(v)?String(Math.round(v*100)/100):'--';
+  const ratioPrev=sameSym?fc.ratio_prev:null;
+  const ratioMA50=sameSym?fc.ratio_ma50:null;
+  el.classList.add('on');
+  el.innerHTML=
+    `<span class="bp-price" style="color:${col}">${fmtLiteNum(bar.close)}</span>`+
+    `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
   // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
@@ -5461,11 +5536,15 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.12,bottom:.18}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
+    _liteVolForecast=null; // đổi mã — xoá dự báo cũ, khỏi hiện nhầm số của mã trước trong lúc chờ fetch
+    updateLiteBigPrice(_liteData[_liteData.length-1]);
+    _liteFetchVolForecast(_liteSymbol);
     _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
     showLiteChartStatus(await statusPromise);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
+    updateLiteBigPrice(null);
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
@@ -5514,6 +5593,8 @@ async function _liteQuietRefreshChart(){
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
     renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
     updateLiteTitle(_liteData[_liteData.length-1]);
+    updateLiteBigPrice(_liteData[_liteData.length-1]); // vẽ lại ngay với dự báo đang có (chưa chờ fetch)
+    _liteFetchVolForecast(sym); // cùng nhịp 20s với refresh nến — lấy lại progress/ratio mới nhất từ server
     _liteApplyBuySignal();
   }catch(e){
     // Lỗi mạng/tạm thời — bỏ qua êm, chờ lượt refresh kế tiếp, không làm phiền người dùng.
@@ -5540,17 +5621,21 @@ function bindLiteChartControls(){
   });
   DOM.liteIndicators?.addEventListener('change',(e)=>{
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
-    // Cả 3 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal) và
-    // "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng mũi tên+badge tín hiệu
-    // (_liteApplyBuySignal) và/hoặc màu volume (_liteRefreshVolumeTop). Chúng KHÔNG đụng tới
-    // MA/EMA/BB/RSI/MACD hay pane layout, nên không gọi renderLiteIndicators() đầy đủ ở đây —
-    // hàm đó luôn chạy applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và
-    // xoá/dựng lại toàn bộ chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
+    // Cả 4 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal),
+    // "bigprice" (Giá phóng to) và "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng
+    // mũi tên+badge tín hiệu (_liteApplyBuySignal), màu volume (_liteRefreshVolumeTop) và/hoặc
+    // khối giá phóng to (updateLiteBigPrice). Chúng KHÔNG đụng tới MA/EMA/BB/RSI/MACD hay pane
+    // layout, nên không gọi renderLiteIndicators() đầy đủ ở đây — hàm đó luôn chạy
+    // applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và xoá/dựng lại toàn bộ
+    // chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
     const val=e.target?.value;
-    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'){
-      if(val!=='signal')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
-      _liteApplyBuySignal();
-      redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
+    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
+      if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
+      if(val==='bigprice'||val==='signalgrp_on')updateLiteBigPrice(_liteData&&_liteData.length?_liteData[_liteData.length-1]:null);
+      if(val!=='bigprice'){ // bigprice riêng lẻ không đụng tới marker tín hiệu hay hình vẽ tay — khỏi vẽ lại thừa
+        _liteApplyBuySignal();
+        redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
+      }
     }else{
       renderLiteIndicators();
       _liteApplyBuySignal();
