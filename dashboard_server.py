@@ -5338,9 +5338,7 @@ function _liteRefreshVolumeTop(showVpaVol){
   try{_liteChart.removeSeries(_liteVolume);}catch(e){}
   _liteVolume=_liteChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  // showVpaVol truyền vào từ renderLiteIndicators() (đọc DOM 1 lần/lượt vẽ, giống maEmaOn/
-  // showRsi...) — chỗ này chỉ tự đọc lại nếu lỡ có nơi khác gọi hàm mà không truyền vào.
-  if(showVpaVol===undefined)showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
+  // showVpaVol truyền vào từ renderLiteIndicators() (đọc DOM 1 lần/lượt vẽ, giống maEmaOn/showRsi...).
   _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v,showVpaVol)})));
 }
 function showLiteChartStatus(status){
