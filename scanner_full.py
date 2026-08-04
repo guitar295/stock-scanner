@@ -580,6 +580,120 @@ def compute_indicators(df):
 
 
 # =============================================================================
+# BƯỚC 5A1: VPA FLAG — tô màu Volume (port rút gọn từ AFL "Signal Generation" +
+# "Volume ADD"). CHỈ port 4 điều kiện lõi (upThrustBar, topRevBar, stopVolume,
+# revUpThrust) — KHÔNG port ~65 pattern nến phụ trong bản AFL gốc, vì chúng chỉ
+# là nhánh OR bổ sung (đòi hỏi thêm giá ở đỉnh/đáy 120 phiên + volume bất
+# thường mới kích hoạt), ảnh hưởng nhỏ tới tần suất tô màu trong khi chi phí
+# port + rủi ro sai lệch rất lớn. Xem thêm ghi chú trong lịch sử trao đổi.
+#
+# LƯU Ý QUAN TRỌNG: AFL gốc gọi RWIHi(min,max)/RWILo(min,max)/RWI(min,max) với
+# 2 tham số — không phải cú pháp RWIHi/RWILo/RWI chuẩn 1 tham số của AmiBroker.
+# Đây nhiều khả năng là hàm mở rộng theo đúng định nghĩa gốc của Random Walk
+# Index (Michael Poulos, TASC 1993): quét p từ min→max, lấy giá trị LỚN NHẤT
+# của (High - Low lùi p phiên)/(ATR(p)*sqrt(p)) — đây là cách chúng tôi triển
+# khai dưới đây. Không có định nghĩa hàm gốc trong file AFL để đối chiếu 100%,
+# nên đây là suy luận theo chuẩn kỹ thuật phổ biến nhất, không phải chắc chắn
+# tuyệt đối khớp bản gốc — nếu vpa_flag ra tần suất bất thường, đây là nơi đầu
+# tiên cần rà lại.
+# =============================================================================
+def _true_range(df):
+    prev_close = df['close'].shift(1)
+    return pd.concat([
+        df['high'] - df['low'],
+        (df['high'] - prev_close).abs(),
+        (df['low']  - prev_close).abs(),
+    ], axis=1).max(axis=1)
+
+def _rwi_hi_lo(df, pmin, pmax, tr=None):
+    """RWIHi/RWILo (Random Walk Index) theo định nghĩa gốc Poulos: với mỗi p
+    trong [pmin, pmax], tính (H - L lùi p phiên)/(ATR(p)*sqrt(p)) rồi lùi p
+    phiên tương tự cho chiều ngược lại, lấy giá trị LỚN NHẤT trên toàn dải p."""
+    if tr is None:
+        tr = _true_range(df)
+    hi_max = pd.Series(0.0, index=df.index)
+    lo_max = pd.Series(0.0, index=df.index)
+    for p in range(pmin, pmax + 1):
+        denom = tr.rolling(p).mean() * math.sqrt(p)
+        hi = ((df['high'] - df['low'].shift(p)) / denom).fillna(0)
+        lo = ((df['high'].shift(p) - df['low']) / denom).fillna(0)
+        hi_max = np.maximum(hi_max, hi)
+        lo_max = np.maximum(lo_max, lo)
+    return hi_max, lo_max
+
+def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
+    """
+    Trả về Series int8 cùng index với df:
+      0 = trung tính  → giữ màu xanh/đỏ theo close/open như cũ
+      1 = cảnh báo suy yếu / phân phối (upThrustBar OR topRevBar) → tô xanh dương
+      2 = tín hiệu tích lũy mạnh (stopVolume OR revUpThrust)      → tô màu vàng/cam
+
+    df cần tối thiểu các cột: open, high, low, close, volume.
+    Nếu dữ liệu chưa đủ dài (RWI dài hạn cần ~40 phiên lùi + rolling(80) cho
+    avg_spread) thì trả về toàn 0 để tránh tín hiệu nhiễu/rác.
+    """
+    if df is None or len(df) < min_bars:
+        return pd.Series(0, index=(df.index if df is not None else []), dtype='int8')
+
+    h, l, c, v = df['high'], df['low'], df['close'], df['volume']
+    tr = _true_range(df)
+
+    hi_st, _        = _rwi_hi_lo(df, *rwi_short, tr=tr)   # Ground — dùng cho upimd
+    hi_lt, lo_lt     = _rwi_hi_lo(df, *rwi_long,  tr=tr)   # j2/lo_lt — dùng cho upmajor/upminor
+
+    j       = hi_lt - lo_lt                 # RWI dài hạn có dấu (theo cross(j,1)/cross(j,-1) trong AFL)
+    upmajor = np.select([j > 1, j < -1], [1, -1], default=0)
+    upminor = np.where(hi_lt > 1, 1, -1)
+    upimd   = np.where(hi_st > 1, 1, 0)
+
+    spread     = h - l
+    avg_spread = spread.rolling(80).mean()
+    wide_range_bar = spread > 1.5 * avg_spread
+
+    vol_avg = v.rolling(30).mean()
+    up_bar   = c > c.shift(1)
+    down_bar = c < c.shift(1)
+
+    close_pos = np.select(
+        [c <= spread * 0.2 + l, c <= spread * 0.4 + l, c <= spread * 0.6 + l, c <= spread * 0.8 + l],
+        [1, 2, 3, 4], default=5,
+    )
+    vol_pos = np.select(
+        [v > vol_avg * 2, v > vol_avg * 1.3, v > vol_avg],
+        [1, 2, 3],
+        default=np.where((v < vol_avg) & (v > vol_avg * 0.7), 4, 5),
+    )
+    up_close   = c >= spread * 0.7 + l
+    down_close = c <= spread * 0.3 + l
+    mid_close  = (c > spread * 0.3 + l) & (c < spread * 0.7 + l)
+
+    up_bar_prev1, down_bar_prev1     = up_bar.shift(1).fillna(False), down_bar.shift(1).fillna(False)
+    wide_bar_prev1                   = wide_range_bar.shift(1).fillna(False)
+    down_close_prev1                 = down_close.shift(1).fillna(False)
+
+    up_thrust_bar = (
+        wide_range_bar & np.isin(close_pos, [1, 2]) & (upminor > 0) &
+        (h > h.shift(1)) & ((upimd > 0) | (upmajor > 0)) & (vol_pos < 4)
+    )
+    top_rev_bar = (
+        (v.shift(1) > vol_avg) & up_bar_prev1 & wide_bar_prev1 &
+        down_bar & down_close & wide_range_bar & (upmajor > 0) & (h == h.rolling(10).max())
+    )
+    stop_volume = (
+        (l == l.rolling(5).min()) & (up_close | mid_close) & (v > 1.5 * vol_avg) & (upmajor < 0)
+    )
+    rev_up_thrust = (
+        (upmajor < 0) & up_bar & up_close & (v > v.shift(1)) & (v > vol_avg) &
+        wide_range_bar & down_bar_prev1 & down_close_prev1 & (upminor < 0)
+    )
+
+    flag = pd.Series(0, index=df.index, dtype='int8')
+    flag[(up_thrust_bar | top_rev_bar).fillna(False)]   = 1
+    flag[(stop_volume | rev_up_thrust).fillna(False)]   = 2   # ưu tiên tích lũy nếu trùng cả 2 (hiếm)
+    return flag
+
+
+# =============================================================================
 # BƯỚC 5A2: MARKET HEALTH / FEAR-GREED INDEX
 # =============================================================================
 def _mh_finite_float(value, default=None):
@@ -1014,7 +1128,9 @@ def load_history_for_symbol(symbol: str, current_date: date):
             df_raw['time'] = pd.to_datetime(df_raw['time'])
             df_raw.set_index('time', inplace=True)
             df_raw.columns = [c.lower() for c in df_raw.columns]
-            return df_raw[['open','high','low','close','volume']].copy()
+            df = df_raw[['open','high','low','close','volume']].copy()
+            df['vpa_flag'] = calc_vpa_flag(df)
+            return df
         except Exception as e:
             if attempt < 2: time.sleep(2)
             else: print(f"    ❌ Load history {symbol}: {e}")
@@ -1183,10 +1299,16 @@ def fetch_today_bar(symbol: str, current_date: date):
     return None
 
 def upsert_today_bar(df_hist, today_bar):
+    """Vá/thêm nến hôm nay vào cache lịch sử. vpa_flag phụ thuộc rolling window
+    (RWI, avg_spread...) nên phải tính lại trên TOÀN BỘ chuỗi sau khi vá — không
+    thể chỉ tính cho 1 bar mới, các bar gần cuối cũng đổi giá trị theo."""
     bar_date = pd.Timestamp(today_bar.name).date()
     new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
-    df_hist = df_hist[df_hist.index.date != bar_date]
-    return pd.concat([df_hist, new_row]).sort_index()
+    ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+    df_hist = df_hist[df_hist.index.date != bar_date][ohlcv_cols]
+    merged = pd.concat([df_hist, new_row]).sort_index()
+    merged['vpa_flag'] = calc_vpa_flag(merged)
+    return merged
 
 def chart_symbol_status(symbol: str) -> dict:
     """
