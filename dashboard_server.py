@@ -131,6 +131,15 @@ _chart_cache: dict = {}
 _chart_lock = threading.Lock()
 CHART_TTL_SEC = 120
 
+# Màu cột Volume: 0=trung tính (xanh/đỏ theo close-open), 1=cảnh báo suy yếu
+# (upThrustBar/topRevBar), 2=tín hiệu tích lũy mạnh (stopVolume/revUpThrust).
+# Cột "vpa_flag" đã được tính sẵn từ khi build/vá history_cache bên
+# scanner_full.py (calc_vpa_flag) — route /api/lightweight_chart CHỈ đọc, không
+# tính lại, để tránh lặp logic + tốn CPU mỗi request. Nhánh weekly (resample)
+# không giữ cột này nên tự động rơi về màu trung tính — chấp nhận được vì các
+# tín hiệu VPA lõi vốn chỉ có ý nghĩa ở khung ngày.
+_VPA_FLAG_COLOR = {1: "#2962ff", 2: "#ffb300"}
+
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
@@ -748,8 +757,9 @@ def api_lightweight_chart(symbol):
             continue
         day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
         candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
-        volume.append({"time": day, "value": max(0, v),
-                       "color": "#26a69a" if c >= o else "#ef5350"})
+        vpa_flag = int(row.get("vpa_flag", 0) or 0)
+        color = _VPA_FLAG_COLOR.get(vpa_flag) or ("#26a69a" if c >= o else "#ef5350")
+        volume.append({"time": day, "value": max(0, v), "color": color})
     if not candles:
         return jsonify({"error": "no_data", "symbol": symbol}), 404
     return jsonify({"symbol": symbol, "timeframe": tf, "candles": candles, "volume": volume,
@@ -3569,15 +3579,6 @@ function _bbands(data,n=20,mult=2){
   }
   return{upper,mid,lower};
 }
-function _liteVolumeColorForBar(bar){
-  return bar&&Number(bar.close)>=Number(bar.open)?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
-}
-function _liteNormalizeVolumeData(volume,data){
-  return (volume||[]).map((v,idx)=>{
-    const bar=data[idx];
-    return {...v,color:_liteVolumeColorForBar(bar)};
-  });
-}
 function _rsi(data,n=LITE_RSI_PERIOD){
   if(!data||data.length<=n)return [];
   const out=[];
@@ -5375,7 +5376,10 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       return{...bar,pct};
     });
     _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
-    _liteVolumeData=_liteNormalizeVolumeData(j.volume,_liteData);
+    // Màu volume (bao gồm cờ VPA xanh dương/vàng) đã được server tính sẵn theo
+    // từng bar — dùng thẳng, không tính lại ở client (tránh ghi đè nhầm về
+    // xanh/đỏ đơn giản, mất tín hiệu VPA).
+    _liteVolumeData=j.volume||[];
     _liteCandle.setData(_liteData);
     _liteVolume.setData(_liteVolumeData);
     _liteUpdateWhitespace();
@@ -5427,9 +5431,9 @@ async function _liteQuietRefreshChart(){
     _liteCandle.update(bar);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
-      const volBar={...rawVol,color:_liteVolumeColorForBar(bar)};
-      if(isNewBar)_liteVolumeData.push(volBar);else _liteVolumeData[_liteVolumeData.length-1]=volBar;
-      _liteVolume.update(volBar);
+      // rawVol.color đã đúng màu (kể cả cờ VPA) do server tính — không ghi đè.
+      if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
+      _liteVolume.update(rawVol);
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
     renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
