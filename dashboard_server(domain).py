@@ -4,8 +4,10 @@ DASHBOARD SERVER
 
 from flask import Flask, jsonify, Response, request, session, send_from_directory
 from functools import wraps
+from io import BytesIO
 from pathlib import Path
 import base64
+import gzip
 import hmac
 import json
 import math
@@ -23,8 +25,41 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("DASHBOARD_SECRET_KEY", "change-this-dashboard-secret-key")
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
+# Ngưỡng dung lượng tối thiểu (bytes) mới nén — response quá nhỏ thì overhead
+# gzip (header ~20 bytes + CPU) không bù lại được, nén chỉ có lợi từ đây trở lên.
+_GZIP_MIN_BYTES = 500
+
+@app.after_request
+def _gzip_response(response):
+    """Nén gzip các response JSON/HTML (chart data, trang dashboard, v.v.) khi
+    trình duyệt hỗ trợ — payload dạng số/JSON lặp lại nhiều nên nén rất hiệu
+    quả (thường giảm 70-80%), giúp panel CHART tải nhanh hơn rõ rệt trên mạng
+    chậm mà KHÔNG cần đổi format dữ liệu hay logic ở frontend."""
+    if "gzip" not in (request.headers.get("Accept-Encoding", "") or "").lower():
+        return response
+    if response.direct_passthrough or response.headers.get("Content-Encoding"):
+        return response  # đã stream sẵn (vd file tĩnh) hoặc đã được nén rồi — bỏ qua
+    data = response.get_data()
+    if len(data) < _GZIP_MIN_BYTES:
+        return response
+    buf = BytesIO()
+    with gzip.GzipFile(mode="wb", fileobj=buf, compresslevel=6) as gz:
+        gz.write(data)
+    compressed = buf.getvalue()
+    if len(compressed) >= len(data):
+        return response  # nén không giúp ích (hiếm, vd data đã compressed sẵn) — giữ nguyên bản gốc
+    response.set_data(compressed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(compressed))
+    vary = response.headers.get("Vary", "")
+    if "Accept-Encoding" not in vary:
+        response.headers["Vary"] = (vary + ", Accept-Encoding").lstrip(", ")
+    return response
+
 _get_alerted_today = None
 _get_momentum_today = None
+_get_attent_today = None
+_get_breakvol_today = None
 _get_signal_session_date = None
 _get_history_cache = None
 _cache_lock = None
@@ -142,7 +177,25 @@ def _json_safe(obj):
     return obj
 
 
+_journal_storage_ready = False
+_journal_storage_init_lock = threading.Lock()
+
 def _init_journal_storage():
+    # Trước đây hàm này (tạo bảng CREATE TABLE IF NOT EXISTS) chạy lại ở MỌI request
+    # đụng tới journal (qua _journal_conn() và vài route gọi trực tiếp), tốn thêm 1
+    # kết nối SQLite + vài câu lệnh DDL dư thừa mỗi lần — dù idempotent nên không sai
+    # kết quả, nhưng lãng phí. Giờ chỉ chạy đúng 1 lần cho cả vòng đời process; các
+    # lần gọi sau return ngay, hành vi/kết quả trả về cho client giữ nguyên y hệt.
+    global _journal_storage_ready
+    if _journal_storage_ready:
+        return
+    with _journal_storage_init_lock:
+        if _journal_storage_ready:
+            return
+        _do_init_journal_storage()
+        _journal_storage_ready = True
+
+def _do_init_journal_storage():
     JOURNAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(JOURNAL_DB_PATH) as conn:
         conn.execute("""
@@ -187,7 +240,22 @@ def _journal_conn():
     return conn
 
 
+_price_alert_storage_ready = False
+_price_alert_storage_init_lock = threading.Lock()
+
 def _init_price_alert_storage():
+    # Cùng tối ưu như _init_journal_storage(): chỉ chạy DDL đúng 1 lần/process thay
+    # vì mỗi request, tránh mở dư 1 kết nối SQLite mỗi lần gọi _price_alert_conn().
+    global _price_alert_storage_ready
+    if _price_alert_storage_ready:
+        return
+    with _price_alert_storage_init_lock:
+        if _price_alert_storage_ready:
+            return
+        _do_init_price_alert_storage()
+        _price_alert_storage_ready = True
+
+def _do_init_price_alert_storage():
     JOURNAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(JOURNAL_DB_PATH) as conn:
         conn.execute("""
@@ -477,6 +545,8 @@ def _serve_chart_images(symbol, fetch_fn, cache_key, label):
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
     momentum = _get_momentum_today() if _get_momentum_today else {}
+    attent = _get_attent_today() if _get_attent_today else {}
+    breakvol = _get_breakvol_today() if _get_breakvol_today else {}
     session_date = _get_signal_session_date() if _get_signal_session_date else None
     today_vn = datetime.now(TZ_VN).date()
     session_stale = bool(session_date) and session_date != today_vn
@@ -500,11 +570,23 @@ def api_signals():
             pct = entry.get("pct") if isinstance(entry, dict) else None
             rows.append({"symbol": sym, "signal": sig, "pct": pct})
         momentum_result.extend(rows)
+    attent_result = [
+        {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
+        for sym, entry in sorted(attent.items())
+    ]
+    breakvol_result = [
+        {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
+        for sym, entry in sorted(breakvol.items())
+    ]
     return jsonify({
         "signals": result,
         "count":   len(result),
         "momentum": momentum_result,
         "momentum_count": len(momentum_result),
+        "attent": attent_result,
+        "attent_count": len(attent_result),
+        "breakvol": breakvol_result,
+        "breakvol_count": len(breakvol_result),
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
         "session_date": session_date.strftime("%d/%m/%Y") if session_date else None,
         "session_stale": session_stale,
@@ -569,6 +651,28 @@ def api_lightweight_chart_status(symbol):
     return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
                     "reason": "fallback_check"})
 
+_chart_ensure_inflight: set = set()
+_chart_ensure_inflight_lock = threading.Lock()
+
+def _ensure_chart_symbol_background(symbol: str):
+    """Chạy _ensure_chart_symbol_fn(symbol) ở thread nền — dùng khi cache ĐÃ có
+    sẵn đủ dữ liệu để trả lời ngay, để việc update/vá nến (có thể gọi mạng
+    vnstock, tốn thời gian) không làm chậm response CHART hiện tại. Kết quả cập
+    nhật sẽ có sẵn cho lần tải chart kế tiếp."""
+    with _chart_ensure_inflight_lock:
+        if symbol in _chart_ensure_inflight:
+            return  # đã có 1 lượt ensure đang chạy nền cho mã này, khỏi trùng
+        _chart_ensure_inflight.add(symbol)
+    def _run():
+        try:
+            _ensure_chart_symbol_fn(symbol)
+        except Exception as exc:
+            print(f"  [LiteChart] {symbol}: ensure cache nền lỗi: {exc}")
+        finally:
+            with _chart_ensure_inflight_lock:
+                _chart_ensure_inflight.discard(symbol)
+    threading.Thread(target=_run, daemon=True).start()
+
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
@@ -578,17 +682,44 @@ def api_lightweight_chart(symbol):
     except (TypeError, ValueError):
         limit = 320
     limit = max(50, min(1000, limit))
-    if _ensure_chart_symbol_fn:
-        try:
-            _ensure_chart_symbol_fn(symbol)
-        except Exception as exc:
-            print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
-    cache = _get_history_cache() if _get_history_cache else {}
     if not _cache_lock:
         return jsonify({"error": "cache_not_ready"}), 503
+    cache = _get_history_cache() if _get_history_cache else {}
+    if _ensure_chart_symbol_fn:
+        with _cache_lock:
+            cached_df = cache.get(symbol)
+            has_cache = cached_df is not None and len(cached_df) >= 60
+        if has_cache:
+            # Cache đã đủ dữ liệu để vẽ chart ngay — trả lời cho client TRƯỚC,
+            # việc update/vá nến mới nhất (có gọi mạng vnstock, chậm) đẩy xuống
+            # chạy nền phía sau để tốc độ load chart không bị delay bởi nó.
+            _ensure_chart_symbol_background(symbol)
+        else:
+            # Chưa có cache (lần đầu xem mã này) → bắt buộc phải chờ tải xong
+            # mới có dữ liệu để trả, không thể "load ngay" khi chưa có gì.
+            try:
+                _ensure_chart_symbol_fn(symbol)
+            except Exception as exc:
+                print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
+    # Đọc df CUỐI CÙNG đúng 1 lần duy nhất ở đây (sau khi các bước ensure ở trên,
+    # nếu có, đã chạy xong) — tránh copy DataFrame 2 lần dư thừa như phiên bản trước.
     with _cache_lock:
-        df = cache.get(symbol)
-        df = df.copy() if df is not None and len(df) else None
+        raw_df = cache.get(symbol)
+        is_weekly = tf in ("1W", "W", "WEEK", "WEEKLY")
+        if raw_df is None or not len(raw_df):
+            df = None
+        elif is_weekly:
+            # Resample tuần cần gộp từ dữ liệu ngày ĐẦY ĐỦ mới ra đúng kết quả — giữ
+            # nguyên copy() toàn bộ như bản cũ, không tối ưu nhánh này để không có rủi
+            # ro làm sai lệch số liệu weekly.
+            df = raw_df.copy()
+        else:
+            # Nhánh ngày (phổ biến nhất, mặc định của panel CHART): chỉ cần đúng
+            # `limit` dòng cuối — cắt bằng .tail() (view nhẹ, không copy dữ liệu) TRƯỚC
+            # rồi mới .copy() đúng phần nhỏ đó, thay vì copy nguyên DataFrame lịch sử
+            # (có thể nhiều năm dữ liệu) như bản cũ rồi mới cắt. Kết quả trả về giống hệt
+            # bản cũ (vẫn đúng `limit` dòng cuối cùng), chỉ giảm chi phí copy dưới lock.
+            df = raw_df.tail(limit).copy()
     if df is None or df.empty:
         return jsonify({"error": "no_cache", "symbol": symbol}), 404
     if tf in ("1W", "W", "WEEK", "WEEKLY"):
@@ -1050,11 +1181,14 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
                     momentum_today_ref=None, fetch_market_health_fn=None,
-                    signal_session_date_ref=None, port=8888):
-    global _get_alerted_today, _get_momentum_today, _get_signal_session_date, _get_history_cache, _cache_lock
+                    signal_session_date_ref=None, port=8888,
+                    attent_today_ref=None, breakvol_today_ref=None):
+    global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
     global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
+    _get_attent_today = attent_today_ref
+    _get_breakvol_today = breakvol_today_ref
     _get_signal_session_date = signal_session_date_ref
     _get_history_cache = history_cache_ref
     _cache_lock        = cache_lock_ref
@@ -1612,6 +1746,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Scanner Dashboard</title>
+<!-- Preconnect + preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
+     viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
+     DNS/TLS/tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
+     script chính gọi loadLiteChart(). preconnect giúp bắt tay DNS/TLS với unpkg sớm, còn
+     preload giúp trình duyệt TẢI SONG SONG file này ngay trong lúc parse HTML phía trên,
+     nên khi script tag thật ở cuối trang được thực thi, file gần như đã có sẵn — giúp
+     panel CHART có thể vẽ sớm hơn thay vì phải đợi round-trip CDN nằm chắn ngay trước nó. -->
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preload" as="script" href="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════
@@ -2924,6 +3067,8 @@ const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
 // SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
+let _attentTodayMap=new Map();
+let _breakvolTodayMap=new Map();
 let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -3269,8 +3414,8 @@ function fmtLiteNum(v){
   return Number.isFinite(v)?Number(v).toFixed(2):'--';
 }
 function fmtLiteDate(t){
-  const p=String(t||'').split('-');
-  return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(t||'--');
+  const p=liteTimeKey(t).split('-');
+  return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:(liteTimeKey(t)||'--');
 }
 function _liteTitleSegments(bar){
   if(!bar)return [];
@@ -5248,6 +5393,54 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
 }
+// ═══════════════════════════════════════════════════════
+// AUTO-REFRESH CHART — chỉ vá đúng CÂY NẾN CUỐI CÙNG (dùng series.update(), KHÔNG
+// setData() lại toàn bộ) nên KHÔNG nháy màn hình, KHÔNG mất zoom/pan hiện tại, không
+// đụng tới các nét vẽ tay. Chạy nền định kỳ, chỉ cho mã đang hiển thị trên panel CHART.
+// ═══════════════════════════════════════════════════════
+const LITE_CHART_AUTOREFRESH_SEC=20;
+let _liteQuietRefreshing=false;
+async function _liteQuietRefreshChart(){
+  if(_liteQuietRefreshing)return;                          // lượt trước chưa xong, khỏi chồng lượt
+  if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;       // panel CHART đang thu gọn/ẩn — khỏi tải ngầm phí công
+  if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return; // chart chưa sẵn sàng
+  if(document.hidden)return;                                // tab đang ẩn, khỏi tải ngầm phí công
+  if(_liteDrawTool!=='cursor')return;                        // đang dùng công cụ vẽ tay, khỏi làm gián đoạn
+  const sym=_liteSymbol,tf=_liteTf;
+  _liteQuietRefreshing=true;
+  try{
+    // limit nhỏ vì chỉ cần nến cuối cùng — backend tự chốt tối thiểu 50 nến, vẫn rất nhẹ.
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=50');
+    if(!r.ok)return;
+    const j=await r.json();
+    // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
+    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
+    const rawBar=j.candles[j.candles.length-1];
+    const key=liteTimeKey(rawBar.time);
+    const isNewBar=!_liteDataByTime.has(key); // true = sang phiên mới (thêm nến), false = vá nến hiện tại
+    const prevBar=isNewBar?_liteData[_liteData.length-1]
+                          :(_liteData.length>1?_liteData[_liteData.length-2]:null);
+    const pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
+    const bar={...rawBar,pct};
+    if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
+    _liteDataByTime.set(key,bar);
+    _liteCandle.update(bar);
+    const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
+    if(rawVol){
+      const volBar={...rawVol,color:_liteVolumeColorForBar(bar)};
+      if(isNewBar)_liteVolumeData.push(volBar);else _liteVolumeData[_liteVolumeData.length-1]=volBar;
+      _liteVolume.update(volBar);
+    }
+    if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
+    renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
+    updateLiteTitle(_liteData[_liteData.length-1]);
+    _liteApplyBuySignal();
+  }catch(e){
+    // Lỗi mạng/tạm thời — bỏ qua êm, chờ lượt refresh kế tiếp, không làm phiền người dùng.
+  }finally{
+    _liteQuietRefreshing=false;
+  }
+}
 function bindLiteChartControls(){
   loadLiteIndicatorPrefs();
   loadLiteTrendMode();
@@ -6581,6 +6774,8 @@ async function fetchSigs(){
     _liteApplyBuySignal();
     const momentum=j.momentum||[];
     _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
+    _attentTodayMap=new Map((j.attent||[]).map(s=>[s.symbol,s]));
+    _breakvolTodayMap=new Map((j.breakvol||[]).map(s=>[s.symbol,s]));
     if(!momentum.length){
       DOM.momentumList.innerHTML='';
     }else{
@@ -7339,6 +7534,8 @@ function _lgGetGroups(){
     {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
     {name:'SIGNAL',syms:[..._sigTodayMap.keys()]},
     {name:'MOMENTUM',syms:[..._momentumTodayMap.keys()]},
+    {name:'ATTENT',syms:[..._attentTodayMap.keys()]},
+    {name:'BREAKVOL',syms:[..._breakvolTodayMap.keys()]},
     ..._hvGroups
   ];
 }
@@ -7499,7 +7696,7 @@ document.addEventListener('click',e=>{
   if(DOM.lgSidebar.contains(e.target))return;
   DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
 });
-// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, TRADING, VN30, nhóm ngành...)
+// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, ATTENT, BREAKVOL, TRADING, VN30, nhóm ngành...)
 // để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
 function _hvBuildTabs(){
   const groups=_lgGetGroups();
@@ -7932,19 +8129,24 @@ window.addEventListener('message',e=>{
 // INIT
 // ═══════════════════════════════════════════════════════
 async function init(){
-  await loadConfig();
   initDesktopNotifyBtn();
   _refreshChartModeUI();
   bindLiteChartControls();
   bindAlertControls();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
-  await Promise.all([fetchSigs(),fetchHmap(),fetchHealth()]);
+  // Bắn tải CHART NGAY LẬP TỨC — không await, không chờ config/tín hiệu/heatmap/health xong
+  // trước. Trước đây 4 API này chạy TUẦN TỰ (await Promise.all(...) rồi mới loadLiteChart())
+  // nên dù cache chart đã sẵn sàng, panel CHART vẫn phải đợi hết round-trip của 4 API không
+  // liên quan mới bắt đầu tải — giờ chạy song song, chart tự vẽ ngay khi request riêng của
+  // nó xong, không phụ thuộc các API kia.
   loadLiteChart(_liteSymbol);
+  await Promise.all([loadConfig(),fetchSigs(),fetchHmap(),fetchHealth()]);
   await Promise.all([loadAlerts(),pollAlertFeed(false)]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
   setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
+  setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
 init();
 </script>
