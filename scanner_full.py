@@ -137,6 +137,17 @@ HEATMAP_COLUMNS = [
     for idx, col in enumerate(HMAP_COLS_CONFIG)
 ]
 
+# Precompute 1 lần duy nhất lúc module load: HEATMAP_COLUMNS/TRADING_STOCKS_POOL là
+# cấu hình tĩnh (không đổi khi chạy), nên tập hợp "mã cần tải giá" cho heatmap luôn
+# giống hệt nhau ở mọi lần gọi fetch_heatmap_data(). Trước đây set/list này bị dựng lại
+# (duyệt lồng nhau qua toàn bộ HEATMAP_COLUMNS) mỗi lần fetch_heatmap_data() chạy — tức
+# mỗi 120s (HEATMAP_TTL_SEC) cho dashboard, cộng thêm mỗi lần lệnh /heatmap Telegram —
+# dù kết quả không bao giờ đổi. Giữ nguyên kết quả hệt như trước, chỉ tính 1 lần.
+_HEATMAP_NEED_SYMBOLS = list(
+    {s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
+    | set(TRADING_STOCKS_POOL)
+)
+
 HMAP_POS_COLORS = [
     (235,248,238), (231,247,234), (225,245,228), (220,243,224),
     (215,242,220), (205,238,211), (195,235,200), (186,232,193),
@@ -290,8 +301,7 @@ def _hmap_col_height(groups):
 
 def fetch_heatmap_data() -> tuple:
     engine = Trading(source=DATA_SOURCE)
-    need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
-                  | set(TRADING_STOCKS_POOL))
+    need   = _HEATMAP_NEED_SYMBOLS
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã...")
     result    = {}
@@ -1850,8 +1860,11 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
-                    df_mom = compute_indicators(df_merged)
-                    mom_pct = (df_mom['close'].iloc[-1] - df_mom['close'].iloc[-2]) / df_mom['close'].iloc[-2] * 100
+                    # compute_indicators() không cần thiết ở đây: giá trị dùng bên dưới chỉ
+                    # là cột 'close' gốc (không đổi qua compute_indicators), nên dùng thẳng
+                    # df_merged thay vì tính lại toàn bộ ~20 cột chỉ báo (MA/EMA/RSI/MACD)
+                    # chỉ để lấy 2 giá đóng cửa gần nhất — kết quả mom_pct giữ nguyên y hệt.
+                    mom_pct = (df_merged['close'].iloc[-1] - df_merged['close'].iloc[-2]) / df_merged['close'].iloc[-2] * 100
                     current_momentum[symbol] = {"signals": momentum_signals, "pct": round(mom_pct, 1)}
             except Exception as e:
                 print(f"    ⚠️  Momentum {symbol}: {e}")
