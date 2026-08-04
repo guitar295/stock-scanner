@@ -4,8 +4,10 @@ DASHBOARD SERVER
 
 from flask import Flask, jsonify, Response, request, session, send_from_directory
 from functools import wraps
+from io import BytesIO
 from pathlib import Path
 import base64
+import gzip
 import hmac
 import json
 import math
@@ -22,6 +24,37 @@ TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 app = Flask(__name__)
 app.secret_key = os.environ.get("DASHBOARD_SECRET_KEY", "change-this-dashboard-secret-key")
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
+
+# Ngưỡng dung lượng tối thiểu (bytes) mới nén — response quá nhỏ thì overhead
+# gzip (header ~20 bytes + CPU) không bù lại được, nén chỉ có lợi từ đây trở lên.
+_GZIP_MIN_BYTES = 500
+
+@app.after_request
+def _gzip_response(response):
+    """Nén gzip các response JSON/HTML (chart data, trang dashboard, v.v.) khi
+    trình duyệt hỗ trợ — payload dạng số/JSON lặp lại nhiều nên nén rất hiệu
+    quả (thường giảm 70-80%), giúp panel CHART tải nhanh hơn rõ rệt trên mạng
+    chậm mà KHÔNG cần đổi format dữ liệu hay logic ở frontend."""
+    if "gzip" not in (request.headers.get("Accept-Encoding", "") or "").lower():
+        return response
+    if response.direct_passthrough or response.headers.get("Content-Encoding"):
+        return response  # đã stream sẵn (vd file tĩnh) hoặc đã được nén rồi — bỏ qua
+    data = response.get_data()
+    if len(data) < _GZIP_MIN_BYTES:
+        return response
+    buf = BytesIO()
+    with gzip.GzipFile(mode="wb", fileobj=buf, compresslevel=6) as gz:
+        gz.write(data)
+    compressed = buf.getvalue()
+    if len(compressed) >= len(data):
+        return response  # nén không giúp ích (hiếm, vd data đã compressed sẵn) — giữ nguyên bản gốc
+    response.set_data(compressed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(compressed))
+    vary = response.headers.get("Vary", "")
+    if "Accept-Encoding" not in vary:
+        response.headers["Vary"] = (vary + ", Accept-Encoding").lstrip(", ")
+    return response
 
 _get_alerted_today = None
 _get_momentum_today = None
@@ -142,7 +175,25 @@ def _json_safe(obj):
     return obj
 
 
+_journal_storage_ready = False
+_journal_storage_init_lock = threading.Lock()
+
 def _init_journal_storage():
+    # Trước đây hàm này (tạo bảng CREATE TABLE IF NOT EXISTS) chạy lại ở MỌI request
+    # đụng tới journal (qua _journal_conn() và vài route gọi trực tiếp), tốn thêm 1
+    # kết nối SQLite + vài câu lệnh DDL dư thừa mỗi lần — dù idempotent nên không sai
+    # kết quả, nhưng lãng phí. Giờ chỉ chạy đúng 1 lần cho cả vòng đời process; các
+    # lần gọi sau return ngay, hành vi/kết quả trả về cho client giữ nguyên y hệt.
+    global _journal_storage_ready
+    if _journal_storage_ready:
+        return
+    with _journal_storage_init_lock:
+        if _journal_storage_ready:
+            return
+        _do_init_journal_storage()
+        _journal_storage_ready = True
+
+def _do_init_journal_storage():
     JOURNAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(JOURNAL_DB_PATH) as conn:
         conn.execute("""
@@ -187,7 +238,22 @@ def _journal_conn():
     return conn
 
 
+_price_alert_storage_ready = False
+_price_alert_storage_init_lock = threading.Lock()
+
 def _init_price_alert_storage():
+    # Cùng tối ưu như _init_journal_storage(): chỉ chạy DDL đúng 1 lần/process thay
+    # vì mỗi request, tránh mở dư 1 kết nối SQLite mỗi lần gọi _price_alert_conn().
+    global _price_alert_storage_ready
+    if _price_alert_storage_ready:
+        return
+    with _price_alert_storage_init_lock:
+        if _price_alert_storage_ready:
+            return
+        _do_init_price_alert_storage()
+        _price_alert_storage_ready = True
+
+def _do_init_price_alert_storage():
     JOURNAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(JOURNAL_DB_PATH) as conn:
         conn.execute("""
@@ -622,8 +688,22 @@ def api_lightweight_chart(symbol):
     # Đọc df CUỐI CÙNG đúng 1 lần duy nhất ở đây (sau khi các bước ensure ở trên,
     # nếu có, đã chạy xong) — tránh copy DataFrame 2 lần dư thừa như phiên bản trước.
     with _cache_lock:
-        df = cache.get(symbol)
-        df = df.copy() if df is not None and len(df) else None
+        raw_df = cache.get(symbol)
+        is_weekly = tf in ("1W", "W", "WEEK", "WEEKLY")
+        if raw_df is None or not len(raw_df):
+            df = None
+        elif is_weekly:
+            # Resample tuần cần gộp từ dữ liệu ngày ĐẦY ĐỦ mới ra đúng kết quả — giữ
+            # nguyên copy() toàn bộ như bản cũ, không tối ưu nhánh này để không có rủi
+            # ro làm sai lệch số liệu weekly.
+            df = raw_df.copy()
+        else:
+            # Nhánh ngày (phổ biến nhất, mặc định của panel CHART): chỉ cần đúng
+            # `limit` dòng cuối — cắt bằng .tail() (view nhẹ, không copy dữ liệu) TRƯỚC
+            # rồi mới .copy() đúng phần nhỏ đó, thay vì copy nguyên DataFrame lịch sử
+            # (có thể nhiều năm dữ liệu) như bản cũ rồi mới cắt. Kết quả trả về giống hệt
+            # bản cũ (vẫn đúng `limit` dòng cuối cùng), chỉ giảm chi phí copy dưới lock.
+            df = raw_df.tail(limit).copy()
     if df is None or df.empty:
         return jsonify({"error": "no_cache", "symbol": symbol}), 404
     if tf in ("1W", "W", "WEEK", "WEEKLY"):
