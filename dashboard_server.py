@@ -1719,8 +1719,12 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-outer::-webkit-scrollbar{height:4px}
 .hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hmap-row{display:inline-flex;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
-.hmap-col{display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
+.hmap-col{position:relative;display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
 .hmap-group{display:flex;flex-direction:column;gap:2px}
+/* Khối FOLLOW đè lên (overlay) phần cuối cột VN30 thay vì nối thêm xuống dưới —
+   neo đáy, tự cao dần lên khi FOLLOW có thêm mã, không cộng thêm chiều cao vào
+   layout tổng thể của hàng Heatmap (cột VN30 vẫn giữ nguyên chiều cao gốc). */
+.hmap-follow-overlay{position:absolute;left:0;right:0;bottom:0;background:var(--surface);z-index:3}
 .hmap-ghdr{display:flex;align-items:center;justify-content:center;padding:0 8px;height:24px;border-radius:4px;background:rgb(220,228,250);border:1px solid rgb(160,180,230);gap:16px}
 .hmap-gname{font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgb(25,55,150);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hmap-gavg{font-family:var(--font-mono);font-size:9px;flex-shrink:0}
@@ -5180,7 +5184,12 @@ function showLiteChartStatus(status){
   clearTimeout(DOM.liteChartStatus._hideTimer);
   DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
 }
-async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
+// LITE_CHART_RETRY_MAX/DELAY: số lần thử lại tối đa và khoảng cách giữa mỗi lần khi API
+// /api/lightweight_chart/ trả no_cache (404) — trước đây chỉ 1 lần/5s (~10s tổng), không đủ
+// cho các mã phải fetch trực tiếp từ vnstock lúc cache chưa có (đặc biệt VNINDEX/VN30, xem
+// ensure_symbol_live_in_cache() ở backend — có thể mất 6-10s+ do tự retry nội bộ khi mạng chập chờn).
+const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
+async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
@@ -5191,7 +5200,7 @@ async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   DOM.liteChartEmpty.style.display='flex';
   showLiteChartStatus(null);
   if(!window.LightweightCharts){
-    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),1200);
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),1200);
     return;
   }
   // Gọi song song: status chỉ để hiển thị placeholder text, không cần chờ nó xong
@@ -5236,7 +5245,7 @@ async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
-    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),5000);
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
 }
 function bindLiteChartControls(){
@@ -5474,7 +5483,8 @@ function mkSectorCol(d){
 }
 function mkFollowGroup(d){
   if(!FOLLOW.length||!FOLLOW_ON)return'';
-  return `<div class="hmap-col"><div class="hmap-group"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div></div>`;
+  const avg=avgPct(FOLLOW,d),sign=avg>=0?'+':'',cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
+  return `<div class="hmap-group hmap-follow-overlay"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
 function renderHeatmap(d){
   if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
@@ -5483,9 +5493,9 @@ function renderHeatmap(d){
   const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
   HMAP_COLS.forEach((cd,i)=>{
     const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
-    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${extra}</div>`);
+    const followExtra=i===0?mkFollowGroup(d):'';
+    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${followExtra}${extra}</div>`);
   });
-  const follow=mkFollowGroup(d);if(follow)parts.push(follow);
   DOM.hmapGrid.innerHTML=parts.join('');
 }
 // Event delegation heatmap
