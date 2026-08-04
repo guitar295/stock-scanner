@@ -569,6 +569,28 @@ def api_lightweight_chart_status(symbol):
     return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
                     "reason": "fallback_check"})
 
+_chart_ensure_inflight: set = set()
+_chart_ensure_inflight_lock = threading.Lock()
+
+def _ensure_chart_symbol_background(symbol: str):
+    """Chạy _ensure_chart_symbol_fn(symbol) ở thread nền — dùng khi cache ĐÃ có
+    sẵn đủ dữ liệu để trả lời ngay, để việc update/vá nến (có thể gọi mạng
+    vnstock, tốn thời gian) không làm chậm response CHART hiện tại. Kết quả cập
+    nhật sẽ có sẵn cho lần tải chart kế tiếp."""
+    with _chart_ensure_inflight_lock:
+        if symbol in _chart_ensure_inflight:
+            return  # đã có 1 lượt ensure đang chạy nền cho mã này, khỏi trùng
+        _chart_ensure_inflight.add(symbol)
+    def _run():
+        try:
+            _ensure_chart_symbol_fn(symbol)
+        except Exception as exc:
+            print(f"  [LiteChart] {symbol}: ensure cache nền lỗi: {exc}")
+        finally:
+            with _chart_ensure_inflight_lock:
+                _chart_ensure_inflight.discard(symbol)
+    threading.Thread(target=_run, daemon=True).start()
+
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
@@ -578,17 +600,29 @@ def api_lightweight_chart(symbol):
     except (TypeError, ValueError):
         limit = 320
     limit = max(50, min(1000, limit))
-    if _ensure_chart_symbol_fn:
-        try:
-            _ensure_chart_symbol_fn(symbol)
-        except Exception as exc:
-            print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
-    cache = _get_history_cache() if _get_history_cache else {}
     if not _cache_lock:
         return jsonify({"error": "cache_not_ready"}), 503
+    cache = _get_history_cache() if _get_history_cache else {}
     with _cache_lock:
         df = cache.get(symbol)
+        has_cache = df is not None and len(df) >= 60
         df = df.copy() if df is not None and len(df) else None
+    if _ensure_chart_symbol_fn:
+        if has_cache:
+            # Cache đã đủ dữ liệu để vẽ chart ngay — trả lời cho client TRƯỚC,
+            # việc update/vá nến mới nhất (có gọi mạng vnstock, chậm) đẩy xuống
+            # chạy nền phía sau để tốc độ load chart không bị delay bởi nó.
+            _ensure_chart_symbol_background(symbol)
+        else:
+            # Chưa có cache (lần đầu xem mã này) → bắt buộc phải chờ tải xong
+            # mới có dữ liệu để trả, không thể "load ngay" khi chưa có gì.
+            try:
+                _ensure_chart_symbol_fn(symbol)
+            except Exception as exc:
+                print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
+            with _cache_lock:
+                df = cache.get(symbol)
+                df = df.copy() if df is not None and len(df) else None
     if df is None or df.empty:
         return jsonify({"error": "no_cache", "symbol": symbol}), 404
     if tf in ("1W", "W", "WEEK", "WEEKLY"):
