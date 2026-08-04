@@ -131,6 +131,16 @@ _chart_cache: dict = {}
 _chart_lock = threading.Lock()
 CHART_TTL_SEC = 120
 
+# Màu cột Volume: 0=trung tính (xanh/đỏ theo close-open), 1=cảnh báo suy yếu
+# (gate xu hướng + Nhánh1-biến A / upThrustBar / topRevBar), 2=tín hiệu tích
+# lũy mạnh (stopVolume/revUpThrust). Cột "vpa_flag" đã được tính sẵn từ khi
+# build/vá history_cache bên scanner_full.py (calc_vpa_flag) — route
+# /api/lightweight_chart CHỈ đọc, không tính lại, để tránh lặp logic + tốn CPU
+# mỗi request. Nhánh weekly (resample) không giữ cột này nên tự động rơi về
+# màu trung tính — chấp nhận được vì các tín hiệu VPA lõi vốn chỉ có ý nghĩa ở
+# khung ngày.
+_VPA_FLAG_COLOR = {1: "#254fcc", 2: "#00ffe5"}
+
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
@@ -748,8 +758,9 @@ def api_lightweight_chart(symbol):
             continue
         day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
         candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
-        volume.append({"time": day, "value": max(0, v),
-                       "color": "#26a69a" if c >= o else "#ef5350"})
+        vpa_flag = int(row.get("vpa_flag", 0) or 0)
+        color = _VPA_FLAG_COLOR.get(vpa_flag) or ("#26a69a" if c >= o else "#ef5350")
+        volume.append({"time": day, "value": max(0, v), "color": color})
     if not candles:
         return jsonify({"error": "no_data", "symbol": symbol}), 404
     return jsonify({"symbol": symbol, "timeframe": tf, "candles": candles, "volume": volume,
@@ -2556,6 +2567,14 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <button class="lite-tf-btn" data-tf="1W">W</button>
         </div>
         <div class="lite-indicators" id="lite-indicators">
+          <div class="lite-ind-group" data-group="signalgrp">
+            <input type="checkbox" class="lite-ind-master" value="signalgrp_on">
+            <button type="button" class="lite-ind-group-btn" data-group-btn="signalgrp">Signal<span class="lite-ind-count" data-count="signalgrp"></span><span class="lite-ind-caret">▾</span></button>
+            <div class="lite-ind-dropdown" data-dropdown="signalgrp">
+              <label><input type="checkbox" value="signal">Buy-Signal</label>
+              <label><input type="checkbox" value="volcolor">Volume-Signal</label>
+            </div>
+          </div>
           <div class="lite-ind-group" data-group="maema">
             <input type="checkbox" class="lite-ind-master" value="maema_on">
             <button type="button" class="lite-ind-group-btn" data-group-btn="maema">MA/EMA<span class="lite-ind-count" data-count="maema"></span><span class="lite-ind-caret">▾</span></button>
@@ -2593,7 +2612,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="rsi"><span class="lite-ind-label" data-ind="rsi" title="Bấm để đổi màu">RSI</span><input type="color" class="lite-ind-color" data-ind="rsi" value="#7c6ee6"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
-          <label class="lite-ind-simple"><input type="checkbox" value="signal">Signal</label>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
           <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
@@ -3399,9 +3417,10 @@ function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
   DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-    // maema_on là checkbox mới thêm — mặc định BẬT để không làm ẩn mất các đường MA/EMA
-    // người dùng đã bật từ trước (localStorage cũ chưa có key này). Các checkbox khác giữ quy ước cũ.
-    cb.checked=cb.value==='maema_on'?(prefs[cb.value]!==false):(prefs[cb.value]===true);
+    // maema_on, signalgrp_on và volcolor mặc định BẬT (giữ hành vi cũ trước khi có
+    // checkbox này — MA/EMA hiển thị sẵn, Volume tô màu VPA sẵn) cho user chưa có key
+    // này trong localStorage. Các checkbox khác giữ quy ước cũ (mặc định TẮT).
+    cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
 }
@@ -3499,7 +3518,7 @@ function updateLiteTitle(bar){
 // không gọi thêm API nào, không tính toán chỉ báo riêng, nên gần như không tốn thêm chi phí.
 function _liteApplyBuySignal(){
   if(!_liteCandle||!_liteData.length)return;
-  const sig=_liteChecked('signal')?_sigTodayMap.get(_liteSymbol):null;
+  const sig=(_liteChecked('signalgrp_on')&&_liteChecked('signal'))?_sigTodayMap.get(_liteSymbol):null;
   if(sig){
     let arrowColor='#9333ea';
     if(DOM.liteChartSignal){
@@ -3568,15 +3587,6 @@ function _bbands(data,n=20,mult=2){
     lower.push({time:data[i].time,value:m-mult*sd});
   }
   return{upper,mid,lower};
-}
-function _liteVolumeColorForBar(bar){
-  return bar&&Number(bar.close)>=Number(bar.open)?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
-}
-function _liteNormalizeVolumeData(volume,data){
-  return (volume||[]).map((v,idx)=>{
-    const bar=data[idx];
-    return {...v,color:_liteVolumeColorForBar(bar)};
-  });
 }
 function _rsi(data,n=LITE_RSI_PERIOD){
   if(!data||data.length<=n)return [];
@@ -5210,6 +5220,7 @@ function renderLiteIndicators(){
   const emaOn=maEmaOn?LITE_EMA_PERIODS.filter(p=>_liteChecked('ema'+p)):[];
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
+  const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
   applyLitePaneLayout();
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
   // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
@@ -5307,17 +5318,28 @@ function renderLiteIndicators(){
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
-  _liteRefreshVolumeTop();
+  _liteRefreshVolumeTop(showVpaVol);
   if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
   redrawLiteDrawings();
 }
-function _liteRefreshVolumeTop(){
+function _liteVolColorFor(volBar,showVpa){
+  // checkbox "volcolor" (nhóm Signal) BẬT → dùng nguyên màu server tính (kể cả cờ VPA
+  // xanh dương/tím). TẮT → phớt lờ cờ VPA, trả về màu xanh/đỏ mặc định theo close/open,
+  // giống hệt quy ước màu mặc định phía backend khi vpa_flag=0.
+  // showVpa truyền vào từ ngoài (đọc DOM 1 lần/lượt vẽ) để tránh querySelector lặp lại
+  // cho từng bar khi map qua cả nghìn nến.
+  if(showVpa)return volBar.color;
+  const cd=_liteDataByTime.get(liteTimeKey(volBar.time));
+  return cd?(cd.close>=cd.open?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR):volBar.color;
+}
+function _liteRefreshVolumeTop(showVpaVol){
   // Vẽ lại volume sau cùng để nó luôn nổi trên phần fill/nền trắng của BB, không bị che.
   if(!_liteChart||!_liteVolume)return;
   try{_liteChart.removeSeries(_liteVolume);}catch(e){}
   _liteVolume=_liteChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  _liteVolume.setData(_liteVolumeData);
+  // showVpaVol truyền vào từ renderLiteIndicators() (đọc DOM 1 lần/lượt vẽ, giống maEmaOn/showRsi...).
+  _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v,showVpaVol)})));
 }
 function showLiteChartStatus(status){
   if(!DOM.liteChartStatus)return;
@@ -5375,9 +5397,14 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       return{...bar,pct};
     });
     _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
-    _liteVolumeData=_liteNormalizeVolumeData(j.volume,_liteData);
+    // Màu volume (bao gồm cờ VPA xanh dương/tím) đã được server tính sẵn theo từng
+    // bar, lưu nguyên trong _liteVolumeData. Màu THỰC hiển thị tuỳ checkbox "volcolor"
+    // (nhóm Signal) — xem _liteVolColorFor(), áp dụng ở _liteRefreshVolumeTop().
+    _liteVolumeData=j.volume||[];
     _liteCandle.setData(_liteData);
-    _liteVolume.setData(_liteVolumeData);
+    // Không setData cho _liteVolume ở đây: renderLiteIndicators() gọi ngay bên dưới
+    // sẽ chạy _liteRefreshVolumeTop() — hàm đó xoá + tạo lại series volume rồi tự
+    // setData (có áp dụng toggle "volcolor") nên gọi ở đây trước đó chỉ phí công.
     _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
@@ -5427,9 +5454,12 @@ async function _liteQuietRefreshChart(){
     _liteCandle.update(bar);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
-      const volBar={...rawVol,color:_liteVolumeColorForBar(bar)};
-      if(isNewBar)_liteVolumeData.push(volBar);else _liteVolumeData[_liteVolumeData.length-1]=volBar;
-      _liteVolume.update(volBar);
+      // rawVol.color đã đúng màu (kể cả cờ VPA) do server tính — giữ nguyên trong
+      // _liteVolumeData (dữ liệu gốc); màu THỰC vẽ ra tuỳ checkbox "volcolor" (nhóm Signal).
+      // Không gọi _liteVolume.update() ở đây: renderLiteIndicators() ngay bên dưới luôn
+      // chạy _liteRefreshVolumeTop() — hàm đó xoá + tạo lại series volume rồi setData()
+      // lại toàn bộ _liteVolumeData, nên patch ở đây sẽ bị ghi đè ngay, chỉ tốn công.
+      if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
     renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
@@ -5458,7 +5488,23 @@ function bindLiteChartControls(){
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
-  DOM.liteIndicators?.addEventListener('change',()=>{saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();renderLiteIndicators();_liteApplyBuySignal();});
+  DOM.liteIndicators?.addEventListener('change',(e)=>{
+    saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
+    // Cả 3 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal) và
+    // "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng mũi tên+badge tín hiệu
+    // (_liteApplyBuySignal) và/hoặc màu volume (_liteRefreshVolumeTop). Chúng KHÔNG đụng tới
+    // MA/EMA/BB/RSI/MACD hay pane layout, nên không gọi renderLiteIndicators() đầy đủ ở đây —
+    // hàm đó luôn chạy applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và
+    // xoá/dựng lại toàn bộ chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
+    const val=e.target?.value;
+    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'){
+      if(val!=='signal')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
+      _liteApplyBuySignal();
+    }else{
+      renderLiteIndicators();
+      _liteApplyBuySignal();
+    }
+  });
   DOM.liteChartFrame?.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
     // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
