@@ -713,8 +713,12 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
 
     flag = pd.Series(0, index=df.index, dtype='int8')
     blue_signal = gate_not_downtrend & (nhanh1 | up_thrust_bar | up_thrust_bar_true | top_rev_bar)
-    flag[blue_signal.fillna(False)]                     = 1
-    flag[(stop_volume | rev_up_thrust).fillna(False)]   = 2   # ưu tiên tích lũy nếu trùng cả 2 (hiếm)
+    # Gate tím: AFL gốc bọc (upmajor<0 AND upminor<0) ngoài (stopVolume OR revUpThrust)
+    # trước khi tô "Super Up Color" — thiếu vế upminor<0 khiến stop_volume tô tím cả khi
+    # upminor>=0 (dương tính giả so với bản gốc).
+    purple_gate = (upmajor < 0) & (upminor < 0)
+    flag[blue_signal.fillna(False)]                                   = 1
+    flag[(purple_gate & (stop_volume | rev_up_thrust)).fillna(False)] = 2   # ưu tiên tích lũy nếu trùng cả 2 (hiếm)
     return flag
 
 
