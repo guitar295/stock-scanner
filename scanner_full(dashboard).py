@@ -137,6 +137,17 @@ HEATMAP_COLUMNS = [
     for idx, col in enumerate(HMAP_COLS_CONFIG)
 ]
 
+# Precompute 1 lần duy nhất lúc module load: HEATMAP_COLUMNS/TRADING_STOCKS_POOL là
+# cấu hình tĩnh (không đổi khi chạy), nên tập hợp "mã cần tải giá" cho heatmap luôn
+# giống hệt nhau ở mọi lần gọi fetch_heatmap_data(). Trước đây set/list này bị dựng lại
+# (duyệt lồng nhau qua toàn bộ HEATMAP_COLUMNS) mỗi lần fetch_heatmap_data() chạy — tức
+# mỗi 120s (HEATMAP_TTL_SEC) cho dashboard, cộng thêm mỗi lần lệnh /heatmap Telegram —
+# dù kết quả không bao giờ đổi. Giữ nguyên kết quả hệt như trước, chỉ tính 1 lần.
+_HEATMAP_NEED_SYMBOLS = list(
+    {s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
+    | set(TRADING_STOCKS_POOL)
+)
+
 HMAP_POS_COLORS = [
     (235,248,238), (231,247,234), (225,245,228), (220,243,224),
     (215,242,220), (205,238,211), (195,235,200), (186,232,193),
@@ -290,8 +301,7 @@ def _hmap_col_height(groups):
 
 def fetch_heatmap_data() -> tuple:
     engine = Trading(source=DATA_SOURCE)
-    need   = list({s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
-                  | set(TRADING_STOCKS_POOL))
+    need   = _HEATMAP_NEED_SYMBOLS
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã...")
     result    = {}
@@ -1616,6 +1626,79 @@ def calc_bottombreakp(df):
     )
     return rsi_cond & high_close_bar & short_wick & price_cond & cond_range & bvol & liq
 
+def _session_time_progress(now_time: int) -> float:
+    """
+    Dịch lại y hệt biến Ti2 trong code AmiBroker gốc: tỉ lệ thời gian giao dịch đã
+    trôi qua trong phiên hiện tại (0-1), dùng để chuẩn hoá khối lượng khớp lệnh tính
+    đến thời điểm hiện tại về khối lượng kỳ vọng cho cả ngày (tổng 240 phút = phiên
+    sáng 9h00-11h30 + phiên chiều 13h00-14h45, quy tròn về mốc gốc của AFL).
+    Trả về 1.0 (không điều chỉnh) nếu ngoài giờ giao dịch (trước 9h00 hoặc sau 14h30) —
+    giống điều kiện `Now(4)<090000 OR Now(4)>143000` trong AFL.
+    """
+    if now_time < 90000 or now_time > 143000:
+        return 1.0
+    hh = now_time // 10000
+    mm = (now_time // 100) % 100
+    hh_morning = hh if hh < 12 else 11
+    morning_minutes_from_hour = (hh_morning - 9) * 60
+    morning_minutes = 30 if now_time > 113100 else mm
+    total_morning = morning_minutes_from_hour + morning_minutes
+    hh_afternoon = 0 if hh < 14 else 1
+    afternoon_minutes_from_hour = hh_afternoon * 60
+    afternoon_minutes = mm if now_time >= 130000 else 0
+    total_afternoon = afternoon_minutes_from_hour + afternoon_minutes
+    total_minutes = total_morning + total_afternoon
+    # Bảo vệ chia-cho-0 ở đúng mốc 09:00:00 (Tigd=0 trong AFL gốc cũng rơi vào biên này,
+    # nhưng AFL không chia cho 0 nhờ may mắn của thứ tự đánh giá; ở đây chặn tường minh).
+    return (total_minutes / 240) if total_minutes > 0 else (1.0 / 240)
+
+def calc_attent(df, now_time):
+    """
+    ATTENT — danh sách "đáng chú ý": thanh khoản đủ tốt, giá tăng >0.5% so với hôm
+    trước, và ít nhất 1 trong 2 nhóm điều kiện sau đúng:
+      • Xu hướng trung hạn đang đi lên (MA50/MA30/MA20 tăng 2 phiên liên tiếp và nằm
+        trên MA200), HOẶC
+      • Khối lượng đang khớp nhanh hơn kỳ vọng cùng thời điểm trong ngày (so với
+        trung bình 30/50 phiên, đã chuẩn hoá theo % thời gian phiên đã trôi qua) và
+        giá đang trên MA10 — tức dòng tiền vào sớm hơn/mạnh hơn bình thường.
+    Dịch lại 1:1 biến ATTENT trong code AmiBroker gốc.
+    """
+    C, V = df['close'], df['volume']
+    liq = (
+        (C >= 5) &
+        (df['VMA30'] >= 50_000) & (df['VMA20'] >= 50_000) &
+        (df['VMA10'] >= 50_000) & (df['VMA50'] >= 50_000) &
+        (df['MA5']  * df['VMA5']  > 2_000_000) &
+        (df['MA10'] * df['VMA10'] > 2_000_000) &
+        (df['MA15'] * df['VMA15'] > 2_000_000) &
+        (df['MA20'] * df['VMA20'] > 2_000_000)
+    )
+    price_up = (C / ref(C, 1)) > 1.005
+    ti2 = _session_time_progress(now_time)
+    vol_pace_50 = ((V / df['VMA50']) / ti2) > 1.2
+    vol_pace_30 = ((V / df['VMA30']) / ti2) > 1.2
+    mid_term_up = (
+        ((df['MA50'] >= ref(df['MA50'], 1)) & (df['MA50'] >= ref(df['MA50'], 2)) & (df['MA50'] >= df['MA200'])) |
+        ((df['MA30'] >= ref(df['MA30'], 1)) & (df['MA30'] >= ref(df['MA30'], 2)) & (df['MA30'] >= df['MA200'])) |
+        ((df['MA20'] >= ref(df['MA20'], 1)) & (df['MA20'] >= ref(df['MA20'], 2)) & (df['MA20'] >= df['MA200'])) |
+        (vol_pace_50 & (C > df['MA10'])) |
+        (vol_pace_30 & (C > df['MA10']))
+    )
+    return liq & price_up & mid_term_up
+
+def calc_breakvol_signal(df, now_time):
+    """
+    BREAKVOL — cảnh báo khối lượng "nổ" sớm trong phiên: khối lượng khớp tính đến
+    thời điểm hiện tại, sau khi chuẩn hoá theo % thời gian phiên đã trôi qua, đang
+    vượt 1.2 lần trung bình khối lượng 50 phiên, đồng thời giá đang tăng so với hôm
+    trước. Dịch lại 1:1 biến BREAKVOL trong code AmiBroker gốc (không kèm điều kiện
+    thanh khoản/liquidity — đúng như bản gốc chỉ xét khối lượng + giá tăng).
+    """
+    C, V = df['close'], df['volume']
+    ti2 = _session_time_progress(now_time)
+    vol_pace = ((V / df['VMA50']) / ti2) > 1.2
+    return vol_pace & (C > ref(C, 1))
+
 def calc_ma_cross(df):
     C, V = df['close'], df['volume']
     ma_cross_cond = (
@@ -1827,9 +1910,12 @@ SIGNAL_EMOJI = {
     'MA_CROSS':     '⚪',
 }
 
-def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_today: dict):
+def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_today: dict,
+                    attent_today: dict = None, breakvol_today: dict = None):
     new_signals  = []
     current_momentum = {}
+    current_attent   = {}
+    current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=2)...")
@@ -1850,11 +1936,28 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
-                    df_mom = compute_indicators(df_merged)
-                    mom_pct = (df_mom['close'].iloc[-1] - df_mom['close'].iloc[-2]) / df_mom['close'].iloc[-2] * 100
+                    # compute_indicators() không cần thiết ở đây: giá trị dùng bên dưới chỉ
+                    # là cột 'close' gốc (không đổi qua compute_indicators), nên dùng thẳng
+                    # df_merged thay vì tính lại toàn bộ ~20 cột chỉ báo (MA/EMA/RSI/MACD)
+                    # chỉ để lấy 2 giá đóng cửa gần nhất — kết quả mom_pct giữ nguyên y hệt.
+                    mom_pct = (df_merged['close'].iloc[-1] - df_merged['close'].iloc[-2]) / df_merged['close'].iloc[-2] * 100
                     current_momentum[symbol] = {"signals": momentum_signals, "pct": round(mom_pct, 1)}
             except Exception as e:
                 print(f"    ⚠️  Momentum {symbol}: {e}")
+
+            try:
+                # ATTENT/BREAKVOL cần các cột MA/EMA/VMA/RSI → tính riêng compute_indicators()
+                # 1 lần dùng chung cho cả 2, tách khỏi detect_signal() (vốn tự tính bản copy
+                # riêng của nó) để không phải sửa chữ ký/kết quả của detect_signal().
+                df_ind = compute_indicators(df_merged)
+                if len(df_ind) >= 60:
+                    pct_today = (df_ind['close'].iloc[-1] - df_ind['close'].iloc[-2]) / df_ind['close'].iloc[-2] * 100
+                    if bool(calc_attent(df_ind, now_time).iloc[-1]):
+                        current_attent[symbol] = {"pct": round(pct_today, 1)}
+                    if bool(calc_breakvol_signal(df_ind, now_time).iloc[-1]):
+                        current_breakvol[symbol] = {"pct": round(pct_today, 1)}
+            except Exception as e:
+                print(f"    ⚠️  ATTENT/BREAKVOL {symbol}: {e}")
 
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
@@ -1920,6 +2023,12 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
     momentum_today.clear()
     momentum_today.update(current_momentum)
+    if attent_today is not None:
+        attent_today.clear()
+        attent_today.update(current_attent)
+    if breakvol_today is not None:
+        breakvol_today.clear()
+        breakvol_today.update(current_breakvol)
     return new_signals
 
 # =============================================================================
@@ -2577,10 +2686,13 @@ _signal_state_lock = threading.Lock()
 
 def _load_signal_state():
     """
-    Đọc lại alerted_today + momentum_today + ngày phiên giao dịch đã lưu từ lần
-    chạy trước. Trả về (alerted_dict, momentum_dict, session_date). session_date
-    =None nếu chưa từng lưu (lần đầu chạy) hoặc file lỗi — khi đó coi như chưa có
-    gì, sẽ tự đồng bộ lại ngay trong lần khởi tạo bên dưới.
+    Đọc lại alerted_today + momentum_today + attent_today + breakvol_today + ngày
+    phiên giao dịch đã lưu từ lần chạy trước. Trả về
+    (alerted_dict, momentum_dict, attent_dict, breakvol_dict, session_date).
+    session_date=None nếu chưa từng lưu (lần đầu chạy) hoặc file lỗi — khi đó coi
+    như chưa có gì, sẽ tự đồng bộ lại ngay trong lần khởi tạo bên dưới.
+    ATTENT/BREAKVOL dùng chung file + cơ chế lưu/đọc với MOMENTUM (key mới, mặc
+    định {} nếu đọc từ file cũ chưa có 2 key này → tương thích ngược).
     """
     try:
         with open(SIGNAL_STATE_FILE, 'r', encoding='utf-8') as f:
@@ -2589,16 +2701,20 @@ def _load_signal_state():
         session_date = datetime.strptime(session_date_str, '%Y-%m-%d').date() if session_date_str else None
         alerted  = data.get('alerted', {}) or {}
         momentum = data.get('momentum', {}) or {}
-        print(f"  💾 Đã đọc trạng thái đã lưu: {len(alerted)} tín hiệu, {len(momentum)} động lượng, phiên {session_date_str or '?'}")
-        return alerted, momentum, session_date
+        attent   = data.get('attent', {}) or {}
+        breakvol = data.get('breakvol', {}) or {}
+        print(f"  💾 Đã đọc trạng thái đã lưu: {len(alerted)} tín hiệu, {len(momentum)} động lượng, "
+              f"{len(attent)} ATTENT, {len(breakvol)} BREAKVOL, phiên {session_date_str or '?'}")
+        return alerted, momentum, attent, breakvol, session_date
     except FileNotFoundError:
-        return {}, {}, None
+        return {}, {}, {}, {}, None
     except Exception as e:
         print(f"  ⚠️  Lỗi đọc {SIGNAL_STATE_FILE}: {e} → bỏ qua, coi như chưa có dữ liệu lưu.")
-        return {}, {}, None
+        return {}, {}, {}, {}, None
 
-def _save_signal_state(alerted: dict, momentum: dict, session_date: date):
-    """Ghi đè toàn bộ trạng thái tín hiệu + động lượng của phiên hiện tại xuống đĩa (ghi an toàn qua file tạm)."""
+def _save_signal_state(alerted: dict, momentum: dict, session_date: date,
+                        attent: dict = None, breakvol: dict = None):
+    """Ghi đè toàn bộ trạng thái tín hiệu + động lượng + ATTENT + BREAKVOL của phiên hiện tại xuống đĩa (ghi an toàn qua file tạm)."""
     try:
         with _signal_state_lock:
             tmp_path = SIGNAL_STATE_FILE + '.tmp'
@@ -2607,6 +2723,8 @@ def _save_signal_state(alerted: dict, momentum: dict, session_date: date):
                     'session_date': session_date.strftime('%Y-%m-%d') if session_date else None,
                     'alerted': alerted,
                     'momentum': momentum,
+                    'attent': attent or {},
+                    'breakvol': breakvol or {},
                 }, f, ensure_ascii=False)
             os.replace(tmp_path, SIGNAL_STATE_FILE)
     except Exception as e:
@@ -2628,14 +2746,15 @@ try:
 except NameError:
     pass
 
-alerted_today, momentum_today, signal_session_date = _load_signal_state()
+alerted_today, momentum_today, attent_today, breakvol_today, signal_session_date = _load_signal_state()
 last_run_date = datetime.now(TZ_VN).date()
 if signal_session_date is None:
     # Lần đầu chạy (chưa từng có file lưu) → coi phiên hiện tại là "phiên của
-    # alerted_today/momentum_today" (rỗng). Vòng lặp chính bên dưới sẽ tự reset
-    # đúng lúc nếu thời điểm khởi động đã là 1 phiên mới so với lần lưu gần nhất.
+    # alerted_today/momentum_today/attent_today/breakvol_today" (rỗng). Vòng lặp
+    # chính bên dưới sẽ tự reset đúng lúc nếu thời điểm khởi động đã là 1 phiên
+    # mới so với lần lưu gần nhất.
     signal_session_date = last_run_date
-    _save_signal_state(alerted_today, momentum_today, signal_session_date)
+    _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
 _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
 
 _stop_listener  = threading.Event()
@@ -2668,6 +2787,8 @@ start_dashboard(
     ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
     chart_symbol_status_fn = chart_symbol_status,
     momentum_today_ref = lambda: momentum_today,
+    attent_today_ref   = lambda: attent_today,
+    breakvol_today_ref = lambda: breakvol_today,
     fetch_market_health_fn = compute_market_health_index,
     signal_session_date_ref = lambda: signal_session_date,
     port              = 8888,
@@ -2758,9 +2879,11 @@ while True:
         if current_date > signal_session_date:
             alerted_today.clear()
             momentum_today.clear()
+            attent_today.clear()
+            breakvol_today.clear()
             signal_session_date = current_date
-            _save_signal_state(alerted_today, momentum_today, signal_session_date)
-            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi.")
+            _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
+            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi (kể cả ATTENT/BREAKVOL).")
 
         # Trong giờ giao dịch: KHÔNG chạy check_and_rebuild_cache_if_stale ở đây nữa
         # (rebuild toàn bộ có thể tốn 45s-vài phút, làm chậm/nghẽn chu kỳ quét tín hiệu).
@@ -2779,7 +2902,8 @@ while True:
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
         print(f"{'='*60}")
 
-        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today)
+        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today,
+                                      attent_today, breakvol_today)
         triggered_alerts = check_price_alerts()
 
         if new_signals:
@@ -2787,9 +2911,10 @@ while True:
         else:
             print(f"[{ts}] Không có tín hiệu mới.")
         # Lưu lại xuống đĩa sau MỖI chu kỳ quét (không chỉ khi có tín hiệu mới) vì
-        # momentum_today được tính lại toàn bộ mỗi chu kỳ — cần đồng bộ liên tục để
-        # khi restart giữa/ngoài phiên vẫn khôi phục được bảng "Động lượng" gần nhất.
-        _save_signal_state(alerted_today, momentum_today, signal_session_date)
+        # momentum_today/attent_today/breakvol_today được tính lại toàn bộ mỗi chu kỳ
+        # — cần đồng bộ liên tục để khi restart giữa/ngoài phiên vẫn khôi phục được
+        # đúng danh sách gần nhất.
+        _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
         if triggered_alerts:
             print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
 
@@ -2799,6 +2924,10 @@ while True:
         if momentum_today:
             summary_mom = " | ".join([f"{k}:{'/'.join(v['signals'])}" for k,v in sorted(momentum_today.items())])
             print(f"   ⚡ Động lượng: {summary_mom}")
+        if attent_today:
+            print(f"   👀 ATTENT ({len(attent_today)}): {', '.join(sorted(attent_today.keys()))}")
+        if breakvol_today:
+            print(f"   💥 BREAKVOL ({len(breakvol_today)}): {', '.join(sorted(breakvol_today.keys()))}")
 
         print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
         time.sleep(SCAN_INTERVAL_SEC)
