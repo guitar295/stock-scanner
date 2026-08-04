@@ -30,6 +30,16 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 _GZIP_MIN_BYTES = 500
 
 @app.after_request
+def _static_cache_headers(response):
+    """File tĩnh trong /static (vd lightweight-charts.min.js) gần như không đổi
+    giữa các lần deploy — cho trình duyệt cache thẳng 7 ngày, khỏi tốn round-trip
+    revalidate (If-None-Match/ETag) mỗi lần load trang. Nếu sau này đổi version
+    lib, đổi luôn tên file để trình duyệt tự tải bản mới thay vì dính cache cũ."""
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    return response
+
+@app.after_request
 def _gzip_response(response):
     """Nén gzip các response JSON/HTML (chart data, trang dashboard, v.v.) khi
     trình duyệt hỗ trợ — payload dạng số/JSON lặp lại nhiều nên nén rất hiệu
