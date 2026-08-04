@@ -516,8 +516,16 @@ heatmap_symbols = {
 cache_symbol_set = set(vn30_symbols) | set(TRADING_STOCKS_POOL) | heatmap_symbols
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
 symbols_to_cache = [s for s in all_symbols if s in cache_symbol_set]
+# VNINDEX/VN30 (chỉ số) không nằm trong all_symbols (danh sách mã niêm yết) nên không
+# lọt qua filter phía trên — trước đây 2 mã này chỉ được nạp on-demand lúc user mở
+# chart (ensure_symbol_live_in_cache), khiến lần xem đầu tiên phải chờ gọi mạng vnstock
+# thật (có thể 6-10s+ do load_history_for_symbol tự retry 3 lần) — dễ vượt quá thời gian
+# chờ/retry phía frontend (loadLiteChart) và làm chart (kể cả khung MACD) không hiển thị.
+# Thêm thủ công vào đây để được build_history_cache() nạp sẵn cùng lúc server khởi động,
+# và được check_and_rebuild_cache_if_stale()/vòng lặp định kỳ giữ luôn ở trạng thái "ấm".
+symbols_to_cache = symbols_to_cache + ["VNINDEX", "VN30"]
 print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to_scan)}")
-print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã")
+print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã (gồm cả VNINDEX, VN30)")
 
 # =============================================================================
 # BƯỚC 5: HÀM TÍNH CHỈ BÁO
