@@ -257,61 +257,14 @@ Sửa nội dung → nhấn "Commit changes"
 docker system prune -f
 ```
 bash // Chú ý sửa link file tải trước khi chạy
-```
-cd ~/scanner && \
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
-docker stop scanner && \
-docker rm scanner && \
-docker build --no-cache -t stock-scanner . && \
-docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env stock-scanner && \
-echo "✅ Cập nhật hoàn tất!" && \
-docker logs --tail 20 scanner
-```
-Đối với chạy cả dash.board_server.py, thì dùng đoạn dưới:
-```
-cd ~/scanner && \
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py && \
-docker stop scanner 2>/dev/null || true && \
-docker rm scanner 2>/dev/null || true && \
-docker build --no-cache -t stock-scanner . && \
-docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env -p 8888:8888 stock-scanner && \
-echo "✅ Cập nhật hoàn tất!" && \
-docker logs --tail 20 scanner
-```
-
-```
-cd ~/scanner && \
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py && \
-sync && sleep 2 && \
-docker stop scanner 2>/dev/null || true && \
-docker rm scanner 2>/dev/null || true && \
-docker build --no-cache -t stock-scanner . && \
-docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env -p 8888:8888 stock-scanner && \
-echo "✅ Cập nhật hoàn tất!" && \
-docker logs --tail 20 scanner
-
-```
-Chạy với tên miền:
-```
-cd ~/scanner && \
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py && \
-sync && sleep 2 && \
-docker stop scanner 2>/dev/null || true && \
-docker rm scanner 2>/dev/null || true && \
-docker build --no-cache -t stock-scanner . && \
-docker run -d --name scanner --restart unless-stopped --env-file ~/scanner/.env --network web_default -p 8888:8888 stock-scanner && \
-echo "✅ Cập nhật hoàn tất!" && \
-docker logs --tail 20 scanner
-```
 
 Chạy với tên miền + nhật ký:
 ```
 cd ~/scanner && \
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
 curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py && \
+mkdir -p static && \
+[ -f static/lightweight-charts.min.js ] || curl -L "https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js" -o static/lightweight-charts.min.js && \
 sync && sleep 2 && \
 docker stop scanner 2>/dev/null || true && \
 docker rm scanner 2>/dev/null || true && \
@@ -323,9 +276,11 @@ docker run -d \
   --network web_default \
   -p 8888:8888 \
   -v ~/scanner/data/trade-journal:/data/trade-journal \
+  -v ~/scanner/static:/app/static \
   stock-scanner && \
 echo "✅ Cập nhật hoàn tất!" && \
 docker logs --tail 20 scanner
+
 ```
 
 Lệnh này tự động làm 6 việc theo thứ tự:
