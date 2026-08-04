@@ -1646,6 +1646,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Scanner Dashboard</title>
+<!-- Preconnect + preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
+     viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
+     DNS/TLS/tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
+     script chính gọi loadLiteChart(). preconnect giúp bắt tay DNS/TLS với unpkg sớm, còn
+     preload giúp trình duyệt TẢI SONG SONG file này ngay trong lúc parse HTML phía trên,
+     nên khi script tag thật ở cuối trang được thực thi, file gần như đã có sẵn — giúp
+     panel CHART có thể vẽ sớm hơn thay vì phải đợi round-trip CDN nằm chắn ngay trước nó. -->
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preload" as="script" href="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════
@@ -5246,7 +5255,10 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
   });
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=1000');
+    // limit=700: đủ dư so với mức tối thiểu cần thiết (320 nến hiển thị + 200 nến lookback cho
+    // MA/EMA200 — chỉ báo dài nhất đang có) để chỉ báo vẫn tính đúng tại mép trái vùng đang xem,
+    // nhưng nhẹ hơn hẳn so với 1000 nến cũ → JSON nhỏ hơn, parse/setData nhanh hơn ở lần tải đầu.
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=700');
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
@@ -8014,14 +8026,18 @@ window.addEventListener('message',e=>{
 // INIT
 // ═══════════════════════════════════════════════════════
 async function init(){
-  await loadConfig();
   initDesktopNotifyBtn();
   _refreshChartModeUI();
   bindLiteChartControls();
   bindAlertControls();
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
-  await Promise.all([fetchSigs(),fetchHmap(),fetchHealth()]);
+  // Bắn tải CHART NGAY LẬP TỨC — không await, không chờ config/tín hiệu/heatmap/health xong
+  // trước. Trước đây 4 API này chạy TUẦN TỰ (await Promise.all(...) rồi mới loadLiteChart())
+  // nên dù cache chart đã sẵn sàng, panel CHART vẫn phải đợi hết round-trip của 4 API không
+  // liên quan mới bắt đầu tải — giờ chạy song song, chart tự vẽ ngay khi request riêng của
+  // nó xong, không phụ thuộc các API kia.
   loadLiteChart(_liteSymbol);
+  await Promise.all([loadConfig(),fetchSigs(),fetchHmap(),fetchHealth()]);
   await Promise.all([loadAlerts(),pollAlertFeed(false)]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
