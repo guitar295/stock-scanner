@@ -139,7 +139,7 @@ CHART_TTL_SEC = 120
 # mỗi request. Nhánh weekly (resample) không giữ cột này nên tự động rơi về
 # màu trung tính — chấp nhận được vì các tín hiệu VPA lõi vốn chỉ có ý nghĩa ở
 # khung ngày.
-_VPA_FLAG_COLOR = {1: "#1a46c9", 2: "#9c27b0"}
+_VPA_FLAG_COLOR = {1: "#1a46c9", 2: "#00ffe5"}
 
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
