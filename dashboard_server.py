@@ -3435,27 +3435,12 @@ function initLiteChart(){
   _liteRsiChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteRsiChart,_liteRsiCrosshairSeries,false));
   if(!_liteResizeBound){
     _liteResizeBound=true;
-    // Ép chart tính lại kích thước canvas THEO devicePixelRatio hiện tại — set width:0 trước rồi
-    // mới set lại width/height thật, vì nếu gọi applyOptions với đúng width/height CSS cũ (không
-    // đổi khi chỉ có devicePixelRatio đổi, ví dụ do Ctrl+cuộn/Ctrl+"+" zoom trình duyệt),
-    // lightweight-charts thấy "không có gì thay đổi" nên KHÔNG cấp lại canvas backing-store theo
-    // dpr mới → canvas cũ (độ phân giải thấp hơn) bị trình duyệt phóng to lên, làm chữ/đường kẻ
-    // mờ như có lớp màng phủ. Set 0 trước buộc thư viện coi đây là một lần resize thực sự.
-    const _liteForceRedpr=()=>{
-      if(_liteChart&&DOM.liteChart){_liteChart.applyOptions({width:0,height:0});_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});}
-      if(_liteRsiChart&&DOM.liteRsiChart){_liteRsiChart.applyOptions({width:0,height:0});_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});}
-      if(_liteMacdChart&&DOM.liteMacdChart){_liteMacdChart.applyOptions({width:0,height:0});_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});}
+    window.addEventListener('resize',()=>{
+      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+      if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
+      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
       resizeLiteDrawCanvas();redrawLiteDrawings();
-    };
-    window.addEventListener('resize',_liteForceRedpr);
-    // window 'resize' không phải lúc nào cũng bắn khi CHỈ có devicePixelRatio đổi (zoom trình duyệt
-    // trong khi layout CSS px giữ nguyên) — theo dõi riêng qua matchMedia(resolution) và tự gắn lại
-    // listener mỗi lần trình duyệt đổi mức zoom, để canvas luôn được vẽ lại sắc nét theo dpr mới nhất.
-    const _liteWatchDpr=()=>{
-      const mq=matchMedia(`(resolution:${window.devicePixelRatio}dppx)`);
-      mq.addEventListener('change',()=>{_liteForceRedpr();_liteWatchDpr();},{once:true});
-    };
-    _liteWatchDpr();
+    });
     // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục);
     // chỉ thực sự vẽ khi panel Chart đang hiển thị (offsetParent!==null) để không tốn CPU vô ích
     // lúc người dùng đang ở tab khác của dashboard.
