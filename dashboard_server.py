@@ -5255,10 +5255,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
   });
   try{
-    // limit=700: đủ dư so với mức tối thiểu cần thiết (320 nến hiển thị + 200 nến lookback cho
-    // MA/EMA200 — chỉ báo dài nhất đang có) để chỉ báo vẫn tính đúng tại mép trái vùng đang xem,
-    // nhưng nhẹ hơn hẳn so với 1000 nến cũ → JSON nhỏ hơn, parse/setData nhanh hơn ở lần tải đầu.
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=700');
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=1000');
     if(!r.ok)throw new Error('no_cache');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
