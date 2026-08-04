@@ -2601,6 +2601,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <div class="lite-ind-dropdown" data-dropdown="signalgrp">
               <label><input type="checkbox" value="signal">Buy-Signal</label>
               <label><input type="checkbox" value="volcolor">Volume-Signal</label>
+              <label><input type="checkbox" value="bigprice">Giá phóng to</label>
             </div>
           </div>
           <div class="lite-ind-group" data-group="maema">
@@ -3460,7 +3461,7 @@ function loadLiteIndicatorPrefs(){
     // maema_on, signalgrp_on và volcolor mặc định BẬT (giữ hành vi cũ trước khi có
     // checkbox này — MA/EMA hiển thị sẵn, Volume tô màu VPA sẵn) cho user chưa có key
     // này trong localStorage. Các checkbox khác giữ quy ước cũ (mặc định TẮT).
-    cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
+    cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor'||cb.value==='bigprice')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
 }
@@ -3520,25 +3521,26 @@ async function _liteFetchVolForecast(sym){
 function updateLiteBigPrice(bar){
   const el=DOM.liteChartBigPrice;
   if(!el)return;
-  if(!bar){el.classList.remove('on');el.innerHTML='';return;}
+  if(!bar||!_liteChecked('signalgrp_on')||!_liteChecked('bigprice')){el.classList.remove('on');el.innerHTML='';return;}
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
   const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)&&pct!==0
     ?bar.close-bar.close/(1+pct/100):(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close-bar.open:0);
+  // Chỉ 2 màu xanh/đỏ — không còn màu xám: bằng tham chiếu (pct===0, hoặc close>=open) tính là xanh.
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
-  const col=pct===0?'#6b7280':(up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR);
+  const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const sign=pct>0?'+':(pct<0?'':'');
   const fc=_liteVolForecast; // {ratio_prev, ratio_ma50, progress, symbol, ...} từ server, hoặc null nếu chưa có/lỗi
   const sameSym=fc&&fc.symbol===_liteSymbol;
   const progress=sameSym&&Number.isFinite(fc.progress)?fc.progress:null;
-  const fmtRatio=v=>Number.isFinite(v)?v.toFixed(2):'--';
   const fmtEst=v=>(Number.isFinite(v)&&progress>0.001)?(v/progress).toFixed(2):'--';
+  // Tỉ lệ tiến độ phiên hiển thị dạng số thập phân (tối đa 1) thay vì phần trăm, bỏ số 0 thừa (1 thay vì 1.00).
+  const fmtProgress=v=>Number.isFinite(v)?String(Math.round(v*100)/100):'--';
   const ratioPrev=sameSym?fc.ratio_prev:null;
   const ratioMA50=sameSym?fc.ratio_ma50:null;
   el.classList.add('on');
   el.innerHTML=
     `<span class="bp-price" style="color:${col}">${fmtLiteNum(bar.close)}</span>`+
-    `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)} (${sign}${pct.toFixed(2)}%)</span>`+
-    `<span class="bp-sub" style="color:#6b7280">KL ${fmtRatio(ratioPrev)}x·MA50 ${fmtRatio(ratioMA50)}x — Ước hết phiên ${fmtEst(ratioPrev)}x/${fmtEst(ratioMA50)}x (${progress!=null?Math.round(progress*100)+'%':'--'})</span>`;
+    `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)} (${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
   // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
@@ -5626,8 +5628,9 @@ function bindLiteChartControls(){
     // hàm đó luôn chạy applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và
     // xoá/dựng lại toàn bộ chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
     const val=e.target?.value;
-    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'){
-      if(val!=='signal')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
+    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
+      if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
+      if(val==='bigprice'||val==='signalgrp_on')updateLiteBigPrice(_liteData&&_liteData.length?_liteData[_liteData.length-1]:null);
       _liteApplyBuySignal();
       redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
     }else{
