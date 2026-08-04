@@ -3271,7 +3271,11 @@ let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=n
 // hành vi này chỉ có từ bản 5.0.9), nên mỗi lần bật/tắt Buy-Signal, setMarkers()/setMarkers([]) làm
 // trục giá tính lại range → cả chart bị co giãn dù dữ liệu nến không đổi. Tự vẽ mũi tên lên canvas vẽ
 // tay (_liteDrawCtx, dùng chung với _liteDrawTrendCloud/_liteDrawBBBand) để tách hẳn khỏi autoScale.
-let _liteBuyArrowData=null; // {time,price,color} | null — price = low của nến cuối, đáy mũi tên đặt dưới giá này
+let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price của nến LUÔN đọc live từ _liteData
+// tại thời điểm vẽ (_liteDrawBuyArrow), không lưu cứng lúc bật tín hiệu — nếu lưu cứng, khi có nến mới
+// chen vào giữa (auto-refresh mỗi 20s đẩy thêm nến qua _liteQuietRefreshChart) mà _liteApplyBuySignal()
+// chưa kịp chạy lại, mũi tên sẽ trỏ vào toạ độ của nến CŨ trong khi trục thời gian đã dịch sang phải
+// nhường chỗ nến mới → mũi tên lệch khỏi tâm nến cuối, trông như nằm ở cạnh nến trước đó.
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
@@ -3541,13 +3545,16 @@ function _liteApplyBuySignal(){
     // thư viện — setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart (xem giải
     // thích ở khai báo _liteBuyArrowData). Không set text để không hiện badge tên tín hiệu ngay dưới
     // mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
-    const lastBar=_liteData[_liteData.length-1];
-    _liteBuyArrowData={time:lastBar.time,price:lastBar.low,color:arrowColor};
+    _liteBuyArrowData={color:arrowColor}; // time/price của nến đọc live ở _liteDrawBuyArrow, không lưu ở đây
   }else{
     _liteBuyArrowData=null;
     if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
   }
-  redrawLiteDrawings(); // vẽ lại ngay — bấm checkbox là hành động rời rạc, không đợi vòng lặp requestAnimationFrame
+  // Không tự redrawLiteDrawings() ở đây — nơi gọi hàm này tự quyết định có cần redraw ngay không (xem
+  // các lời gọi _liteApplyBuySignal()): loadLiteChart()/_liteQuietRefreshChart() đã tự redraw ngay sau
+  // đó rồi (qua renderLiteIndicators() hoặc redrawLiteDrawings() liền kề), tự vẽ thêm ở đây chỉ tốn
+  // công một lượt clear+redraw thừa. Handler checkbox và fetchSigs() (2 nơi không có redraw kèm theo)
+  // tự gọi redrawLiteDrawings() ngay sau khi gọi hàm này.
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -4217,16 +4224,18 @@ function _liteDrawTrendCloud(ctx){
 // đặt thấp xuống dưới low của nến một khoảng lớn hơn mặc định của thư viện (marker 'belowBar' mặc định
 // của lightweight-charts sát ngay dưới nến, dễ đụng bấc nến/volume).
 function _liteDrawBuyArrow(ctx){
-  if(!_liteBuyArrowData||!_liteChart||!_liteCandle)return;
-  const{time,price,color}=_liteBuyArrowData;
-  const x=_liteTimeToX(time),yLow=_litePriceToY(price);
+  if(!_liteBuyArrowData||!_liteChart||!_liteCandle||!_liteData.length)return;
+  // Đọc live nến cuối cùng ngay tại thời điểm vẽ (không dùng time/price lưu sẵn) — đảm bảo mũi tên
+  // luôn bám đúng tâm nến hiện tại, kể cả khi có nến mới chen vào giữa 2 lần _liteApplyBuySignal().
+  const lastBar=_liteData[_liteData.length-1];
+  const{color}=_liteBuyArrowData;
+  const x=_liteTimeToX(lastBar.time),yLow=_litePriceToY(lastBar.low);
   if(x===null||yLow===null)return;
   // GAP: khoảng cách xuống dưới low nến tới ĐUÔI mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu mũi tên
   // (nhỏ, hẹp). SHAFT_H/SHAFT_HALF_W: thân que nối đầu mũi tên xuống đuôi (mảnh hơn đầu).
   const GAP=14,HEAD_H=6,HEAD_HALF_W=2.5,SHAFT_H=5,SHAFT_HALF_W=1;
   const yTip=yLow+GAP;              // đỉnh mũi tên, hướng lên phía nến
   const yHeadBase=yTip+HEAD_H;      // đáy tam giác đầu mũi tên = đỉnh thân que
-  const yTail=yHeadBase+SHAFT_H;    // đuôi thân que
   ctx.save();
   _liteClipMainPlot(ctx);
   ctx.fillStyle=color;
@@ -5541,6 +5550,7 @@ function bindLiteChartControls(){
     if(val==='signal'||val==='volcolor'||val==='signalgrp_on'){
       if(val!=='signal')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
       _liteApplyBuySignal();
+      redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
     }else{
       renderLiteIndicators();
       _liteApplyBuySignal();
@@ -6859,6 +6869,7 @@ async function fetchSigs(){
     // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
+    redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
     const momentum=j.momentum||[];
     _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
     _attentTodayMap=new Map((j.attent||[]).map(s=>[s.symbol,s]));
