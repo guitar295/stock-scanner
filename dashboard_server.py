@@ -132,13 +132,14 @@ _chart_lock = threading.Lock()
 CHART_TTL_SEC = 120
 
 # Màu cột Volume: 0=trung tính (xanh/đỏ theo close-open), 1=cảnh báo suy yếu
-# (upThrustBar/topRevBar), 2=tín hiệu tích lũy mạnh (stopVolume/revUpThrust).
-# Cột "vpa_flag" đã được tính sẵn từ khi build/vá history_cache bên
-# scanner_full.py (calc_vpa_flag) — route /api/lightweight_chart CHỈ đọc, không
-# tính lại, để tránh lặp logic + tốn CPU mỗi request. Nhánh weekly (resample)
-# không giữ cột này nên tự động rơi về màu trung tính — chấp nhận được vì các
-# tín hiệu VPA lõi vốn chỉ có ý nghĩa ở khung ngày.
-_VPA_FLAG_COLOR = {1: "#2962ff", 2: "#ffb300"}
+# (gate xu hướng + Nhánh1-biến A / upThrustBar / topRevBar), 2=tín hiệu tích
+# lũy mạnh (stopVolume/revUpThrust). Cột "vpa_flag" đã được tính sẵn từ khi
+# build/vá history_cache bên scanner_full.py (calc_vpa_flag) — route
+# /api/lightweight_chart CHỈ đọc, không tính lại, để tránh lặp logic + tốn CPU
+# mỗi request. Nhánh weekly (resample) không giữ cột này nên tự động rơi về
+# màu trung tính — chấp nhận được vì các tín hiệu VPA lõi vốn chỉ có ý nghĩa ở
+# khung ngày.
+_VPA_FLAG_COLOR = {1: "#2962ff", 2: "#9c27b0"}
 
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
