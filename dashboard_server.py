@@ -3393,8 +3393,8 @@ function fmtLiteNum(v){
   return Number.isFinite(v)?Number(v).toFixed(2):'--';
 }
 function fmtLiteDate(t){
-  const p=String(t||'').split('-');
-  return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(t||'--');
+  const p=liteTimeKey(t).split('-');
+  return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:(liteTimeKey(t)||'--');
 }
 function _liteTitleSegments(bar){
   if(!bar)return [];
