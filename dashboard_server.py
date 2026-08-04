@@ -3266,6 +3266,12 @@ function _liteSyncVisibleRangeFrom(source,range){
 }
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
+// Mũi tên báo mua: KHÔNG dùng _liteCandle.setMarkers() nữa — bản lightweight-charts@4.2.3 đang dùng
+// luôn tính không gian marker vào autoScale của trục giá (option SeriesMarkersOptions.autoScale để tắt
+// hành vi này chỉ có từ bản 5.0.9), nên mỗi lần bật/tắt Buy-Signal, setMarkers()/setMarkers([]) làm
+// trục giá tính lại range → cả chart bị co giãn dù dữ liệu nến không đổi. Tự vẽ mũi tên lên canvas vẽ
+// tay (_liteDrawCtx, dùng chung với _liteDrawTrendCloud/_liteDrawBBBand) để tách hẳn khỏi autoScale.
+let _liteBuyArrowData=null; // {time,price,color} | null — price = low của nến cuối, đáy mũi tên đặt dưới giá này
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
@@ -3404,7 +3410,7 @@ function initLiteChart(){
     // chỉ thực sự vẽ khi panel Chart đang hiển thị (offsetParent!==null) để không tốn CPU vô ích
     // lúc người dùng đang ở tab khác của dashboard.
     const _liteDrawLoop=()=>{
-      if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData))redrawLiteDrawings();
+      if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData))redrawLiteDrawings();
       requestAnimationFrame(_liteDrawLoop);
     };
     requestAnimationFrame(_liteDrawLoop);
@@ -3529,15 +3535,17 @@ function _liteApplyBuySignal(){
       const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
       if(badgeEl)arrowColor=getComputedStyle(badgeEl).borderColor||arrowColor;
     }
-    // Mũi tên báo mua: thu nhỏ còn một nửa (size:1 thay vì 2), không set text để không hiện badge
-    // tên tín hiệu ngay dưới mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
-    _liteCandle.setMarkers([{
-      time:_liteData[_liteData.length-1].time,position:'belowBar',color:arrowColor,shape:'arrowUp',size:1
-    }]);
+    // Mũi tên báo mua: vẽ tay lên canvas overlay (xem _liteDrawBuyArrow) thay vì series marker của
+    // thư viện — setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart (xem giải
+    // thích ở khai báo _liteBuyArrowData). Không set text để không hiện badge tên tín hiệu ngay dưới
+    // mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
+    const lastBar=_liteData[_liteData.length-1];
+    _liteBuyArrowData={time:lastBar.time,price:lastBar.low,color:arrowColor};
   }else{
-    _liteCandle.setMarkers([]);
+    _liteBuyArrowData=null;
     if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
   }
+  redrawLiteDrawings(); // vẽ lại ngay — bấm checkbox là hành động rời rạc, không đợi vòng lặp requestAnimationFrame
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -3557,6 +3565,7 @@ function _clearLiteIndicators(){
   _liteMacdCrosshairSeries=null;
   _liteBBFillData=null;
   _liteTrendFillData=null;
+  _liteBuyArrowData=null; // tránh mũi tên của mã cũ chớp lên sai vị trí trước khi _liteApplyBuySignal() chạy lại cho mã mới
 }
 function _sma(data,n){
   const out=[];let sum=0;
@@ -4201,12 +4210,42 @@ function _liteDrawTrendCloud(ctx){
   }
   ctx.restore();
 }
+// Vẽ mũi tên báo mua thay cho series marker của thư viện (xem giải thích ở khai báo _liteBuyArrowData
+// phía trên). Vẽ đúng hình mũi tên (đầu tam giác + thân que), không phải tam giác đặc — hẹp ngang và
+// đặt thấp xuống dưới low của nến một khoảng lớn hơn mặc định của thư viện (marker 'belowBar' mặc định
+// của lightweight-charts sát ngay dưới nến, dễ đụng bấc nến/volume).
+function _liteDrawBuyArrow(ctx){
+  if(!_liteBuyArrowData||!_liteChart||!_liteCandle)return;
+  const{time,price,color}=_liteBuyArrowData;
+  const x=_liteTimeToX(time),yLow=_litePriceToY(price);
+  if(x===null||yLow===null)return;
+  // GAP: khoảng cách xuống dưới low nến tới ĐUÔI mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu mũi tên
+  // (nhỏ, hẹp). SHAFT_H/SHAFT_HALF_W: thân que nối đầu mũi tên xuống đuôi (mảnh hơn đầu).
+  const GAP=14,HEAD_H=6,HEAD_HALF_W=2.5,SHAFT_H=5,SHAFT_HALF_W=1;
+  const yTip=yLow+GAP;              // đỉnh mũi tên, hướng lên phía nến
+  const yHeadBase=yTip+HEAD_H;      // đáy tam giác đầu mũi tên = đỉnh thân que
+  const yTail=yHeadBase+SHAFT_H;    // đuôi thân que
+  ctx.save();
+  _liteClipMainPlot(ctx);
+  ctx.fillStyle=color;
+  // Đầu mũi tên (tam giác)
+  ctx.beginPath();
+  ctx.moveTo(x,yTip);
+  ctx.lineTo(x-HEAD_HALF_W,yHeadBase);
+  ctx.lineTo(x+HEAD_HALF_W,yHeadBase);
+  ctx.closePath();
+  ctx.fill();
+  // Thân mũi tên (que mảnh)
+  ctx.fillRect(x-SHAFT_HALF_W,yHeadBase,SHAFT_HALF_W*2,SHAFT_H);
+  ctx.restore();
+}
 function redrawLiteDrawings(){
   if(!_liteDrawCtx||!DOM.liteDrawCanvas)return;
   const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight;
   _liteDrawCtx.clearRect(0,0,w,h);
   _liteDrawTrendCloud(_liteDrawCtx);
   _liteDrawBBBand(_liteDrawCtx);
+  _liteDrawBuyArrow(_liteDrawCtx);
   for(const d of _liteDrawings)_liteDrawShapeToCanvas(_liteDrawCtx,d);
   if(_liteDrawActive)_liteDrawShapeToCanvas(_liteDrawCtx,_liteDrawActive);
   if(_liteChannelPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteChannelPending);
