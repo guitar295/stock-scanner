@@ -581,11 +581,18 @@ def compute_indicators(df):
 
 # =============================================================================
 # BƯỚC 5A1: VPA FLAG — tô màu Volume (port rút gọn từ AFL "Signal Generation" +
-# "Volume ADD"). CHỈ port 4 điều kiện lõi (upThrustBar, topRevBar, stopVolume,
-# revUpThrust) — KHÔNG port ~65 pattern nến phụ trong bản AFL gốc, vì chúng chỉ
-# là nhánh OR bổ sung (đòi hỏi thêm giá ở đỉnh/đáy 120 phiên + volume bất
-# thường mới kích hoạt), ảnh hưởng nhỏ tới tần suất tô màu trong khi chi phí
-# port + rủi ro sai lệch rất lớn. Xem thêm ghi chú trong lịch sử trao đổi.
+# "Volume ADD"). Với NHÁNH XANH DƯƠNG (cảnh báo suy yếu/phân phối), đã port:
+#   - Điều kiện cổng ngoài cùng: upmajor>=0 AND upminor>=0
+#   - Nhánh 1 ("biến A"): volume bất thường kèm giá không tăng
+#   - Nhánh 2 (VSA): upThrustBar OR upThrustBarTrue OR topRevBar
+#     (upThrustBarTrue KHÔNG phải tập con của upThrustBar — nó không đòi
+#     upminor>0, chỉ cần upmajor>0 — nên bắt thêm được tín hiệu mà
+#     upThrustBar bỏ sót, đã đối chiếu kỹ với AFL gốc và port đủ cả 2)
+# CHƯA port: Nhánh 3 (~36 pattern nến bearish kèm điều kiện giá ở đỉnh 120
+# phiên) — chi phí port lớn, giá trị tăng thêm nhỏ vì đã có điều kiện phụ rất
+# chặt (đỉnh 120 phiên + volume bất thường) mới kích hoạt. Toàn bộ ~65 pattern
+# nến (cả bullish lẫn bearish) trong AFL gốc vẫn KHÔNG port, theo đúng thống
+# nhất từ đầu.
 #
 # LƯU Ý QUAN TRỌNG: AFL gốc gọi RWIHi(min,max)/RWILo(min,max)/RWI(min,max) với
 # 2 tham số — không phải cú pháp RWIHi/RWILo/RWI chuẩn 1 tham số của AmiBroker.
@@ -625,8 +632,10 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
     """
     Trả về Series int8 cùng index với df:
       0 = trung tính  → giữ màu xanh/đỏ theo close/open như cũ
-      1 = cảnh báo suy yếu / phân phối (upThrustBar OR topRevBar) → tô xanh dương
-      2 = tín hiệu tích lũy mạnh (stopVolume OR revUpThrust)      → tô màu vàng/cam
+      1 = cảnh báo suy yếu / phân phối → tô xanh dương
+          gate(upmajor>=0 AND upminor>=0) AND
+          (Nhánh1-biến A OR upThrustBar OR upThrustBarTrue OR topRevBar)
+      2 = tín hiệu tích lũy mạnh (stopVolume OR revUpThrust) → tô tím
 
     df cần tối thiểu các cột: open, high, low, close, volume.
     Nếu dữ liệu chưa đủ dài (RWI dài hạn cần ~40 phiên lùi + rolling(80) cho
@@ -645,14 +654,25 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
     upmajor = np.select([j > 1, j < -1], [1, -1], default=0)
     upminor = np.where(hi_lt > 1, 1, -1)
     upimd   = np.where(hi_st > 1, 1, 0)
+    gate_not_downtrend = (upmajor >= 0) & (upminor >= 0)   # điều kiện cổng bọc ngoài toàn nhánh xanh dương
 
     spread     = h - l
     avg_spread = spread.rolling(80).mean()
     wide_range_bar = spread > 1.5 * avg_spread
 
-    vol_avg = v.rolling(30).mean()
+    maV5, maV20, maV50 = v.rolling(5).mean(), v.rolling(20).mean(), v.rolling(50).mean()
+    vol_avg = v.rolling(30).mean()   # = maV30 trong AFL
     up_bar   = c > c.shift(1)
     down_bar = c < c.shift(1)
+
+    # Nhánh 1 (biến "A" trong AFL): giá không tăng, đi kèm volume bất thường
+    # theo 1 trong 3 kiểu — báo hiệu lực bán/phân phối đang âm thầm diễn ra.
+    dv = v / v.shift(1)
+    nhanh1 = (c <= c.shift(1)) & (
+        ((dv > 1.06) & ((v > vol_avg) | (v > maV50) | (v > maV20)))
+        | ((v > maV5) & (v > 1.2 * maV20) & (v > 1.2 * vol_avg) & (v > 1.2 * maV50))
+        | ((v > v.shift(1)) & (v > maV5) & (v > maV20) & (v > vol_avg) & (v > maV50))
+    )
 
     close_pos = np.select(
         [c <= spread * 0.2 + l, c <= spread * 0.4 + l, c <= spread * 0.6 + l, c <= spread * 0.8 + l],
@@ -675,6 +695,10 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
         wide_range_bar & np.isin(close_pos, [1, 2]) & (upminor > 0) &
         (h > h.shift(1)) & ((upimd > 0) | (upmajor > 0)) & (vol_pos < 4)
     )
+    up_thrust_bar_true = (
+        wide_range_bar & (close_pos == 1) & (upmajor > 0) &
+        (h > h.shift(1)) & (vol_pos < 4)
+    )
     top_rev_bar = (
         (v.shift(1) > vol_avg) & up_bar_prev1 & wide_bar_prev1 &
         down_bar & down_close & wide_range_bar & (upmajor > 0) & (h == h.rolling(10).max())
@@ -688,7 +712,8 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
     )
 
     flag = pd.Series(0, index=df.index, dtype='int8')
-    flag[(up_thrust_bar | top_rev_bar).fillna(False)]   = 1
+    blue_signal = gate_not_downtrend & (nhanh1 | up_thrust_bar | up_thrust_bar_true | top_rev_bar)
+    flag[blue_signal.fillna(False)]                     = 1
     flag[(stop_volume | rev_up_thrust).fillna(False)]   = 2   # ưu tiên tích lũy nếu trùng cả 2 (hiếm)
     return flag
 
