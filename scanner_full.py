@@ -2629,6 +2629,56 @@ def dashboard_chart_15m_fn(symbol: str):
         print(f"  [DashChart] ❌ 15m {symbol}: {e}")
         return [], []
 
+def dashboard_vol_forecast_fn(symbol: str):
+    """
+    Được truyền vào start_dashboard(vol_forecast_fn=...) — NGUỒN DUY NHẤT cho khối
+    "Giá phóng to" (bp-price/bp-sub) trên panel CHART của dashboard: dùng lại NGUYÊN
+    _get_chart_context() (cùng df_calc/VMA50 đã tính cho tín hiệu ATTENT/BREAKVOL,
+    không tính lại riêng) và _session_time_progress() (cùng hàm ti2 dùng cho
+    calc_attent()/calc_breakvol_signal()) — tránh có 2 bản logic lệch nhau giữa
+    scanner và dashboard (JS phía trước không còn tự đoán múi giờ trình duyệt hay
+    tự tính MA50 nữa, chỉ hiển thị số server trả về).
+    """
+    symbol = symbol.upper().strip()
+    try:
+        ctx = _get_chart_context(symbol)
+        if ctx is None:
+            return {"symbol": symbol, "error": "no_data"}
+        df_calc = ctx["df_calc"]
+        if len(df_calc) < 2:
+            return {"symbol": symbol, "error": "not_enough_bars"}
+        today = df_calc.iloc[-1]
+        prev = df_calc.iloc[-2]
+        now_obj = datetime.now(TZ_VN)
+        now_time = int(now_obj.strftime("%H%M%S"))
+        bar_date = pd.Timestamp(df_calc.index[-1]).strftime("%Y-%m-%d")
+        is_today = bar_date == now_obj.strftime("%Y-%m-%d")
+        # Giống điều kiện Ti2 trong AFL gốc: chỉ co giãn theo % thời gian phiên khi đang
+        # xem ĐÚNG nến của hôm nay; nến quá khứ luôn coi như đã chốt phiên (progress=1).
+        progress = _session_time_progress(now_time) if is_today else 1.0
+        vol = float(today.get("volume", float("nan")))
+        prev_vol = float(prev.get("volume", float("nan")))
+        vma50 = float(today.get("VMA50", float("nan")))
+        ratio_prev = (vol / prev_vol) if (prev_vol > 0 and vol == vol) else None
+        ratio_ma50 = (vol / vma50) if (vma50 > 0 and vol == vol) else None
+        # Chỉ trả về đúng những field JS thực sự dùng (symbol/progress/ratio_*) — volume/prev_volume/
+        # vma50 giữ lại thêm để tiện đối chiếu qua tab Network khi cần soát lại số, close/open/
+        # now_time/is_today thì bỏ hẳn vì client đã có sẵn close/open từ chính dữ liệu nến, và
+        # is_today không cần thiết vì progress đã tự phản ánh đúng ý nghĩa đó rồi.
+        return {
+            "symbol": symbol,
+            "bar_date": bar_date,
+            "progress": round(progress, 4),
+            "volume": vol if vol == vol else None,
+            "prev_volume": prev_vol if prev_vol == prev_vol else None,
+            "vma50": vma50 if vma50 == vma50 else None,
+            "ratio_prev": round(ratio_prev, 4) if ratio_prev is not None else None,
+            "ratio_ma50": round(ratio_ma50, 4) if ratio_ma50 is not None else None,
+        }
+    except Exception as e:
+        print(f"  [VolForecast] ❌ {symbol}: {e}")
+        return {"symbol": symbol, "error": "exception", "detail": str(e)}
+
 # =============================================================================
 # BƯỚC 8E: TELEGRAM LISTENER
 # =============================================================================
@@ -2937,6 +2987,7 @@ start_dashboard(
     fetch_chart_15m_fn = dashboard_chart_15m_fn,
     ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
     chart_symbol_status_fn = chart_symbol_status,
+    vol_forecast_fn   = dashboard_vol_forecast_fn,
     momentum_today_ref = lambda: momentum_today,
     attent_today_ref   = lambda: attent_today,
     breakvol_today_ref = lambda: breakvol_today,
