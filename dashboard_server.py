@@ -3530,10 +3530,12 @@ function _liteApplyBuySignal(){
     if(DOM.liteChartSignal){
       DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
       DOM.liteChartSignal.classList.add('on');
-      // Lấy đúng màu viền của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — không khai báo
-      // lại bảng màu riêng, mũi tên luôn đồng bộ màu với badge kể cả khi CSS đổi màu sau này.
+      // Lấy đúng màu chữ (color) của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — đây là màu
+      // đậm/đặc trưng nhất của từng loại tín hiệu (border chỉ là viền nhạt, không đại diện rõ bằng
+      // màu chữ). Không khai báo lại bảng màu riêng, mũi tên luôn đồng bộ với badge/icon tín hiệu kể
+      // cả khi CSS đổi màu sau này.
       const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
-      if(badgeEl)arrowColor=getComputedStyle(badgeEl).borderColor||arrowColor;
+      if(badgeEl)arrowColor=getComputedStyle(badgeEl).color||arrowColor;
     }
     // Mũi tên báo mua: vẽ tay lên canvas overlay (xem _liteDrawBuyArrow) thay vì series marker của
     // thư viện — setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart (xem giải
