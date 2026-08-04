@@ -5282,6 +5282,54 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
 }
+// ═══════════════════════════════════════════════════════
+// AUTO-REFRESH CHART — chỉ vá đúng CÂY NẾN CUỐI CÙNG (dùng series.update(), KHÔNG
+// setData() lại toàn bộ) nên KHÔNG nháy màn hình, KHÔNG mất zoom/pan hiện tại, không
+// đụng tới các nét vẽ tay. Chạy nền định kỳ, chỉ cho mã đang hiển thị trên panel CHART.
+// ═══════════════════════════════════════════════════════
+const LITE_CHART_AUTOREFRESH_SEC=20;
+let _liteQuietRefreshing=false;
+async function _liteQuietRefreshChart(){
+  if(_liteQuietRefreshing)return;                          // lượt trước chưa xong, khỏi chồng lượt
+  if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;       // panel CHART đang thu gọn/ẩn — khỏi tải ngầm phí công
+  if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return; // chart chưa sẵn sàng
+  if(document.hidden)return;                                // tab đang ẩn, khỏi tải ngầm phí công
+  if(_liteDrawTool!=='cursor')return;                        // đang dùng công cụ vẽ tay, khỏi làm gián đoạn
+  const sym=_liteSymbol,tf=_liteTf;
+  _liteQuietRefreshing=true;
+  try{
+    // limit nhỏ vì chỉ cần nến cuối cùng — backend tự chốt tối thiểu 50 nến, vẫn rất nhẹ.
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=50');
+    if(!r.ok)return;
+    const j=await r.json();
+    // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
+    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
+    const rawBar=j.candles[j.candles.length-1];
+    const key=liteTimeKey(rawBar.time);
+    const isNewBar=!_liteDataByTime.has(key); // true = sang phiên mới (thêm nến), false = vá nến hiện tại
+    const prevBar=isNewBar?_liteData[_liteData.length-1]
+                          :(_liteData.length>1?_liteData[_liteData.length-2]:null);
+    const pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
+    const bar={...rawBar,pct};
+    if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
+    _liteDataByTime.set(key,bar);
+    _liteCandle.update(bar);
+    const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
+    if(rawVol){
+      const volBar={...rawVol,color:_liteVolumeColorForBar(bar)};
+      if(isNewBar)_liteVolumeData.push(volBar);else _liteVolumeData[_liteVolumeData.length-1]=volBar;
+      _liteVolume.update(volBar);
+    }
+    if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
+    renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
+    updateLiteTitle(_liteData[_liteData.length-1]);
+    _liteApplyBuySignal();
+  }catch(e){
+    // Lỗi mạng/tạm thời — bỏ qua êm, chờ lượt refresh kế tiếp, không làm phiền người dùng.
+  }finally{
+    _liteQuietRefreshing=false;
+  }
+}
 function bindLiteChartControls(){
   loadLiteIndicatorPrefs();
   loadLiteTrendMode();
@@ -7979,6 +8027,7 @@ async function init(){
   setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
   setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
+  setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
 init();
 </script>
