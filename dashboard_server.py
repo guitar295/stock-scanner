@@ -1864,10 +1864,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .s-sym{font-weight:700;font-size:13px;transition:color .15s}
 .s-type{font-size:11px;font-weight:600}
 .s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui)}
-.b-BREAKOUT{background:#dcfce7;color:#15803d;border:1px solid #86efac}
-.b-POCKET{background:#fef9c3;color:#854d0e;border:1px solid #fde047}
-.b-PREBREAK{background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
-.b-BBREAKP{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
+.b-BREAKOUT{background:#dcfce7;color:#0bbc08;border:1px solid #86efac}
+.b-POCKET{background:#fef9c3;color:#f8d100;border:1px solid #fde047}
+.b-PREBREAK{background:#f3e8ff;color:#bd1ed8;border:1px solid #d8b4fe}
+.b-BBREAKP{background:#dbeafe;color:#006af8;border:1px solid #93c5fd}
 .b-BFISH{background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
 .b-MACROSS{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .signal-header-toggle{cursor:pointer;user-select:none}
