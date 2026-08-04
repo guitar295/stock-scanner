@@ -5184,7 +5184,12 @@ function showLiteChartStatus(status){
   clearTimeout(DOM.liteChartStatus._hideTimer);
   DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
 }
-async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
+// LITE_CHART_RETRY_MAX/DELAY: số lần thử lại tối đa và khoảng cách giữa mỗi lần khi API
+// /api/lightweight_chart/ trả no_cache (404) — trước đây chỉ 1 lần/5s (~10s tổng), không đủ
+// cho các mã phải fetch trực tiếp từ vnstock lúc cache chưa có (đặc biệt VNINDEX/VN30, xem
+// ensure_symbol_live_in_cache() ở backend — có thể mất 6-10s+ do tự retry nội bộ khi mạng chập chờn).
+const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
+async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
@@ -5195,7 +5200,7 @@ async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   DOM.liteChartEmpty.style.display='flex';
   showLiteChartStatus(null);
   if(!window.LightweightCharts){
-    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),1200);
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),1200);
     return;
   }
   // Gọi song song: status chỉ để hiển thị placeholder text, không cần chờ nó xong
@@ -5240,7 +5245,7 @@ async function loadLiteChart(sym='FPT',retry=1,skipPopoutSync=false){
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
-    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1),5000);
+    if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
 }
 function bindLiteChartControls(){
