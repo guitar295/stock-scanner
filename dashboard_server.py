@@ -1864,10 +1864,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .s-sym{font-weight:700;font-size:13px;transition:color .15s}
 .s-type{font-size:11px;font-weight:600}
 .s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui)}
-.b-BREAKOUT{background:#dcfce7;color:#0bbc08;border:1px solid #86efac}
-.b-POCKET{background:#fef9c3;color:#f8d100;border:1px solid #fde047}
-.b-PREBREAK{background:#f3e8ff;color:#bd1ed8;border:1px solid #d8b4fe}
-.b-BBREAKP{background:#dbeafe;color:#006af8;border:1px solid #93c5fd}
+.b-BREAKOUT{background:#dcfce7;color:#15803d;border:1px solid #86efac}
+.b-POCKET{background:#fef9c3;color:#854d0e;border:1px solid #fde047}
+.b-PREBREAK{background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
+.b-BBREAKP{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
 .b-BFISH{background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
 .b-MACROSS{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .signal-header-toggle{cursor:pointer;user-select:none}
@@ -2034,7 +2034,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
    Market Price" của AmiBroker): dòng 1 là giá lớn, dòng 2 là biến động/khối lượng nhỏ hơn. */
 .lite-chart-bigprice{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:3;display:none;flex-direction:column;align-items:center;gap:1px;pointer-events:none;transition:left .15s;white-space:nowrap}
 .lite-chart-bigprice.on{display:flex}
-.lite-chart-bigprice .bp-price{font-family:var(--font-mono);font-size:20px;font-weight:700;line-height:1.1}
+.lite-chart-bigprice .bp-price{font-family:"Times New Roman",var(--font-mono);font-size:20px;font-weight:700;line-height:1.1}
 .lite-chart-bigprice .bp-sub{font-family:var(--font-mono);font-size:11px;line-height:1.2}
 /* Khi sidebar nhóm ngành mở: dịch phải đúng bằng nửa bề rộng sidebar (180px) để canh lại giữa
    phần khung chart còn hiển thị (không bị sidebar che), thay vì dịch hẳn 192px như title/tín
