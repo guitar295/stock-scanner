@@ -1775,15 +1775,14 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Scanner Dashboard</title>
-<!-- Preconnect + preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
+<!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
      viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
-     DNS/TLS/tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
-     script chính gọi loadLiteChart(). preconnect giúp bắt tay DNS/TLS với unpkg sớm, còn
-     preload giúp trình duyệt TẢI SONG SONG file này ngay trong lúc parse HTML phía trên,
-     nên khi script tag thật ở cuối trang được thực thi, file gần như đã có sẵn — giúp
-     panel CHART có thể vẽ sớm hơn thay vì phải đợi round-trip CDN nằm chắn ngay trước nó. -->
-<link rel="preconnect" href="https://unpkg.com" crossorigin>
-<link rel="preload" as="script" href="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js">
+     tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
+     script chính gọi loadLiteChart(). preload giúp trình duyệt TẢI SONG SONG file này
+     ngay trong lúc parse HTML phía trên, nên khi script tag thật ở cuối trang được thực
+     thi, file gần như đã có sẵn — giúp panel CHART có thể vẽ sớm hơn.
+     File này được self-host tại /app/static (không còn phụ thuộc CDN unpkg ngoài). -->
+<link rel="preload" as="script" href="/static/lightweight-charts.min.js">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════
@@ -3002,7 +3001,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 </div>
 <div id="edge-swipe-zone"></div>
 
-<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/static/lightweight-charts.min.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
