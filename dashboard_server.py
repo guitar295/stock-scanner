@@ -603,11 +603,10 @@ def api_lightweight_chart(symbol):
     if not _cache_lock:
         return jsonify({"error": "cache_not_ready"}), 503
     cache = _get_history_cache() if _get_history_cache else {}
-    with _cache_lock:
-        df = cache.get(symbol)
-        has_cache = df is not None and len(df) >= 60
-        df = df.copy() if df is not None and len(df) else None
     if _ensure_chart_symbol_fn:
+        with _cache_lock:
+            cached_df = cache.get(symbol)
+            has_cache = cached_df is not None and len(cached_df) >= 60
         if has_cache:
             # Cache đã đủ dữ liệu để vẽ chart ngay — trả lời cho client TRƯỚC,
             # việc update/vá nến mới nhất (có gọi mạng vnstock, chậm) đẩy xuống
@@ -620,9 +619,11 @@ def api_lightweight_chart(symbol):
                 _ensure_chart_symbol_fn(symbol)
             except Exception as exc:
                 print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
-            with _cache_lock:
-                df = cache.get(symbol)
-                df = df.copy() if df is not None and len(df) else None
+    # Đọc df CUỐI CÙNG đúng 1 lần duy nhất ở đây (sau khi các bước ensure ở trên,
+    # nếu có, đã chạy xong) — tránh copy DataFrame 2 lần dư thừa như phiên bản trước.
+    with _cache_lock:
+        df = cache.get(symbol)
+        df = df.copy() if df is not None and len(df) else None
     if df is None or df.empty:
         return jsonify({"error": "no_cache", "symbol": symbol}), 404
     if tf in ("1W", "W", "WEEK", "WEEKLY"):
