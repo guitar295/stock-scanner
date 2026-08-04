@@ -5490,12 +5490,20 @@ function bindLiteChartControls(){
   });
   DOM.liteIndicators?.addEventListener('change',(e)=>{
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
-    // "Buy-Signal" (value="signal") chỉ ảnh hưởng mũi tên + badge tín hiệu, xử lý riêng ở
-    // _liteApplyBuySignal() bên dưới — không đụng tới MA/EMA/BB/RSI/MACD/Volume hay pane
-    // layout. Gọi renderLiteIndicators() ở đây sẽ ép applyLitePaneLayout() tính lại autoScale
-    // cho cả chart một cách vô ích, khiến chart bị co/giãn không cần thiết mỗi lần bấm.
-    if(e.target?.value!=='signal')renderLiteIndicators();
-    _liteApplyBuySignal();
+    // Cả 3 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal) và
+    // "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng mũi tên+badge tín hiệu
+    // (_liteApplyBuySignal) và/hoặc màu volume (_liteRefreshVolumeTop). Chúng KHÔNG đụng tới
+    // MA/EMA/BB/RSI/MACD hay pane layout, nên không gọi renderLiteIndicators() đầy đủ ở đây —
+    // hàm đó luôn chạy applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và
+    // xoá/dựng lại toàn bộ chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
+    const val=e.target?.value;
+    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'){
+      if(val!=='signal')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
+      _liteApplyBuySignal();
+    }else{
+      renderLiteIndicators();
+      _liteApplyBuySignal();
+    }
   });
   DOM.liteChartFrame?.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
