@@ -196,6 +196,144 @@ def warm_market_health_cache():
           f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
     return data
 
+# ─── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
+# Lấy trực tiếp từ API công khai của VNDIRECT (giống trang dstock.vndirect.com.vn/
+# du-lieu-thi-truong/dinh-gia-thi-truong — xem vndirect_valuation_chart.py) để vẽ
+# NGAY trong khung Mrk Health, thay vì chỉ nhúng iframe như tab "Vndstock" hiện có.
+# Cache TTL ngắn (5 phút) để không gọi lại API ngoài quá dày mỗi lần người dùng
+# đổi kỳ thời gian / chỉ tiêu, nhưng vẫn đủ mới cho một khung định giá thị trường.
+VND_BASE = "https://api-finfo.vndirect.com.vn/v4"
+VND_RATIO_CODES = {
+    "pe": "PRICE_TO_EARNINGS",
+    "pb": "PRICE_TO_BOOK",
+    "ma50": "OVER_MA50D_PCT_CR",
+    "ma200": "OVER_MA200D_PCT_CR",
+}
+VND_TTL_SEC = 300
+_vnd_cache: dict = {}
+_vnd_lock = threading.Lock()
+
+
+def _vnd_fetch_json(url):
+    resp = requests.get(url, timeout=20, headers={
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json,text/plain,*/*",
+        "Origin": "https://dstock.vndirect.com.vn",
+        "Referer": "https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong",
+    })
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _vnd_ratio_data(ratio_code, from_date):
+    url = (
+        f"{VND_BASE}/ratios"
+        f"?q=ratioCode:{ratio_code}~code:VNINDEX~reportDate:gte:{from_date}"
+        "&sort=reportDate:desc&size=10000&fields=value,reportDate"
+    )
+    return _vnd_fetch_json(url).get("data", [])
+
+
+def _vnd_price_data(from_date):
+    url = (
+        f"{VND_BASE}/vnmarket_prices"
+        f"?q=code:vnindex~date:gte:{from_date}"
+        "&sort=date:desc&size=10000&fields=close,date"
+    )
+    return _vnd_fetch_json(url).get("data", [])
+
+
+def _vnd_price_by_date(from_date):
+    return {
+        item["date"]: float(item["close"])
+        for item in _vnd_price_data(from_date)
+        if item.get("date") and item.get("close") is not None
+    }
+
+
+def _vnd_valuation_rows(metric, from_date):
+    ratio_code = VND_RATIO_CODES.get(metric, VND_RATIO_CODES["pe"])
+    prices = _vnd_price_by_date(from_date)
+    rows = []
+    for item in _vnd_ratio_data(ratio_code, from_date):
+        date = item.get("reportDate")
+        if date in prices and item.get("value") is not None:
+            rows.append({"date": date, "value": float(item["value"]), "index": prices[date]})
+    rows.sort(key=lambda row: row["date"])
+    return rows
+
+
+def _vnd_allocation_rows(from_date):
+    prices = _vnd_price_by_date(from_date)
+    ma50 = {
+        item["reportDate"]: float(item["value"]) * 100
+        for item in _vnd_ratio_data(VND_RATIO_CODES["ma50"], from_date)
+        if item.get("reportDate") and item.get("value") is not None
+    }
+    ma200 = {
+        item["reportDate"]: float(item["value"]) * 100
+        for item in _vnd_ratio_data(VND_RATIO_CODES["ma200"], from_date)
+        if item.get("reportDate") and item.get("value") is not None
+    }
+    dates = sorted(set(prices) & set(ma50) & set(ma200))
+    return [
+        {"date": date, "index": prices[date], "ma50": ma50[date], "ma200": ma200[date]}
+        for date in dates
+    ]
+
+
+def _vnd_cached_rows(cache_key, getter):
+    """Cache theo (kind, metric, from_date) — TTL VND_TTL_SEC, dùng chung cho cả
+    2 route bên dưới để đổi kỳ thời gian/tab P/E-P/B không phải gọi VNDIRECT lại
+    ngay nếu vài phút trước đã có người xem đúng tổ hợp đó."""
+    now = time.time()
+    with _vnd_lock:
+        cached = _vnd_cache.get(cache_key)
+        if cached and now - cached["updated_at"] < VND_TTL_SEC:
+            return cached["rows"]
+    rows = getter()
+    with _vnd_lock:
+        _vnd_cache[cache_key] = {"rows": rows, "updated_at": time.time()}
+    return rows
+
+
+@app.route("/api/vndirect_valuation")
+def api_vndirect_valuation():
+    metric = (request.args.get("metric") or "pe").lower()
+    if metric not in ("pe", "pb"):
+        metric = "pe"
+    from_date = request.args.get("from") or "2015-01-01"
+    cache_key = f"valuation:{metric}:{from_date}"
+    try:
+        rows = _vnd_cached_rows(cache_key, lambda: _vnd_valuation_rows(metric, from_date))
+        return jsonify({
+            "ok": True, "kind": metric,
+            "from": rows[0]["date"] if rows else from_date,
+            "to": rows[-1]["date"] if rows else from_date,
+            "rows": rows,
+        })
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Fetch VNDIRECT định giá lỗi: {e}")
+        return jsonify({"ok": False, "message": str(e), "rows": []}), 502
+
+
+@app.route("/api/vndirect_allocation")
+def api_vndirect_allocation():
+    from_date = request.args.get("from") or "2015-01-01"
+    cache_key = f"allocation:{from_date}"
+    try:
+        rows = _vnd_cached_rows(cache_key, lambda: _vnd_allocation_rows(from_date))
+        return jsonify({
+            "ok": True, "kind": "allocation",
+            "from": rows[0]["date"] if rows else from_date,
+            "to": rows[-1]["date"] if rows else from_date,
+            "rows": rows,
+        })
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Fetch VNDIRECT phân bổ thị trường lỗi: {e}")
+        return jsonify({"ok": False, "message": str(e), "rows": []}), 502
+
+
 _chart_cache: dict = {}
 _chart_lock = threading.Lock()
 CHART_TTL_SEC = 120
@@ -2046,6 +2184,33 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-analysis ul{margin:0 0 12px 20px;color:#374151;font-size:14.5px;line-height:1.65;font-family:'IBM Plex Sans',sans-serif}
 .health-analysis li{margin-bottom:5px}
 .health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
+.vnd-panel{margin:14px 14px 0;border:1px solid var(--border);border-radius:8px;padding:14px 16px 12px;background:#fff}
+.vnd-panel:last-child{margin-bottom:14px}
+.vnd-panel-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.vnd-panel-title{font-family:var(--font-ui);font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px;color:var(--accent)}
+.vnd-status{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
+.vnd-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0}
+.vnd-tabs{display:inline-flex;gap:6px}
+.vnd-tab{height:26px;padding:0 12px;display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;user-select:none}
+.vnd-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
+.vnd-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.vnd-period{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap}
+.vnd-period select{height:26px;width:auto;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);padding:0 6px;font-size:12px}
+.vnd-chart-area{position:relative;height:270px}
+.vnd-svg{width:100%;height:100%;display:block;overflow:visible}
+.vnd-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5}
+.vnd-axis-label{fill:var(--muted);font-size:11px;font-weight:700}
+.vnd-x-label{fill:var(--muted);font-size:10px;font-weight:600}
+.vnd-legend{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:2px;color:var(--muted);font-size:11px;flex-wrap:wrap}
+.vnd-legend-item{display:inline-flex;align-items:center;gap:5px}
+.vnd-swatch{display:inline-block;width:12px;height:3px;border-radius:2px}
+.vnd-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+.vnd-tile{border:1px solid var(--border);border-radius:7px;padding:8px 10px;background:var(--surf2);min-height:52px}
+.vnd-tile span{display:block;color:var(--muted);font-size:11px;font-weight:700;margin-bottom:4px}
+.vnd-tile strong{display:block;font-size:16px;line-height:20px;color:var(--text)}
+.vnd-error{display:none;margin-top:8px;border:1px solid #efc5c5;background:#fff5f5;color:#9b2424;border-radius:6px;padding:8px 10px;font-size:12px}
+.vnd-tooltip{position:fixed;z-index:50;display:none;min-width:150px;padding:8px 10px;background:rgba(17,24,39,.94);color:#fff;border-radius:6px;font-size:11px;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.vnd-tooltip strong{display:block;margin-bottom:4px}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -2366,6 +2531,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .health-body{height:auto;display:block;overflow:visible}
   .health-chartbox{height:280px}
   .health-score{font-size:36px}
+  .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
+  .vnd-panel:last-child{margin-bottom:12px}
+  .vnd-controls{flex-direction:column;align-items:flex-start;gap:8px}
+  .vnd-chart-area{height:220px}
+  .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
@@ -2944,6 +3114,73 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
               </div>
             </div>
           </div>
+        </div>
+        <div class="vnd-panel" id="vnd-valuation-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Định giá thị trường</span>
+            <span class="vnd-status" id="vnd-valuation-status">Đang tải dữ liệu VNDIRECT...</span>
+          </div>
+          <div class="vnd-controls">
+            <div class="vnd-tabs" id="vnd-valuation-tabs">
+              <span class="vnd-tab on" data-metric="pe">P/E</span>
+              <span class="vnd-tab" data-metric="pb">P/B</span>
+            </div>
+            <label class="vnd-period">Kỳ thời gian
+              <select id="vnd-valuation-period">
+                <option value="90">3 tháng</option>
+                <option value="180">6 tháng</option>
+                <option value="365" selected>1 năm</option>
+                <option value="1095">3 năm</option>
+                <option value="1825">5 năm</option>
+              </select>
+            </label>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-valuation-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-legend">
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#1a56db"></span>VNINDEX (điểm, trái)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span><span id="vnd-valuation-metric-legend">P/E (lần, phải)</span></span>
+          </div>
+          <div class="vnd-summary">
+            <div class="vnd-tile"><span>Ngày gần nhất</span><strong id="vnd-valuation-date">--</strong></div>
+            <div class="vnd-tile"><span>VNINDEX</span><strong id="vnd-valuation-index">--</strong></div>
+            <div class="vnd-tile"><span id="vnd-valuation-metric-label">P/E</span><strong id="vnd-valuation-metric">--</strong></div>
+            <div class="vnd-tile"><span>Số điểm dữ liệu</span><strong id="vnd-valuation-count">--</strong></div>
+          </div>
+          <div class="vnd-error" id="vnd-valuation-error"></div>
+        </div>
+        <div class="vnd-panel" id="vnd-allocation-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Phân bổ thị trường</span>
+            <span class="vnd-status" id="vnd-allocation-status">Đang tải dữ liệu VNDIRECT...</span>
+          </div>
+          <div class="vnd-controls">
+            <div class="vnd-legend" style="margin:0;justify-content:flex-start">
+              <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
+              <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50</span>
+              <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200</span>
+            </div>
+            <label class="vnd-period">Kỳ thời gian
+              <select id="vnd-allocation-period">
+                <option value="90">3 tháng</option>
+                <option value="180">6 tháng</option>
+                <option value="365" selected>1 năm</option>
+                <option value="1095">3 năm</option>
+                <option value="1825">5 năm</option>
+              </select>
+            </label>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-allocation-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-summary">
+            <div class="vnd-tile"><span>Ngày gần nhất</span><strong id="vnd-allocation-date">--</strong></div>
+            <div class="vnd-tile"><span>VNINDEX</span><strong id="vnd-allocation-index">--</strong></div>
+            <div class="vnd-tile"><span>Trên MA50</span><strong id="vnd-allocation-ma50">--</strong></div>
+            <div class="vnd-tile"><span>Trên MA200</span><strong id="vnd-allocation-ma200">--</strong></div>
+          </div>
+          <div class="vnd-error" id="vnd-allocation-error"></div>
         </div>
       </div>
       <div class="tri-content" id="tri-content-dinhgia">
@@ -6972,6 +7209,226 @@ DOM.treemapCopyBtn?.addEventListener('click',e=>{
   e.stopPropagation();
   copyTreemapImage(e.currentTarget);
 });
+// ── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
+// Vẽ NGAY trong khung Mrk Health — tải lười (lazy) lần đầu tab "health" được mở
+// (đỡ gọi VNDIRECT khi người dùng không xem tới), sau đó tự làm mới định kỳ.
+// Cách lấy dữ liệu (API VNDIRECT) và vẽ SVG 2 trục dựa đúng theo vndirect_valuation_chart.py.
+const VND_AUTO_REFRESH_MS=5*60*1000;
+const vndValuationState={metric:'pe',period:365,rows:[]};
+const vndAllocationState={period:365,rows:[]};
+let _vndLoaded=false,_vndRefreshTimer=null,_vndResizeTimer=null;
+const vndTooltip=document.createElement('div');
+vndTooltip.className='vnd-tooltip';
+vndTooltip.id='vnd-tooltip';
+document.body.appendChild(vndTooltip);
+
+function vndFmt(value,digits=2){
+  if(!Number.isFinite(Number(value)))return'--';
+  return Number(value).toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits});
+}
+function vndYmd(date){return date.toISOString().slice(0,10);}
+function vndLabelDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
+function vndFullDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
+function vndNiceTicks(min,max,count=4){if(min===max)return[min];const step=(max-min)/(count-1);return Array.from({length:count},(_,idx)=>min+idx*step);}
+function vndPickXTicks(rows,count=5){if(rows.length<=count)return rows;return Array.from({length:count},(_,idx)=>rows[Math.round(idx*(rows.length-1)/(count-1))]);}
+function vndPeriodStart(days){const start=new Date();start.setDate(start.getDate()-days);return vndYmd(start);}
+function vndToPath(points){return points.map(([x,y],idx)=>`${idx?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');}
+
+async function vndLoadJson(url){
+  const res=await fetch(url);
+  if(!res.ok)throw new Error(`HTTP ${res.status}`);
+  const data=await res.json();
+  if(!data.ok)throw new Error(data.message||'Không lấy được dữ liệu');
+  return data;
+}
+function vndShowError(statusId,errorId,err){
+  $(statusId).textContent='Không tải được dữ liệu';
+  const box=$(errorId);
+  box.style.display='block';
+  box.textContent=`Lỗi: ${err.message}`;
+}
+
+async function loadVndValuation(){
+  $('vnd-valuation-status').textContent='Đang tải dữ liệu VNDIRECT...';
+  $('vnd-valuation-error').style.display='none';
+  try{
+    const url=`/api/vndirect_valuation?metric=${vndValuationState.metric}&from=${vndPeriodStart(vndValuationState.period)}`;
+    const data=await vndLoadJson(url);
+    vndValuationState.rows=data.rows;
+    $('vnd-valuation-status').textContent=`Nguồn: VNDIRECT | ${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
+    renderVndValuation();
+  }catch(e){vndShowError('vnd-valuation-status','vnd-valuation-error',e);}
+}
+async function loadVndAllocation(){
+  $('vnd-allocation-status').textContent='Đang tải dữ liệu VNDIRECT...';
+  $('vnd-allocation-error').style.display='none';
+  try{
+    const url=`/api/vndirect_allocation?from=${vndPeriodStart(vndAllocationState.period)}`;
+    const data=await vndLoadJson(url);
+    vndAllocationState.rows=data.rows;
+    $('vnd-allocation-status').textContent=`Nguồn: VNDIRECT | ${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
+    renderVndAllocation();
+  }catch(e){vndShowError('vnd-allocation-status','vnd-allocation-error',e);}
+}
+
+function renderVndValuation(){
+  const rows=vndValuationState.rows||[];
+  if(!rows.length)return;
+  const metricLabel=vndValuationState.metric==='pe'?'P/E':'P/B';
+  renderVndChart({
+    svgId:'vnd-valuation-svg',rows,
+    rightSeries:[{key:'value',color:'#0e9f6e',digits:vndValuationState.metric==='pe'?2:3,axisDigits:vndValuationState.metric==='pe'?1:2}],
+    leftColor:'#1a56db',rightMin:null,rightMax:null,
+    tooltipBuilder:row=>`<strong>${vndFullDate(row.date)}</strong><div>VNINDEX: ${vndFmt(row.index,2)}</div><div>${metricLabel}: ${vndFmt(row.value,3)}</div>`,
+    onLast:row=>{
+      $('vnd-valuation-date').textContent=vndFullDate(row.date);
+      $('vnd-valuation-index').textContent=vndFmt(row.index,2);
+      $('vnd-valuation-metric').textContent=vndFmt(row.value,vndValuationState.metric==='pe'?2:3);
+      $('vnd-valuation-count').textContent=rows.length.toLocaleString('en-US');
+    },
+  });
+}
+function renderVndAllocation(){
+  const rows=vndAllocationState.rows||[];
+  if(!rows.length)return;
+  renderVndChart({
+    svgId:'vnd-allocation-svg',rows,
+    rightSeries:[{key:'ma50',color:'#0e9f6e',digits:1,axisDigits:0},{key:'ma200',color:'#f59b00',digits:1,axisDigits:0}],
+    leftColor:'#9b55ff',rightMin:0,rightMax:100,
+    tooltipBuilder:row=>`<strong>${vndFullDate(row.date)}</strong><div>VNINDEX: ${vndFmt(row.index,2)}</div><div>Trên MA50: ${vndFmt(row.ma50,1)}%</div><div>Trên MA200: ${vndFmt(row.ma200,1)}%</div>`,
+    onLast:row=>{
+      $('vnd-allocation-date').textContent=vndFullDate(row.date);
+      $('vnd-allocation-index').textContent=vndFmt(row.index,2);
+      $('vnd-allocation-ma50').textContent=`${vndFmt(row.ma50,1)}%`;
+      $('vnd-allocation-ma200').textContent=`${vndFmt(row.ma200,1)}%`;
+    },
+  });
+}
+
+function renderVndChart(config){
+  const rows=config.rows||[];
+  const svg=$(config.svgId);
+  svg.innerHTML='';
+  if(!rows.length)return;
+  const rect=svg.getBoundingClientRect();
+  const width=Math.max(320,rect.width||640);
+  const height=Math.max(200,rect.height||270);
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  const margin={top:16,right:56,bottom:30,left:52};
+  const innerW=width-margin.left-margin.right;
+  const innerH=height-margin.top-margin.bottom;
+  const xVals=rows.map(r=>new Date(r.date+'T00:00:00').getTime());
+  const indexVals=rows.map(r=>r.index);
+  const rightVals=config.rightSeries.flatMap(series=>rows.map(r=>r[series.key]));
+  const xMin=xVals[0],xMax=xVals[xVals.length-1];
+  const idxMin=Math.min(...indexVals),idxMax=Math.max(...indexVals);
+  const rightRawMin=Math.min(...rightVals),rightRawMax=Math.max(...rightVals);
+  const idxPad=(idxMax-idxMin)*0.08||1;
+  const rightPad=(rightRawMax-rightRawMin)*0.12||0.1;
+  const rightMin=config.rightMin===null?rightRawMin-rightPad:config.rightMin;
+  const rightMax=config.rightMax===null?rightRawMax+rightPad:config.rightMax;
+  const sx=x=>margin.left+((x-xMin)/(xMax-xMin||1))*innerW;
+  const syIndex=y=>margin.top+(1-((y-(idxMin-idxPad))/((idxMax+idxPad)-(idxMin-idxPad))))*innerH;
+  const syRight=y=>margin.top+(1-((y-rightMin)/(rightMax-rightMin||1)))*innerH;
+  function add(tag,attrs,text){
+    const el=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const[key,value]of Object.entries(attrs))el.setAttribute(key,value);
+    if(text!==undefined)el.textContent=text;
+    svg.appendChild(el);
+    return el;
+  }
+  for(const tick of vndNiceTicks(idxMin-idxPad,idxMax+idxPad,4)){
+    const y=syIndex(tick);
+    add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
+    add('text',{x:margin.left-8,y:y+4,'text-anchor':'end',class:'vnd-axis-label'},Math.round(tick).toLocaleString('en-US'));
+  }
+  const axisDigits=config.rightSeries[0].axisDigits;
+  for(const tick of vndNiceTicks(rightMin,rightMax,4)){
+    const y=syRight(tick);
+    const suffix=config.rightMax===100?'%':'';
+    add('text',{x:width-margin.right+8,y:y+4,'text-anchor':'start',class:'vnd-axis-label'},`${vndFmt(tick,axisDigits)}${suffix}`);
+  }
+  for(const row of vndPickXTicks(rows,5)){
+    const x=sx(new Date(row.date+'T00:00:00').getTime());
+    add('text',{x,y:height-10,'text-anchor':'middle',class:'vnd-x-label'},vndLabelDate(row.date));
+  }
+  const indexPoints=rows.map(r=>[sx(new Date(r.date+'T00:00:00').getTime()),syIndex(r.index)]);
+  add('path',{d:vndToPath(indexPoints),fill:'none',stroke:config.leftColor,'stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'});
+  for(const series of config.rightSeries){
+    const points=rows.map(r=>[sx(new Date(r.date+'T00:00:00').getTime()),syRight(r[series.key])]);
+    add('path',{d:vndToPath(points),fill:'none',stroke:series.color,'stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'});
+  }
+  const last=rows[rows.length-1];
+  config.onLast?.(last);
+  const guide=add('line',{y1:margin.top,y2:height-margin.bottom,stroke:'#9aa3b2','stroke-width':1,'stroke-dasharray':'3 4',opacity:0});
+  const dots=[add('circle',{r:3.5,fill:config.leftColor,stroke:'#fff','stroke-width':2,opacity:0}),
+    ...config.rightSeries.map(series=>add('circle',{r:3.5,fill:series.color,stroke:'#fff','stroke-width':2,opacity:0}))];
+  const hit=add('rect',{x:margin.left,y:margin.top,width:innerW,height:innerH,fill:'transparent'});
+  hit.addEventListener('mousemove',event=>{
+    const box=svg.getBoundingClientRect();
+    const x=event.clientX-box.left;
+    const ratio=Math.max(0,Math.min(1,(x-margin.left)/innerW));
+    const target=xMin+ratio*(xMax-xMin);
+    let nearest=rows[0],best=Infinity;
+    for(const row of rows){
+      const time=new Date(row.date+'T00:00:00').getTime();
+      const delta=Math.abs(time-target);
+      if(delta<best){best=delta;nearest=row;}
+    }
+    const nx=sx(new Date(nearest.date+'T00:00:00').getTime());
+    guide.setAttribute('x1',nx);guide.setAttribute('x2',nx);guide.setAttribute('opacity','1');
+    dots[0].setAttribute('cx',nx);dots[0].setAttribute('cy',syIndex(nearest.index));dots[0].setAttribute('opacity','1');
+    config.rightSeries.forEach((series,idx)=>{
+      dots[idx+1].setAttribute('cx',nx);dots[idx+1].setAttribute('cy',syRight(nearest[series.key]));dots[idx+1].setAttribute('opacity','1');
+    });
+    vndTooltip.innerHTML=config.tooltipBuilder(nearest);
+    vndTooltip.style.display='block';
+    vndTooltip.style.left=`${event.clientX+14}px`;
+    vndTooltip.style.top=`${event.clientY+14}px`;
+  });
+  hit.addEventListener('mouseleave',()=>{
+    guide.setAttribute('opacity','0');
+    dots.forEach(dot=>dot.setAttribute('opacity','0'));
+    vndTooltip.style.display='none';
+  });
+}
+
+function vndRefreshAll(){loadVndValuation();loadVndAllocation();}
+function vndRerenderVisible(){
+  if(vndValuationState.rows.length)renderVndValuation();
+  if(vndAllocationState.rows.length)renderVndAllocation();
+}
+function vndInitOnce(){
+  if(_vndLoaded)return;
+  _vndLoaded=true;
+  $('vnd-valuation-tabs').addEventListener('click',e=>{
+    const btn=e.target.closest('.vnd-tab');
+    if(!btn)return;
+    const metric=btn.dataset.metric;
+    if(metric===vndValuationState.metric)return;
+    vndValuationState.metric=metric;
+    $('vnd-valuation-tabs').querySelectorAll('.vnd-tab').forEach(b=>b.classList.toggle('on',b.dataset.metric===metric));
+    $('vnd-valuation-metric-legend').textContent=`${metric==='pe'?'P/E':'P/B'} (lần, phải)`;
+    $('vnd-valuation-metric-label').textContent=metric==='pe'?'P/E':'P/B';
+    loadVndValuation();
+  });
+  $('vnd-valuation-period').addEventListener('change',e=>{
+    vndValuationState.period=Number(e.target.value);
+    loadVndValuation();
+  });
+  $('vnd-allocation-period').addEventListener('change',e=>{
+    vndAllocationState.period=Number(e.target.value);
+    loadVndAllocation();
+  });
+  vndRefreshAll();
+  _vndRefreshTimer=setInterval(vndRefreshAll,VND_AUTO_REFRESH_MS);
+}
+window.addEventListener('resize',()=>{
+  if(!_vndLoaded)return;
+  clearTimeout(_vndResizeTimer);
+  _vndResizeTimer=setTimeout(vndRerenderVisible,150);
+});
+
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
 const TRI_TABS=['fireant','dinhgia','health','treemap','sankey'];
 const TRI_IFRAME_MAP={
@@ -6987,7 +7444,13 @@ function triActivateTab(tab){
   // Tab HEALTH vẽ chart theo kích thước khung THẬT (getBoundingClientRect) — lúc tab đang ẩn
   // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
   // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
-  if(tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+  if(tab==='health'){
+    if(_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+    // Khung PE/PB + Phân bổ thị trường: nạp lần đầu (lazy), các lần mở lại sau chỉ
+    // cần vẽ lại theo đúng kích thước khung hiện tại (dữ liệu đã có sẵn trong state).
+    vndInitOnce();
+    requestAnimationFrame(vndRerenderVisible);
+  }
   // Định giá: chỉ nạp iframe khi tab được kích hoạt lần đầu (lazy-load)
   if(TRI_IFRAME_MAP[tab]){
     const cfg=TRI_IFRAME_MAP[tab],f=document.getElementById(cfg.id);
@@ -7004,7 +7467,10 @@ DOM.triHdr.addEventListener('click',e=>{
   const collapsed=DOM.triPanel.classList.toggle('collapsed');
   if(!collapsed){
     const activeTab=DOM.triTabs.querySelector('.tri-tab.on');
-    if(activeTab&&activeTab.dataset.tab==='health'&&_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+    if(activeTab&&activeTab.dataset.tab==='health'){
+      if(_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
+      requestAnimationFrame(vndRerenderVisible);
+    }
   }
 });
 // Trên mobile, tab Fireant bị ẩn (xem CSS mobile — iframe fireant.vn không tối ưu cho di động):
