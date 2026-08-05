@@ -30,6 +30,32 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 _GZIP_MIN_BYTES = 500
 
 @app.after_request
+def _static_cache_headers(response):
+    """File tĩnh trong /static (vd lightweight-charts.min.js) gần như không đổi
+    giữa các lần deploy — cho trình duyệt cache thẳng 7 ngày, khỏi tốn round-trip
+    revalidate (If-None-Match/ETag) mỗi lần load trang. Nếu sau này đổi version
+    lib, đổi luôn tên file để trình duyệt tự tải bản mới thay vì dính cache cũ."""
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    return response
+
+_LWC_JS_CACHE = None
+
+@app.route("/static/lightweight-charts.min.js")
+def _serve_lwc_js():
+    """Route riêng cho đúng file lib chart, ĐÈ LÊN route /static/<path:filename>
+    mặc định của Flask. Lý do: send_from_directory (route static mặc định) stream
+    file với direct_passthrough=True, khiến hook _gzip_response() bên dưới BỎ QUA
+    không nén được — 160KB gửi nguyên qua mạng mỗi lần cache hết hạn/lần đầu ghé.
+    Đọc file vào RAM 1 lần (cache theo tiến trình) rồi trả qua Response thường,
+    để _gzip_response() nén được như các response JSON/HTML khác (~60KB sau nén)."""
+    global _LWC_JS_CACHE
+    if _LWC_JS_CACHE is None:
+        with open(os.path.join(app.static_folder, "lightweight-charts.min.js"), "rb") as f:
+            _LWC_JS_CACHE = f.read()
+    return Response(_LWC_JS_CACHE, content_type="application/javascript; charset=utf-8")
+
+@app.after_request
 def _gzip_response(response):
     """Nén gzip các response JSON/HTML (chart data, trang dashboard, v.v.) khi
     trình duyệt hỗ trợ — payload dạng số/JSON lặp lại nhiều nên nén rất hiệu
@@ -1775,15 +1801,14 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Scanner Dashboard</title>
-<!-- Preconnect + preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
+<!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
      viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
-     DNS/TLS/tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
-     script chính gọi loadLiteChart(). preconnect giúp bắt tay DNS/TLS với unpkg sớm, còn
-     preload giúp trình duyệt TẢI SONG SONG file này ngay trong lúc parse HTML phía trên,
-     nên khi script tag thật ở cuối trang được thực thi, file gần như đã có sẵn — giúp
-     panel CHART có thể vẽ sớm hơn thay vì phải đợi round-trip CDN nằm chắn ngay trước nó. -->
-<link rel="preconnect" href="https://unpkg.com" crossorigin>
-<link rel="preload" as="script" href="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js">
+     tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
+     script chính gọi loadLiteChart(). preload giúp trình duyệt TẢI SONG SONG file này
+     ngay trong lúc parse HTML phía trên, nên khi script tag thật ở cuối trang được thực
+     thi, file gần như đã có sẵn — giúp panel CHART có thể vẽ sớm hơn.
+     File này được self-host tại /app/static (không còn phụ thuộc CDN unpkg ngoài). -->
+<link rel="preload" as="script" href="/static/lightweight-charts.min.js">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════
@@ -2032,14 +2057,15 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lite-groups-sidebar.on~.lite-chart-signal{left:192px}
 /* Giá phóng to — đặt sát cạnh trên, canh giữa theo chiều ngang khung chart (kiểu "Magnified
    Market Price" của AmiBroker): dòng 1 là giá lớn, dòng 2 là biến động/khối lượng nhỏ hơn. */
-.lite-chart-bigprice{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:3;display:none;flex-direction:column;align-items:center;gap:1px;pointer-events:none;transition:left .15s;white-space:nowrap}
+.lite-chart-bigprice{position:absolute;top:6px;left:0;right:0;margin:0 auto;width:max-content;z-index:3;display:none;flex-direction:column;align-items:center;gap:1px;pointer-events:none;transition:left .15s;white-space:nowrap}
 .lite-chart-bigprice.on{display:flex}
-.lite-chart-bigprice .bp-price{font-family:"Times New Roman",var(--font-mono);font-size:20px;font-weight:700;line-height:1.1}
+.lite-chart-bigprice .bp-price{font-family:var(--font-mono);font-size:20px;font-weight:700;line-height:1.1}
 .lite-chart-bigprice .bp-sub{font-family:var(--font-mono);font-size:11px;line-height:1.2}
-/* Khi sidebar nhóm ngành mở: dịch phải đúng bằng nửa bề rộng sidebar (180px) để canh lại giữa
-   phần khung chart còn hiển thị (không bị sidebar che), thay vì dịch hẳn 192px như title/tín
-   hiệu (2 khối đó neo theo left tuyệt đối chứ không canh giữa). */
-.lite-groups-sidebar.on~.lite-chart-bigprice{left:calc(50% + 90px)}
+/* Khi sidebar nhóm ngành mở: đẩy mốc left từ 0 sang đúng bề rộng sidebar (180px), margin:auto sẽ
+   tự canh giữa trong phần còn lại (180px → hết khung chart) — tức canh giữa đúng phần khung chart
+   còn hiển thị (không bị sidebar che), khác với title/tín hiệu (2 khối đó neo theo left tuyệt đối
+   chứ không canh giữa). */
+.lite-groups-sidebar.on~.lite-chart-bigprice{left:180px}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
 .lite-chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--muted);font-size:12px;pointer-events:none}
@@ -3001,7 +3027,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 </div>
 <div id="edge-swipe-zone"></div>
 
-<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/static/lightweight-charts.min.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
