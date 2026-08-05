@@ -108,6 +108,47 @@ SIGNAL_TTL_SEC = 10
 _market_health_cache = {"data": {}, "updated_at": 0}
 _market_health_lock = threading.Lock()
 
+# ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
+# _market_health_cache vốn chỉ nằm trong RAM (biến Python), nên mỗi lần container
+# bị build/restart (deploy mới), nó về lại {} — dashboard phải đợi build_history_cache()
+# (1-3 phút) chạy xong RỒI warm_market_health_cache() mới tính ra được HEALTH đầu tiên.
+# Ở đây ghi kết quả THÀNH CÔNG gần nhất xuống file JSON, và nạp lại file đó ngay khi
+# module này được import (tức là NGAY khi process khởi động, trước cả khi Flask mở cổng)
+# — nhờ vậy panel HEALTH có ngay dữ liệu (dù hơi cũ, có kèm mốc "updated_at" gốc để cơ
+# chế TTL/stale phía trên tự biết khi nào cần tính lại) thay vì trắng/lỗi trong lúc chờ.
+# Dùng chung volume /data/trade-journal đã được mount sẵn (đỡ phải thêm dòng -v mới trong
+# lệnh docker run) — file market_health.json chỉ là một file JSON nhỏ nằm cạnh dữ liệu
+# Nhật ký giao dịch, không đụng chạm gì tới nhau.
+_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
+
+def _save_market_health_to_disk():
+    try:
+        os.makedirs(os.path.dirname(_MARKET_HEALTH_CACHE_FILE), exist_ok=True)
+        tmp_path = _MARKET_HEALTH_CACHE_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(_market_health_cache, f, ensure_ascii=False)
+        os.replace(tmp_path, _MARKET_HEALTH_CACHE_FILE)  # ghi qua file tạm rồi rename — tránh
+        # trường hợp process bị kill giữa lúc ghi làm hỏng file cache (rename là thao tác atomic).
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Lưu HEALTH cache xuống đĩa lỗi (bỏ qua, không ảnh hưởng dashboard): {e}")
+
+def _load_market_health_from_disk():
+    try:
+        with open(_MARKET_HEALTH_CACHE_FILE, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if isinstance(saved, dict) and saved.get("data", {}).get("ok"):
+            _market_health_cache["data"] = saved["data"]
+            _market_health_cache["updated_at"] = saved.get("updated_at", 0)
+            age_min = (time.time() - _market_health_cache["updated_at"]) / 60
+            print(f"  [Dashboard] ✅ Nạp lại HEALTH cache từ đĩa (cũ {age_min:.1f} phút) — "
+                  f"có dữ liệu hiển thị ngay trong lúc chờ tính lại.")
+    except FileNotFoundError:
+        pass  # lần đầu chạy / chưa mount volume — không có gì để nạp, bỏ qua im lặng
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Nạp HEALTH cache từ đĩa lỗi (bỏ qua): {e}")
+
+_load_market_health_from_disk()  # chạy NGAY lúc import module — trước khi Flask mở cổng
+
 
 def _refresh_market_health(force: bool = False) -> dict:
     """
@@ -133,6 +174,7 @@ def _refresh_market_health(force: bool = False) -> dict:
             _market_health_cache["data"] = data
             if data.get("ok"):
                 _market_health_cache["updated_at"] = time.time()
+                _save_market_health_to_disk()
         except Exception as e:
             print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
             # Không ghi đè "data" bằng lỗi cứng ở đây — giữ lại dữ liệu HEALTH
