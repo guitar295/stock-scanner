@@ -687,9 +687,9 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
     down_close = c <= spread * 0.3 + l
     mid_close  = (c > spread * 0.3 + l) & (c < spread * 0.7 + l)
 
-    up_bar_prev1, down_bar_prev1     = up_bar.shift(1).fillna(False), down_bar.shift(1).fillna(False)
-    wide_bar_prev1                   = wide_range_bar.shift(1).fillna(False)
-    down_close_prev1                 = down_close.shift(1).fillna(False)
+    up_bar_prev1, down_bar_prev1     = up_bar.shift(1).fillna(False).astype(bool), down_bar.shift(1).fillna(False).astype(bool)
+    wide_bar_prev1                   = wide_range_bar.shift(1).fillna(False).astype(bool)
+    down_close_prev1                 = down_close.shift(1).fillna(False).astype(bool)
 
     up_thrust_bar = (
         wide_range_bar & np.isin(close_pos, [1, 2]) & (upminor > 0) &
@@ -717,8 +717,8 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
     # trước khi tô "Super Up Color" — thiếu vế upminor<0 khiến stop_volume tô tím cả khi
     # upminor>=0 (dương tính giả so với bản gốc).
     purple_gate = (upmajor < 0) & (upminor < 0)
-    flag[blue_signal.fillna(False)]                                   = 1
-    flag[(purple_gate & (stop_volume | rev_up_thrust)).fillna(False)] = 2   # ưu tiên tích lũy nếu trùng cả 2 (hiếm)
+    flag[blue_signal.fillna(False).astype(bool)]                                   = 1
+    flag[(purple_gate & (stop_volume | rev_up_thrust)).fillna(False).astype(bool)] = 2   # ưu tiên tích lũy nếu trùng cả 2 (hiếm)
     return flag
 
 
