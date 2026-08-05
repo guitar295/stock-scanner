@@ -1218,12 +1218,22 @@ def popout_full(symbol):
 
 @app.route("/")
 def index():
-    html = (
-        DASHBOARD_HTML
+    # __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ giờ nằm trong DASHBOARD_MAIN_JS (đã tách ra
+    # file JS riêng, xem route /dashboard-main.js bên dưới) chứ không còn trong DASHBOARD_HTML
+    # nữa, nên ở đây khỏi cần .replace() gì thêm — trả thẳng HTML nguyên bản.
+    return Response(DASHBOARD_HTML, mimetype="text/html")
+
+@app.route("/dashboard-main.js")
+def dashboard_main_js():
+    """JS chính của dashboard — tách khỏi DASHBOARD_HTML (xem giải thích ở khai báo
+    DASHBOARD_MAIN_JS phía dưới). __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ được thay ở
+    đây (giống hệt logic .replace() cũ từng nằm trong index()), không đổi giá trị/format."""
+    js = (
+        DASHBOARD_MAIN_JS
         .replace("__HMAP_COLS_CONFIG__", json.dumps(HMAP_COLS_CONFIG, ensure_ascii=False))
         .replace("__TS_POOL_CONFIG__", json.dumps(TS_POOL_CONFIG, ensure_ascii=False))
     )
-    return Response(html, mimetype="text/html")
+    return Response(js, content_type="application/javascript; charset=utf-8")
 
 # =============================================================================
 # START
@@ -3028,7 +3038,27 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 <div id="edge-swipe-zone"></div>
 
 <script src="/static/lightweight-charts.min.js"></script>
-<script>
+<script defer src="/dashboard-main.js"></script>
+</body>
+</html>
+"""
+
+# Toàn bộ JS chính của dashboard (trước đây nhúng thẳng trong DASHBOARD_HTML dưới dạng
+# 1 thẻ <script> ~5300 dòng ở cuối trang) — tách ra thành file JS riêng, serve qua route
+# /dashboard-main.js bên dưới. Lý do tách:
+#   1) Trang HTML chính (DASHBOARD_HTML) giờ nhẹ hơn NHIỀU (bớt ~5300 dòng) — trình duyệt
+#      parse xong toàn bộ HTML rất nhanh, không phải "cõng" luôn cả khối JS khổng lồ này
+#      trong CÙNG 1 response.
+#   2) Dùng <script defer src=...> thay vì <script> nhúng ở cuối <body> — trình duyệt bắt
+#      đầu TẢI file JS này song song ngay khi gặp thẻ (không chờ parse hết phần HTML còn lại),
+#      thay vì phải đợi toàn bộ ~376KB HTML về tới tay rồi mới có JS để chạy.
+#   3) Route riêng => tận dụng lại được hook gzip nén sẵn (_gzip_response) giống như đã áp
+#      dụng cho lightweight-charts.min.js — giảm đáng kể dung lượng truyền qua mạng.
+# LƯU Ý: hành vi thực thi (thời điểm chạy, thứ tự chạy so với DOM đã sẵn sàng) GIỮ NGUYÊN
+# so với trước — defer vẫn chạy đúng lúc "ngay trước DOMContentLoaded", đúng thời điểm mà
+# script inline ở cuối <body> trước đây từng chạy. Nội dung JS bên trong KHÔNG đổi 1 dòng nào,
+# chỉ đổi cách nó được gửi tới trình duyệt.
+DASHBOARD_MAIN_JS = r"""
 'use strict';
 // ═══════════════════════════════════════════════════════
 // DOM CACHE
@@ -8358,7 +8388,4 @@ async function init(){
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
 init();
-</script>
-</body>
-</html>
 """
