@@ -3149,11 +3149,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-allocation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
-            <div class="vnd-legend" style="margin:0;justify-content:flex-start">
-              <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
-              <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50</span>
-              <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200</span>
-            </div>
             <label class="vnd-period">Kỳ thời gian
               <select id="vnd-allocation-period">
                 <option value="90">3 tháng</option>
@@ -3166,6 +3161,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           </div>
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-allocation-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-legend">
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX (điểm, trái)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50 (%, phải)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200 (%, phải)</span>
           </div>
           <div class="vnd-error" id="vnd-allocation-error"></div>
         </div>
@@ -7334,26 +7334,47 @@ function renderVndChart(config){
   }
   const last=rows[rows.length-1];
   config.onLast?.(last);
+  // ── Badges giá trị cuối trên trục ──────────────────────────────────────────
+  // Vẽ nhãn màu (badge) ngay trên đường trục trái/phải tại vị trí Y của giá trị cuối cùng,
+  // giúp đọc nhanh VNINDEX hiện tại và chỉ số P/E, P/B hoặc % MA50/MA200 mà không cần hover.
+  const _vBadge=(y,text,color,align)=>{
+    const H=15,FONT=10,PAD=5,approxW=Math.max(text.length*6.3+PAD*2,28);
+    const rx_=align==='right'?margin.left-approxW:width-margin.right;
+    add('rect',{x:rx_,y:y-H/2,width:approxW,height:H,rx:2.5,fill:color});
+    add('text',{x:align==='right'?margin.left-PAD:width-margin.right+PAD,y:y+FONT/2-0.5,
+      'text-anchor':align==='right'?'end':'start','font-size':FONT,'font-weight':'700',
+      fill:'#fff','font-family':'inherit'},text);
+  };
+  _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor,'right');
+  for(const series of config.rightSeries){
+    const suffix=config.rightMax===100?'%':'';
+    _vBadge(syRight(last[series.key]),`${vndFmt(last[series.key],series.axisDigits)}${suffix}`,series.color,'left');
+  }
+  // ── Crosshair & tooltip ────────────────────────────────────────────────────
   const guide=add('line',{y1:margin.top,y2:height-margin.bottom,stroke:'#9aa3b2','stroke-width':1,'stroke-dasharray':'3 4',opacity:0});
   const dots=[add('circle',{r:3.5,fill:config.leftColor,stroke:'#fff','stroke-width':2,opacity:0}),
     ...config.rightSeries.map(series=>add('circle',{r:3.5,fill:series.color,stroke:'#fff','stroke-width':2,opacity:0}))];
   const hit=add('rect',{x:margin.left,y:margin.top,width:innerW,height:innerH,fill:'transparent'});
   hit.addEventListener('mousemove',event=>{
     const box=svg.getBoundingClientRect();
-    const x=event.clientX-box.left;
-    const ratio=Math.max(0,Math.min(1,(x-margin.left)/innerW));
-    const target=xMin+ratio*(xMax-xMin);
+    // Đổi sang tọa độ SVG (viewBox) — xử lý đúng khi SVG bị scale bởi CSS
+    const scaleX=width/box.width;
+    const curX=Math.max(margin.left,Math.min(width-margin.right,(event.clientX-box.left)*scaleX));
+    const ratio=(curX-margin.left)/innerW;
+    // Tìm điểm dữ liệu gần nhất theo tọa độ X con trỏ (dùng xMaxPadded cho nhất quán với sx())
+    const target=xMin+ratio*(xMaxPadded-xMin);
     let nearest=rows[0],best=Infinity;
     for(const row of rows){
       const time=new Date(row.date+'T00:00:00').getTime();
       const delta=Math.abs(time-target);
       if(delta<best){best=delta;nearest=row;}
     }
-    const nx=sx(new Date(nearest.date+'T00:00:00').getTime());
-    guide.setAttribute('x1',nx);guide.setAttribute('x2',nx);guide.setAttribute('opacity','1');
-    dots[0].setAttribute('cx',nx);dots[0].setAttribute('cy',syIndex(nearest.index));dots[0].setAttribute('opacity','1');
+    // Guide bám đúng vị trí con trỏ (không snap sang điểm dữ liệu) → crosshair = cursor
+    guide.setAttribute('x1',curX);guide.setAttribute('x2',curX);guide.setAttribute('opacity','1');
+    // Dots tại X con trỏ, Y tại điểm dữ liệu gần nhất
+    dots[0].setAttribute('cx',curX);dots[0].setAttribute('cy',syIndex(nearest.index));dots[0].setAttribute('opacity','1');
     config.rightSeries.forEach((series,idx)=>{
-      dots[idx+1].setAttribute('cx',nx);dots[idx+1].setAttribute('cy',syRight(nearest[series.key]));dots[idx+1].setAttribute('opacity','1');
+      dots[idx+1].setAttribute('cx',curX);dots[idx+1].setAttribute('cy',syRight(nearest[series.key]));dots[idx+1].setAttribute('opacity','1');
     });
     vndTooltip.innerHTML=config.tooltipBuilder(nearest);
     vndTooltip.style.display='block';
