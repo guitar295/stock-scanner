@@ -687,9 +687,9 @@ def calc_vpa_flag(df, rwi_short=(2, 8), rwi_long=(10, 40), min_bars=140):
     down_close = c <= spread * 0.3 + l
     mid_close  = (c > spread * 0.3 + l) & (c < spread * 0.7 + l)
 
-    up_bar_prev1, down_bar_prev1     = up_bar.shift(1).fillna(False).astype(bool), down_bar.shift(1).fillna(False).astype(bool)
-    wide_bar_prev1                   = wide_range_bar.shift(1).fillna(False).astype(bool)
-    down_close_prev1                 = down_close.shift(1).fillna(False).astype(bool)
+    up_bar_prev1, down_bar_prev1     = up_bar.shift(1, fill_value=False), down_bar.shift(1, fill_value=False)
+    wide_bar_prev1                   = wide_range_bar.shift(1, fill_value=False)
+    down_close_prev1                 = down_close.shift(1, fill_value=False)
 
     up_thrust_bar = (
         wide_range_bar & np.isin(close_pos, [1, 2]) & (upminor > 0) &
