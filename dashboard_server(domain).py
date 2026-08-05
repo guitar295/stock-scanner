@@ -108,6 +108,47 @@ SIGNAL_TTL_SEC = 10
 _market_health_cache = {"data": {}, "updated_at": 0}
 _market_health_lock = threading.Lock()
 
+# ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
+# _market_health_cache vốn chỉ nằm trong RAM (biến Python), nên mỗi lần container
+# bị build/restart (deploy mới), nó về lại {} — dashboard phải đợi build_history_cache()
+# (1-3 phút) chạy xong RỒI warm_market_health_cache() mới tính ra được HEALTH đầu tiên.
+# Ở đây ghi kết quả THÀNH CÔNG gần nhất xuống file JSON, và nạp lại file đó ngay khi
+# module này được import (tức là NGAY khi process khởi động, trước cả khi Flask mở cổng)
+# — nhờ vậy panel HEALTH có ngay dữ liệu (dù hơi cũ, có kèm mốc "updated_at" gốc để cơ
+# chế TTL/stale phía trên tự biết khi nào cần tính lại) thay vì trắng/lỗi trong lúc chờ.
+# Dùng chung volume /data/trade-journal đã được mount sẵn (đỡ phải thêm dòng -v mới trong
+# lệnh docker run) — file market_health.json chỉ là một file JSON nhỏ nằm cạnh dữ liệu
+# Nhật ký giao dịch, không đụng chạm gì tới nhau.
+_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
+
+def _save_market_health_to_disk():
+    try:
+        os.makedirs(os.path.dirname(_MARKET_HEALTH_CACHE_FILE), exist_ok=True)
+        tmp_path = _MARKET_HEALTH_CACHE_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(_market_health_cache, f, ensure_ascii=False)
+        os.replace(tmp_path, _MARKET_HEALTH_CACHE_FILE)  # ghi qua file tạm rồi rename — tránh
+        # trường hợp process bị kill giữa lúc ghi làm hỏng file cache (rename là thao tác atomic).
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Lưu HEALTH cache xuống đĩa lỗi (bỏ qua, không ảnh hưởng dashboard): {e}")
+
+def _load_market_health_from_disk():
+    try:
+        with open(_MARKET_HEALTH_CACHE_FILE, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if isinstance(saved, dict) and saved.get("data", {}).get("ok"):
+            _market_health_cache["data"] = saved["data"]
+            _market_health_cache["updated_at"] = saved.get("updated_at", 0)
+            age_min = (time.time() - _market_health_cache["updated_at"]) / 60
+            print(f"  [Dashboard] ✅ Nạp lại HEALTH cache từ đĩa (cũ {age_min:.1f} phút) — "
+                  f"có dữ liệu hiển thị ngay trong lúc chờ tính lại.")
+    except FileNotFoundError:
+        pass  # lần đầu chạy / chưa mount volume — không có gì để nạp, bỏ qua im lặng
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Nạp HEALTH cache từ đĩa lỗi (bỏ qua): {e}")
+
+_load_market_health_from_disk()  # chạy NGAY lúc import module — trước khi Flask mở cổng
+
 
 def _refresh_market_health(force: bool = False) -> dict:
     """
@@ -133,6 +174,7 @@ def _refresh_market_health(force: bool = False) -> dict:
             _market_health_cache["data"] = data
             if data.get("ok"):
                 _market_health_cache["updated_at"] = time.time()
+                _save_market_health_to_disk()
         except Exception as e:
             print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
             # Không ghi đè "data" bằng lỗi cứng ở đây — giữ lại dữ liệu HEALTH
@@ -787,20 +829,26 @@ def api_lightweight_chart(symbol):
         tf = "1D"
     df = df.tail(limit)
     candles, volume = [], []
-    for idx, row in df.iterrows():
+    # itertuples() thay cho iterrows(): iterrows() phải đóng gói MỖI dòng thành 1 object
+    # Series (khá nặng, phải suy luận lại dtype từng lần) — itertuples() trả namedtuple nhẹ
+    # hơn nhiều, nhanh hơn ~5-10 lần trên cùng dữ liệu. API này bị gọi lại mỗi 20s (auto-refresh)
+    # + mỗi lần đổi mã, nên tối ưu vòng lặp này có lợi tích lũy dù mỗi lần chỉ vài chục ms.
+    has_vpa = "vpa_flag" in df.columns
+    for row in df.itertuples():
         try:
-            o = float(row.get("open", 0) or 0)
-            h = float(row.get("high", 0) or 0)
-            l = float(row.get("low", 0) or 0)
-            c = float(row.get("close", 0) or 0)
-            v = float(row.get("volume", 0) or 0)
+            o = float(getattr(row, "open", 0) or 0)
+            h = float(getattr(row, "high", 0) or 0)
+            l = float(getattr(row, "low", 0) or 0)
+            c = float(getattr(row, "close", 0) or 0)
+            v = float(getattr(row, "volume", 0) or 0)
         except (TypeError, ValueError):
             continue
         if not all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
             continue
+        idx = row.Index
         day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
         candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
-        vpa_flag = int(row.get("vpa_flag", 0) or 0)
+        vpa_flag = int(getattr(row, "vpa_flag", 0) or 0) if has_vpa else 0
         color = _VPA_FLAG_COLOR.get(vpa_flag) or ("#26a69a" if c >= o else "#ef5350")
         volume.append({"time": day, "value": max(0, v), "color": color})
     if not candles:
@@ -1218,12 +1266,28 @@ def popout_full(symbol):
 
 @app.route("/")
 def index():
-    html = (
-        DASHBOARD_HTML
+    # __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ giờ nằm trong DASHBOARD_MAIN_JS (đã tách ra
+    # file JS riêng, xem route /dashboard-main.js bên dưới) chứ không còn trong DASHBOARD_HTML
+    # nữa, nên ở đây khỏi cần .replace() gì thêm — trả thẳng HTML nguyên bản.
+    return Response(DASHBOARD_HTML, mimetype="text/html")
+
+@app.route("/dashboard-main.js")
+def dashboard_main_js():
+    """JS chính của dashboard — tách khỏi DASHBOARD_HTML (xem giải thích ở khai báo
+    DASHBOARD_MAIN_JS phía dưới). __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ được thay ở
+    đây (giống hệt logic .replace() cũ từng nằm trong index()), không đổi giá trị/format."""
+    js = (
+        DASHBOARD_MAIN_JS
         .replace("__HMAP_COLS_CONFIG__", json.dumps(HMAP_COLS_CONFIG, ensure_ascii=False))
         .replace("__TS_POOL_CONFIG__", json.dumps(TS_POOL_CONFIG, ensure_ascii=False))
     )
-    return Response(html, mimetype="text/html")
+    resp = Response(js, content_type="application/javascript; charset=utf-8")
+    # KHÔNG cache dài hạn ở đây — khác với lightweight-charts.min.js (gần như không đổi),
+    # file này đổi theo MỖI LẦN deploy. Nếu có reverse proxy/CDN phía trước, no-cache
+    # buộc luôn kiểm tra lại server, tránh tình trạng "deploy bản mới nhưng trình duyệt/proxy
+    # vẫn chạy JS cũ" — lỗi kiểu này rất khó nhận ra vì HTML mới nhưng JS cũ.
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 # =============================================================================
 # START
@@ -3028,7 +3092,27 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 <div id="edge-swipe-zone"></div>
 
 <script src="/static/lightweight-charts.min.js"></script>
-<script>
+<script defer src="/dashboard-main.js"></script>
+</body>
+</html>
+"""
+
+# Toàn bộ JS chính của dashboard (trước đây nhúng thẳng trong DASHBOARD_HTML dưới dạng
+# 1 thẻ <script> ~5300 dòng ở cuối trang) — tách ra thành file JS riêng, serve qua route
+# /dashboard-main.js bên dưới. Lý do tách:
+#   1) Trang HTML chính (DASHBOARD_HTML) giờ nhẹ hơn NHIỀU (bớt ~5300 dòng) — trình duyệt
+#      parse xong toàn bộ HTML rất nhanh, không phải "cõng" luôn cả khối JS khổng lồ này
+#      trong CÙNG 1 response.
+#   2) Dùng <script defer src=...> thay vì <script> nhúng ở cuối <body> — trình duyệt bắt
+#      đầu TẢI file JS này song song ngay khi gặp thẻ (không chờ parse hết phần HTML còn lại),
+#      thay vì phải đợi toàn bộ ~376KB HTML về tới tay rồi mới có JS để chạy.
+#   3) Route riêng => tận dụng lại được hook gzip nén sẵn (_gzip_response) giống như đã áp
+#      dụng cho lightweight-charts.min.js — giảm đáng kể dung lượng truyền qua mạng.
+# LƯU Ý: hành vi thực thi (thời điểm chạy, thứ tự chạy so với DOM đã sẵn sàng) GIỮ NGUYÊN
+# so với trước — defer vẫn chạy đúng lúc "ngay trước DOMContentLoaded", đúng thời điểm mà
+# script inline ở cuối <body> trước đây từng chạy. Nội dung JS bên trong KHÔNG đổi 1 dòng nào,
+# chỉ đổi cách nó được gửi tới trình duyệt.
+DASHBOARD_MAIN_JS = r"""
 'use strict';
 // ═══════════════════════════════════════════════════════
 // DOM CACHE
@@ -8358,7 +8442,4 @@ async function init(){
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
 init();
-</script>
-</body>
-</html>
 """
