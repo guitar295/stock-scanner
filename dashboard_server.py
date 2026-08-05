@@ -3074,7 +3074,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <span class="panel-title">MARKET</span>
       <div class="tri-tabs" id="tri-tabs">
         <span class="tri-tab on" data-tab="fireant">Fireant</span>
-        <span class="tri-tab" data-tab="dinhgia">Vndstock</span>
         <span class="tri-tab" data-tab="health">Mrk Health</span>
         <span class="tri-tab" data-tab="treemap">Treemap</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
@@ -3118,7 +3117,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <div class="vnd-panel" id="vnd-valuation-panel">
           <div class="vnd-panel-hdr">
             <span class="vnd-panel-title">Định giá thị trường</span>
-            <span class="vnd-status" id="vnd-valuation-status">Đang tải dữ liệu VNDIRECT...</span>
+            <span class="vnd-status" id="vnd-valuation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
             <div class="vnd-tabs" id="vnd-valuation-tabs">
@@ -3139,21 +3138,15 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <svg class="vnd-svg" id="vnd-valuation-svg" preserveAspectRatio="none"></svg>
           </div>
           <div class="vnd-legend">
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#1a56db"></span>VNINDEX (điểm, trái)</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span><span id="vnd-valuation-metric-legend">P/E (lần, phải)</span></span>
-          </div>
-          <div class="vnd-summary">
-            <div class="vnd-tile"><span>Ngày gần nhất</span><strong id="vnd-valuation-date">--</strong></div>
-            <div class="vnd-tile"><span>VNINDEX</span><strong id="vnd-valuation-index">--</strong></div>
-            <div class="vnd-tile"><span id="vnd-valuation-metric-label">P/E</span><strong id="vnd-valuation-metric">--</strong></div>
-            <div class="vnd-tile"><span>Số điểm dữ liệu</span><strong id="vnd-valuation-count">--</strong></div>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX (điểm, trái)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" id="vnd-valuation-metric-swatch" style="background:#f59b00"></span><span id="vnd-valuation-metric-legend">P/E (lần, phải)</span></span>
           </div>
           <div class="vnd-error" id="vnd-valuation-error"></div>
         </div>
         <div class="vnd-panel" id="vnd-allocation-panel">
           <div class="vnd-panel-hdr">
             <span class="vnd-panel-title">Phân bổ thị trường</span>
-            <span class="vnd-status" id="vnd-allocation-status">Đang tải dữ liệu VNDIRECT...</span>
+            <span class="vnd-status" id="vnd-allocation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
             <div class="vnd-legend" style="margin:0;justify-content:flex-start">
@@ -3174,17 +3167,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-allocation-svg" preserveAspectRatio="none"></svg>
           </div>
-          <div class="vnd-summary">
-            <div class="vnd-tile"><span>Ngày gần nhất</span><strong id="vnd-allocation-date">--</strong></div>
-            <div class="vnd-tile"><span>VNINDEX</span><strong id="vnd-allocation-index">--</strong></div>
-            <div class="vnd-tile"><span>Trên MA50</span><strong id="vnd-allocation-ma50">--</strong></div>
-            <div class="vnd-tile"><span>Trên MA200</span><strong id="vnd-allocation-ma200">--</strong></div>
-          </div>
           <div class="vnd-error" id="vnd-allocation-error"></div>
         </div>
-      </div>
-      <div class="tri-content" id="tri-content-dinhgia">
-        <div class="frame-shrink"><iframe id="dinhgia-frame" src="about:blank" allowfullscreen></iframe></div>
       </div>
       <div class="tri-content" id="tri-content-treemap">
         <button class="lite-draw-btn treemap-copy-btn" id="treemap-copy-btn" title="Sao chép ảnh Treemap vào clipboard" aria-label="Sao chép ảnh Treemap vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
@@ -7249,24 +7233,24 @@ function vndShowError(statusId,errorId,err){
 }
 
 async function loadVndValuation(){
-  $('vnd-valuation-status').textContent='Đang tải dữ liệu VNDIRECT...';
+  $('vnd-valuation-status').textContent='Đang tải...';
   $('vnd-valuation-error').style.display='none';
   try{
     const url=`/api/vndirect_valuation?metric=${vndValuationState.metric}&from=${vndPeriodStart(vndValuationState.period)}`;
     const data=await vndLoadJson(url);
     vndValuationState.rows=data.rows;
-    $('vnd-valuation-status').textContent=`Nguồn: VNDIRECT | ${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
+    $('vnd-valuation-status').textContent=`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
     renderVndValuation();
   }catch(e){vndShowError('vnd-valuation-status','vnd-valuation-error',e);}
 }
 async function loadVndAllocation(){
-  $('vnd-allocation-status').textContent='Đang tải dữ liệu VNDIRECT...';
+  $('vnd-allocation-status').textContent='Đang tải...';
   $('vnd-allocation-error').style.display='none';
   try{
     const url=`/api/vndirect_allocation?from=${vndPeriodStart(vndAllocationState.period)}`;
     const data=await vndLoadJson(url);
     vndAllocationState.rows=data.rows;
-    $('vnd-allocation-status').textContent=`Nguồn: VNDIRECT | ${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
+    $('vnd-allocation-status').textContent=`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
     renderVndAllocation();
   }catch(e){vndShowError('vnd-allocation-status','vnd-allocation-error',e);}
 }
@@ -7277,15 +7261,9 @@ function renderVndValuation(){
   const metricLabel=vndValuationState.metric==='pe'?'P/E':'P/B';
   renderVndChart({
     svgId:'vnd-valuation-svg',rows,
-    rightSeries:[{key:'value',color:'#0e9f6e',digits:vndValuationState.metric==='pe'?2:3,axisDigits:vndValuationState.metric==='pe'?1:2}],
-    leftColor:'#1a56db',rightMin:null,rightMax:null,
+    rightSeries:[{key:'value',color:vndValuationState.metric==='pe'?'#f59b00':'#0e9f6e',digits:vndValuationState.metric==='pe'?2:3,axisDigits:vndValuationState.metric==='pe'?1:2}],
+    leftColor:'#9b55ff',rightMin:null,rightMax:null,
     tooltipBuilder:row=>`<strong>${vndFullDate(row.date)}</strong><div>VNINDEX: ${vndFmt(row.index,2)}</div><div>${metricLabel}: ${vndFmt(row.value,3)}</div>`,
-    onLast:row=>{
-      $('vnd-valuation-date').textContent=vndFullDate(row.date);
-      $('vnd-valuation-index').textContent=vndFmt(row.index,2);
-      $('vnd-valuation-metric').textContent=vndFmt(row.value,vndValuationState.metric==='pe'?2:3);
-      $('vnd-valuation-count').textContent=rows.length.toLocaleString('en-US');
-    },
   });
 }
 function renderVndAllocation(){
@@ -7296,12 +7274,6 @@ function renderVndAllocation(){
     rightSeries:[{key:'ma50',color:'#0e9f6e',digits:1,axisDigits:0},{key:'ma200',color:'#f59b00',digits:1,axisDigits:0}],
     leftColor:'#9b55ff',rightMin:0,rightMax:100,
     tooltipBuilder:row=>`<strong>${vndFullDate(row.date)}</strong><div>VNINDEX: ${vndFmt(row.index,2)}</div><div>Trên MA50: ${vndFmt(row.ma50,1)}%</div><div>Trên MA200: ${vndFmt(row.ma200,1)}%</div>`,
-    onLast:row=>{
-      $('vnd-allocation-date').textContent=vndFullDate(row.date);
-      $('vnd-allocation-index').textContent=vndFmt(row.index,2);
-      $('vnd-allocation-ma50').textContent=`${vndFmt(row.ma50,1)}%`;
-      $('vnd-allocation-ma200').textContent=`${vndFmt(row.ma200,1)}%`;
-    },
   });
 }
 
@@ -7321,13 +7293,15 @@ function renderVndChart(config){
   const indexVals=rows.map(r=>r.index);
   const rightVals=config.rightSeries.flatMap(series=>rows.map(r=>r[series.key]));
   const xMin=xVals[0],xMax=xVals[xVals.length-1];
+  const xRange=xMax-xMin||1;
+  const xMaxPadded=xMax+xRange*0.05; // 5% khoảng trống bên phải giữa điểm cuối và trục giá trị
   const idxMin=Math.min(...indexVals),idxMax=Math.max(...indexVals);
   const rightRawMin=Math.min(...rightVals),rightRawMax=Math.max(...rightVals);
   const idxPad=(idxMax-idxMin)*0.08||1;
   const rightPad=(rightRawMax-rightRawMin)*0.12||0.1;
   const rightMin=config.rightMin===null?rightRawMin-rightPad:config.rightMin;
   const rightMax=config.rightMax===null?rightRawMax+rightPad:config.rightMax;
-  const sx=x=>margin.left+((x-xMin)/(xMax-xMin||1))*innerW;
+  const sx=x=>margin.left+((x-xMin)/(xMaxPadded-xMin||1))*innerW;
   const syIndex=y=>margin.top+(1-((y-(idxMin-idxPad))/((idxMax+idxPad)-(idxMin-idxPad))))*innerH;
   const syRight=y=>margin.top+(1-((y-rightMin)/(rightMax-rightMin||1)))*innerH;
   function add(tag,attrs,text){
@@ -7409,7 +7383,7 @@ function vndInitOnce(){
     vndValuationState.metric=metric;
     $('vnd-valuation-tabs').querySelectorAll('.vnd-tab').forEach(b=>b.classList.toggle('on',b.dataset.metric===metric));
     $('vnd-valuation-metric-legend').textContent=`${metric==='pe'?'P/E':'P/B'} (lần, phải)`;
-    $('vnd-valuation-metric-label').textContent=metric==='pe'?'P/E':'P/B';
+    const _ml=$('vnd-valuation-metric-swatch');if(_ml)_ml.style.background=metric==='pe'?'#f59b00':'#0e9f6e';
     loadVndValuation();
   });
   $('vnd-valuation-period').addEventListener('change',e=>{
@@ -7430,10 +7404,8 @@ window.addEventListener('resize',()=>{
 });
 
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','dinhgia','health','treemap','sankey'];
-const TRI_IFRAME_MAP={
-  dinhgia:{id:'dinhgia-frame',url:'https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong'}
-};
+const TRI_TABS=['fireant','health','treemap','sankey'];
+const TRI_IFRAME_MAP={};
 function triActivateTab(tab){
   if(!TRI_TABS.includes(tab))return;
   DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
