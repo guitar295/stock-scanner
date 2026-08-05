@@ -787,20 +787,26 @@ def api_lightweight_chart(symbol):
         tf = "1D"
     df = df.tail(limit)
     candles, volume = [], []
-    for idx, row in df.iterrows():
+    # itertuples() thay cho iterrows(): iterrows() phải đóng gói MỖI dòng thành 1 object
+    # Series (khá nặng, phải suy luận lại dtype từng lần) — itertuples() trả namedtuple nhẹ
+    # hơn nhiều, nhanh hơn ~5-10 lần trên cùng dữ liệu. API này bị gọi lại mỗi 20s (auto-refresh)
+    # + mỗi lần đổi mã, nên tối ưu vòng lặp này có lợi tích lũy dù mỗi lần chỉ vài chục ms.
+    has_vpa = "vpa_flag" in df.columns
+    for row in df.itertuples():
         try:
-            o = float(row.get("open", 0) or 0)
-            h = float(row.get("high", 0) or 0)
-            l = float(row.get("low", 0) or 0)
-            c = float(row.get("close", 0) or 0)
-            v = float(row.get("volume", 0) or 0)
+            o = float(getattr(row, "open", 0) or 0)
+            h = float(getattr(row, "high", 0) or 0)
+            l = float(getattr(row, "low", 0) or 0)
+            c = float(getattr(row, "close", 0) or 0)
+            v = float(getattr(row, "volume", 0) or 0)
         except (TypeError, ValueError):
             continue
         if not all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
             continue
+        idx = row.Index
         day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
         candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
-        vpa_flag = int(row.get("vpa_flag", 0) or 0)
+        vpa_flag = int(getattr(row, "vpa_flag", 0) or 0) if has_vpa else 0
         color = _VPA_FLAG_COLOR.get(vpa_flag) or ("#26a69a" if c >= o else "#ef5350")
         volume.append({"time": day, "value": max(0, v), "color": color})
     if not candles:
@@ -1233,7 +1239,13 @@ def dashboard_main_js():
         .replace("__HMAP_COLS_CONFIG__", json.dumps(HMAP_COLS_CONFIG, ensure_ascii=False))
         .replace("__TS_POOL_CONFIG__", json.dumps(TS_POOL_CONFIG, ensure_ascii=False))
     )
-    return Response(js, content_type="application/javascript; charset=utf-8")
+    resp = Response(js, content_type="application/javascript; charset=utf-8")
+    # KHÔNG cache dài hạn ở đây — khác với lightweight-charts.min.js (gần như không đổi),
+    # file này đổi theo MỖI LẦN deploy. Nếu có reverse proxy/CDN phía trước, no-cache
+    # buộc luôn kiểm tra lại server, tránh tình trạng "deploy bản mới nhưng trình duyệt/proxy
+    # vẫn chạy JS cũ" — lỗi kiểu này rất khó nhận ra vì HTML mới nhưng JS cũ.
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 # =============================================================================
 # START
