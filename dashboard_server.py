@@ -3149,7 +3149,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-allocation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
-            <label class="vnd-period">Kỳ thời gian
+            <label class="vnd-period" style="margin-left:auto">Kỳ thời gian
               <select id="vnd-allocation-period">
                 <option value="90">3 tháng</option>
                 <option value="180">6 tháng</option>
