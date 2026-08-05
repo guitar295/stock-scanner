@@ -39,6 +39,22 @@ def _static_cache_headers(response):
         response.headers["Cache-Control"] = "public, max-age=604800, immutable"
     return response
 
+_LWC_JS_CACHE = None
+
+@app.route("/static/lightweight-charts.min.js")
+def _serve_lwc_js():
+    """Route riêng cho đúng file lib chart, ĐÈ LÊN route /static/<path:filename>
+    mặc định của Flask. Lý do: send_from_directory (route static mặc định) stream
+    file với direct_passthrough=True, khiến hook _gzip_response() bên dưới BỎ QUA
+    không nén được — 160KB gửi nguyên qua mạng mỗi lần cache hết hạn/lần đầu ghé.
+    Đọc file vào RAM 1 lần (cache theo tiến trình) rồi trả qua Response thường,
+    để _gzip_response() nén được như các response JSON/HTML khác (~60KB sau nén)."""
+    global _LWC_JS_CACHE
+    if _LWC_JS_CACHE is None:
+        with open(os.path.join(app.static_folder, "lightweight-charts.min.js"), "rb") as f:
+            _LWC_JS_CACHE = f.read()
+    return Response(_LWC_JS_CACHE, content_type="application/javascript; charset=utf-8")
+
 @app.after_request
 def _gzip_response(response):
     """Nén gzip các response JSON/HTML (chart data, trang dashboard, v.v.) khi
