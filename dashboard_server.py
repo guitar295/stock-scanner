@@ -13,6 +13,7 @@ import json
 import math
 import os
 import requests
+import urllib.request
 import sqlite3
 import threading
 import time
@@ -1040,10 +1041,156 @@ def _ensure_chart_symbol_background(symbol: str):
                 _chart_ensure_inflight.discard(symbol)
     threading.Thread(target=_run, daemon=True).start()
 
+def fetch_vndirect_dchart(symbol, tf="1D"):
+    symbol = symbol.upper().strip()
+    tf_upper = tf.upper().strip()
+    now_ts = int(time.time())
+
+    if tf_upper in ("15M", "15P", "15"):
+        res = "15"
+        from_ts = now_ts - 60 * 86400
+        target_tf = "15m"
+    elif tf_upper in ("1H", "60M", "60P", "60"):
+        res = "60"
+        from_ts = now_ts - 180 * 86400
+        target_tf = "1H"
+    elif tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
+        res = "D"
+        from_ts = 946684800
+        target_tf = "1W"
+    elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
+        res = "D"
+        from_ts = 946684800
+        target_tf = "1M"
+    else:
+        res = "D"
+        from_ts = 946684800
+        target_tf = "1D"
+
+    url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution={res}&symbol={symbol}&from={from_ts}&to={now_ts}"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept": "application/json,*/*",
+        "Referer": "https://dstock.vndirect.com.vn/",
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res_obj:
+            data = json.loads(res_obj.read().decode("utf-8"))
+    except Exception as exc:
+        return None, str(exc)
+
+    if not data or data.get("s") != "ok" or not data.get("t"):
+        return None, "no_data_from_vndirect"
+
+    times = data.get("t", [])
+    opens = data.get("o", [])
+    highs = data.get("h", [])
+    lows = data.get("l", [])
+    closes = data.get("c", [])
+    vols = data.get("v", [])
+
+    raw_bars = []
+    for i in range(len(times)):
+        try:
+            o = float(opens[i])
+            h = float(highs[i])
+            l = float(lows[i])
+            c = float(closes[i])
+            v = float(vols[i])
+            if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
+                raw_bars.append({
+                    "t": int(times[i]),
+                    "open": o, "high": h, "low": l, "close": c, "volume": max(0.0, v)
+                })
+        except (IndexError, ValueError, TypeError):
+            continue
+
+    if not raw_bars:
+        return None, "empty_bars"
+
+    if target_tf == "1W":
+        weeks = {}
+        for bar in raw_bars:
+            dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
+            key = (dt.isocalendar()[0], dt.isocalendar()[1])
+            if key not in weeks:
+                weeks[key] = {
+                    "time": dt.strftime("%Y-%m-%d"),
+                    "open": bar["open"], "high": bar["high"], "low": bar["low"],
+                    "close": bar["close"], "volume": bar["volume"]
+                }
+            else:
+                w = weeks[key]
+                w["high"] = max(w["high"], bar["high"])
+                w["low"] = min(w["low"], bar["low"])
+                w["close"] = bar["close"]
+                w["volume"] += bar["volume"]
+                w["time"] = dt.strftime("%Y-%m-%d")
+        final_bars = list(weeks.values())
+
+    elif target_tf == "1M":
+        months = {}
+        for bar in raw_bars:
+            dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
+            key = (dt.year, dt.month)
+            if key not in months:
+                months[key] = {
+                    "time": dt.strftime("%Y-%m-%d"),
+                    "open": bar["open"], "high": bar["high"], "low": bar["low"],
+                    "close": bar["close"], "volume": bar["volume"]
+                }
+            else:
+                m = months[key]
+                m["high"] = max(m["high"], bar["high"])
+                m["low"] = min(m["low"], bar["low"])
+                m["close"] = bar["close"]
+                m["volume"] += bar["volume"]
+                m["time"] = dt.strftime("%Y-%m-%d")
+        final_bars = list(months.values())
+
+    elif target_tf in ("15m", "1H"):
+        final_bars = []
+        for bar in raw_bars:
+            final_bars.append({
+                "time": bar["t"],
+                "open": bar["open"], "high": bar["high"], "low": bar["low"],
+                "close": bar["close"], "volume": bar["volume"]
+            })
+
+    else:
+        final_bars = []
+        for bar in raw_bars:
+            dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
+            final_bars.append({
+                "time": dt.strftime("%Y-%m-%d"),
+                "open": bar["open"], "high": bar["high"], "low": bar["low"],
+                "close": bar["close"], "volume": bar["volume"]
+            })
+
+    candles = []
+    volume = []
+    for b in final_bars:
+        t_val = b["time"]
+        o, h, l, c, v = b["open"], b["high"], b["low"], b["close"], b["volume"]
+        candles.append({"time": t_val, "open": o, "high": h, "low": l, "close": c})
+        color = "#26a69a" if c >= o else "#ef5350"
+        volume.append({"time": t_val, "value": v, "color": color})
+
+    return {"symbol": symbol, "timeframe": target_tf, "candles": candles, "volume": volume,
+            "last_date": str(candles[-1]["time"])}, None
+
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
-    tf = (request.args.get("tf") or "1D").upper()
+    tf = (request.args.get("tf") or "1D").strip()
+
+    # Priority 1: Fetch directly from VNDirect DChart API (Adjusted price, TradingView UDF standard)
+    dchart_data, err = fetch_vndirect_dchart(symbol, tf)
+    if not err and dchart_data and dchart_data.get("candles"):
+        return jsonify(dchart_data)
+
+    # Fallback to internal cache if network call fails
     try:
         limit = int(request.args.get("limit", 320) or 320)
     except (TypeError, ValueError):
@@ -1057,55 +1204,36 @@ def api_lightweight_chart(symbol):
             cached_df = cache.get(symbol)
             has_cache = cached_df is not None and len(cached_df) >= 60
         if has_cache:
-            # Cache đã đủ dữ liệu để vẽ chart ngay — trả lời cho client TRƯỚC,
-            # việc update/vá nến mới nhất (có gọi mạng vnstock, chậm) đẩy xuống
-            # chạy nền phía sau để tốc độ load chart không bị delay bởi nó.
             _ensure_chart_symbol_background(symbol)
         else:
-            # Chưa có cache (lần đầu xem mã này) → bắt buộc phải chờ tải xong
-            # mới có dữ liệu để trả, không thể "load ngay" khi chưa có gì.
             try:
                 _ensure_chart_symbol_fn(symbol)
             except Exception as exc:
                 print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
-    # Đọc df CUỐI CÙNG đúng 1 lần duy nhất ở đây (sau khi các bước ensure ở trên,
-    # nếu có, đã chạy xong) — tránh copy DataFrame 2 lần dư thừa như phiên bản trước.
     with _cache_lock:
         raw_df = cache.get(symbol)
-        is_weekly = tf in ("1W", "W", "WEEK", "WEEKLY")
+        is_weekly = tf.upper() in ("1W", "W", "WEEK", "WEEKLY")
         if raw_df is None or not len(raw_df):
             df = None
         elif is_weekly:
-            # Resample tuần cần gộp từ dữ liệu ngày ĐẦY ĐỦ mới ra đúng kết quả — giữ
-            # nguyên copy() toàn bộ như bản cũ, không tối ưu nhánh này để không có rủi
-            # ro làm sai lệch số liệu weekly.
             df = raw_df.copy()
         else:
-            # Nhánh ngày (phổ biến nhất, mặc định của panel CHART): chỉ cần đúng
-            # `limit` dòng cuối — cắt bằng .tail() (view nhẹ, không copy dữ liệu) TRƯỚC
-            # rồi mới .copy() đúng phần nhỏ đó, thay vì copy nguyên DataFrame lịch sử
-            # (có thể nhiều năm dữ liệu) như bản cũ rồi mới cắt. Kết quả trả về giống hệt
-            # bản cũ (vẫn đúng `limit` dòng cuối cùng), chỉ giảm chi phí copy dưới lock.
             df = raw_df.tail(limit).copy()
     if df is None or df.empty:
         return jsonify({"error": "no_cache", "symbol": symbol}), 404
-    if tf in ("1W", "W", "WEEK", "WEEKLY"):
+    if is_weekly:
         try:
             df = df.resample("W-FRI").agg({
                 "open": "first", "high": "max", "low": "min",
                 "close": "last", "volume": "sum"
             }).dropna(subset=["open", "high", "low", "close"])
-            tf = "1W"
+            tf_out = "1W"
         except Exception as exc:
             return jsonify({"error": "weekly_resample_failed", "detail": str(exc)}), 500
     else:
-        tf = "1D"
+        tf_out = "1D"
     df = df.tail(limit)
     candles, volume = [], []
-    # itertuples() thay cho iterrows(): iterrows() phải đóng gói MỖI dòng thành 1 object
-    # Series (khá nặng, phải suy luận lại dtype từng lần) — itertuples() trả namedtuple nhẹ
-    # hơn nhiều, nhanh hơn ~5-10 lần trên cùng dữ liệu. API này bị gọi lại mỗi 20s (auto-refresh)
-    # + mỗi lần đổi mã, nên tối ưu vòng lặp này có lợi tích lũy dù mỗi lần chỉ vài chục ms.
     has_vpa = "vpa_flag" in df.columns
     for row in df.itertuples():
         try:
@@ -1126,7 +1254,7 @@ def api_lightweight_chart(symbol):
         volume.append({"time": day, "value": max(0, v), "color": color})
     if not candles:
         return jsonify({"error": "no_data", "symbol": symbol}), 404
-    return jsonify({"symbol": symbol, "timeframe": tf, "candles": candles, "volume": volume,
+    return jsonify({"symbol": symbol, "timeframe": tf_out, "candles": candles, "volume": volume,
                     "last_date": candles[-1]["time"]})
 
 @app.route("/api/cache_info")
@@ -2988,8 +3116,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
         <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
+          <button class="lite-tf-btn" data-tf="15m">15m</button>
+          <button class="lite-tf-btn" data-tf="1H">1H</button>
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
+          <button class="lite-tf-btn" data-tf="1M">M</button>
         </div>
         <div class="lite-indicators" id="lite-indicators">
           <div class="lite-ind-group" data-group="signalgrp">
@@ -3962,12 +4093,16 @@ function fmtLiteNum(v){
   return Number.isFinite(v)?Number(v).toFixed(2):'--';
 }
 function fmtLiteDate(t){
+  if(typeof t==='number'){
+    const d=new Date(t*1000);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
   const p=liteTimeKey(t).split('-');
   return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:(liteTimeKey(t)||'--');
 }
 function _liteTitleSegments(bar){
   if(!bar)return [];
-  const tf=_liteTf==='1W'?'W':'D';
+  const tf=_liteTf;
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
@@ -4055,12 +4190,23 @@ function _liteBindSymInput(el,onClean){
   });
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
+  if(typeof lastTimeStr === 'number'){
+    const out=[];
+    const step = (tf==='15m'||tf==='15M'||tf==='15')? 900 : 3600;
+    for(let i=1; i<=n; i++){
+      out.push(lastTimeStr + i*step);
+    }
+    return out;
+  }
   const out=[];
+  let stepDays = 1;
+  if(tf==='1W'||tf==='W') stepDays=7;
+  else if(tf==='1M'||tf==='M') stepDays=30;
   let d=new Date(lastTimeStr+'T00:00:00Z'),added=0,guard=0;
   while(added<n&&guard<n*4){
     guard++;
-    d=new Date(d.getTime()+(tf==='1W'?7:1)*86400000);
-    if(tf!=='1W'){const wd=d.getUTCDay();if(wd===0||wd===6)continue;}
+    d=new Date(d.getTime()+stepDays*86400000);
+    if(stepDays===1){const wd=d.getUTCDay();if(wd===0||wd===6)continue;}
     out.push(d.toISOString().slice(0,10));added++;
   }
   return out;
@@ -4075,6 +4221,7 @@ function _liteUpdateWhitespace(){
 }
 function liteTimeKey(t){
   if(typeof t==='string')return t;
+  if(typeof t==='number')return String(t);
   if(t&&typeof t==='object'&&'year'in t&&'month'in t&&'day'in t){
     return `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
   }
@@ -4125,7 +4272,7 @@ function setLiteRightOffset(){
   _liteApplyVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
-  _liteTf=tf==='1W'?'1W':'1D';
+  _liteTf=tf || '1D';
   DOM.liteChartTf?.querySelectorAll('.lite-tf-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.tf===_liteTf));
 }
 function _clearLiteIndicators(){
