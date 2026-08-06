@@ -339,6 +339,7 @@ def api_vndirect_allocation():
 # phút (_vnd_cached_rows) như 2 khung Định giá/Phân bổ ở trên.
 _VND_FOREIGN_CODES = "STOCK_HNX,STOCK_UPCOM,STOCK_HOSE,ETF_HOSE,IFC_HOSE"
 _VND_PROPRIETARY_CODES = "HNX,VNINDEX,UPCOM"
+_VND_FLOW_SESSIONS = 50  # số phiên hiển thị trên bar chart Khối ngoại / Tự doanh
 
 
 def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vol_key, sell_vol_key):
@@ -347,49 +348,60 @@ def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vo
         row_date = item.get(date_key)
         if not row_date:
             continue
-        row = grouped.setdefault(row_date, {
-            "date": row_date, "buyValue": 0.0, "sellValue": 0.0, "netValue": 0.0,
-            "buyVol": 0.0, "sellVol": 0.0, "netVol": 0.0,
-        })
+        row = grouped.setdefault(row_date, {"date": row_date, "netValue": 0.0, "netVol": 0.0})
         buy_value = float(item.get(buy_value_key) or 0)
         sell_value = float(item.get(sell_value_key) or 0)
         buy_vol = float(item.get(buy_vol_key) or 0)
         sell_vol = float(item.get(sell_vol_key) or 0)
-        row["buyValue"] += buy_value
-        row["sellValue"] += sell_value
         row["netValue"] += float(item.get("netVal") or (buy_value - sell_value))
-        row["buyVol"] += buy_vol
-        row["sellVol"] += sell_vol
         row["netVol"] += float(item.get("netVol") or (buy_vol - sell_vol))
 
+    # Chỉ giữ lại các trường thực sự được frontend sử dụng (date, netVol, netValueBn)
+    # — khung Khối ngoại/Tự doanh hiện chỉ hiển thị chart + GT ròng phiên gần nhất.
+    #
+    # LƯU LẠI ĐỀ PHÒNG DÙNG LẠI SAU NÀY — trước đây hàm này còn trả về thêm các
+    # trường KL/GT mua-bán riêng lẻ (đã bỏ khỏi UI ngày 2026-08-06). Muốn khôi phục
+    # lại phần hiển thị KL Mua/Bán, GT Mua/Bán như cũ, làm 2 bước:
+    #   1) Trong vòng lặp tích lũy ở trên, cộng dồn thêm:
+    #        row["buyValue"] = row.get("buyValue", 0.0) + buy_value
+    #        row["sellValue"] = row.get("sellValue", 0.0) + sell_value
+    #        row["buyVol"] = row.get("buyVol", 0.0) + buy_vol
+    #        row["sellVol"] = row.get("sellVol", 0.0) + sell_vol
+    #      (khởi tạo 4 key này = 0.0 luôn trong dict setdefault ở trên cho gọn)
+    #   2) Trong dict trả về bên dưới, thêm lại:
+    #        "buyValueBn": row["buyValue"] / 1e9, "sellValueBn": row["sellValue"] / 1e9,
+    #        "buyVol": row["buyVol"], "sellVol": row["sellVol"]
+    #   3) Ở JS, hàm renderVndFlowPanel() (tìm `function renderVndFlowPanel`) thêm lại
+    #      các dòng vndSetFlowStat(...) cho buyvol/sellvol/buyval/sellval như bản cũ,
+    #      và thêm lại các <div class="flow-stat">...</div> tương ứng trong HTML khung
+    #      #vnd-foreign-stats / #vnd-proprietary-stats (đã bị rút gọn còn 1 dòng GT ròng).
     rows = []
     for row in grouped.values():
-        row["buyValueBn"] = row["buyValue"] / 1e9
-        row["sellValueBn"] = row["sellValue"] / 1e9
-        row["netValueBn"] = row["netValue"] / 1e9
-        rows.append(row)
+        rows.append({"date": row["date"], "netVol": row["netVol"], "netValueBn": row["netValue"] / 1e9})
     rows.sort(key=lambda row: row["date"])
     return rows
 
 
 def _vnd_foreign_flow_rows():
-    url = f"{VND_BASE}/foreigns?q=code:{_VND_FOREIGN_CODES}&sort=tradingDate&size=100"
+    url = f"{VND_BASE}/foreigns?q=code:{_VND_FOREIGN_CODES}&sort=tradingDate&size=500"
     items = _vnd_fetch_json(
         url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-foreign"
     ).get("data", [])
-    return _vnd_sum_flow_by_date(items, "tradingDate", "buyVal", "sellVal", "buyVol", "sellVol")
+    rows = _vnd_sum_flow_by_date(items, "tradingDate", "buyVal", "sellVal", "buyVol", "sellVol")
+    return rows[-_VND_FLOW_SESSIONS:]
 
 
 def _vnd_proprietary_flow_rows(from_date):
     url = (
         f"{VND_BASE}/proprietary_trading"
         f"?q=code:{_VND_PROPRIETARY_CODES}~date:gte:{from_date}"
-        "&sort=date:desc&size=600"
+        "&sort=date:desc&size=900"
     )
     items = _vnd_fetch_json(
         url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-proprietary"
     ).get("data", [])
-    return _vnd_sum_flow_by_date(items, "date", "buyingVal", "sellingVal", "buyingVol", "sellingVol")
+    rows = _vnd_sum_flow_by_date(items, "date", "buyingVal", "sellingVal", "buyingVol", "sellingVol")
+    return rows[-_VND_FLOW_SESSIONS:]
 
 
 @app.route("/api/foreign_flow")
@@ -409,7 +421,7 @@ def api_foreign_flow():
 
 @app.route("/api/proprietary_flow")
 def api_proprietary_flow():
-    from_date = request.args.get("from") or (datetime.now(TZ_VN).date() - timedelta(days=45)).isoformat()
+    from_date = request.args.get("from") or (datetime.now(TZ_VN).date() - timedelta(days=90)).isoformat()
     cache_key = f"proprietary_flow:{from_date}"
     try:
         rows = _vnd_cached_rows(cache_key, lambda: _vnd_proprietary_flow_rows(from_date))
@@ -2304,11 +2316,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-bar-positive{fill:var(--green)}
 .vnd-bar-negative{fill:var(--red)}
 .vnd-zero-line{stroke:#8b94a3;stroke-width:1}
-.flow-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 14px;margin:8px 0 4px}
-.flow-stat{display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted)}
+.flow-stats{display:grid;grid-template-columns:1fr;gap:8px 14px;margin:8px 0 4px}
+.flow-stat{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--muted);background:#f4efe5;border:1px solid #ead9b7;border-radius:6px;padding:6px 10px}
 .flow-stat strong{font-size:14px;color:var(--text);font-weight:800}
-.flow-stat:nth-child(6){grid-column:span 3;flex-direction:row;justify-content:space-between;align-items:center;background:#f4efe5;border:1px solid #ead9b7;border-radius:6px;padding:6px 10px}
-.flow-stat:nth-child(6) strong{font-size:14px}
 .flow-positive{color:var(--green)!important}
 .flow-negative{color:var(--red)!important}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
@@ -2635,8 +2645,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .vnd-panel:last-child{margin-bottom:12px}
   .vnd-controls{flex-direction:column;align-items:flex-start;gap:8px}
   .vnd-chart-area{height:220px}
-  .flow-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .flow-stat:nth-child(6){grid-column:span 2}
+  .flow-stats{grid-template-columns:1fr}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
@@ -3222,12 +3231,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
           </div>
           <div class="flow-stats" id="vnd-foreign-stats">
-            <div class="flow-stat"><span>KL Mua</span><strong id="vnd-foreign-buyvol">--</strong></div>
-            <div class="flow-stat"><span>KL Bán</span><strong id="vnd-foreign-sellvol">--</strong></div>
-            <div class="flow-stat"><span>KL ròng</span><strong id="vnd-foreign-netvol">--</strong></div>
-            <div class="flow-stat"><span>GT Mua</span><strong id="vnd-foreign-buyval">--</strong></div>
-            <div class="flow-stat"><span>GT Bán</span><strong id="vnd-foreign-sellval">--</strong></div>
-            <div class="flow-stat"><span>GT ròng</span><strong id="vnd-foreign-netval">--</strong></div>
+            <div class="flow-stat"><span>GT ròng phiên gần nhất</span><strong id="vnd-foreign-netval">--</strong></div>
           </div>
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
@@ -3240,12 +3244,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
           </div>
           <div class="flow-stats" id="vnd-proprietary-stats">
-            <div class="flow-stat"><span>KL Mua</span><strong id="vnd-proprietary-buyvol">--</strong></div>
-            <div class="flow-stat"><span>KL Bán</span><strong id="vnd-proprietary-sellvol">--</strong></div>
-            <div class="flow-stat"><span>KL ròng</span><strong id="vnd-proprietary-netvol">--</strong></div>
-            <div class="flow-stat"><span>GT Mua</span><strong id="vnd-proprietary-buyval">--</strong></div>
-            <div class="flow-stat"><span>GT Bán</span><strong id="vnd-proprietary-sellval">--</strong></div>
-            <div class="flow-stat"><span>GT ròng</span><strong id="vnd-proprietary-netval">--</strong></div>
+            <div class="flow-stat"><span>GT ròng phiên gần nhất</span><strong id="vnd-proprietary-netval">--</strong></div>
           </div>
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
@@ -3262,7 +3261,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
               <span class="vnd-tab on" data-metric="pe">P/E</span>
               <span class="vnd-tab" data-metric="pb">P/B</span>
             </div>
-            <label class="vnd-period">Kỳ thời gian
+            <label class="vnd-period">Chu kỳ
               <select id="vnd-valuation-period">
                 <option value="90">3 tháng</option>
                 <option value="180">6 tháng</option>
@@ -3287,7 +3286,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-allocation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
-            <label class="vnd-period" style="margin-left:auto">Kỳ thời gian
+            <label class="vnd-period" style="margin-left:auto">Chu kỳ
               <select id="vnd-allocation-period">
                 <option value="90">3 tháng</option>
                 <option value="180">6 tháng</option>
@@ -7437,11 +7436,6 @@ function renderVndFlowPanel(prefix,rows,label){
   renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div><div>KL ròng: ${Math.round(row.netVol).toLocaleString('en-US')}</div>`);
   if(!rows.length)return;
   const last=rows[rows.length-1];
-  vndSetFlowStat(`vnd-${prefix}-buyvol`,Math.round(last.buyVol).toLocaleString('en-US'),1);
-  vndSetFlowStat(`vnd-${prefix}-sellvol`,Math.round(last.sellVol).toLocaleString('en-US'),-1);
-  vndSetFlowStat(`vnd-${prefix}-netvol`,vndFmtSigned(last.netVol,0),last.netVol);
-  vndSetFlowStat(`vnd-${prefix}-buyval`,`${vndFmt(last.buyValueBn,2)} Tỷ`,1);
-  vndSetFlowStat(`vnd-${prefix}-sellval`,`${vndFmt(last.sellValueBn,2)} Tỷ`,-1);
   vndSetFlowStat(`vnd-${prefix}-netval`,`${vndFmtSigned(last.netValueBn,2)} Tỷ`,last.netValueBn);
 }
 function renderVndForeignFlow(){renderVndFlowPanel('foreign',vndForeignState.rows||[],'NN');}
