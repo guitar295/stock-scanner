@@ -1041,30 +1041,24 @@ def _ensure_chart_symbol_background(symbol: str):
                 _chart_ensure_inflight.discard(symbol)
     threading.Thread(target=_run, daemon=True).start()
 
-def fetch_vndirect_dchart(symbol, tf="1D"):
+def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
     symbol = symbol.upper().strip()
     tf_upper = tf.upper().strip()
     now_ts = int(time.time())
-
-    if tf_upper in ("15M", "15P", "15"):
-        res = "15"
-        from_ts = now_ts - 60 * 86400
-        target_tf = "15m"
-    elif tf_upper in ("1H", "60M", "60P", "60"):
-        res = "60"
-        from_ts = now_ts - 180 * 86400
-        target_tf = "1H"
-    elif tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
+    limit = max(50, min(1000, int(limit or 1000)))
+    # Chỉ kéo đủ dữ liệu thô (theo ngày) cần thiết để dựng đủ `limit` cây nến
+    # ở khung đích — tránh tải nguyên 25 năm lịch sử mỗi request (rất chậm).
+    if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
         res = "D"
-        from_ts = 946684800
+        from_ts = now_ts - (limit * 7 + 60) * 86400   # +buffer ~2 tháng
         target_tf = "1W"
     elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
         res = "D"
-        from_ts = 946684800
+        from_ts = now_ts - (limit * 31 + 90) * 86400  # +buffer ~3 tháng
         target_tf = "1M"
     else:
         res = "D"
-        from_ts = 946684800
+        from_ts = now_ts - int(limit * 1.6 + 30) * 86400  # ~1.6 ngày lịch/nến (bù T7,CN,lễ) + buffer
         target_tf = "1D"
 
     url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution={res}&symbol={symbol}&from={from_ts}&to={now_ts}"
@@ -1149,15 +1143,6 @@ def fetch_vndirect_dchart(symbol, tf="1D"):
                 m["time"] = dt.strftime("%Y-%m-%d")
         final_bars = list(months.values())
 
-    elif target_tf in ("15m", "1H"):
-        final_bars = []
-        for bar in raw_bars:
-            final_bars.append({
-                "time": bar["t"],
-                "open": bar["open"], "high": bar["high"], "low": bar["low"],
-                "close": bar["close"], "volume": bar["volume"]
-            })
-
     else:
         final_bars = []
         for bar in raw_bars:
@@ -1167,6 +1152,8 @@ def fetch_vndirect_dchart(symbol, tf="1D"):
                 "open": bar["open"], "high": bar["high"], "low": bar["low"],
                 "close": bar["close"], "volume": bar["volume"]
             })
+
+    final_bars = final_bars[-limit:]
 
     candles = []
     volume = []
@@ -1185,17 +1172,18 @@ def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
     tf = (request.args.get("tf") or "1D").strip()
 
+    try:
+        limit = int(request.args.get("limit", 1000) or 1000)
+    except (TypeError, ValueError):
+        limit = 1000
+    limit = max(50, min(1000, limit))
+
     # Priority 1: Fetch directly from VNDirect DChart API (Adjusted price, TradingView UDF standard)
-    dchart_data, err = fetch_vndirect_dchart(symbol, tf)
+    dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit)
     if not err and dchart_data and dchart_data.get("candles"):
         return jsonify(dchart_data)
 
     # Fallback to internal cache if network call fails
-    try:
-        limit = int(request.args.get("limit", 320) or 320)
-    except (TypeError, ValueError):
-        limit = 320
-    limit = max(50, min(1000, limit))
     if not _cache_lock:
         return jsonify({"error": "cache_not_ready"}), 503
     cache = _get_history_cache() if _get_history_cache else {}
@@ -3116,8 +3104,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
         <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
-          <button class="lite-tf-btn" data-tf="15m">15m</button>
-          <button class="lite-tf-btn" data-tf="1H">1H</button>
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
           <button class="lite-tf-btn" data-tf="1M">M</button>
