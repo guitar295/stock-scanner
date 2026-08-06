@@ -343,41 +343,50 @@ _VND_FLOW_SESSIONS = 130  # số phiên hiển thị trên bar chart Khối ngo�
 
 
 def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vol_key, sell_vol_key):
+    # buy_vol_key/sell_vol_key hiện không dùng tới trong vòng lặp (KL ròng đã bỏ khỏi
+    # tooltip ngày 2026-08-06) — giữ lại tham số để khôi phục nhanh nếu cần, xem ghi chú bên dưới.
     grouped = {}
     for item in items:
         row_date = item.get(date_key)
         if not row_date:
             continue
-        row = grouped.setdefault(row_date, {"date": row_date, "netValue": 0.0, "netVol": 0.0})
+        row = grouped.setdefault(row_date, {"date": row_date, "netValue": 0.0})
         buy_value = float(item.get(buy_value_key) or 0)
         sell_value = float(item.get(sell_value_key) or 0)
-        buy_vol = float(item.get(buy_vol_key) or 0)
-        sell_vol = float(item.get(sell_vol_key) or 0)
         row["netValue"] += float(item.get("netVal") or (buy_value - sell_value))
-        row["netVol"] += float(item.get("netVol") or (buy_vol - sell_vol))
 
-    # Chỉ giữ lại các trường thực sự được frontend sử dụng (date, netVol, netValueBn)
-    # — khung Khối ngoại/Tự doanh hiện chỉ hiển thị chart + GT ròng phiên gần nhất.
+    # Chỉ giữ lại các trường thực sự được frontend sử dụng (date, netValueBn)
+    # — khung Khối ngoại/Tự doanh hiện chỉ hiển thị chart + GT ròng (không còn KL ròng).
     #
-    # LƯU LẠI ĐỀ PHÒNG DÙNG LẠI SAU NÀY — trước đây hàm này còn trả về thêm các
-    # trường KL/GT mua-bán riêng lẻ (đã bỏ khỏi UI ngày 2026-08-06). Muốn khôi phục
-    # lại phần hiển thị KL Mua/Bán, GT Mua/Bán như cũ, làm 2 bước:
+    # LƯU LẠI ĐỀ PHÒNG DÙNG LẠI SAU NÀY:
+    #
+    # A) Khôi phục KL ròng (tooltip khi hover) — đã bỏ ngày 2026-08-06:
+    #   1) Trong vòng lặp tích lũy ở trên, thêm "netVol": 0.0 vào dict setdefault, rồi cộng dồn:
+    #        buy_vol = float(item.get(buy_vol_key) or 0)
+    #        sell_vol = float(item.get(sell_vol_key) or 0)
+    #        row["netVol"] += float(item.get("netVol") or (buy_vol - sell_vol))
+    #   2) Trong dict trả về bên dưới, thêm lại: "netVol": row["netVol"]
+    #   3) Ở JS, hàm renderVndFlowPanel() (tìm `function renderVndFlowPanel`) thêm lại
+    #      dòng `<div>KL ròng: ${Math.round(row.netVol).toLocaleString('en-US')}</div>`
+    #      vào chuỗi tooltipBuilder truyền cho renderVndFlowChart.
+    #
+    # B) Khôi phục KL Mua/Bán, GT Mua/Bán (dưới tiêu đề panel) — đã bỏ ngày 2026-08-06:
     #   1) Trong vòng lặp tích lũy ở trên, cộng dồn thêm:
     #        row["buyValue"] = row.get("buyValue", 0.0) + buy_value
     #        row["sellValue"] = row.get("sellValue", 0.0) + sell_value
-    #        row["buyVol"] = row.get("buyVol", 0.0) + buy_vol
-    #        row["sellVol"] = row.get("sellVol", 0.0) + sell_vol
+    #        row["buyVol"] = row.get("buyVol", 0.0) + buy_vol   (cần buy_vol ở mục A.1)
+    #        row["sellVol"] = row.get("sellVol", 0.0) + sell_vol (cần sell_vol ở mục A.1)
     #      (khởi tạo 4 key này = 0.0 luôn trong dict setdefault ở trên cho gọn)
     #   2) Trong dict trả về bên dưới, thêm lại:
     #        "buyValueBn": row["buyValue"] / 1e9, "sellValueBn": row["sellValue"] / 1e9,
     #        "buyVol": row["buyVol"], "sellVol": row["sellVol"]
-    #   3) Ở JS, hàm renderVndFlowPanel() (tìm `function renderVndFlowPanel`) thêm lại
-    #      các dòng vndSetFlowStat(...) cho buyvol/sellvol/buyval/sellval như bản cũ,
-    #      và thêm lại các <div class="flow-stat">...</div> tương ứng trong HTML khung
-    #      #vnd-foreign-stats / #vnd-proprietary-stats (đã bị rút gọn còn 1 dòng GT ròng).
+    #   3) Ở JS, hàm renderVndFlowPanel() cần tạo lại hàm vndSetFlowStat(id,text,sign) (đã xóa)
+    #      để gán text + màu xanh/đỏ, gọi nó cho từng chỉ số, và thêm lại HTML
+    #      <div class="flow-stats" id="vnd-foreign-stats">...</div> (và bản proprietary
+    #      tương ứng) dưới tiêu đề panel Khối ngoại/Tự doanh.
     rows = []
     for row in grouped.values():
-        rows.append({"date": row["date"], "netVol": row["netVol"], "netValueBn": row["netValue"] / 1e9})
+        rows.append({"date": row["date"], "netValueBn": row["netValue"] / 1e9})
     rows.sort(key=lambda row: row["date"])
     return rows
 
@@ -7416,7 +7425,7 @@ async function loadVndProprietaryFlow(){
 }
 
 function renderVndFlowPanel(prefix,rows,label){
-  renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div><div>KL ròng: ${Math.round(row.netVol).toLocaleString('en-US')}</div>`);
+  renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div>`);
 }
 function renderVndForeignFlow(){renderVndFlowPanel('foreign',vndForeignState.rows||[],'NN');}
 function renderVndProprietaryFlow(){renderVndFlowPanel('proprietary',vndProprietaryState.rows||[],'Tự doanh');}
@@ -7450,7 +7459,6 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
   for(const tick of vndNiceTicks(yMin,yMax,5)){
     const y=sy(tick);
     add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
-    add('text',{x:margin.left-8,y:y+4,'text-anchor':'end',class:'vnd-axis-label'},vndFmt(tick,Math.abs(tick)>=100?0:1));
   }
   add('line',{x1:margin.left,x2:width-margin.right,y1:zeroY,y2:zeroY,class:'vnd-zero-line'});
   const tickDates=new Set(vndPickXTicks(rows,Math.min(6,rows.length)).map(r=>r.date));
@@ -7546,7 +7554,6 @@ function renderVndChart(config){
   for(const tick of vndNiceTicks(idxMin-idxPad,idxMax+idxPad,4)){
     const y=syIndex(tick);
     add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
-    add('text',{x:margin.left-8,y:y+4,'text-anchor':'end',class:'vnd-axis-label'},Math.round(tick).toLocaleString('en-US'));
   }
   const axisDigits=config.rightSeries[0].axisDigits;
   for(const tick of vndNiceTicks(rightMin,rightMax,4)){
