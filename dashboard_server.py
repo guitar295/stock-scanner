@@ -3274,8 +3274,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <svg class="vnd-svg" id="vnd-valuation-svg" preserveAspectRatio="none"></svg>
           </div>
           <div class="vnd-legend">
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX (điểm, trái)</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" id="vnd-valuation-metric-swatch" style="background:#f59b00"></span><span id="vnd-valuation-metric-legend">P/E (lần, phải)</span></span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" id="vnd-valuation-metric-swatch" style="background:#f59b00"></span><span id="vnd-valuation-metric-legend">P/E</span></span>
           </div>
           <div class="vnd-error" id="vnd-valuation-error"></div>
         </div>
@@ -3299,9 +3299,9 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <svg class="vnd-svg" id="vnd-allocation-svg" preserveAspectRatio="none"></svg>
           </div>
           <div class="vnd-legend">
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX (điểm, trái)</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50 (%, phải)</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200 (%, phải)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200</span>
           </div>
           <div class="vnd-error" id="vnd-allocation-error"></div>
         </div>
@@ -7445,7 +7445,12 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
   const rawMin=Math.min(0,...vals),rawMax=Math.max(0,...vals);
   const pad=(rawMax-rawMin)*0.14||1;
   const yMin=rawMin-pad,yMax=rawMax+pad;
-  const step=innerW/rows.length;
+  // Khoảng trắng bên phải 5% — đồng bộ với renderVndChart (khung Định giá/Phân bổ dùng
+  // xMaxPadded = xMax + xRange*0.05) để bar cuối cùng thẳng hàng theo chiều dọc với điểm
+  // giá trị cuối cùng bên khung Định giá/Phân bổ.
+  const rightPadRatio=0.05;
+  const barAreaW=innerW/(1+rightPadRatio);
+  const step=barAreaW/rows.length;
   const barW=Math.max(3,Math.min(40,step*0.56));
   const sy=v=>margin.top+(1-((v-yMin)/(yMax-yMin||1)))*innerH;
   const zeroY=sy(0);
@@ -7584,7 +7589,7 @@ function renderVndChart(config){
       'text-anchor':align==='right'?'end':'start','font-size':FONT,'font-weight':'700',
       fill:'#fff','font-family':'inherit'},text);
   };
-  _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor,'right');
+  _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor,'left');
   for(const series of config.rightSeries){
     const suffix=config.rightMax===100?'%':'';
     _vBadge(syRight(last[series.key]),`${vndFmt(last[series.key],series.axisDigits)}${suffix}`,series.color,'left');
@@ -7644,7 +7649,7 @@ function vndInitOnce(){
     if(metric===vndValuationState.metric)return;
     vndValuationState.metric=metric;
     $('vnd-valuation-tabs').querySelectorAll('.vnd-tab').forEach(b=>b.classList.toggle('on',b.dataset.metric===metric));
-    $('vnd-valuation-metric-legend').textContent=`${metric==='pe'?'P/E':'P/B'} (lần, phải)`;
+    $('vnd-valuation-metric-legend').textContent=metric==='pe'?'P/E':'P/B';
     const _ml=$('vnd-valuation-metric-swatch');if(_ml)_ml.style.background=metric==='pe'?'#f59b00':'#0e9f6e';
     loadVndValuation();
   });
