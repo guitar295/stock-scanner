@@ -2988,6 +2988,7 @@ start_dashboard(
     ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
     chart_symbol_status_fn = chart_symbol_status,
     vol_forecast_fn   = dashboard_vol_forecast_fn,
+    calc_vpa_flag_fn  = calc_vpa_flag,
     momentum_today_ref = lambda: momentum_today,
     attent_today_ref   = lambda: attent_today,
     breakvol_today_ref = lambda: breakvol_today,
