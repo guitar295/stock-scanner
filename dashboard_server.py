@@ -2333,7 +2333,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-period select{height:26px;width:auto;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);padding:0 6px;font-size:12px}
 .vnd-chart-area{position:relative;height:270px}
 .vnd-svg{width:100%;height:100%;display:block;overflow:visible}
-.vnd-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5}
+.vnd-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5;stroke-opacity:.35}
 .vnd-axis-label{fill:var(--muted);font-size:11px;font-weight:700}
 .vnd-x-label{fill:var(--muted);font-size:10px;font-weight:600}
 .vnd-legend{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:2px;color:var(--muted);font-size:11px;flex-wrap:wrap}
@@ -3210,18 +3210,18 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <div class="panel-hdr tri-hdr" id="tri-hdr">
       <span class="panel-title">MARKET</span>
       <div class="tri-tabs" id="tri-tabs">
-        <span class="tri-tab on" data-tab="fireant">Fireant</span>
-        <span class="tri-tab" data-tab="health">Mrk Health</span>
+        <span class="tri-tab" data-tab="fireant">Fireant</span>
+        <span class="tri-tab on" data-tab="health">Mrk Health</span>
         <span class="tri-tab" data-tab="treemap">Treemap</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
       <span class="tri-toggle" id="tri-toggle">▶</span>
     </div>
     <div class="tri-body" id="tri-body">
-      <div class="tri-content on" id="tri-content-fireant">
+      <div class="tri-content" id="tri-content-fireant">
         <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
       </div>
-      <div class="tri-content" id="tri-content-health">
+      <div class="tri-content on" id="tri-content-health">
         <button class="lite-draw-btn health-copy-btn" id="health-copy-btn" title="Sao chép ảnh Mrk Health vào clipboard" aria-label="Sao chép ảnh Mrk Health vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
         <div class="health-body" id="health-body">
@@ -3250,26 +3250,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
               </div>
             </div>
           </div>
-        </div>
-        <div class="vnd-panel" id="vnd-foreign-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Khối ngoại</span>
-            <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
-          </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
-          </div>
-          <div class="vnd-error" id="vnd-foreign-error"></div>
-        </div>
-        <div class="vnd-panel" id="vnd-proprietary-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Tự doanh</span>
-            <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
-          </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
-          </div>
-          <div class="vnd-error" id="vnd-proprietary-error"></div>
         </div>
         <div class="vnd-panel" id="vnd-valuation-panel">
           <div class="vnd-panel-hdr">
@@ -3325,6 +3305,26 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200</span>
           </div>
           <div class="vnd-error" id="vnd-allocation-error"></div>
+        </div>
+        <div class="vnd-panel" id="vnd-foreign-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Khối ngoại</span>
+            <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-error" id="vnd-foreign-error"></div>
+        </div>
+        <div class="vnd-panel" id="vnd-proprietary-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Tự doanh</span>
+            <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-error" id="vnd-proprietary-error"></div>
         </div>
       </div>
       <div class="tri-content" id="tri-content-treemap">
@@ -7701,9 +7701,16 @@ window.addEventListener('resize',()=>{
 
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
 const TRI_TABS=['fireant','health','treemap','sankey'];
+const TRI_TAB_STORAGE_KEY='triActiveTab';
 const TRI_IFRAME_MAP={};
-function triActivateTab(tab){
+function triActivateTab(tab,opts){
   if(!TRI_TABS.includes(tab))return;
+  // Lưu tab đang active vào localStorage để lần mở dashboard sau (F5 / mở server mới)
+  // tự động khôi phục đúng tab đó — trừ khi gọi với skipSave (vd: chuyển ép sang HEALTH
+  // trên mobile chỉ áp dụng cho phiên đó, không ghi đè lựa chọn đã lưu của người dùng).
+  if(!(opts&&opts.skipSave)){
+    try{localStorage.setItem(TRI_TAB_STORAGE_KEY,tab);}catch(e){}
+  }
   DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   TRI_TABS.forEach(t=>{
     const el=document.getElementById('tri-content-'+t);
@@ -7741,9 +7748,18 @@ DOM.triHdr.addEventListener('click',e=>{
     }
   }
 });
+// Khôi phục tab MARKET đã active ở lần mở dashboard trước đó (lưu trong localStorage).
+// Mặc định (chưa từng lưu / dữ liệu hỏng) là HEALTH thay vì Fireant.
+try{
+  const _savedTriTab=localStorage.getItem(TRI_TAB_STORAGE_KEY);
+  if(_savedTriTab&&TRI_TABS.includes(_savedTriTab))triActivateTab(_savedTriTab,{skipSave:true});
+}catch(e){}
 // Trên mobile, tab Fireant bị ẩn (xem CSS mobile — iframe fireant.vn không tối ưu cho di động):
 // nếu đang active đúng tab đó thì chuyển sẵn sang HEALTH để mở thẻ ra không bị trống trơn.
-if(IS_MOBILE())triActivateTab('health');
+// skipSave: chỉ ép cho phiên mobile này, không ghi đè lựa chọn đã lưu của người dùng.
+if(IS_MOBILE()&&DOM.triTabs.querySelector('.tri-tab.on')?.dataset.tab==='fireant'){
+  triActivateTab('health',{skipSave:true});
+}
 DOM.hmapToggle.addEventListener('click',e=>{
   // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...)
   // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
