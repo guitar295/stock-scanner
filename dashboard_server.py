@@ -2326,7 +2326,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-tooltip strong{display:block;margin-bottom:4px}
 .vnd-bar-positive{fill:var(--green)}
 .vnd-bar-negative{fill:var(--red)}
-.vnd-zero-line{stroke:#8b94a3;stroke-width:1}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -7465,7 +7464,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     const y=sy(tick);
     add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
   }
-  add('line',{x1:margin.left,x2:width-margin.right,y1:zeroY,y2:zeroY,class:'vnd-zero-line'});
+  add('line',{x1:margin.left,x2:width-margin.right,y1:zeroY,y2:zeroY,class:'vnd-grid-line'});
   const tickDates=new Set(vndPickXTicks(rows,Math.min(6,rows.length)).map(r=>r.date));
   rows.forEach((row,idx)=>{
     const x=margin.left+idx*step+step/2;
