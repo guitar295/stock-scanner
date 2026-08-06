@@ -105,7 +105,7 @@ HEATMAP_TTL_SEC = 120
 MARKET_HEALTH_TTL_SEC = 1800
 SIGNAL_TTL_SEC = 10
 
-_market_health_cache = {"data": {}, "updated_at": 0}
+_market_health_cache = {"data": {}, "updated_at": 0, "pending_refresh": False}
 _market_health_lock = threading.Lock()
 
 # ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
@@ -171,15 +171,32 @@ def _refresh_market_health(force: bool = False) -> dict:
             return _market_health_cache["data"]
         try:
             data = _fetch_market_health_fn()
-            _market_health_cache["data"] = data
             if data.get("ok"):
+                _market_health_cache["data"] = data
                 _market_health_cache["updated_at"] = time.time()
+                _market_health_cache["pending_refresh"] = False
                 _save_market_health_to_disk()
+            else:
+                # data.get("ok") là False (ví dụ "0 mã hợp lệ" do history_cache chưa kịp
+                # load xong) → CHỦ Ý không ghi đè _market_health_cache["data"] — giữ nguyên
+                # dữ liệu HEALTH hợp lệ gần nhất (kể cả dữ liệu vừa nạp từ đĩa lúc khởi động)
+                # để panel không bị "trắng" trong lúc chờ. Đồng thời bật cờ pending_refresh
+                # để endpoint /api/market_health báo cho frontend biết đây vẫn là số CŨ,
+                # cần tiếp tục polling nhanh (xem HEALTH_RETRY_MS ở JS) thay vì tưởng đã
+                # xong rồi đợi tới tận chu kỳ HEALTH_TTL (30 phút) mới hỏi lại — nếu không
+                # có cờ này, số cũ có thể bị "đứng hình" khá lâu dù history_cache đã build
+                # xong ngay sau đó. updated_at cũng không đổi nên lần gọi kế tiếp vẫn coi
+                # cache là hết hạn và tự thử tính lại ngay (không phải đợi đủ TTL).
+                # Trước đây chỗ này lỡ ghi đè "data" cả khi thất bại, khiến dữ liệu cache
+                # nạp từ đĩa bị xóa mất bất cứ khi nào lần refresh đầu tiên sau khi khởi
+                # động chẳng may xảy ra trước khi history_cache build xong — sửa 2026-08-06.
+                _market_health_cache["pending_refresh"] = True
         except Exception as e:
             print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
             # Không ghi đè "data" bằng lỗi cứng ở đây — giữ lại dữ liệu HEALTH
             # hợp lệ gần nhất (nếu có) để dashboard không "trắng" panel; đồng thời
             # KHÔNG cập nhật updated_at nên lần gọi sau sẽ tự thử lại.
+            _market_health_cache["pending_refresh"] = True
         return _market_health_cache["data"]
 
 
@@ -946,9 +963,14 @@ def api_market_health():
     data = _refresh_market_health()
     with _market_health_lock:
         snap_time = _market_health_cache["updated_at"]
+        pending_refresh = _market_health_cache.get("pending_refresh", False)
     payload = dict(data or {})
     payload["cached_age"] = int(time.time() - snap_time) if snap_time else 0
     payload["ttl_sec"] = MARKET_HEALTH_TTL_SEC
+    # True nghĩa là số đang hiển thị là số CŨ (giữ lại từ lần thành công trước / từ đĩa)
+    # trong lúc chờ tính lại — frontend dùng cờ này để biết cần polling nhanh tiếp
+    # (xem fetchHealth() ở JS) thay vì tưởng đã có số mới rồi đợi hết TTL mới hỏi lại.
+    payload["pending_refresh"] = pending_refresh
     return jsonify(_json_safe(payload))
 
 @app.route("/api/chart_images/<symbol>")
@@ -6949,11 +6971,13 @@ function renderHealth(data){
   renderHealthChart(d.history||[]);
 }
 // Trong lúc hệ thống đang build lại history_cache lúc khởi động (hoặc đầu
-// phiên mới), /api/market_health trả ok:false vì chưa đủ dữ liệu. Thay vì bắt
-// người dùng F5 cả trang để thấy chart khi cache build xong, tự động thử lại
-// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu —
-// một khi đã ok:true thì dừng vòng thử nhanh này, cơ chế làm mới định kỳ theo
-// HEALTH_TTL ở startDashboard() vẫn chạy như cũ, không đổi.
+// phiên mới), /api/market_health trả ok:false (chưa từng có dữ liệu) HOẶC
+// pending_refresh:true (đang hiển thị tạm số CŨ trong lúc chờ tính lại — xem
+// _refresh_market_health() ở Python) vì chưa đủ dữ liệu. Thay vì bắt người
+// dùng F5 cả trang để thấy số mới khi cache build xong, tự động thử lại
+// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu
+// mới thực sự — một khi đã ok:true VÀ không còn pending_refresh thì mới dừng
+// vòng thử nhanh này, cơ chế làm mới định kỳ theo HEALTH_TTL vẫn chạy như cũ.
 const HEALTH_RETRY_MS=20000;
 let _healthRetryTimer=null;
 async function fetchHealth(){
@@ -6961,7 +6985,7 @@ async function fetchHealth(){
     const j=await fetch('/api/market_health').then(r=>r.json());
     renderHealth(j);
     if(_healthRetryTimer){clearTimeout(_healthRetryTimer);_healthRetryTimer=null;}
-    if(j.ok){
+    if(j.ok&&!j.pending_refresh){
       startBar(DOM.pbarHealth,HEALTH_TTL);
     }else{
       startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
@@ -7460,11 +7484,17 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     svg.appendChild(el);
     return el;
   }
-  for(const tick of vndNiceTicks(yMin,yMax,5)){
+  // Tick grid luôn đi qua đúng 0 và cách đều 2 phía trên/dưới — tránh trường hợp
+  // vndNiceTicks() (chia đều yMin..yMax, không neo vào 0) lỡ sinh ra 1 tick nằm rất
+  // sát 0 khiến nhìn như có 2 đường kề nhau cạnh đường 0.
+  const flowStepUnit=Math.max(Math.abs(yMax),Math.abs(yMin),1e-9)/3;
+  const flowGridTicks=[0];
+  for(let t=flowStepUnit;t<=yMax+1e-9;t+=flowStepUnit)flowGridTicks.push(t);
+  for(let t=-flowStepUnit;t>=yMin-1e-9;t-=flowStepUnit)flowGridTicks.push(t);
+  for(const tick of flowGridTicks){
     const y=sy(tick);
     add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
   }
-  add('line',{x1:margin.left,x2:width-margin.right,y1:zeroY,y2:zeroY,class:'vnd-grid-line'});
   const tickDates=new Set(vndPickXTicks(rows,Math.min(6,rows.length)).map(r=>r.date));
   rows.forEach((row,idx)=>{
     const x=margin.left+idx*step+step/2;
