@@ -16,7 +16,7 @@ import requests
 import sqlite3
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 import pytz
 
@@ -214,12 +214,12 @@ _vnd_cache: dict = {}
 _vnd_lock = threading.Lock()
 
 
-def _vnd_fetch_json(url):
+def _vnd_fetch_json(url, referer="https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong"):
     resp = requests.get(url, timeout=20, headers={
         "User-Agent": "Mozilla/5.0",
         "Accept": "application/json,text/plain,*/*",
         "Origin": "https://dstock.vndirect.com.vn",
-        "Referer": "https://dstock.vndirect.com.vn/du-lieu-thi-truong/dinh-gia-thi-truong",
+        "Referer": referer,
     })
     resp.raise_for_status()
     return resp.json()
@@ -331,6 +331,110 @@ def api_vndirect_allocation():
         })
     except Exception as e:
         print(f"  [Dashboard] ❌ Fetch VNDIRECT phân bổ thị trường lỗi: {e}")
+        return jsonify({"ok": False, "message": str(e), "rows": []}), 502
+
+
+# ─── Khối ngoại & Tự doanh: gộp theo phiên rồi vẽ bar chart ngay dưới khung
+# HEALTH, trên khung Định giá — cùng nguồn dữ liệu và cùng cơ chế cache TTL 5
+# phút (_vnd_cached_rows) như 2 khung Định giá/Phân bổ ở trên.
+_VND_FOREIGN_CODES = "STOCK_HNX,STOCK_UPCOM,STOCK_HOSE,ETF_HOSE,IFC_HOSE"
+_VND_PROPRIETARY_CODES = "HNX,VNINDEX,UPCOM"
+_VND_FLOW_SESSIONS = 130  # số phiên hiển thị trên bar chart Khối ngoại / Tự doanh (~6 tháng giao dịch)
+
+
+def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vol_key, sell_vol_key):
+    grouped = {}
+    for item in items:
+        row_date = item.get(date_key)
+        if not row_date:
+            continue
+        row = grouped.setdefault(row_date, {"date": row_date, "netValue": 0.0, "netVol": 0.0})
+        buy_value = float(item.get(buy_value_key) or 0)
+        sell_value = float(item.get(sell_value_key) or 0)
+        buy_vol = float(item.get(buy_vol_key) or 0)
+        sell_vol = float(item.get(sell_vol_key) or 0)
+        row["netValue"] += float(item.get("netVal") or (buy_value - sell_value))
+        row["netVol"] += float(item.get("netVol") or (buy_vol - sell_vol))
+
+    # Chỉ giữ lại các trường thực sự được frontend sử dụng (date, netVol, netValueBn)
+    # — khung Khối ngoại/Tự doanh hiện chỉ hiển thị chart + GT ròng phiên gần nhất.
+    #
+    # LƯU LẠI ĐỀ PHÒNG DÙNG LẠI SAU NÀY — trước đây hàm này còn trả về thêm các
+    # trường KL/GT mua-bán riêng lẻ (đã bỏ khỏi UI ngày 2026-08-06). Muốn khôi phục
+    # lại phần hiển thị KL Mua/Bán, GT Mua/Bán như cũ, làm 2 bước:
+    #   1) Trong vòng lặp tích lũy ở trên, cộng dồn thêm:
+    #        row["buyValue"] = row.get("buyValue", 0.0) + buy_value
+    #        row["sellValue"] = row.get("sellValue", 0.0) + sell_value
+    #        row["buyVol"] = row.get("buyVol", 0.0) + buy_vol
+    #        row["sellVol"] = row.get("sellVol", 0.0) + sell_vol
+    #      (khởi tạo 4 key này = 0.0 luôn trong dict setdefault ở trên cho gọn)
+    #   2) Trong dict trả về bên dưới, thêm lại:
+    #        "buyValueBn": row["buyValue"] / 1e9, "sellValueBn": row["sellValue"] / 1e9,
+    #        "buyVol": row["buyVol"], "sellVol": row["sellVol"]
+    #   3) Ở JS, hàm renderVndFlowPanel() (tìm `function renderVndFlowPanel`) thêm lại
+    #      các dòng vndSetFlowStat(...) cho buyvol/sellvol/buyval/sellval như bản cũ,
+    #      và thêm lại các <div class="flow-stat">...</div> tương ứng trong HTML khung
+    #      #vnd-foreign-stats / #vnd-proprietary-stats (đã bị rút gọn còn 1 dòng GT ròng).
+    rows = []
+    for row in grouped.values():
+        rows.append({"date": row["date"], "netVol": row["netVol"], "netValueBn": row["netValue"] / 1e9})
+    rows.sort(key=lambda row: row["date"])
+    return rows
+
+
+def _vnd_foreign_flow_rows():
+    # size=900 raw / 5 mã rổ ≈ 180 phiên thô — đủ dư cho _VND_FLOW_SESSIONS=130 sau khi gộp theo ngày.
+    url = f"{VND_BASE}/foreigns?q=code:{_VND_FOREIGN_CODES}&sort=tradingDate&size=900"
+    items = _vnd_fetch_json(
+        url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-foreign"
+    ).get("data", [])
+    rows = _vnd_sum_flow_by_date(items, "tradingDate", "buyVal", "sellVal", "buyVol", "sellVol")
+    return rows[-_VND_FLOW_SESSIONS:]
+
+
+def _vnd_proprietary_flow_rows(from_date):
+    url = (
+        f"{VND_BASE}/proprietary_trading"
+        f"?q=code:{_VND_PROPRIETARY_CODES}~date:gte:{from_date}"
+        "&sort=date:desc&size=1500"
+    )
+    items = _vnd_fetch_json(
+        url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-proprietary"
+    ).get("data", [])
+    rows = _vnd_sum_flow_by_date(items, "date", "buyingVal", "sellingVal", "buyingVol", "sellingVol")
+    return rows[-_VND_FLOW_SESSIONS:]
+
+
+@app.route("/api/foreign_flow")
+def api_foreign_flow():
+    try:
+        rows = _vnd_cached_rows("foreign_flow", _vnd_foreign_flow_rows)
+        return jsonify({
+            "ok": True,
+            "from": rows[0]["date"] if rows else "",
+            "to": rows[-1]["date"] if rows else "",
+            "rows": rows,
+        })
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Fetch dữ liệu khối ngoại lỗi: {e}")
+        return jsonify({"ok": False, "message": str(e), "rows": []}), 502
+
+
+@app.route("/api/proprietary_flow")
+def api_proprietary_flow():
+    # ~6 tháng lịch (182 ngày) để đủ dữ liệu thô cho _VND_FLOW_SESSIONS=130 phiên giao dịch.
+    from_date = request.args.get("from") or (datetime.now(TZ_VN).date() - timedelta(days=182)).isoformat()
+    cache_key = f"proprietary_flow:{from_date}"
+    try:
+        rows = _vnd_cached_rows(cache_key, lambda: _vnd_proprietary_flow_rows(from_date))
+        return jsonify({
+            "ok": True,
+            "from": rows[0]["date"] if rows else from_date,
+            "to": rows[-1]["date"] if rows else from_date,
+            "rows": rows,
+        })
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Fetch dữ liệu tự doanh lỗi: {e}")
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
 
@@ -2211,6 +2315,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-error{display:none;margin-top:8px;border:1px solid #efc5c5;background:#fff5f5;color:#9b2424;border-radius:6px;padding:8px 10px;font-size:12px}
 .vnd-tooltip{position:fixed;z-index:50;display:none;min-width:150px;padding:8px 10px;background:rgba(17,24,39,.94);color:#fff;border-radius:6px;font-size:11px;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .vnd-tooltip strong{display:block;margin-bottom:4px}
+.vnd-bar-positive{fill:var(--green)}
+.vnd-bar-negative{fill:var(--red)}
+.vnd-zero-line{stroke:#8b94a3;stroke-width:1}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -3114,6 +3221,26 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             </div>
           </div>
         </div>
+        <div class="vnd-panel" id="vnd-foreign-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Khối ngoại</span>
+            <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-error" id="vnd-foreign-error"></div>
+        </div>
+        <div class="vnd-panel" id="vnd-proprietary-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Tự doanh</span>
+            <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-error" id="vnd-proprietary-error"></div>
+        </div>
         <div class="vnd-panel" id="vnd-valuation-panel">
           <div class="vnd-panel-hdr">
             <span class="vnd-panel-title">Định giá thị trường</span>
@@ -3124,7 +3251,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
               <span class="vnd-tab on" data-metric="pe">P/E</span>
               <span class="vnd-tab" data-metric="pb">P/B</span>
             </div>
-            <label class="vnd-period">Kỳ thời gian
+            <label class="vnd-period">Chu kỳ
               <select id="vnd-valuation-period">
                 <option value="90">3 tháng</option>
                 <option value="180">6 tháng</option>
@@ -3149,7 +3276,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-allocation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
-            <label class="vnd-period" style="margin-left:auto">Kỳ thời gian
+            <label class="vnd-period" style="margin-left:auto">Chu kỳ
               <select id="vnd-allocation-period">
                 <option value="90">3 tháng</option>
                 <option value="180">6 tháng</option>
@@ -7210,6 +7337,12 @@ function vndFmt(value,digits=2){
   if(!Number.isFinite(Number(value)))return'--';
   return Number(value).toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits});
 }
+function vndFmtSigned(value,digits=2){
+  if(!Number.isFinite(Number(value)))return'--';
+  const n=Number(value);
+  return `${n>0?'+':''}${vndFmt(n,digits)}`;
+}
+function vndDayMonth(value){const d=new Date(value+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;}
 function vndYmd(date){return date.toISOString().slice(0,10);}
 function vndLabelDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
 function vndFullDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
@@ -7253,6 +7386,105 @@ async function loadVndAllocation(){
     $('vnd-allocation-status').textContent=`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
     renderVndAllocation();
   }catch(e){vndShowError('vnd-allocation-status','vnd-allocation-error',e);}
+}
+
+// ── Khối ngoại & Tự doanh: 2 khung bar chart gộp theo phiên, nằm dưới HEALTH,
+// trên khung Định giá. Không có tab/kỳ thời gian chọn — luôn hiện đủ dữ liệu
+// gần nhất trả về từ API (khối ngoại ~100 phiên, tự doanh 45 ngày gần nhất).
+const vndForeignState={rows:[]};
+const vndProprietaryState={rows:[]};
+
+async function loadVndForeignFlow(){
+  $('vnd-foreign-status').textContent='Đang tải...';
+  $('vnd-foreign-error').style.display='none';
+  try{
+    const data=await vndLoadJson('/api/foreign_flow');
+    vndForeignState.rows=data.rows||[];
+    $('vnd-foreign-status').textContent=vndForeignState.rows.length?`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`:'--';
+    renderVndForeignFlow();
+  }catch(e){vndShowError('vnd-foreign-status','vnd-foreign-error',e);}
+}
+async function loadVndProprietaryFlow(){
+  $('vnd-proprietary-status').textContent='Đang tải...';
+  $('vnd-proprietary-error').style.display='none';
+  try{
+    const data=await vndLoadJson('/api/proprietary_flow');
+    vndProprietaryState.rows=data.rows||[];
+    $('vnd-proprietary-status').textContent=vndProprietaryState.rows.length?`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`:'--';
+    renderVndProprietaryFlow();
+  }catch(e){vndShowError('vnd-proprietary-status','vnd-proprietary-error',e);}
+}
+
+function renderVndFlowPanel(prefix,rows,label){
+  renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div><div>KL ròng: ${Math.round(row.netVol).toLocaleString('en-US')}</div>`);
+}
+function renderVndForeignFlow(){renderVndFlowPanel('foreign',vndForeignState.rows||[],'NN');}
+function renderVndProprietaryFlow(){renderVndFlowPanel('proprietary',vndProprietaryState.rows||[],'Tự doanh');}
+
+function renderVndFlowChart(svgId,rows,tooltipBuilder){
+  const svg=$(svgId);
+  svg.innerHTML='';
+  if(!rows.length)return;
+  const rect=svg.getBoundingClientRect();
+  const width=Math.max(320,rect.width||640);
+  const height=Math.max(200,rect.height||270);
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  const margin={top:16,right:56,bottom:30,left:52};
+  const innerW=width-margin.left-margin.right;
+  const innerH=height-margin.top-margin.bottom;
+  const vals=rows.map(r=>r.netValueBn);
+  const rawMin=Math.min(0,...vals),rawMax=Math.max(0,...vals);
+  const pad=(rawMax-rawMin)*0.14||1;
+  const yMin=rawMin-pad,yMax=rawMax+pad;
+  const step=innerW/rows.length;
+  const barW=Math.max(3,Math.min(40,step*0.56));
+  const sy=v=>margin.top+(1-((v-yMin)/(yMax-yMin||1)))*innerH;
+  const zeroY=sy(0);
+  function add(tag,attrs,text){
+    const el=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const[key,value]of Object.entries(attrs))el.setAttribute(key,value);
+    if(text!==undefined)el.textContent=text;
+    svg.appendChild(el);
+    return el;
+  }
+  for(const tick of vndNiceTicks(yMin,yMax,5)){
+    const y=sy(tick);
+    add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
+    add('text',{x:margin.left-8,y:y+4,'text-anchor':'end',class:'vnd-axis-label'},vndFmt(tick,Math.abs(tick)>=100?0:1));
+  }
+  add('line',{x1:margin.left,x2:width-margin.right,y1:zeroY,y2:zeroY,class:'vnd-zero-line'});
+  const tickDates=new Set(vndPickXTicks(rows,Math.min(6,rows.length)).map(r=>r.date));
+  rows.forEach((row,idx)=>{
+    const x=margin.left+idx*step+step/2;
+    const y=sy(Math.max(0,row.netValueBn));
+    const h=Math.max(2,Math.abs(sy(row.netValueBn)-zeroY));
+    const bar=add('rect',{
+      x:x-barW/2,
+      y:row.netValueBn>=0?y:zeroY,
+      width:barW,height:h,rx:2.5,
+      class:row.netValueBn>=0?'vnd-bar-positive':'vnd-bar-negative',
+    });
+    bar.addEventListener('mousemove',event=>{
+      vndTooltip.innerHTML=tooltipBuilder(row);
+      vndTooltip.style.display='block';
+      vndTooltip.style.left=`${event.clientX+14}px`;
+      vndTooltip.style.top=`${event.clientY+14}px`;
+    });
+    if(tickDates.has(row.date)){
+      add('text',{x,y:height-10,'text-anchor':'middle',class:'vnd-x-label'},vndDayMonth(row.date));
+    }
+  });
+  const last=rows[rows.length-1];
+  const lastX=margin.left+(rows.length-1)*step+step/2;
+  const lastY=sy(last.netValueBn);
+  add('text',{
+    x:Math.min(width-margin.right,lastX+barW/2+7),
+    y:lastY+(last.netValueBn>=0?-5:14),
+    'text-anchor':'start',
+    fill:last.netValueBn>=0?'var(--green)':'var(--red)',
+    'font-size':11,'font-weight':800,
+  },`${vndFmtSigned(last.netValueBn,1)} tỷ`);
+  svg.addEventListener('mouseleave',()=>{vndTooltip.style.display='none';});
 }
 
 function renderVndValuation(){
@@ -7388,10 +7620,12 @@ function renderVndChart(config){
   });
 }
 
-function vndRefreshAll(){loadVndValuation();loadVndAllocation();}
+function vndRefreshAll(){loadVndValuation();loadVndAllocation();loadVndForeignFlow();loadVndProprietaryFlow();}
 function vndRerenderVisible(){
   if(vndValuationState.rows.length)renderVndValuation();
   if(vndAllocationState.rows.length)renderVndAllocation();
+  if(vndForeignState.rows.length)renderVndForeignFlow();
+  if(vndProprietaryState.rows.length)renderVndProprietaryFlow();
 }
 function vndInitOnce(){
   if(_vndLoaded)return;
