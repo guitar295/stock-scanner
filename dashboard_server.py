@@ -105,7 +105,7 @@ HEATMAP_TTL_SEC = 120
 MARKET_HEALTH_TTL_SEC = 1800
 SIGNAL_TTL_SEC = 10
 
-_market_health_cache = {"data": {}, "updated_at": 0, "pending_refresh": False}
+_market_health_cache = {"data": {}, "updated_at": 0}
 _market_health_lock = threading.Lock()
 
 # ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
@@ -171,32 +171,15 @@ def _refresh_market_health(force: bool = False) -> dict:
             return _market_health_cache["data"]
         try:
             data = _fetch_market_health_fn()
+            _market_health_cache["data"] = data
             if data.get("ok"):
-                _market_health_cache["data"] = data
                 _market_health_cache["updated_at"] = time.time()
-                _market_health_cache["pending_refresh"] = False
                 _save_market_health_to_disk()
-            else:
-                # data.get("ok") là False (ví dụ "0 mã hợp lệ" do history_cache chưa kịp
-                # load xong) → CHỦ Ý không ghi đè _market_health_cache["data"] — giữ nguyên
-                # dữ liệu HEALTH hợp lệ gần nhất (kể cả dữ liệu vừa nạp từ đĩa lúc khởi động)
-                # để panel không bị "trắng" trong lúc chờ. Đồng thời bật cờ pending_refresh
-                # để endpoint /api/market_health báo cho frontend biết đây vẫn là số CŨ,
-                # cần tiếp tục polling nhanh (xem HEALTH_RETRY_MS ở JS) thay vì tưởng đã
-                # xong rồi đợi tới tận chu kỳ HEALTH_TTL (30 phút) mới hỏi lại — nếu không
-                # có cờ này, số cũ có thể bị "đứng hình" khá lâu dù history_cache đã build
-                # xong ngay sau đó. updated_at cũng không đổi nên lần gọi kế tiếp vẫn coi
-                # cache là hết hạn và tự thử tính lại ngay (không phải đợi đủ TTL).
-                # Trước đây chỗ này lỡ ghi đè "data" cả khi thất bại, khiến dữ liệu cache
-                # nạp từ đĩa bị xóa mất bất cứ khi nào lần refresh đầu tiên sau khi khởi
-                # động chẳng may xảy ra trước khi history_cache build xong — sửa 2026-08-06.
-                _market_health_cache["pending_refresh"] = True
         except Exception as e:
             print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
             # Không ghi đè "data" bằng lỗi cứng ở đây — giữ lại dữ liệu HEALTH
             # hợp lệ gần nhất (nếu có) để dashboard không "trắng" panel; đồng thời
             # KHÔNG cập nhật updated_at nên lần gọi sau sẽ tự thử lại.
-            _market_health_cache["pending_refresh"] = True
         return _market_health_cache["data"]
 
 
@@ -360,50 +343,41 @@ _VND_FLOW_SESSIONS = 130  # số phiên hiển thị trên bar chart Khối ngo�
 
 
 def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vol_key, sell_vol_key):
-    # buy_vol_key/sell_vol_key hiện không dùng tới trong vòng lặp (KL ròng đã bỏ khỏi
-    # tooltip ngày 2026-08-06) — giữ lại tham số để khôi phục nhanh nếu cần, xem ghi chú bên dưới.
     grouped = {}
     for item in items:
         row_date = item.get(date_key)
         if not row_date:
             continue
-        row = grouped.setdefault(row_date, {"date": row_date, "netValue": 0.0})
+        row = grouped.setdefault(row_date, {"date": row_date, "netValue": 0.0, "netVol": 0.0})
         buy_value = float(item.get(buy_value_key) or 0)
         sell_value = float(item.get(sell_value_key) or 0)
+        buy_vol = float(item.get(buy_vol_key) or 0)
+        sell_vol = float(item.get(sell_vol_key) or 0)
         row["netValue"] += float(item.get("netVal") or (buy_value - sell_value))
+        row["netVol"] += float(item.get("netVol") or (buy_vol - sell_vol))
 
-    # Chỉ giữ lại các trường thực sự được frontend sử dụng (date, netValueBn)
-    # — khung Khối ngoại/Tự doanh hiện chỉ hiển thị chart + GT ròng (không còn KL ròng).
+    # Chỉ giữ lại các trường thực sự được frontend sử dụng (date, netVol, netValueBn)
+    # — khung Khối ngoại/Tự doanh hiện chỉ hiển thị chart + GT ròng phiên gần nhất.
     #
-    # LƯU LẠI ĐỀ PHÒNG DÙNG LẠI SAU NÀY:
-    #
-    # A) Khôi phục KL ròng (tooltip khi hover) — đã bỏ ngày 2026-08-06:
-    #   1) Trong vòng lặp tích lũy ở trên, thêm "netVol": 0.0 vào dict setdefault, rồi cộng dồn:
-    #        buy_vol = float(item.get(buy_vol_key) or 0)
-    #        sell_vol = float(item.get(sell_vol_key) or 0)
-    #        row["netVol"] += float(item.get("netVol") or (buy_vol - sell_vol))
-    #   2) Trong dict trả về bên dưới, thêm lại: "netVol": row["netVol"]
-    #   3) Ở JS, hàm renderVndFlowPanel() (tìm `function renderVndFlowPanel`) thêm lại
-    #      dòng `<div>KL ròng: ${Math.round(row.netVol).toLocaleString('en-US')}</div>`
-    #      vào chuỗi tooltipBuilder truyền cho renderVndFlowChart.
-    #
-    # B) Khôi phục KL Mua/Bán, GT Mua/Bán (dưới tiêu đề panel) — đã bỏ ngày 2026-08-06:
+    # LƯU LẠI ĐỀ PHÒNG DÙNG LẠI SAU NÀY — trước đây hàm này còn trả về thêm các
+    # trường KL/GT mua-bán riêng lẻ (đã bỏ khỏi UI ngày 2026-08-06). Muốn khôi phục
+    # lại phần hiển thị KL Mua/Bán, GT Mua/Bán như cũ, làm 2 bước:
     #   1) Trong vòng lặp tích lũy ở trên, cộng dồn thêm:
     #        row["buyValue"] = row.get("buyValue", 0.0) + buy_value
     #        row["sellValue"] = row.get("sellValue", 0.0) + sell_value
-    #        row["buyVol"] = row.get("buyVol", 0.0) + buy_vol   (cần buy_vol ở mục A.1)
-    #        row["sellVol"] = row.get("sellVol", 0.0) + sell_vol (cần sell_vol ở mục A.1)
+    #        row["buyVol"] = row.get("buyVol", 0.0) + buy_vol
+    #        row["sellVol"] = row.get("sellVol", 0.0) + sell_vol
     #      (khởi tạo 4 key này = 0.0 luôn trong dict setdefault ở trên cho gọn)
     #   2) Trong dict trả về bên dưới, thêm lại:
     #        "buyValueBn": row["buyValue"] / 1e9, "sellValueBn": row["sellValue"] / 1e9,
     #        "buyVol": row["buyVol"], "sellVol": row["sellVol"]
-    #   3) Ở JS, hàm renderVndFlowPanel() cần tạo lại hàm vndSetFlowStat(id,text,sign) (đã xóa)
-    #      để gán text + màu xanh/đỏ, gọi nó cho từng chỉ số, và thêm lại HTML
-    #      <div class="flow-stats" id="vnd-foreign-stats">...</div> (và bản proprietary
-    #      tương ứng) dưới tiêu đề panel Khối ngoại/Tự doanh.
+    #   3) Ở JS, hàm renderVndFlowPanel() (tìm `function renderVndFlowPanel`) thêm lại
+    #      các dòng vndSetFlowStat(...) cho buyvol/sellvol/buyval/sellval như bản cũ,
+    #      và thêm lại các <div class="flow-stat">...</div> tương ứng trong HTML khung
+    #      #vnd-foreign-stats / #vnd-proprietary-stats (đã bị rút gọn còn 1 dòng GT ròng).
     rows = []
     for row in grouped.values():
-        rows.append({"date": row["date"], "netValueBn": row["netValue"] / 1e9})
+        rows.append({"date": row["date"], "netVol": row["netVol"], "netValueBn": row["netValue"] / 1e9})
     rows.sort(key=lambda row: row["date"])
     return rows
 
@@ -963,14 +937,9 @@ def api_market_health():
     data = _refresh_market_health()
     with _market_health_lock:
         snap_time = _market_health_cache["updated_at"]
-        pending_refresh = _market_health_cache.get("pending_refresh", False)
     payload = dict(data or {})
     payload["cached_age"] = int(time.time() - snap_time) if snap_time else 0
     payload["ttl_sec"] = MARKET_HEALTH_TTL_SEC
-    # True nghĩa là số đang hiển thị là số CŨ (giữ lại từ lần thành công trước / từ đĩa)
-    # trong lúc chờ tính lại — frontend dùng cờ này để biết cần polling nhanh tiếp
-    # (xem fetchHealth() ở JS) thay vì tưởng đã có số mới rồi đợi hết TTL mới hỏi lại.
-    payload["pending_refresh"] = pending_refresh
     return jsonify(_json_safe(payload))
 
 @app.route("/api/chart_images/<symbol>")
@@ -2325,7 +2294,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-panel-title{font-family:var(--font-ui);font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px;color:var(--accent)}
 .vnd-status{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
 .vnd-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0}
-.vnd-tabs{display:inline-flex;gap:6px;position:relative;top:8px}
+.vnd-tabs{display:inline-flex;gap:6px}
 .vnd-tab{height:26px;padding:0 12px;display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;user-select:none}
 .vnd-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
 .vnd-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -2333,7 +2302,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-period select{height:26px;width:auto;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);padding:0 6px;font-size:12px}
 .vnd-chart-area{position:relative;height:270px}
 .vnd-svg{width:100%;height:100%;display:block;overflow:visible}
-.vnd-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5;stroke-opacity:.35}
+.vnd-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5}
 .vnd-axis-label{fill:var(--muted);font-size:11px;font-weight:700}
 .vnd-x-label{fill:var(--muted);font-size:10px;font-weight:600}
 .vnd-legend{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:2px;color:var(--muted);font-size:11px;flex-wrap:wrap}
@@ -2348,6 +2317,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-tooltip strong{display:block;margin-bottom:4px}
 .vnd-bar-positive{fill:var(--green)}
 .vnd-bar-negative{fill:var(--red)}
+.vnd-zero-line{stroke:#8b94a3;stroke-width:1}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -3210,18 +3180,18 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <div class="panel-hdr tri-hdr" id="tri-hdr">
       <span class="panel-title">MARKET</span>
       <div class="tri-tabs" id="tri-tabs">
-        <span class="tri-tab" data-tab="fireant">Fireant</span>
-        <span class="tri-tab on" data-tab="health">Mrk Health</span>
+        <span class="tri-tab on" data-tab="fireant">Fireant</span>
+        <span class="tri-tab" data-tab="health">Mrk Health</span>
         <span class="tri-tab" data-tab="treemap">Treemap</span>
         <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
       <span class="tri-toggle" id="tri-toggle">▶</span>
     </div>
     <div class="tri-body" id="tri-body">
-      <div class="tri-content" id="tri-content-fireant">
+      <div class="tri-content on" id="tri-content-fireant">
         <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
       </div>
-      <div class="tri-content on" id="tri-content-health">
+      <div class="tri-content" id="tri-content-health">
         <button class="lite-draw-btn health-copy-btn" id="health-copy-btn" title="Sao chép ảnh Mrk Health vào clipboard" aria-label="Sao chép ảnh Mrk Health vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
         <div class="health-body" id="health-body">
@@ -3251,6 +3221,26 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             </div>
           </div>
         </div>
+        <div class="vnd-panel" id="vnd-foreign-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Khối ngoại</span>
+            <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-error" id="vnd-foreign-error"></div>
+        </div>
+        <div class="vnd-panel" id="vnd-proprietary-panel">
+          <div class="vnd-panel-hdr">
+            <span class="vnd-panel-title">Tự doanh</span>
+            <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
+          </div>
+          <div class="vnd-chart-area">
+            <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="vnd-error" id="vnd-proprietary-error"></div>
+        </div>
         <div class="vnd-panel" id="vnd-valuation-panel">
           <div class="vnd-panel-hdr">
             <span class="vnd-panel-title">Định giá thị trường</span>
@@ -3275,8 +3265,8 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <svg class="vnd-svg" id="vnd-valuation-svg" preserveAspectRatio="none"></svg>
           </div>
           <div class="vnd-legend">
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" id="vnd-valuation-metric-swatch" style="background:#f59b00"></span><span id="vnd-valuation-metric-legend">P/E</span></span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX (điểm, trái)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" id="vnd-valuation-metric-swatch" style="background:#f59b00"></span><span id="vnd-valuation-metric-legend">P/E (lần, phải)</span></span>
           </div>
           <div class="vnd-error" id="vnd-valuation-error"></div>
         </div>
@@ -3300,31 +3290,11 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <svg class="vnd-svg" id="vnd-allocation-svg" preserveAspectRatio="none"></svg>
           </div>
           <div class="vnd-legend">
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX (điểm, trái)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50 (%, phải)</span>
+            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200 (%, phải)</span>
           </div>
           <div class="vnd-error" id="vnd-allocation-error"></div>
-        </div>
-        <div class="vnd-panel" id="vnd-foreign-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Khối ngoại</span>
-            <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
-          </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
-          </div>
-          <div class="vnd-error" id="vnd-foreign-error"></div>
-        </div>
-        <div class="vnd-panel" id="vnd-proprietary-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Tự doanh</span>
-            <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
-          </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
-          </div>
-          <div class="vnd-error" id="vnd-proprietary-error"></div>
         </div>
       </div>
       <div class="tri-content" id="tri-content-treemap">
@@ -6971,13 +6941,11 @@ function renderHealth(data){
   renderHealthChart(d.history||[]);
 }
 // Trong lúc hệ thống đang build lại history_cache lúc khởi động (hoặc đầu
-// phiên mới), /api/market_health trả ok:false (chưa từng có dữ liệu) HOẶC
-// pending_refresh:true (đang hiển thị tạm số CŨ trong lúc chờ tính lại — xem
-// _refresh_market_health() ở Python) vì chưa đủ dữ liệu. Thay vì bắt người
-// dùng F5 cả trang để thấy số mới khi cache build xong, tự động thử lại
-// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu
-// mới thực sự — một khi đã ok:true VÀ không còn pending_refresh thì mới dừng
-// vòng thử nhanh này, cơ chế làm mới định kỳ theo HEALTH_TTL vẫn chạy như cũ.
+// phiên mới), /api/market_health trả ok:false vì chưa đủ dữ liệu. Thay vì bắt
+// người dùng F5 cả trang để thấy chart khi cache build xong, tự động thử lại
+// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu —
+// một khi đã ok:true thì dừng vòng thử nhanh này, cơ chế làm mới định kỳ theo
+// HEALTH_TTL ở startDashboard() vẫn chạy như cũ, không đổi.
 const HEALTH_RETRY_MS=20000;
 let _healthRetryTimer=null;
 async function fetchHealth(){
@@ -6985,7 +6953,7 @@ async function fetchHealth(){
     const j=await fetch('/api/market_health').then(r=>r.json());
     renderHealth(j);
     if(_healthRetryTimer){clearTimeout(_healthRetryTimer);_healthRetryTimer=null;}
-    if(j.ok&&!j.pending_refresh){
+    if(j.ok){
       startBar(DOM.pbarHealth,HEALTH_TTL);
     }else{
       startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
@@ -7448,7 +7416,7 @@ async function loadVndProprietaryFlow(){
 }
 
 function renderVndFlowPanel(prefix,rows,label){
-  renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div>`);
+  renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div><div>KL ròng: ${Math.round(row.netVol).toLocaleString('en-US')}</div>`);
 }
 function renderVndForeignFlow(){renderVndFlowPanel('foreign',vndForeignState.rows||[],'NN');}
 function renderVndProprietaryFlow(){renderVndFlowPanel('proprietary',vndProprietaryState.rows||[],'Tự doanh');}
@@ -7468,12 +7436,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
   const rawMin=Math.min(0,...vals),rawMax=Math.max(0,...vals);
   const pad=(rawMax-rawMin)*0.14||1;
   const yMin=rawMin-pad,yMax=rawMax+pad;
-  // Khoảng trắng bên phải 5% — đồng bộ với renderVndChart (khung Định giá/Phân bổ dùng
-  // xMaxPadded = xMax + xRange*0.05) để bar cuối cùng thẳng hàng theo chiều dọc với điểm
-  // giá trị cuối cùng bên khung Định giá/Phân bổ.
-  const rightPadRatio=0.05;
-  const barAreaW=innerW/(1+rightPadRatio);
-  const step=barAreaW/rows.length;
+  const step=innerW/rows.length;
   const barW=Math.max(3,Math.min(40,step*0.56));
   const sy=v=>margin.top+(1-((v-yMin)/(yMax-yMin||1)))*innerH;
   const zeroY=sy(0);
@@ -7484,17 +7447,12 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     svg.appendChild(el);
     return el;
   }
-  // Tick grid luôn đi qua đúng 0 và cách đều 2 phía trên/dưới — tránh trường hợp
-  // vndNiceTicks() (chia đều yMin..yMax, không neo vào 0) lỡ sinh ra 1 tick nằm rất
-  // sát 0 khiến nhìn như có 2 đường kề nhau cạnh đường 0.
-  const flowStepUnit=Math.max(Math.abs(yMax),Math.abs(yMin),1e-9)/3;
-  const flowGridTicks=[0];
-  for(let t=flowStepUnit;t<=yMax+1e-9;t+=flowStepUnit)flowGridTicks.push(t);
-  for(let t=-flowStepUnit;t>=yMin-1e-9;t-=flowStepUnit)flowGridTicks.push(t);
-  for(const tick of flowGridTicks){
+  for(const tick of vndNiceTicks(yMin,yMax,5)){
     const y=sy(tick);
     add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
+    add('text',{x:margin.left-8,y:y+4,'text-anchor':'end',class:'vnd-axis-label'},vndFmt(tick,Math.abs(tick)>=100?0:1));
   }
+  add('line',{x1:margin.left,x2:width-margin.right,y1:zeroY,y2:zeroY,class:'vnd-zero-line'});
   const tickDates=new Set(vndPickXTicks(rows,Math.min(6,rows.length)).map(r=>r.date));
   rows.forEach((row,idx)=>{
     const x=margin.left+idx*step+step/2;
@@ -7588,12 +7546,13 @@ function renderVndChart(config){
   for(const tick of vndNiceTicks(idxMin-idxPad,idxMax+idxPad,4)){
     const y=syIndex(tick);
     add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
+    add('text',{x:margin.left-8,y:y+4,'text-anchor':'end',class:'vnd-axis-label'},Math.round(tick).toLocaleString('en-US'));
   }
   const axisDigits=config.rightSeries[0].axisDigits;
-  const rightSuffix=config.rightMax===100?'%':''; // '%' cho khung Phân bổ (MA50/MA200), rỗng cho P/E,P/B — dùng chung cho axis label lẫn badge bên dưới
   for(const tick of vndNiceTicks(rightMin,rightMax,4)){
     const y=syRight(tick);
-    add('text',{x:width-margin.right+8,y:y+4,'text-anchor':'start',class:'vnd-axis-label'},`${vndFmt(tick,axisDigits)}${rightSuffix}`);
+    const suffix=config.rightMax===100?'%':'';
+    add('text',{x:width-margin.right+8,y:y+4,'text-anchor':'start',class:'vnd-axis-label'},`${vndFmt(tick,axisDigits)}${suffix}`);
   }
   for(const row of vndPickXTicks(rows,5)){
     const x=sx(new Date(row.date+'T00:00:00').getTime());
@@ -7607,21 +7566,21 @@ function renderVndChart(config){
   }
   const last=rows[rows.length-1];
   config.onLast?.(last);
-  // ── Badges giá trị cuối bên phải chart ──────────────────────────────────────
-  // Vẽ nhãn màu (badge) sát mép phải tại vị trí Y của giá trị cuối cùng, giúp đọc
-  // nhanh VNINDEX hiện tại và chỉ số P/E, P/B hoặc % MA50/MA200 mà không cần hover.
-  // (Trước đây badge VNINDEX nằm bên trái — đã chuyển sang phải cùng các badge khác
-  // ngày 2026-08-06, nên hàm dưới đây không còn cần tham số căn trái/phải nữa.)
-  const _vBadge=(y,text,color)=>{
+  // ── Badges giá trị cuối trên trục ──────────────────────────────────────────
+  // Vẽ nhãn màu (badge) ngay trên đường trục trái/phải tại vị trí Y của giá trị cuối cùng,
+  // giúp đọc nhanh VNINDEX hiện tại và chỉ số P/E, P/B hoặc % MA50/MA200 mà không cần hover.
+  const _vBadge=(y,text,color,align)=>{
     const H=15,FONT=10,PAD=5,approxW=Math.max(text.length*6.3+PAD*2,28);
-    add('rect',{x:width-margin.right,y:y-H/2,width:approxW,height:H,rx:2.5,fill:color});
-    add('text',{x:width-margin.right+PAD,y:y+FONT/2-0.5,
-      'text-anchor':'start','font-size':FONT,'font-weight':'700',
+    const rx_=align==='right'?margin.left-approxW:width-margin.right;
+    add('rect',{x:rx_,y:y-H/2,width:approxW,height:H,rx:2.5,fill:color});
+    add('text',{x:align==='right'?margin.left-PAD:width-margin.right+PAD,y:y+FONT/2-0.5,
+      'text-anchor':align==='right'?'end':'start','font-size':FONT,'font-weight':'700',
       fill:'#fff','font-family':'inherit'},text);
   };
-  _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor);
+  _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor,'right');
   for(const series of config.rightSeries){
-    _vBadge(syRight(last[series.key]),`${vndFmt(last[series.key],series.axisDigits)}${rightSuffix}`,series.color);
+    const suffix=config.rightMax===100?'%':'';
+    _vBadge(syRight(last[series.key]),`${vndFmt(last[series.key],series.axisDigits)}${suffix}`,series.color,'left');
   }
   // ── Crosshair & tooltip ────────────────────────────────────────────────────
   const guide=add('line',{y1:margin.top,y2:height-margin.bottom,stroke:'#9aa3b2','stroke-width':1,'stroke-dasharray':'3 4',opacity:0});
@@ -7678,7 +7637,7 @@ function vndInitOnce(){
     if(metric===vndValuationState.metric)return;
     vndValuationState.metric=metric;
     $('vnd-valuation-tabs').querySelectorAll('.vnd-tab').forEach(b=>b.classList.toggle('on',b.dataset.metric===metric));
-    $('vnd-valuation-metric-legend').textContent=metric==='pe'?'P/E':'P/B';
+    $('vnd-valuation-metric-legend').textContent=`${metric==='pe'?'P/E':'P/B'} (lần, phải)`;
     const _ml=$('vnd-valuation-metric-swatch');if(_ml)_ml.style.background=metric==='pe'?'#f59b00':'#0e9f6e';
     loadVndValuation();
   });
@@ -7701,16 +7660,9 @@ window.addEventListener('resize',()=>{
 
 // ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
 const TRI_TABS=['fireant','health','treemap','sankey'];
-const TRI_TAB_STORAGE_KEY='triActiveTab';
 const TRI_IFRAME_MAP={};
-function triActivateTab(tab,opts){
+function triActivateTab(tab){
   if(!TRI_TABS.includes(tab))return;
-  // Lưu tab đang active vào localStorage để lần mở dashboard sau (F5 / mở server mới)
-  // tự động khôi phục đúng tab đó — trừ khi gọi với skipSave (vd: chuyển ép sang HEALTH
-  // trên mobile chỉ áp dụng cho phiên đó, không ghi đè lựa chọn đã lưu của người dùng).
-  if(!(opts&&opts.skipSave)){
-    try{localStorage.setItem(TRI_TAB_STORAGE_KEY,tab);}catch(e){}
-  }
   DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   TRI_TABS.forEach(t=>{
     const el=document.getElementById('tri-content-'+t);
@@ -7748,18 +7700,9 @@ DOM.triHdr.addEventListener('click',e=>{
     }
   }
 });
-// Khôi phục tab MARKET đã active ở lần mở dashboard trước đó (lưu trong localStorage).
-// Mặc định (chưa từng lưu / dữ liệu hỏng) là HEALTH thay vì Fireant.
-try{
-  const _savedTriTab=localStorage.getItem(TRI_TAB_STORAGE_KEY);
-  if(_savedTriTab&&TRI_TABS.includes(_savedTriTab))triActivateTab(_savedTriTab,{skipSave:true});
-}catch(e){}
 // Trên mobile, tab Fireant bị ẩn (xem CSS mobile — iframe fireant.vn không tối ưu cho di động):
 // nếu đang active đúng tab đó thì chuyển sẵn sang HEALTH để mở thẻ ra không bị trống trơn.
-// skipSave: chỉ ép cho phiên mobile này, không ghi đè lựa chọn đã lưu của người dùng.
-if(IS_MOBILE()&&DOM.triTabs.querySelector('.tri-tab.on')?.dataset.tab==='fireant'){
-  triActivateTab('health',{skipSave:true});
-}
+if(IS_MOBILE())triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
   // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...)
   // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
