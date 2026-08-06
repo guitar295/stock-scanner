@@ -2303,7 +2303,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-panel-title{font-family:var(--font-ui);font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px;color:var(--accent)}
 .vnd-status{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
 .vnd-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0}
-.vnd-tabs{display:inline-flex;gap:6px}
+.vnd-tabs{display:inline-flex;gap:6px;position:relative;top:8px}
 .vnd-tab{height:26px;padding:0 12px;display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;user-select:none}
 .vnd-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
 .vnd-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -7561,10 +7561,10 @@ function renderVndChart(config){
     add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
   }
   const axisDigits=config.rightSeries[0].axisDigits;
+  const rightSuffix=config.rightMax===100?'%':''; // '%' cho khung Phân bổ (MA50/MA200), rỗng cho P/E,P/B — dùng chung cho axis label lẫn badge bên dưới
   for(const tick of vndNiceTicks(rightMin,rightMax,4)){
     const y=syRight(tick);
-    const suffix=config.rightMax===100?'%':'';
-    add('text',{x:width-margin.right+8,y:y+4,'text-anchor':'start',class:'vnd-axis-label'},`${vndFmt(tick,axisDigits)}${suffix}`);
+    add('text',{x:width-margin.right+8,y:y+4,'text-anchor':'start',class:'vnd-axis-label'},`${vndFmt(tick,axisDigits)}${rightSuffix}`);
   }
   for(const row of vndPickXTicks(rows,5)){
     const x=sx(new Date(row.date+'T00:00:00').getTime());
@@ -7578,21 +7578,21 @@ function renderVndChart(config){
   }
   const last=rows[rows.length-1];
   config.onLast?.(last);
-  // ── Badges giá trị cuối trên trục ──────────────────────────────────────────
-  // Vẽ nhãn màu (badge) ngay trên đường trục trái/phải tại vị trí Y của giá trị cuối cùng,
-  // giúp đọc nhanh VNINDEX hiện tại và chỉ số P/E, P/B hoặc % MA50/MA200 mà không cần hover.
-  const _vBadge=(y,text,color,align)=>{
+  // ── Badges giá trị cuối bên phải chart ──────────────────────────────────────
+  // Vẽ nhãn màu (badge) sát mép phải tại vị trí Y của giá trị cuối cùng, giúp đọc
+  // nhanh VNINDEX hiện tại và chỉ số P/E, P/B hoặc % MA50/MA200 mà không cần hover.
+  // (Trước đây badge VNINDEX nằm bên trái — đã chuyển sang phải cùng các badge khác
+  // ngày 2026-08-06, nên hàm dưới đây không còn cần tham số căn trái/phải nữa.)
+  const _vBadge=(y,text,color)=>{
     const H=15,FONT=10,PAD=5,approxW=Math.max(text.length*6.3+PAD*2,28);
-    const rx_=align==='right'?margin.left-approxW:width-margin.right;
-    add('rect',{x:rx_,y:y-H/2,width:approxW,height:H,rx:2.5,fill:color});
-    add('text',{x:align==='right'?margin.left-PAD:width-margin.right+PAD,y:y+FONT/2-0.5,
-      'text-anchor':align==='right'?'end':'start','font-size':FONT,'font-weight':'700',
+    add('rect',{x:width-margin.right,y:y-H/2,width:approxW,height:H,rx:2.5,fill:color});
+    add('text',{x:width-margin.right+PAD,y:y+FONT/2-0.5,
+      'text-anchor':'start','font-size':FONT,'font-weight':'700',
       fill:'#fff','font-family':'inherit'},text);
   };
-  _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor,'left');
+  _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor);
   for(const series of config.rightSeries){
-    const suffix=config.rightMax===100?'%':'';
-    _vBadge(syRight(last[series.key]),`${vndFmt(last[series.key],series.axisDigits)}${suffix}`,series.color,'left');
+    _vBadge(syRight(last[series.key]),`${vndFmt(last[series.key],series.axisDigits)}${rightSuffix}`,series.color);
   }
   // ── Crosshair & tooltip ────────────────────────────────────────────────────
   const guide=add('line',{y1:margin.top,y2:height-margin.bottom,stroke:'#9aa3b2','stroke-width':1,'stroke-dasharray':'3 4',opacity:0});
