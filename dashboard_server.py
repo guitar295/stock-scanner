@@ -339,7 +339,7 @@ def api_vndirect_allocation():
 # phút (_vnd_cached_rows) như 2 khung Định giá/Phân bổ ở trên.
 _VND_FOREIGN_CODES = "STOCK_HNX,STOCK_UPCOM,STOCK_HOSE,ETF_HOSE,IFC_HOSE"
 _VND_PROPRIETARY_CODES = "HNX,VNINDEX,UPCOM"
-_VND_FLOW_SESSIONS = 50  # số phiên hiển thị trên bar chart Khối ngoại / Tự doanh
+_VND_FLOW_SESSIONS = 130  # số phiên hiển thị trên bar chart Khối ngoại / Tự doanh (~6 tháng giao dịch)
 
 
 def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vol_key, sell_vol_key):
@@ -383,7 +383,8 @@ def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vo
 
 
 def _vnd_foreign_flow_rows():
-    url = f"{VND_BASE}/foreigns?q=code:{_VND_FOREIGN_CODES}&sort=tradingDate&size=500"
+    # size=900 raw / 5 mã rổ ≈ 180 phiên thô — đủ dư cho _VND_FLOW_SESSIONS=130 sau khi gộp theo ngày.
+    url = f"{VND_BASE}/foreigns?q=code:{_VND_FOREIGN_CODES}&sort=tradingDate&size=900"
     items = _vnd_fetch_json(
         url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-foreign"
     ).get("data", [])
@@ -395,7 +396,7 @@ def _vnd_proprietary_flow_rows(from_date):
     url = (
         f"{VND_BASE}/proprietary_trading"
         f"?q=code:{_VND_PROPRIETARY_CODES}~date:gte:{from_date}"
-        "&sort=date:desc&size=900"
+        "&sort=date:desc&size=1500"
     )
     items = _vnd_fetch_json(
         url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-proprietary"
@@ -421,7 +422,8 @@ def api_foreign_flow():
 
 @app.route("/api/proprietary_flow")
 def api_proprietary_flow():
-    from_date = request.args.get("from") or (datetime.now(TZ_VN).date() - timedelta(days=90)).isoformat()
+    # ~6 tháng lịch (182 ngày) để đủ dữ liệu thô cho _VND_FLOW_SESSIONS=130 phiên giao dịch.
+    from_date = request.args.get("from") or (datetime.now(TZ_VN).date() - timedelta(days=182)).isoformat()
     cache_key = f"proprietary_flow:{from_date}"
     try:
         rows = _vnd_cached_rows(cache_key, lambda: _vnd_proprietary_flow_rows(from_date))
