@@ -2318,9 +2318,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-bar-positive{fill:var(--green)}
 .vnd-bar-negative{fill:var(--red)}
 .vnd-zero-line{stroke:#8b94a3;stroke-width:1}
-.flow-stats{display:grid;grid-template-columns:1fr;gap:8px 14px;margin:8px 0 4px}
-.flow-stat{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--muted);background:#f4efe5;border:1px solid #ead9b7;border-radius:6px;padding:6px 10px}
-.flow-stat strong{font-size:14px;color:var(--text);font-weight:800}
+.flow-stats{margin:8px 0 4px}
+.flow-net-plain{font-size:14px;font-weight:800;color:var(--text)}
 .flow-positive{color:var(--green)!important}
 .flow-negative{color:var(--red)!important}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
@@ -2647,7 +2646,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .vnd-panel:last-child{margin-bottom:12px}
   .vnd-controls{flex-direction:column;align-items:flex-start;gap:8px}
   .vnd-chart-area{height:220px}
-  .flow-stats{grid-template-columns:1fr}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .album-slide img{cursor:zoom-in}
@@ -3233,7 +3231,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
           </div>
           <div class="flow-stats" id="vnd-foreign-stats">
-            <div class="flow-stat"><span>GT ròng phiên gần nhất</span><strong id="vnd-foreign-netval">--</strong></div>
+            <strong id="vnd-foreign-netval" class="flow-net-plain">--</strong>
           </div>
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
@@ -3246,7 +3244,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
           </div>
           <div class="flow-stats" id="vnd-proprietary-stats">
-            <div class="flow-stat"><span>GT ròng phiên gần nhất</span><strong id="vnd-proprietary-netval">--</strong></div>
+            <strong id="vnd-proprietary-netval" class="flow-net-plain">--</strong>
           </div>
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
@@ -7451,7 +7449,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
   const width=Math.max(320,rect.width||640);
   const height=Math.max(200,rect.height||270);
   svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
-  const margin={top:16,right:28,bottom:30,left:52};
+  const margin={top:16,right:56,bottom:30,left:52};
   const innerW=width-margin.left-margin.right;
   const innerH=height-margin.top-margin.bottom;
   const vals=rows.map(r=>r.netValueBn);
