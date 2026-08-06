@@ -2318,10 +2318,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .vnd-bar-positive{fill:var(--green)}
 .vnd-bar-negative{fill:var(--red)}
 .vnd-zero-line{stroke:#8b94a3;stroke-width:1}
-.flow-stats{margin:8px 0 4px}
-.flow-net-plain{font-size:14px;font-weight:800;color:var(--text)}
-.flow-positive{color:var(--green)!important}
-.flow-negative{color:var(--red)!important}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -3230,9 +3226,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
             <span class="vnd-panel-title">Khối ngoại</span>
             <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
           </div>
-          <div class="flow-stats" id="vnd-foreign-stats">
-            <strong id="vnd-foreign-netval" class="flow-net-plain">--</strong>
-          </div>
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
           </div>
@@ -3242,9 +3235,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
           <div class="vnd-panel-hdr">
             <span class="vnd-panel-title">Tự doanh</span>
             <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
-          </div>
-          <div class="flow-stats" id="vnd-proprietary-stats">
-            <strong id="vnd-proprietary-netval" class="flow-net-plain">--</strong>
           </div>
           <div class="vnd-chart-area">
             <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
@@ -7425,18 +7415,8 @@ async function loadVndProprietaryFlow(){
   }catch(e){vndShowError('vnd-proprietary-status','vnd-proprietary-error',e);}
 }
 
-function vndSetFlowStat(id,text,sign){
-  const el=$(id);
-  el.textContent=text;
-  el.classList.toggle('flow-positive',Number(sign)>0);
-  el.classList.toggle('flow-negative',Number(sign)<0);
-}
-
 function renderVndFlowPanel(prefix,rows,label){
   renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div><div>KL ròng: ${Math.round(row.netVol).toLocaleString('en-US')}</div>`);
-  if(!rows.length)return;
-  const last=rows[rows.length-1];
-  vndSetFlowStat(`vnd-${prefix}-netval`,`${vndFmtSigned(last.netValueBn,2)} Tỷ`,last.netValueBn);
 }
 function renderVndForeignFlow(){renderVndFlowPanel('foreign',vndForeignState.rows||[],'NN');}
 function renderVndProprietaryFlow(){renderVndFlowPanel('proprietary',vndProprietaryState.rows||[],'Tự doanh');}
@@ -7503,7 +7483,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     'text-anchor':'start',
     fill:last.netValueBn>=0?'var(--green)':'var(--red)',
     'font-size':11,'font-weight':800,
-  },vndFmtSigned(last.netValueBn,1));
+  },`${vndFmtSigned(last.netValueBn,1)} tỷ`);
   svg.addEventListener('mouseleave',()=>{vndTooltip.style.display='none';});
 }
 
