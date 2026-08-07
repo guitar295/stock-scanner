@@ -1106,15 +1106,15 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
     return flags_by_date
 
-def fetch_vndirect_dchart(symbol, tf="1D", limit=250, before_date=None):
+def fetch_vndirect_dchart(symbol, tf="1D", limit=400, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
-    - limit: số nến tối đa muốn trả (default 250 ≈ 1 năm D — cực nhanh ~150-250ms).
+    - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
       (dùng cho lazy load lịch sử khi user kéo trái đến đầu dữ liệu).
     """
     symbol = symbol.upper().strip()
     tf_upper = tf.upper().strip()
-    limit = max(50, min(1000, int(limit or 250)))
+    limit = max(50, min(1000, int(limit or 400)))
 
     # ── Xác định khoảng thời gian cần fetch ──────────────────────────────────
     if before_date:
@@ -1237,9 +1237,9 @@ def api_lightweight_chart(symbol):
     before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 250) or 250)
+        limit = int(request.args.get("limit", 400) or 400)
     except (TypeError, ValueError):
-        limit = 250
+        limit = 400
     limit = max(50, min(1000, limit))
 
     # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
@@ -3951,7 +3951,7 @@ let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price c
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
+const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
 // Lazy load lịch sử: khi user kéo trái đến đầu dữ liệu, tự động fetch thêm bar cũ hơn.
 let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load (server báo)
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
@@ -4291,9 +4291,10 @@ function _liteApplyBuySignal(){
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
   const last=_liteData.length-1;
-  const rightOffset=15;
+  const rightOffset=22; // Lề phải ~8% chiều rộng màn hình
   const to=last+rightOffset;
-  const from=0; // 250 nến phủ 94% chiều rộng màn hình, 6% lề phải
+  const visibleCount=250; // Hiển thị chuẩn 250 nến gần nhất trên màn hình
+  const from=Math.max(0,last-visibleCount+1);
   _liteApplyVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
@@ -6099,7 +6100,6 @@ function renderLiteIndicators(){
     const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
     const macdAligned=alignLiteSeries(m.macd);
     hist.setData(histScaled);macdLine.setData(macdAligned);sigLine.setData(alignLiteSeries(m.signal));
-    hist.priceScale().applyOptions({autoScale:true,scaleMargins:{top:.07,bottom:.10}});
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
@@ -6118,12 +6118,7 @@ function _liteVolColorFor(volBar,showVpa){
   return cd?(cd.close>=cd.open?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR):volBar.color;
 }
 function _liteRefreshVolumeTop(showVpaVol){
-  // Vẽ lại volume sau cùng để nó luôn nổi trên phần fill/nền trắng của BB, không bị che.
   if(!_liteChart||!_liteVolume)return;
-  try{_liteChart.removeSeries(_liteVolume);}catch(e){}
-  _liteVolume=_liteChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
-  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  // showVpaVol truyền vào từ renderLiteIndicators() (đọc DOM 1 lần/lượt vẽ, giống maEmaOn/showRsi...).
   _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v,showVpaVol)})));
 }
 // LITE_CHART_RETRY_MAX/DELAY: số lần thử lại tối đa và khoảng cách giữa mỗi lần khi API
@@ -6144,7 +6139,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=250');
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=400');
     if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
