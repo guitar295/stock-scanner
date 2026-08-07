@@ -6143,7 +6143,7 @@ function _liteUpdateIndicatorData(){
   _liteRefreshVolumeTop(showVpaVol);
   redrawLiteDrawings();
 }
-function renderLiteIndicators(skipRangeRestore,explicitRange){
+function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   // explicitRange: cho phép nơi gọi truyền sẵn range đã CHỐT TỪ TRƯỚC (vd. trước khi cập nhật nến mới
   // ở _liteQuietRefreshChart) thay vì để hàm này tự đọc range HIỆN TẠI — vì nếu đọc lúc này, dữ liệu/nến
@@ -6159,7 +6159,12 @@ function renderLiteIndicators(skipRangeRestore,explicitRange){
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
-  applyLitePaneLayout();
+  // applyLitePaneLayout() gọi applyOptions({timeScale:{rightOffset:...}}) trên cả 3 chart — bản thân
+  // việc SET rightOffset (dù cùng giá trị cũ) khiến thư viện tự canh lại vị trí cuộn theo offset đó,
+  // ghi đè pan/zoom user đang xem. Auto-refresh 10s gọi renderLiteIndicators() liên tục trong khi
+  // layout (ẩn/hiện RSI/MACD, kích thước pane) KHÔNG hề đổi — nên bỏ qua bước này khi skipPaneLayout
+  // (xem _liteQuietRefreshChart) để tránh đúng nguyên nhân gây "nhảy chart" mỗi 10s.
+  if(!skipPaneLayout)applyLitePaneLayout();
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
   // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
   maOn.forEach(p=>{
@@ -6386,7 +6391,7 @@ async function _liteQuietRefreshChart(){
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
-    renderLiteIndicators(false,prevRangeBeforeUpdate); // áp lại ĐÚNG range đã chốt trước khi update, không nhảy khung
+    renderLiteIndicators(false,prevRangeBeforeUpdate,true); // skipPaneLayout=true — layout không đổi, chỉ vá dữ liệu
     updateLiteTitle(_liteData[_liteData.length-1]);
     updateLiteBigPrice(_liteData[_liteData.length-1]); // vẽ lại ngay với dự báo đang có (chưa chờ fetch)
     _liteFetchVolForecast(sym); // cùng nhịp 20s với refresh nến — lấy lại progress/ratio mới nhất từ server
