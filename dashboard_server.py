@@ -1106,7 +1106,7 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
     return flags_by_date
 
-def fetch_vndirect_dchart(symbol, tf="1D", limit=400, before_date=None):
+def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
     - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
@@ -1237,9 +1237,9 @@ def api_lightweight_chart(symbol):
     before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 400) or 400)
+        limit = int(request.args.get("limit", 450) or 450)
     except (TypeError, ValueError):
-        limit = 400
+        limit = 450
     limit = max(50, min(1000, limit))
 
     # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
@@ -5994,6 +5994,53 @@ function _liteTryOpenSearchOnKey(e){
   openLiteSearchWithChar(e.key);
   return true;
 }
+// _liteUpdateIndicatorData: phiên bản NHẾ của renderLiteIndicators() — dùng khi dữ liệu đã prepend (lazy-load).
+// CHỈ cập nhật dữ liệu của các series đang có sẵn, KHÔNG destroy/recreate bất kỳ series nào.
+// Nhờ vậy không trigger layout pass thừa → hoàn toàn không giật/nhấp nháy.
+function _liteUpdateIndicatorData(){
+  if(!_liteChart)return;
+  _liteIndicatorSeries.forEach(s=>{
+    if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
+    else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
+    else if(s.kind==='bb-upper'||s.kind==='bb-mid'||s.kind==='bb-lower'){/* handled below */}
+  });
+  // BB: tính 1 lần, cập nhật 3 series
+  const bbEntry=_liteIndicatorSeries.find(s=>s.kind==='bb-upper');
+  if(bbEntry){
+    const bb=_bbands(_liteData,20,2);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-upper').series.setData(bb.upper);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-mid').series.setData(bb.mid);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-lower').series.setData(bb.lower);
+    _liteBBFillData={upper:bb.upper,lower:bb.lower,color:_liteIndColors.bb};
+  }
+  // Trend cloud
+  if(_liteTrendFillData){
+    _liteTrendFillData=_trendCloudData(_liteData,LITE_TREND_PERIOD,LITE_TREND_MULT,_liteTrendMode());
+  }
+  // RSI
+  if(_liteRsiCrosshairSeries){
+    const rsiAligned=alignLiteSeries(_rsi(_liteData,LITE_RSI_PERIOD));
+    _liteRsiCrosshairSeries.setData(rsiAligned);
+    // RSI các đường nằm ngang (70/50/30/band) không đổi theo số nến — bỏ qua, tiết kiệm CPU.
+  }
+  // MACD
+  if(_liteMacdCrosshairSeries){
+    const m=_macd(_liteData);
+    const histEntry=_liteIndicatorSeries.find(s=>s.chart===_liteMacdChart&&s.series!==_liteMacdCrosshairSeries&&_liteIndicatorSeries.indexOf(s)>_liteIndicatorSeries.indexOf(_liteIndicatorSeries.find(x=>x.series===_liteMacdCrosshairSeries))-2);
+    // Tìm series histogram (loại HistogramSeries) và signal line trong MACD panel
+    const macdPanelSeries=_liteIndicatorSeries.filter(s=>s.chart===_liteMacdChart);
+    if(macdPanelSeries.length>=3){
+      const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
+      macdPanelSeries[0].series.setData(histScaled);
+      macdPanelSeries[1].series.setData(alignLiteSeries(m.macd));
+      macdPanelSeries[2].series.setData(alignLiteSeries(m.signal));
+    }
+  }
+  // Volume: cập nhật data màu (giữ đúng VPA)
+  const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
+  _liteRefreshVolumeTop(showVpaVol);
+  redrawLiteDrawings();
+}
 function renderLiteIndicators(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   const prevRange=_liteGetVisibleLogicalRange();
@@ -6139,7 +6186,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=400');
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
     if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
@@ -6274,7 +6321,9 @@ async function _liteFetchMoreHistory(){
     const prependCount=newBars.length;
     // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
     _liteCandle.setData(_liteData);
-    renderLiteIndicators();
+    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu
+    // các series đang có sẵn, KHÔNG destroy/recreate → loại bỏ hoàn toàn hiện tượng giật.
+    _liteUpdateIndicatorData();
     // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData()
     // gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
     if(prevRange){
