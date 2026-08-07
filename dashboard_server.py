@@ -4218,41 +4218,33 @@ function _liteCleanSym(v){
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Gắn sự kiện làm sạch ký tự cho ô nhập mã. Mã CK luôn chỉ gồm A-Z0-9 nên chặn THẲNG mọi ký tự
-// khác NGAY TỪ LÚC CHÈN (beforeinput) thay vì để gõ vào rồi mới "dọn" sau — đây là lý do cách cũ
-// (chỉ dựa vào compositionstart/compositionend) vẫn bị lặp chữ: Unikey kiểu gõ hệ điều hành (khác
-// IME phần mềm) không phát sinh sự kiện composition của trình duyệt, nó gõ ký tự có dấu bằng cách tự
-// gửi liên tiếp lệnh xoá lùi + gõ đè — mỗi lệnh đó đều là 1 sự kiện 'beforeinput' riêng, nên vẫn bắt
-// được và chặn được ở đây dù không có composition. Chặn xong thì ô input KHÔNG BAO GIỜ nhận ký tự có
-// dấu để mà phải "dọn", nên hết hẳn hiện tượng tự gõ đè gây lặp chữ.
+// Gắn sự kiện làm sạch ký tự cho ô nhập mã — ÁP DỤNG CÙNG TRIẾT LÝ với ô tìm kiếm ở header
+// (#hmap-search, #popup-search, #mob-search dùng _bindSearch): TUYỆT ĐỐI KHÔNG ghi đè el.value
+// giữa lúc người dùng còn đang gõ. Bản cũ từng thử "dọn" ngay trong lúc gõ (chặn ở beforeinput +
+// ghi lại el.value mỗi sự kiện input) để vừa auto-uppercase vừa auto-tìm sau khi ngừng gõ — nhưng
+// với Unikey kiểu gõ hệ điều hành (gõ dấu bằng cách tự gửi liên tiếp lệnh xoá lùi + gõ đè, không
+// phát sinh composition của trình duyệt), việc code ghi đè el.value xen giữa đúng lúc đó chính là
+// nguyên nhân gây lặp ký tự đầu — vì code và Unikey cùng đụng vào value trong cùng một khoảng rất
+// ngắn. Ô tìm kiếm ở header không có lỗi này chỉ vì nó không đụng vào value lúc đang gõ, mà đợi tới
+// khi gõ xong (Enter) mới đọc 1 lần. Ở đây áp dụng đúng nguyên tắc đó: chỉ "dọn" (viết hoa, bỏ dấu,
+// loại ký tự lạ) tại các ĐIỂM CHỐT đã gõ xong — hết giờ debounce tự-tìm, bấm Enter, hoặc rời focus
+// (blur) — không bao giờ đụng vào value giữa chừng lúc còn đang gõ.
 function _liteBindSymInput(el,onClean){
-  if(!el)return;
-  let composing=false,_busy=false;
+  if(!el)return ()=>'';
+  let timer=null;
   function _apply(){
-    if(_busy)return;
-    _busy=true;
+    clearTimeout(timer);timer=null;
     const raw=_liteCleanSym(el.value);
-    el.value=raw;      // programmatic set — không fire input nhờ _busy guard
-    _busy=false;
+    if(el.value!==raw)el.value=raw; // chỉ ghi khi thực sự đã đến điểm chốt, không còn đang gõ dở
     onClean(raw);
+    return raw;
   }
-  el.addEventListener('beforeinput',e=>{
-    // e.data=null với các thao tác không chèn ký tự (xoá, di chuyển con trỏ...) — bỏ qua, chỉ chặn
-    // khi thật sự có nội dung sắp chèn và nội dung đó chứa ký tự ngoài A-Z0-9 (chữ có dấu, khoảng
-    // trắng, ký tự đặc biệt...). Cho qua a-z thường để _apply() phía dưới tự viết hoa như trước.
-    if(e.data&&/[^A-Za-z0-9]/.test(e.data))e.preventDefault();
+  el.addEventListener('input',()=>{
+    clearTimeout(timer);
+    timer=setTimeout(_apply,300); // đợi ngừng gõ 300ms (đủ để Unikey/IME ổn định xong) rồi mới dọn
   });
-  el.addEventListener('compositionstart',()=>{composing=true;});
-  el.addEventListener('compositionend',()=>{
-    composing=false;
-    // Defer 1 tick: để IME commit xong hoàn toàn rồi mới đọc giá trị ô input,
-    // tránh đọc trúng chuỗi chưa ổn định → nhân đôi ký tự đầu tiên.
-    setTimeout(_apply,0);
-  });
-  el.addEventListener('input',e=>{
-    if(_busy||composing||e.isComposing)return;
-    _apply();
-  });
+  el.addEventListener('blur',_apply);
+  return _apply; // trả về hàm dọn-ngay để nơi gọi dùng khi cần chốt tức thì (vd: bấm Enter)
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
   const out=[];
@@ -6470,14 +6462,18 @@ function bindLiteChartControls(){
   bindLiteIndColorPickers();
   bindLiteIndGroupDropdowns();
   bindLiteDrawToolbar();
-  _liteBindSymInput(DOM.liteChartInput,raw=>{
+  const _liteApplyChartInput=_liteBindSymInput(DOM.liteChartInput,raw=>{
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
   });
   DOM.liteChartInput?.addEventListener('keydown',e=>{
     if(e.key==='Enter'){
+      // _liteApplyChartInput() tự chạy lại onClean(raw) bên trong (xem _liteBindSymInput), mà onClean
+      // lại đặt lịch _liteInputTimer 450ms để tự tải chart — nên PHẢI clearTimeout SAU khi gọi apply(),
+      // không phải trước, kẻo còn sót 1 lịch tải chart thừa chạy ngầm 450ms sau khi Enter đã tải xong.
+      const raw=_liteApplyChartInput(); // chốt dọn ngay (không đợi 300ms) rồi mới tìm
       if(_liteInputTimer)clearTimeout(_liteInputTimer);
-      loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
+      loadLiteChart(raw||_liteSymbol,0);
     }
   });
   DOM.liteChartTf?.addEventListener('click',e=>{
@@ -6558,14 +6554,24 @@ function bindLiteChartControls(){
     if(!_litePointerInside)return;
     _liteTryOpenSearchOnKey(e);
   });
-  _liteBindSymInput(DOM.liteChartSearch,raw=>{
-    resizeLiteSearchInput();
+  const _liteApplyChartSearch=_liteBindSymInput(DOM.liteChartSearch,raw=>{
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
   });
+  // Đổi độ rộng theo số ký tự ngay khi gõ: chỉ ĐỌC độ dài value, không ghi lại value nên an toàn,
+  // không đụng vào cơ chế "chốt mới dọn" ở trên. Đã lo hết việc resize theo từng phím gõ nên KHÔNG
+  // cần gọi lại resizeLiteSearchInput() trong onClean phía trên nữa (trùng việc, tốn công vô ích).
+  DOM.liteChartSearch?.addEventListener('input',resizeLiteSearchInput);
   DOM.liteChartSearch?.addEventListener('keydown',e=>{
     if(e.key==='Escape'){DOM.liteChartSearch.classList.remove('on');DOM.liteChartFrame.focus();}
-    if(e.key==='Enter'&&DOM.liteChartSearch.value){DOM.liteChartSearch.classList.remove('on');loadLiteChart(DOM.liteChartSearch.value,0);}
+    if(e.key==='Enter'&&DOM.liteChartSearch.value){
+      // Xem chú thích ở nhánh Enter của #lite-chart-input phía trên: clearTimeout PHẢI đứng SAU
+      // apply(), vì apply() tự chạy onClean() đặt lịch _liteInputTimer mới — clear trước sẽ vô ích.
+      const raw=_liteApplyChartSearch(); // chốt dọn ngay rồi mới tìm
+      if(_liteInputTimer)clearTimeout(_liteInputTimer);
+      DOM.liteChartSearch.classList.remove('on');
+      loadLiteChart(raw,0);
+    }
   });
   DOM.liteMacdResizer?.addEventListener('pointerdown',e=>{
     e.preventDefault();
