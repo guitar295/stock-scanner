@@ -2867,7 +2867,43 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .tri-tabs [data-tab="fireant"],
   #tri-content-fireant{display:none !important}
 
-  #lite-chart-panel{display:none !important}
+  /* ─── Panel CHART trên mobile ───────────────────────────────────────────
+     Trước đây bị display:none hẳn. Giờ hiện lại nhưng thiết kế riêng bề rộng/
+     chiều cao cho màn hẹp: toolbar (search/tf/indicators/vẽ) quá nhiều nút để
+     nhét vừa 1-2 hàng trên ~360-420px, nên cho cuộn ngang 1 hàng duy nhất
+     (giống cách .hmap-hdr-row1 đã làm ở trên) thay vì wrap xuống nhiều hàng
+     làm chart bị đẩy xuống quá sâu. Khung chart hạ từ 720px (cố định cho
+     desktop) xuống theo % chiều cao màn hình, có min/max để không quá lùn
+     trên máy nhỏ hoặc quá cao khi xoay ngang. Toàn bộ khối này chỉ áp dụng
+     trong @media(max-width:768px) nên KHÔNG ảnh hưởng gì tới desktop. */
+  #lite-chart-panel{display:block}
+  .lite-chart-toolbar{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    padding-bottom:2px;
+  }
+  .lite-chart-toolbar::-webkit-scrollbar{display:none}
+  .lite-chart-toolbar>*{flex-shrink:0}
+  .lite-indicators{flex-wrap:nowrap}
+  .lite-draw-toolbar{flex-wrap:nowrap}
+  .lite-chart-input{width:80px}
+  .lite-chart-input:focus{width:96px}
+  .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
+  .lite-groups-sidebar{width:150px}
+  .lite-groups-sidebar.on~.lite-vietstock-iframe{left:150px;width:calc(100% - 150px)}
+  .lite-groups-sidebar.on+.lite-chart-title,
+  .lite-groups-sidebar.on~.lite-chart-signal{left:162px}
+  .lite-groups-sidebar.on~.lite-chart-bigprice{left:150px}
+  .lite-chart-bigprice .bp-price{font-size:16px}
+  .lite-alert-panel{width:calc(100vw - 28px)}
+}
+@media screen and (max-width:768px) and (orientation:landscape){
+  /* Xoay ngang: rộng hơn portrait nên khung chart có thể cao hơn 1 chút mà
+     vẫn còn chỗ cho toolbar + phần dashboard phía trên. */
+  .lite-chart-frame{height:72vh;max-height:640px}
 }
 
 /* ═══════════════════════════════════════════
@@ -4471,7 +4507,11 @@ function alignLiteSeries(points){
 function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  const totalH=720;
+  // Đọc chiều cao THỰC TẾ của khung (.lite-chart-frame) thay vì số cố định 720 — trên
+  // desktop CSS vẫn set height:720px nên giá trị này luôn ra đúng 720 y hệt trước đây
+  // (không đổi hành vi desktop); trên mobile CSS đặt chiều cao khác (vd 56vh, xem
+  // @media(max-width:768px)) nên totalH tự khớp theo, chart không bị tràn/hụt khung.
+  const totalH=(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
