@@ -6,14 +6,12 @@ from flask import Flask, jsonify, Response, request, session, send_from_director
 from functools import wraps
 from io import BytesIO
 from pathlib import Path
-import base64
 import gzip
 import hmac
 import json
 import math
 import os
 import requests
-import urllib.request
 import sqlite3
 import threading
 import time
@@ -93,10 +91,6 @@ _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
 _fetch_market_health_fn = None
-_fetch_chart_fn = None
-_fetch_chart_15m_fn = None
-_ensure_chart_symbol_fn = None
-_chart_symbol_status_fn = None
 _vol_forecast_fn = None
 # Hàm tính vpa_flag (calc_vpa_flag bên scanner_full.py) — inject qua
 # start_dashboard(calc_vpa_flag_fn=...) để panel CHART tô màu Volume-Signal
@@ -469,10 +463,6 @@ def api_proprietary_flow():
         print(f"  [Dashboard] ❌ Fetch dữ liệu tự doanh lỗi: {e}")
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
-
-_chart_cache: dict = {}
-_chart_lock = threading.Lock()
-CHART_TTL_SEC = 120
 
 # Màu cột Volume: 0=trung tính (xanh/đỏ theo close-open), 1=cảnh báo suy yếu
 # (gate xu hướng + Nhánh1-biến A / upThrustBar / topRevBar), 2=tín hiệu tích
@@ -891,33 +881,6 @@ def _uploaded_ext(filename):
 # =============================================================================
 # API
 # =============================================================================
-def _serve_chart_images(symbol, fetch_fn, cache_key, label):
-    symbol = symbol.upper().strip()
-    now = time.time()
-    with _chart_lock:
-        cached = _chart_cache.get(cache_key)
-        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
-            return jsonify({"symbol": symbol, "images": cached["images"],
-                            "labels": cached["labels"], "cached": True})
-    if not fetch_fn:
-        return jsonify({"error": f"{label}_fn_not_registered"}), 503
-    try:
-        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [Dashboard] 📊 Tạo {label} {symbol}...")
-        png_list, labels = fetch_fn(symbol)
-        if not png_list:
-            return jsonify({"error": "no_data"}), 404
-        b64_list = [base64.b64encode(b).decode() for b in png_list]
-        with _chart_lock:
-            _chart_cache[cache_key] = {"images": b64_list, "labels": labels,
-                                       "updated_at": time.time()}
-        print(f"  [Dashboard] ✅ {label} {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
-        return jsonify({"symbol": symbol, "images": b64_list,
-                        "labels": labels, "cached": False})
-    except Exception as e:
-        print(f"  [Dashboard] ❌ {label} {symbol} lỗi: {e}")
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
@@ -1002,16 +965,6 @@ def api_market_health():
     # (xem fetchHealth() ở JS) thay vì tưởng đã có số mới rồi đợi hết TTL mới hỏi lại.
     payload["pending_refresh"] = pending_refresh
     return jsonify(_json_safe(payload))
-
-@app.route("/api/chart_images/<symbol>")
-def api_chart_images(symbol):
-    symbol = symbol.upper().strip()
-    return _serve_chart_images(symbol, _fetch_chart_fn, symbol, "chart")
-
-@app.route("/api/chart_image_15m/<symbol>")
-def api_chart_image_15m(symbol):
-    symbol = symbol.upper().strip()
-    return _serve_chart_images(symbol, _fetch_chart_15m_fn, f"{symbol}:15m", "chart_15m")
 
 @app.route("/api/vol_forecast/<symbol>")
 def api_vol_forecast(symbol):
@@ -1308,18 +1261,6 @@ def api_status():
     cache = _get_history_cache() if _get_history_cache else {}
     return jsonify({"status": "running", "cache_symbols": len(cache),
                     "server_time": datetime.now(TZ_VN).strftime("%H:%M:%S %d/%m/%Y")})
-
-@app.route("/api/chart_cache_clear/<symbol>", methods=["DELETE"])
-def api_chart_cache_clear(symbol):
-    symbol = symbol.upper().strip()
-    with _chart_lock:
-        removed = symbol in _chart_cache or f"{symbol}:15m" in _chart_cache
-        _chart_cache.pop(symbol, None)
-        _chart_cache.pop(f"{symbol}:15m", None)
-    with _lite_chart_cache_lock:
-        for tf in ("1D", "1W", "1M", "D", "W", "M"):
-            _lite_chart_cache.pop((symbol, tf), None)
-    return jsonify({"symbol": symbol, "cleared": removed})
 
 @app.route("/api/config")
 def api_config():
@@ -1697,11 +1638,6 @@ def api_journal_delete_image(image_id):
         pass
     return jsonify({"ok": True})
 
-@app.route("/popout_full/<symbol>")
-def popout_full(symbol):
-    return Response(POPOUT_FULL_HTML.replace("__SYMBOL__", symbol.upper().strip()),
-                    mimetype="text/html")
-
 @app.route("/")
 def index():
     # __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ giờ nằm trong DASHBOARD_MAIN_JS (đã tách ra
@@ -1732,16 +1668,13 @@ def dashboard_main_js():
 # =============================================================================
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
-                    fetch_chart_fn=None, fetch_chart_15m_fn=None,
-                    ensure_chart_symbol_fn=None,
-                    chart_symbol_status_fn=None,
                     vol_forecast_fn=None,
                     calc_vpa_flag_fn=None,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -1751,10 +1684,6 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_market_health_fn = fetch_market_health_fn
-    _fetch_chart_fn    = fetch_chart_fn
-    _fetch_chart_15m_fn = fetch_chart_15m_fn
-    _ensure_chart_symbol_fn = ensure_chart_symbol_fn
-    _chart_symbol_status_fn = chart_symbol_status_fn
     _vol_forecast_fn   = vol_forecast_fn
     _calc_vpa_flag_fn  = calc_vpa_flag_fn
     _signal_emoji      = signal_emoji_ref
@@ -1767,275 +1696,8 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
 
     threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
+    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s")
 
-# =============================================================================
-# POPOUT FULL HTML
-# =============================================================================
-POPOUT_FULL_HTML = r"""<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Full Chart — __SYMBOL__</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<script>
-try{
-  const qs=new URLSearchParams(window.location.search);
-  if(qs.get('embedded')==='1')
-    document.documentElement.classList.add('embedded-popout');
-}catch(e){}
-</script>
-<style>
-:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace}
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;overflow:hidden}
-body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
-.page{height:100vh;display:flex;flex-direction:column}
-.phdr{display:flex;align-items:center;justify-content:center;padding:7px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
-html.embedded-popout .phdr{display:none !important}
-.phdr-center{display:flex;align-items:flex-end;justify-content:center}
-.phdr-right{display:flex;align-items:center;justify-content:flex-end}
-.ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center}
-.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
-.ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
-.ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
-.phdr-right{margin-left:2px}
-.closebtn{width:30px;height:30px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
-.closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
-.pbody{flex:1;overflow:hidden;position:relative;background:#fff}
-.tpanel{position:absolute;inset:0;display:none}
-.tpanel.on{display:block}
-.tpanel iframe{width:100%;height:100%;border:none;display:block}
-#panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
-#panel-scanner.on{display:flex}
-.scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
-.album-outer{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:6px;gap:6px;background:#fff;scrollbar-width:thin}
-.album-slide{display:none;flex-direction:column;align-items:center;width:100%}
-.album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(100vh - 140px);object-fit:contain;border-radius:3px;border:1px solid var(--border)}
-.album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0}
-.album-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;user-select:none}
-.album-nav-btn:hover:not(.disabled){background:var(--accent);color:#fff;border-color:var(--accent)}
-.album-nav-btn.disabled{opacity:.25;pointer-events:none}
-.album-dots-wrap{display:flex;gap:6px;align-items:center}
-.album-dot{width:8px;height:8px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
-.album-dot.on{background:var(--accent);transform:scale(1.3)}
-.album-refresh-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.album-refresh-btn:hover{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
-.album-refresh-btn.spinning span{display:inline-block;animation:spin .7s linear infinite}
-.album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 6px;flex-shrink:0}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-@media (min-width: 769px) {
-    body.embedded-popout-desktop .phdr{display:none !important}
-  }
-@media(max-width:980px){
-  .phdr{grid-template-columns:1fr;gap:8px}
-  .phdr-center,.phdr-right{justify-content:center}
-}
-@media(max-width:768px){
-  .phdr{display:flex !important;align-items:center !important;justify-content:flex-start !important;padding:4px 6px !important;gap:4px !important}
-  .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
-  .phdr-right{display:flex !important;flex-shrink:0}
-  .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch}
-  .ctabs::-webkit-scrollbar{display:none}
-  .ctab{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
-  .ctab.on{border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent)}
-  .closebtn{width:30px;height:30px;border-radius:4px;flex-shrink:0}
-}
-</style>
-</head>
-<body>
-<div class="page">
-  <div class="phdr">
-    <div class="phdr-center">
-      <div class="ctabs" id="ctabs">
-        <button class="ctab on" data-tab="vs">📈 Vietstock</button>
-        <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
-        <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-        <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
-        <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="ctab" data-tab="24h">💬 Fireant</button>
-      </div>
-    </div>
-    <div class="phdr-right">
-      <button class="closebtn" id="close-btn">✕</button>
-    </div>
-  </div>
-  <div class="pbody">
-    <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-scanner">
-      <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
-      <div class="album-outer" id="album-outer" style="display:none">
-        <div class="album-center"><div id="album-slides"></div></div>
-        <div class="album-nav-bar">
-          <button class="album-nav-btn disabled" id="btn-prev">&#9664;</button>
-          <div class="album-dots-wrap" id="album-dots"></div>
-          <button class="album-nav-btn" id="btn-next">&#9654;</button>
-          <button class="album-refresh-btn" id="btn-refresh"><span>&#8635;</span></button>
-        </div>
-        <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
-      </div>
-    </div>
-    <div class="tpanel" id="panel-vnd-cs"><iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-vnd-news"><iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-vnd-sum"><iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-24h"><iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe></div>
-  </div>
-</div>
-<script>
-'use strict';
-const $=id=>document.getElementById(id);
-const DOM={
-  ifVs:$('iframe-vs'),
-  loading:$('scanner-loading'),outer:$('album-outer'),
-  slides:$('album-slides'),dots:$('album-dots'),
-  btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
-  ctabs:$('ctabs'),
-};
-const IFRAME_MAP={
-  'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
-  'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://fireant.vn/ma-chung-khoan/${s}`,
-};
-const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
-let _sym='__SYMBOL__',_tab='vs';
-let _albumIdx=0,_albumTotal=0,_albumImages=[];
-function _applyEmbeddedMode(){
-  const qs=new URLSearchParams(window.location.search);
-  const isEmbedded = qs.get('embedded')==='1';
-  const isMobile = (window.innerWidth <= 768);
-  document.documentElement.classList.toggle('embedded-popout', isEmbedded);
-  document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
-  document.body.classList.toggle('embedded-popout-desktop', isEmbedded && !isMobile);
-}
-window.addEventListener('resize', _applyEmbeddedMode);
-window.addEventListener('orientationchange', _applyEmbeddedMode);
-_applyEmbeddedMode();
-function notifyHost(sym){
-  try{
-    if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
-    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
-  }catch(e){}
-}
-function handleClose(){
-  try{if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_CLOSE',symbol:_sym},'*');}catch(e){}
-  window.close();
-}
-
-DOM.ctabs.addEventListener('click',e=>{
-  const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);
-});
-function _activateTab(tab){
-  _tab=tab;
-  DOM.ctabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
-  if(IFRAME_MAP[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_MAP[tab](_sym);}
-  if(tab==='scanner')loadScannerChart(_sym);
-}
-
-function setSymbol(sym){
-  _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
-  document.title=_sym+' • Full Chart';
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
-  Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
-  DOM.outer.style.display='none';
-  DOM.loading.style.display='flex';
-  DOM.loading.innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-  _activateTab('vs');
-  try{history.replaceState(null,'','/popout_full/'+_sym);}catch(e){}
-  notifyHost(_sym);
-}
-
-function _showAlbum(images){
-  _albumImages=images;_albumTotal=images.length;_albumIdx=0;
-  DOM.slides.innerHTML=images.map((img,i)=>`<div class="album-slide${i===0?' on':''}" data-idx="${i}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`).join('');
-  DOM.dots.innerHTML=images.map((_,i)=>`<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
-  _updateAlbumNav();
-  DOM.outer.style.display='flex';DOM.loading.style.display='none';
-}
-function _appendAlbumImages(images){
-  if(!images.length)return;
-  const start=_albumImages.length;
-  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
-  DOM.slides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`;}).join(''));
-  DOM.dots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
-  _updateAlbumNav();
-}
-DOM.dots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
-DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
-DOM.btnNext.addEventListener('click',()=>albumNav(1));
-function albumGoto(i){
-  if(i<0||i>=_albumTotal)return;
-  DOM.slides.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
-  DOM.dots.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i;_updateAlbumNav();
-}
-function albumNav(dir){albumGoto(_albumIdx+dir);}
-function _updateAlbumNav(){
-  DOM.btnPrev.classList.toggle('disabled',_albumIdx===0);
-  DOM.btnNext.classList.toggle('disabled',_albumIdx===_albumTotal-1);
-}
-DOM.btnRef.addEventListener('click',async()=>{
-  if(!_sym)return;
-  DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
-  try{await fetch('/api/chart_cache_clear/'+_sym,{method:'DELETE'});}catch(e){}
-  DOM.btnRef.classList.remove('spinning');DOM.btnRef.disabled=false;
-  await loadScannerChart(_sym);
-});
-async function loadScannerChart(sym){
-  DOM.outer.style.display='none';DOM.loading.style.display='flex';
-  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
-  try{
-    const r=await fetch('/api/chart_images/'+sym);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
-    const j=await r.json();
-    if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
-    _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent='Đang tải 15m...';
-    loadScannerChart15m(sym);
-  }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
-  }
-}
-async function loadScannerChart15m(sym){
-  const s=(sym||'').toUpperCase().trim();
-  try{
-    const r=await fetch('/api/chart_image_15m/'+s);
-    if(!r.ok){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='';return;}
-    const j=await r.json();
-    if((_sym||'').toUpperCase().trim()!==s)return;
-    if(!j.images?.length)return;
-    const labels=j.labels||['⚡ 15 phút [15m]'];
-    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
-    const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }catch(e){
-    const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }
-}
-document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){window.close();return;}
-  if(_tab!=='scanner'||_albumTotal===0)return;
-  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
-  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
-});
-$('close-btn').addEventListener('click',handleClose);
-window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
-_applyEmbeddedMode();
-setSymbol(_sym);
-</script>
-</body>
-</html>
-"""
 
 # =============================================================================
 # TRADE JOURNAL HTML
@@ -2303,8 +1965,21 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Scanner Dashboard</title>
+<!-- Cửa sổ CHART popout (?chartPopout=1, xem openChartPopout()) chỉ cần hiện panel CHART,
+     ẩn hết phần còn lại của dashboard — class chart-popout-mode trước đây chỉ được JS ở
+     cuối trang gắn vào <body> SAU KHI toàn bộ dashboard-main.js tải/parse xong, nên người
+     dùng thấy cả trang dashboard load nháy lên rồi mới thu về đúng mỗi chart. Gắn class này
+     vào <html> NGAY TỪ ĐẦU <head> (chạy đồng bộ, trước khi <body> được parse/paint) để CSS
+     bên dưới ẩn mọi thứ trừ panel CHART ngay từ lần vẽ đầu tiên — bỏ qua hẳn cảnh load full
+     dashboard rồi mới nhảy vào chart. -->
+<script>
+try{
+  if(new URLSearchParams(window.location.search).get('chartPopout')==='1')
+    document.documentElement.classList.add('chart-popout-mode');
+}catch(e){}
+</script>
 <!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
      viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
      tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
@@ -2520,11 +2195,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
-/* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
-body.chart-popout-mode>header,
-body.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
-body.chart-popout-mode #main-wrap{padding:8px}
-body.chart-popout-mode #lite-chart-popout-btn{display:none}
+/* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard.
+   Dùng selector html.chart-popout-mode (thay vì body.chart-popout-mode) vì class này giờ
+   được gắn vào <html> ngay từ đầu <head> — xem script inline phía trên — để có hiệu lực
+   ngay từ lần vẽ đầu tiên, không đợi JS cuối trang chạy xong mới ẩn. */
+html.chart-popout-mode>body>header,
+html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
+html.chart-popout-mode #main-wrap{padding:8px}
+html.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -2731,30 +2409,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
 /* ═══════════════════════════════════════════
-   ALBUM — dùng chung
-   ═══════════════════════════════════════════ */
-#panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
-#panel-scanner.on{display:flex}
-.scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
-.album-outer{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px;gap:4px;background:#fff;scrollbar-width:thin}
-.album-slide{display:none;flex-direction:column;align-items:center;width:100%}
-.album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid var(--border)}
-.album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0}
-.album-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;user-select:none}
-.album-nav-btn:hover:not(.disabled){background:var(--accent);color:#fff;border-color:var(--accent)}
-.album-nav-btn.disabled{opacity:.25;pointer-events:none}
-.album-dots-wrap{display:flex;gap:6px;align-items:center}
-.album-dot{width:8px;height:8px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
-.album-dot.on{background:var(--accent);transform:scale(1.3)}
-.album-refresh-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.album-refresh-btn:hover{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
-.album-refresh-btn.spinning span{display:inline-block;animation:spin .7s linear infinite}
-.album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;flex-shrink:0}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* ═══════════════════════════════════════════
    HOVER PREVIEW
    ═══════════════════════════════════════════ */
 #hover-preview-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;min-height:120px;max-height:90vh;z-index:500;background:var(--surface);border-top:2px solid var(--accent);box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column}
@@ -2838,18 +2492,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .vnd-chart-area{height:220px}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
-  .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
-  #hmap-popout-btn:hover, #hmap-popout-btn:focus {
-    background: var(--surface) !important;
-    color: var(--muted) !important;
-    border-color: var(--border) !important;
-  }
-  #hmap-popout-btn:active {
-    background: var(--surf2) !important;
-    color: var(--text) !important;
-    border-color: var(--border) !important;
-  }
   .sankey-wrap{
     width:100% !important;
     margin-left:0 !important;
@@ -2867,7 +2510,65 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .tri-tabs [data-tab="fireant"],
   #tri-content-fireant{display:none !important}
 
-  #lite-chart-panel{display:none !important}
+  /* ─── Panel CHART trên mobile & iPhone ───────────────────────────────────
+     Bật và tối ưu hiển thị/thao tác panel CHART trên thiết bị di động:
+     - Khung toolbar cuộn ngang 1 hàng mượt mà bằng tay trên iPhone (-webkit-overflow-scrolling: touch).
+     - Loại bỏ hiện tượng tự động phóng to (zoom) của iOS Safari khi chạm vào ô input (font-size 16px).
+     - Hỗ trợ safe area insets cho iPhone có notch / Dynamic Island và thanh Home bar.
+     - Hiển thị bảng chỉ báo (Indicators) dạng bottom sheet nổi tiện chạm trên màn hình nhỏ. */
+  #lite-chart-panel{display:block}
+  .lite-chart-toolbar{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    padding-bottom:2px;
+  }
+  .lite-chart-toolbar::-webkit-scrollbar{display:none}
+  .lite-chart-toolbar>*{flex-shrink:0}
+  .lite-indicators{flex-wrap:nowrap}
+  .lite-draw-toolbar{flex-wrap:nowrap}
+  .lite-chart-input{width:90px;font-size:16px !important}
+  .lite-chart-input:focus{width:110px}
+  .mob-search-input, .mob-land-search, .popup-search-input, .hmap-search-input {
+    font-size: 16px !important;
+  }
+  button, input, select, .ctab, .mob-tab-btn, .mob-land-tab, .lite-draw-btn, .lite-tf-btn, .lite-ind-group-btn {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #lite-chart {
+    touch-action: pan-x pan-y;
+  }
+  .lite-ind-dropdown {
+    position: fixed !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    top: auto !important;
+    bottom: 20px !important;
+    width: min(340px, 92vw) !important;
+    max-height: 55vh !important;
+    overflow-y: auto !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
+    border-radius: 12px !important;
+    z-index: 99999 !important;
+    padding: 12px 16px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
+  .lite-groups-sidebar{width:150px}
+  .lite-groups-sidebar.on~.lite-vietstock-iframe{left:150px;width:calc(100% - 150px)}
+  .lite-groups-sidebar.on+.lite-chart-title,
+  .lite-groups-sidebar.on~.lite-chart-signal{left:162px}
+  .lite-groups-sidebar.on~.lite-chart-bigprice{left:150px}
+  .lite-chart-bigprice .bp-price{font-size:16px}
+  .lite-alert-panel{width:calc(100vw - 28px)}
+}
+@media screen and (max-width:768px) and (orientation:landscape){
+  /* Xoay ngang: rộng hơn portrait nên khung chart có thể cao hơn 1 chút mà
+     vẫn còn chỗ cho toolbar + phần dashboard phía trên. */
+  .lite-chart-frame{height:72vh;max-height:640px}
 }
 
 /* ═══════════════════════════════════════════
@@ -3035,9 +2736,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     display:none !important;
   }
 
-  /* Album img cao hơn khi landscape */
-  .album-slide img{max-height:calc(100dvh - 50px)}
-
   /* FIX #5 Landscape: hover preview tabs dễ nhấn hơn — tăng chiều cao và vùng chạm */
   .hv-gtab{
     height:40px !important;
@@ -3051,26 +2749,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   }
 }
 
-/* ═══════════════════════════════════════════
-   MOBILE LIGHTBOX
-   ═══════════════════════════════════════════ */
-#mob-lightbox{display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow:hidden;touch-action:none}
-#mob-lightbox.on{display:block}
-#lb-viewport{position:absolute;inset:0;overflow:hidden}
-#lb-strip{display:flex;height:100%}
-#lb-strip.dragging{will-change:transform}
-#lb-strip.snapping{transition:transform .32s cubic-bezier(.25,.46,.45,.94)}
-.lb-slide{flex-shrink:0;width:100vw;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.lb-slide img{max-width:100vw;max-height:100dvh;object-fit:contain;display:block;transform-origin:center;user-select:none;-webkit-user-drag:none;pointer-events:none}
-.lb-slide img.zooming{will-change:transform;transition:none}
-#mob-lightbox-close{position:absolute;top:14px;right:14px;width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.07);border:1px solid rgba(0,0,0,.15);color:#333;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:10;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-#mob-lightbox-close:active{background:rgba(0,0,0,.2)}
-#mob-lightbox-counter{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;z-index:10;pointer-events:none}
-.mob-lb-dot{width:7px;height:7px;border-radius:50%;background:rgba(0,0,0,.18);transition:all .2s}
-.mob-lb-dot.on{background:var(--accent);transform:scale(1.4)}
-#mob-lightbox-label{position:absolute;top:16px;left:50%;transform:translateX(-50%);color:rgba(30,30,30,.85);font-family:var(--font-mono);font-size:12px;white-space:nowrap;z-index:10;pointer-events:none;background:rgba(0,0,0,.08);padding:3px 12px;border-radius:20px}
-#lb-zoom-hint{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.45);color:#fff;font-family:var(--font-mono);font-size:10px;padding:3px 10px;border-radius:20px;z-index:11;pointer-events:none;opacity:0;transition:opacity .3s;white-space:nowrap}
-#lb-zoom-hint.show{opacity:1}
 #edge-swipe-zone{position:fixed;left:0;top:0;width:30px;height:100%;z-index:10000;display:none;touch-action:pan-y}
 #edge-swipe-zone.on{display:block}
 
@@ -3125,7 +2803,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         </div>
         <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
         <button id="hover-preview-btn">Chart: OFF</button>
-        <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
       <span class="hmap-toggle-icon">▶</span>
@@ -3519,7 +3196,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <div style="display:flex;gap:4px;align-items:center;margin-left:auto;padding-right:4px;flex-shrink:0">
       <button class="hv-ctrl" id="hv-sort-btn" style="display:none">A↕Z</button>
       <button class="hv-ctrl" id="hv-full-btn"> ⛶ </button>
-      <button class="hv-ctrl" id="hv-pop-btn"> ⧉ </button>
       <button class="hv-ctrl danger" id="hv-close-btn"> ✕ </button>
     </div>
   </div>
@@ -3550,7 +3226,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="phdr-center">
         <div class="ctabs" id="popup-ctabs">
           <button class="ctab on" data-tab="vs">📈 Vietstock</button>
-          <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
+          <button class="ctab" data-tab="chart">📊 Chart</button>
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
           <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
           <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
@@ -3574,7 +3250,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <!-- Mobile portrait header — Row 2: tabs cuộn -->
     <div class="mob-tab-row" id="mob-tab-row" style="display:none">
       <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
-      <button class="mob-tab-btn" data-tab="scanner">🖼 Scanner</button>
+      <button class="mob-tab-btn" data-tab="chart">📊 Chart</button>
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
       <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
       <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
@@ -3590,7 +3266,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       </div>
       <div class="mob-land-tabs" id="mob-land-tabs">
         <button class="mob-land-tab on" data-tab="vs">📈 Vietstock</button>
-        <button class="mob-land-tab" data-tab="scanner">🖼 Scanner</button>
+        <button class="mob-land-tab" data-tab="chart">📊 Chart</button>
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
@@ -3602,19 +3278,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 
     <div class="pbody">
       <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
-      <div class="tpanel" id="panel-scanner">
-        <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
-        <div class="album-outer" id="album-outer" style="display:none">
-          <div class="album-center"><div id="album-slides"></div></div>
-          <div class="album-nav-bar">
-            <button class="album-nav-btn disabled" id="btn-prev">&#9664;</button>
-            <div class="album-dots-wrap" id="album-dots"></div>
-            <button class="album-nav-btn" id="btn-next">&#9654;</button>
-            <button class="album-refresh-btn" id="btn-refresh"><span>&#8635;</span></button>
-          </div>
-          <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
-        </div>
-      </div>
+      <div class="tpanel" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-cs"><iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-news"><iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-sum"><iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe></div>
@@ -3623,14 +3287,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   </div>
 </div>
 
-<!-- LIGHTBOX -->
-<div id="mob-lightbox">
-  <div id="lb-viewport"><div id="lb-strip"></div></div>
-  <div id="mob-lightbox-label">📊 Daily [D]</div>
-  <button id="mob-lightbox-close">✕</button>
-  <div id="mob-lightbox-counter"></div>
-  <div id="lb-zoom-hint">Chụm 2 ngón để zoom</div>
-</div>
 <div id="edge-swipe-zone"></div>
 
 <script src="/static/lightweight-charts.min.js"></script>
@@ -3656,9 +3312,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 # chỉ đổi cách nó được gửi tới trình duyệt.
 DASHBOARD_MAIN_JS = r"""
 'use strict';
-// ═══════════════════════════════════════════════════════
 // DOM CACHE
-// ═══════════════════════════════════════════════════════
 const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
@@ -3727,32 +3381,24 @@ const DOM={
   mobLandSearch:$('mob-land-search'),mobLandTabs:$('mob-land-tabs'),
   // iframes
   ifVs:$('iframe-vs'),
-  // album
-  loading:$('scanner-loading'),albumOuter:$('album-outer'),
-  albumSlides:$('album-slides'),albumDots:$('album-dots'),
-  btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
   // hover
   hpPanel:$('hover-preview-panel'),hpIframe:$('hover-preview-iframe'),
   hpGrouptabs:$('hv-grouptabs'),hpSymlist:$('hv-symlist'),hpSortBtn:$('hv-sort-btn'),
   edgeZone:$('edge-swipe-zone'),mobClose:$('mob-close-float'),
   wrap:$('main-wrap'),footer:$('footer-txt'),
-  lb:$('mob-lightbox'),lbStrip:$('lb-strip'),
-  lbLabel:$('mob-lightbox-label'),lbCounter:$('mob-lightbox-counter'),
-  lbZoomHint:$('lb-zoom-hint'),
   lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
   lgList:$('lite-groups-list'),
 };
-// ═══════════════════════════════════════════════════════
 // HELPERS
-// ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
-  'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
-  'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://fireant.vn/ma-chung-khoan/${s}`,
+  'chart':    s=>`/?chartPopout=1&embedded=1&sym=${encodeURIComponent(s)}`,
+  'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
+  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
+  'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
+  '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
 const BADGE_MAP={
   'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
@@ -3763,8 +3409,7 @@ const SIGNAL_LABEL_MAP={
   'POCKET PIVOT':'POCKET'
 };
 const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
-// Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
-// SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
+// Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
 let _attentTodayMap=new Map();
@@ -3809,10 +3454,8 @@ function editFollowSymbols(){
   renderHeatmap(window._lastHmapData||{});
   return true;
 }
-let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
-let _isPopoutMode=false,_popoutWin=null;
 let _isChartPanelOpen=false;
 let _iframeDelay=null,_keyThrottle=false;
 const LITE_IND_KEY='dashboard_lite_indicators';
@@ -3832,8 +3475,7 @@ function _liteTrendMode(){
   const el=DOM.liteIndicators?.querySelector('input[name="trend-mode"]:checked');
   return el?el.value:'regular';
 }
-// Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch
-// lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
+// Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
 function _liteLSGet(key,fallback){
   try{return localStorage.getItem(key)||fallback;}catch(e){return fallback;}
 }
@@ -3948,16 +3590,9 @@ function _liteSyncVisibleRangeFrom(source,range){
 }
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
-// Mũi tên báo mua: KHÔNG dùng _liteCandle.setMarkers() nữa — bản lightweight-charts@4.2.3 đang dùng
-// luôn tính không gian marker vào autoScale của trục giá (option SeriesMarkersOptions.autoScale để tắt
-// hành vi này chỉ có từ bản 5.0.9), nên mỗi lần bật/tắt Buy-Signal, setMarkers()/setMarkers([]) làm
-// trục giá tính lại range → cả chart bị co giãn dù dữ liệu nến không đổi. Tự vẽ mũi tên lên canvas vẽ
-// tay (_liteDrawCtx, dùng chung với _liteDrawTrendCloud/_liteDrawBBBand) để tách hẳn khỏi autoScale.
+// Mũi tên báo mua tự vẽ canvas (không dùng setMarkers()) vì setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart.
 let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price của nến LUÔN đọc live từ _liteData
-// tại thời điểm vẽ (_liteDrawBuyArrow), không lưu cứng lúc bật tín hiệu — nếu lưu cứng, khi có nến mới
-// chen vào giữa (auto-refresh mỗi 20s đẩy thêm nến qua _liteQuietRefreshChart) mà _liteApplyBuySignal()
-// chưa kịp chạy lại, mũi tên sẽ trỏ vào toạ độ của nến CŨ trong khi trục thời gian đã dịch sang phải
-// nhường chỗ nến mới → mũi tên lệch khỏi tâm nến cuối, trông như nằm ở cạnh nến trước đó.
+// Vị trí mũi tên tính lại tại thời điểm vẽ (không lưu cứng) để luôn khớp nến mới nhất khi auto-refresh chèn nến mới vào giữa.
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
@@ -3967,25 +3602,15 @@ let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
 let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
 let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
-// Phần chung của mọi cấu hình rightPriceScale trong initLiteChart()/applyLitePaneLayout() —
-// borderColor và minimumWidth giống hệt nhau ở cả 3 chart (main/RSI/MACD) và ở mọi lần áp dụng,
-// chỉ scaleMargins (và autoScale ở main/RSI khi đổi layout) là khác nhau nên vẫn để riêng.
+// Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
 const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
-  // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
-  // Lý do: cách cũ dùng applyOptions() để bật/tắt horzLine mỗi khi đổi panel — applyOptions là thao tác
-  // nặng (buộc chart vẽ lại toàn bộ), gọi liên tục theo mousemove nên gây giật/nháy và có lúc lộ ra
-  // đồng thời 2 đường ngang (do độ trễ giữa 2 lệnh applyOptions ở 2 chart). Từ nay chỉ vẽ 1 crosshair
-  // DUY NHẤT bằng overlay DOM riêng (xem _liteMoveXhair/_liteHideXhair) — mượt tuyệt đối vì chỉ set
-  // style.left/top, không đụng tới engine vẽ của lightweight-charts.
+  // Crosshair gốc của thư viện tắt hẳn; dùng overlay DOM riêng (_liteMoveXhair/_liteHideXhair) để mượt, tránh giật/nháy khi applyOptions() chạy liên tục theo mousemove.
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    // shiftVisibleRangeOnNewBar:false — mặc định thư viện TỰ CUỘN chart về bên phải mỗi khi có 1 nến
-    // mới xuất hiện (dù nến đó nằm ngoài vùng đang xem). Auto-refresh 10s (_liteQuietRefreshChart) gọi
-    // _liteCandle.update() liên tục nên hành vi này làm chart "nhảy" về mặc định ngay cả khi user đang
-    // zoom-out/kéo xem vùng khác — tắt hẳn để chart CHỈ đổi vị trí khi chính user thao tác.
+    // Tắt shiftVisibleRangeOnNewBar để auto-refresh không tự cuộn chart về phải, tránh giật view khi user đang xem vùng khác.
     timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET,shiftVisibleRangeOnNewBar:false},
     crosshair:{
       mode:LightweightCharts.CrosshairMode.Normal,
@@ -4016,9 +3641,7 @@ function initLiteChart(){
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  // Series "whitespace" vô hình: chỉ chứa các mốc thời gian tương lai (vùng trống bên phải nến cuối),
-  // giúp time-scale nhận biết vùng này nên subscribeCrosshairMove vẫn trả về param.time hợp lệ khi
-  // trỏ vào vùng trống đó (để overlay crosshair + nhãn ngày vẫn hoạt động, không bị "rớt").
+  // Series whitespace vô hình giữ các mốc thời gian tương lai để crosshair vẫn hoạt động ở vùng trống bên phải nến cuối.
   _liteMainWhite=_liteChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteRsiWhite=_liteRsiChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteMacdWhite=_liteMacdChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
@@ -4036,14 +3659,7 @@ function initLiteChart(){
   _liteMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     _liteSyncVisibleRangeFrom(_liteMacdChart,range);
   });
-  // ─── Crosshair hợp nhất (1 đường dọc + 1 đường ngang) cho cả 2 panel ───────────────────────────
-  // Nguyên lý: KHÔNG dùng crosshair gốc của lightweight-charts nữa (đã tắt hẳn ở chartOpts phía trên).
-  // Mỗi panel tự báo toạ độ con trỏ (x,y cục bộ) qua subscribeCrosshairMove, ta cộng thêm offsetTop
-  // của panel đó so với khung frame để ra toạ độ TUYỆT ĐỐI trong #lite-chart-frame, rồi set thẳng
-  // style.left/top cho 4 phần tử overlay (vạch dọc xuyên suốt cả khung, vạch ngang, nhãn giá, nhãn ngày).
-  // Vì #lite-chart và #lite-macd-chart có cùng chiều rộng & cùng gốc trái (0), toạ độ x của 2 panel
-  // khớp tuyệt đối nhau nên vạch dọc luôn thẳng hàng liền mạch qua cả 2 panel — không lệch, không giật,
-  // vì mỗi lần di chuột chỉ là một phép gán style (rẻ), hoàn toàn không gọi applyOptions/setCrosshairPosition.
+  // Crosshair hợp nhất (1 dọc + 1 ngang) cho cả 2 panel: mỗi panel tự báo toạ độ cục bộ, cộng offsetTop rồi set trực tiếp style.left/top cho overlay — không dùng crosshair gốc/applyOptions() nên mượt, không giật.
   function _liteHideXhair(){
     if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
     if(DOM.liteXhairH)DOM.liteXhairH.style.display='none';
@@ -4068,11 +3684,7 @@ function initLiteChart(){
     const price=series&&series.coordinateToPrice&&series.coordinateToPrice(localY);
     return Number.isFinite(price)?fmtLiteNum(price):'';
   }
-  // _liteHandleCrosshairMove: dùng chung cho cả 3 panel (main/MACD/RSI) — gộp lại từ 3 khối
-  // subscribeCrosshairMove gần như giống hệt nhau trước đây để đỡ lặp code khi cần sửa sau này.
-  // isMain=true GIỮ NGUYÊN thứ tự xử lý gốc của chart chính (luôn cập nhật title kể cả khi con trỏ
-  // rời khỏi chart, để hiện title của nến cuối); isMain=false giữ nguyên hành vi gốc của MACD/RSI
-  // (chỉ cập nhật title khi có điểm trỏ hợp lệ, không có "else" fallback).
+  // _liteHandleCrosshairMove dùng chung cho main/MACD/RSI (gộp từ 3 khối trùng lặp); isMain giữ nguyên hành vi cập nhật title gốc của mỗi loại.
   function _liteHandleCrosshairMove(param,domEl,priceSeries,isMain){
     if(isMain){
       const key=param&&param.time?liteTimeKey(param.time):'';
@@ -4105,9 +3717,7 @@ function initLiteChart(){
       if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
       resizeLiteDrawCanvas();redrawLiteDrawings();
     });
-    // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục);
-    // chỉ thực sự vẽ khi panel Chart đang hiển thị (offsetParent!==null) để không tốn CPU vô ích
-    // lúc người dùng đang ở tab khác của dashboard.
+    // Vẽ lại canvas liên tục để bắt thay đổi price-scale khi zoom trục Y; chỉ chạy khi panel Chart đang hiển thị để tránh tốn CPU.
     const _liteDrawLoop=()=>{
       if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData))redrawLiteDrawings();
       requestAnimationFrame(_liteDrawLoop);
@@ -4122,9 +3732,7 @@ function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
   DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-    // maema_on, signalgrp_on và volcolor mặc định BẬT (giữ hành vi cũ trước khi có
-    // checkbox này — MA/EMA hiển thị sẵn, Volume tô màu VPA sẵn) cho user chưa có key
-    // này trong localStorage. Các checkbox khác giữ quy ước cũ (mặc định TẮT).
+    // maema_on/signalgrp_on/volcolor mặc định BẬT (giữ hành vi cũ) cho user chưa có key trong localStorage; các checkbox khác mặc định TẮT.
     cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor'||cb.value==='bigprice')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
@@ -4166,13 +3774,7 @@ function _liteTitleSegments(bar){
     {text:')',color:'#111827'}
   ];
 }
-// ═══════════════════════════════════════════════════════
-// GIÁ PHÓNG TO (kiểu "Magnified Market Price" của AmiBroker) — hiển thị giá lớn + biến động/khối
-// lượng ngay giữa cạnh trên khung CHART. ratio_prev/ratio_ma50/progress KHÔNG tự tính ở đây nữa —
-// lấy nguyên từ /api/vol_forecast/<symbol> (scanner_full.dashboard_vol_forecast_fn), vốn dùng lại
-// CHÍNH XÁC VMA50 + _session_time_progress() mà tín hiệu ATTENT/BREAKVOL đang dùng, và progress
-// tính theo đồng hồ SERVER (giờ VN) thay vì đồng hồ trình duyệt — tránh 2 bản logic lệch nhau.
-// ═══════════════════════════════════════════════════════
+// GIÁ PHÓNG TO — lấy ratio_prev/ratio_ma50/progress nguyên từ /api/vol_forecast (dùng chung VMA50 + giờ server với tín hiệu ATTENT/BREAKVOL) để tránh 2 bản logic lệch nhau.
 let _liteVolForecast=null,_liteVolForecastReqId=0;
 async function _liteFetchVolForecast(sym){
   const reqId=++_liteVolForecastReqId; // chặn trường hợp 2 lượt fetch chồng nhau (đổi mã nhanh +
@@ -4211,16 +3813,13 @@ function updateLiteBigPrice(bar){
     `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
-  // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
-  // ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
+  // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ: ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
   return String(v||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Dọn value ô nhập mã (viết hoa, bỏ dấu, loại ký tự lạ) CHỈ tại điểm chốt: Enter/Space
-// (caller gọi _apply trực tiếp) hoặc blur. KHÔNG đụng value lúc đang gõ — tránh xung đột
-// với Unikey/IME gây giật/lặp ký tự. Không còn auto-load: load chỉ xảy ra khi Enter/Space.
+// Dọn value ô nhập mã chỉ tại điểm chốt (Enter/blur), không đụng lúc đang gõ để tránh xung đột IME.
 function _liteBindSymInput(el){
   if(!el)return ()=>'';
   function _apply(){
@@ -4267,9 +3866,7 @@ function updateLiteTitle(bar){
     seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
   ).join('');
 }
-// Gắn mũi tên điểm mua lên nến cuối cùng (= nến giao dịch gần nhất, kể cả khi hôm nay không phải
-// ngày giao dịch) cho mã đang xem, dựa HOÀN TOÀN vào _sigTodayMap đã cache sẵn từ fetchSigs() —
-// không gọi thêm API nào, không tính toán chỉ báo riêng, nên gần như không tốn thêm chi phí.
+// Mũi tên điểm mua gắn vào nến cuối dựa vào _sigTodayMap đã cache sẵn, không gọi API/tính toán thêm.
 function _liteApplyBuySignal(){
   if(!_liteCandle||!_liteData.length)return;
   const sig=(_liteChecked('signalgrp_on')&&_liteChecked('signal'))?_sigTodayMap.get(_liteSymbol):null;
@@ -4278,27 +3875,17 @@ function _liteApplyBuySignal(){
     if(DOM.liteChartSignal){
       DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
       DOM.liteChartSignal.classList.add('on');
-      // Lấy đúng màu chữ (color) của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — đây là màu
-      // đậm/đặc trưng nhất của từng loại tín hiệu (border chỉ là viền nhạt, không đại diện rõ bằng
-      // màu chữ). Không khai báo lại bảng màu riêng, mũi tên luôn đồng bộ với badge/icon tín hiệu kể
-      // cả khi CSS đổi màu sau này.
+      // Màu mũi tên lấy từ màu chữ badge tín hiệu đã render (không định nghĩa bảng màu riêng) để luôn đồng bộ với badge.
       const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
       if(badgeEl)arrowColor=getComputedStyle(badgeEl).color||arrowColor;
     }
-    // Mũi tên báo mua: vẽ tay lên canvas overlay (xem _liteDrawBuyArrow) thay vì series marker của
-    // thư viện — setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart (xem giải
-    // thích ở khai báo _liteBuyArrowData). Không set text để không hiện badge tên tín hiệu ngay dưới
-    // mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
+    // Mũi tên báo mua vẽ tay canvas (không setMarkers, xem lý do ở _liteBuyArrowData); không hiện text để tránh trùng badge tín hiệu phía trên.
     _liteBuyArrowData={color:arrowColor}; // time/price của nến đọc live ở _liteDrawBuyArrow, không lưu ở đây
   }else{
     _liteBuyArrowData=null;
     if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
   }
-  // Không tự redrawLiteDrawings() ở đây — nơi gọi hàm này tự quyết định có cần redraw ngay không (xem
-  // các lời gọi _liteApplyBuySignal()): loadLiteChart()/_liteQuietRefreshChart() đã tự redraw ngay sau
-  // đó rồi (qua renderLiteIndicators() hoặc redrawLiteDrawings() liền kề), tự vẽ thêm ở đây chỉ tốn
-  // công một lượt clear+redraw thừa. Handler checkbox và fetchSigs() (2 nơi không có redraw kèm theo)
-  // tự gọi redrawLiteDrawings() ngay sau khi gọi hàm này.
+  // Không tự redrawLiteDrawings() ở đây — nơi gọi hàm tự quyết định redraw để tránh vẽ lại thừa.
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -4389,10 +3976,7 @@ function _macd(data){
   });
   return{macd,signal,hist};
 }
-// ═══ TREND (Trailing Stop/Reverse kiểu NRTR) ═══
-// mult = hệ số nhân biên độ đảo chiều, period = chu kỳ WMA biên độ H-L.
-// mode: 'regular' dùng H-L/Close thường; 'smoothed' dùng nến Heikin Ashi (đúng công thức AFL gốc).
-// Không vẽ kênh hồi quy — chỉ tô vùng trailing-stop đổi màu theo xu hướng.
+// ═══ TREND (Trailing Stop/Reverse kiểu NRTR) ═══ mult=hệ số biên độ đảo chiều, period=chu kỳ WMA H-L; mode 'smoothed' dùng Heikin Ashi theo công thức AFL gốc. Không vẽ kênh hồi quy.
 const LITE_TREND_MULT=1.75, LITE_TREND_PERIOD=10;
 function _wma(values,n){
   // values: mảng số thô (không phải {time,value}) đã align 1-1 theo index với dữ liệu nến.
@@ -4471,7 +4055,8 @@ function alignLiteSeries(points){
 function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  const totalH=720;
+  // Đọc chiều cao thực tế khung (.lite-chart-frame) thay vì cố định 720, để khớp cả CSS mobile.
+  const totalH=(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
@@ -4514,9 +4099,7 @@ function applyLitePaneLayout(){
   }
   resizeLiteDrawCanvas();redrawLiteDrawings();
 }
-// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══
-// Lấy cảm hứng thao tác kiểu TradingView: mọi hình vẽ xong đều chọn được, kéo-di-chuyển được,
-// đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định), kênh giá vẽ 2 bước.
+// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══ Thao tác kiểu TradingView: hình vẽ xong chọn/kéo/đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định).
 const LITE_DRAW_KEY='dashboard_lite_drawings';
 const LITE_DRAW_COLOR_KEY='dashboard_lite_draw_color';
 const LITE_TEXT_SIZE_KEY='dashboard_lite_text_size';
@@ -4566,9 +4149,7 @@ function saveLiteDrawings(){
   }
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
-// Đồng bộ hình vẽ realtime giữa cửa sổ CHART mặc định và cửa sổ CHART popout: 'storage' là sự
-// kiện có sẵn của trình duyệt, tự bắn sang các cửa sổ KHÁC (không bắn lại về cửa sổ vừa ghi)
-// mỗi khi localStorage thay đổi — nên chỉ cần lắng nghe và vẽ lại, không cần tự gửi message.
+// Đồng bộ hình vẽ giữa cửa sổ CHART chính và popout qua sự kiện 'storage' có sẵn của trình duyệt.
 window.addEventListener('storage',e=>{
   if(e.key!==_liteDrawStoreKey())return; // không phải mã đang xem — bỏ qua (dùng chung mọi TF)
   loadLiteDrawings();redrawLiteDrawings();
@@ -4675,14 +4256,12 @@ function _liteDrawHandle(ctx,x,y){
   ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#1a56db';ctx.lineWidth=1.3;
   ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
 }
-// Vẽ 4 chấm góc của khung 2-điểm (khớp đúng bộ 4 điểm p0/p1/c1/c2 mà _liteCornerHitPart nhận diện)
-// — dùng chung cho cả Hộp (rect) và Target (position, ở phần khung Entry-Target).
+// Vẽ 4 chấm góc của khung 2-điểm (khớp đúng bộ 4 điểm p0/p1/c1/c2 mà _liteCornerHitPart nhận diện) — dùng chung cho cả Hộp (rect) và Target (position, ở phần khung Entry-Target).
 function _liteDrawCornerHandles(ctx,x1,y1,x2,y2){
   _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
   _liteDrawHandle(ctx,x1,y2);_liteDrawHandle(ctx,x2,y1);
 }
-// Vẽ 1 cặp chấm trái/phải cùng 1 mức giá (y) trong khung rx..rx+rw — dùng cho các dòng Stop/Target2
-// của Target, vốn không thuộc bộ 4 góc chính (chỉ resize ngang qua edgeL/edgeR, không phải góc chéo).
+// Vẽ 1 cặp chấm trái/phải cùng 1 mức giá (y) trong khung rx..rx+rw — dùng cho các dòng Stop/Target2 của Target, vốn không thuộc bộ 4 góc chính (chỉ resize ngang qua edgeL/edgeR, không phải góc chéo).
 function _liteDrawHandlePair(ctx,rx,rw,y){
   _liteDrawHandle(ctx,rx,y);_liteDrawHandle(ctx,rx+rw,y);
 }
@@ -4690,16 +4269,7 @@ function _liteChannelOffset(d){
   const pts=d.points;
   return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
 }
-// Đường cong bán nguyệt (arc): pts[2] lưu trực tiếp toạ độ (logical,price) nơi người dùng rê chuột tới —
-// tức là điểm "đáy" (đỉnh cong) mà đường cong PHẢI đi qua.
-//
-// LƯU Ý QUAN TRỌNG: control-point của quadratic bezier PHẢI được tính trong không gian PIXEL (x,y trên canvas),
-// KHÔNG được tính trong không gian logical/price rồi mới quy đổi sang pixel. Lý do: công thức bù trừ
-// C = 2*target - trungĐiểm chỉ cho ra đường cong đi đúng qua "target" khi phép quy đổi (logical→x, price→y)
-// là TUYẾN TÍNH. Trục giá của chart có thể ở chế độ log/percentage (không tuyến tính) — khi đó nếu tính C theo
-// logical/price rồi quy đổi, điểm đáy hiển thị trên màn hình sẽ LỆCH khỏi đúng vị trí chuột (lệch càng nhiều khi
-// biên độ giá càng lớn), gây hiện tượng "đáy nhảy chéo xa chuột". Tính thẳng trong pixel-space thì luôn đúng,
-// bất kể trục giá tuyến tính hay không.
+// Control-point của quadratic bezier (đường cong bán nguyệt) PHẢI tính trong pixel-space, không phải logical/price rồi quy đổi — nếu trục giá log/percentage (phi tuyến), quy đổi sau sẽ làm đáy cong lệch khỏi vị trí chuột.
 function _liteArcControlXY(x1,y1,x2,y2,tx,ty){
   if(!Number.isFinite(tx)||!Number.isFinite(ty))return null;
   const midX=(x1+x2)/2,midY=(y1+y2)/2;
@@ -4715,9 +4285,7 @@ function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
   }
   return min;
 }
-// Mũi tên "vệt" (extended/spike arrow): thân thon dần từ đuôi nhọn, rồi xòe rộng hẳn ra thành đầu mũi tên
-// tam giác rõ nét ở phía ngọn — khác mũi tên thân thẳng + đầu tam giác nhỏ thông thường.
-// widthScale: hệ số độ dày do người dùng chọn trên thanh điều chỉnh (mặc định 2 = "Vừa").
+// Mũi tên "vệt": thân thon dần rồi xoè thành đầu tam giác rõ nét; widthScale = hệ số độ dày người dùng chọn.
 function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,widthScale){
   const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
   if(len<1e-3)return;
@@ -4771,8 +4339,7 @@ function _liteDrawShapeToCanvas(ctx,d){
         const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
         if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
       }
-      // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng,
-      // giống kiểu dải màu của Kênh giá / Bán nguyệt, để thấy rõ "vùng" mà ZigZag bao lấy.
+      // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng, giống kiểu dải màu của Kênh giá / Bán nguyệt, để thấy rõ "vùng" mà ZigZag bao lấy.
       if(scr.length>=3&&!d.noFill){
         ctx.save();
         ctx.beginPath();
@@ -4822,9 +4389,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.lineWidth=selected?1.8:1.2;const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
     ctx.fillRect(rx,ry,rw,rh);ctx.strokeRect(rx,ry,rw,rh);ctx.restore();
     if(selected)_liteDrawCornerHandles(ctx,x1,y1,x2,y2);
-    // kéo xuống (giảm giá) -> nhãn ở cạnh dưới. Chỉ hiện realtime lúc đang vẽ dở (xem trước qua _liteLinePending
-    // — rect luôn được tạo theo kiểu click-click, không đi qua _liteDrawActive); khi đã chốt hình thì mặc định
-    // ẨN, chỉ hiện nếu bật tuỳ chọn "%" trên thanh công cụ của hộp (d.showPct).
+    // Nhãn % chỉ hiện realtime lúc đang vẽ dở, hoặc khi bật tuỳ chọn hiển thị (d.showPct).
     const pct=(d===_liteLinePending||d.showPct)?_liteRectPct(d):null;
     if(pct!==null){
       const pctColor=pct>=0?'#16a34a':'#ef4444';
@@ -4846,9 +4411,7 @@ function _liteDrawShapeToCanvas(ctx,d){
       ctx.restore();
     }
   }else if(d.type==='channel'){
-    // CHỈ hiện kênh (2 cạnh + tô nền) khi đã có điểm thứ 3 (độ rộng kênh) thật sự được xác lập
-    // ở bước 2 (rê chuột lên/xuống). Trong lúc bước 1 (mới chọn 2 điểm đầu-cuối, chưa rê) chỉ hiện
-    // 1 đường chéo xem trước — không hiện kênh sớm.
+    // Kênh (2 cạnh+nền) chỉ hiện khi đã xác lập điểm thứ 3 (độ rộng); bước 1 chỉ hiện đường chéo xem trước.
     if(pts[2]&&Number.isFinite(pts[2].offsetPrice)){
       const offPrice=pts[2].offsetPrice;
       const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
@@ -4891,17 +4454,12 @@ function _liteDrawShapeToCanvas(ctx,d){
     }
     if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
   }else if(d.type==='arc'){
-    // Đường cong bán nguyệt: 2 điểm đầu-cuối như đường thẳng, bước 2 rê chuột tự do (cả trái/phải lẫn
-    // lên/xuống) để chọn vị trí "đáy" (đỉnh cong) — đường cong luôn đi qua đúng vị trí chuột, không bị
-    // ép về giữa 2 điểm đầu-cuối.
-    // Quy đổi điểm "đáy" sang pixel TRƯỚC, rồi mới tính control-point trong pixel-space (xem ghi chú tại
-    // _liteArcControlXY) → đường cong luôn đi qua đúng vị trí chuột dù trục giá tuyến tính hay log/percentage.
+    // Đường cong bán nguyệt: bước 2 rê chuột tự do chọn điểm đáy; quy đổi sang pixel trước rồi tính control-point (_liteArcControlXY) để cong luôn đi đúng qua vị trí chuột.
     const tx=pts[2]?_liteLogicalToX(pts[2]):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
     const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
     if(ctrl){
       const cx=ctrl.cx,cy=ctrl.cy;
-      // Tô màu phần diện tích giữa dây cung (đường thẳng nối 2 điểm đầu-cuối) và đường cong, giống kiểu
-      // dải màu của công cụ Kênh giá, để dễ nhìn thấy "vùng" mà bán nguyệt bao lấy.
+      // Tô màu phần diện tích giữa dây cung (đường thẳng nối 2 điểm đầu-cuối) và đường cong, giống kiểu dải màu của công cụ Kênh giá, để dễ nhìn thấy "vùng" mà bán nguyệt bao lấy.
       if(cx!==null&&cy!==null){
         ctx.save();
         ctx.beginPath();
@@ -4963,9 +4521,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     }
   }
 }
-// _liteHexAlpha: trước đây tự parse hex riêng (trùng logic với _liteHexToRgba ở trên) — nay chỉ là
-// lớp mỏng gọi lại _liteHexToRgba với màu fallback riêng của mình ('26,86,219' = #1a56db, màu vẽ mặc
-// định), kết quả đầu ra giữ NGUYÊN y hệt như cài đặt cũ cho mọi input hex hợp lệ/không hợp lệ.
+// _liteHexAlpha chỉ là lớp mỏng gọi lại _liteHexToRgba với màu fallback riêng (#1a56db), không tự parse hex nữa.
 function _liteHexAlpha(hex,a){
   return _liteHexToRgba(hex,a,'26,86,219');
 }
@@ -5040,20 +4596,15 @@ function _liteDrawTrendCloud(ctx){
   }
   ctx.restore();
 }
-// Vẽ mũi tên báo mua thay cho series marker của thư viện (xem giải thích ở khai báo _liteBuyArrowData
-// phía trên). Vẽ đúng hình mũi tên (đầu tam giác + thân que), không phải tam giác đặc — hẹp ngang và
-// đặt thấp xuống dưới low của nến một khoảng lớn hơn mặc định của thư viện (marker 'belowBar' mặc định
-// của lightweight-charts sát ngay dưới nến, dễ đụng bấc nến/volume).
+// Vẽ mũi tên báo mua thật (đầu tam giác+thân que), đặt cách xa dưới low hơn marker mặc định của thư viện để tránh đụng bấc nến/volume.
 function _liteDrawBuyArrow(ctx){
   if(!_liteBuyArrowData||!_liteChart||!_liteCandle||!_liteData.length)return;
-  // Đọc live nến cuối cùng ngay tại thời điểm vẽ (không dùng time/price lưu sẵn) — đảm bảo mũi tên
-  // luôn bám đúng tâm nến hiện tại, kể cả khi có nến mới chen vào giữa 2 lần _liteApplyBuySignal().
+  // Đọc live nến cuối cùng ngay tại thời điểm vẽ (không dùng time/price lưu sẵn) — đảm bảo mũi tên luôn bám đúng tâm nến hiện tại, kể cả khi có nến mới chen vào giữa 2 lần _liteApplyBuySignal().
   const lastBar=_liteData[_liteData.length-1];
   const{color}=_liteBuyArrowData;
   const x=_liteTimeToX(lastBar.time),yLow=_litePriceToY(lastBar.low);
   if(x===null||yLow===null)return;
-  // GAP: khoảng cách xuống dưới low nến tới ĐUÔI mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu mũi tên
-  // (nhỏ, hẹp). SHAFT_H/SHAFT_HALF_W: thân que nối đầu mũi tên xuống đuôi (mảnh hơn đầu).
+  // GAP: khoảng cách xuống dưới low nến tới ĐUÔI mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu mũi tên (nhỏ, hẹp). SHAFT_H/SHAFT_HALF_W: thân que nối đầu mũi tên xuống đuôi (mảnh hơn đầu).
   const GAP=14,HEAD_H=6,HEAD_HALF_W=2.5,SHAFT_H=5,SHAFT_HALF_W=1;
   const yTip=yLow+GAP;              // đỉnh mũi tên, hướng lên phía nến
   const yHeadBase=yTip+HEAD_H;      // đáy tam giác đầu mũi tên = đỉnh thân que
@@ -5129,8 +4680,7 @@ function _liteOpenTextInput(p0,ev,editingShape){
   DOM.liteTextInput.style.top=Math.max(0,y)+'px';
   _liteApplyTextInputStyle();
   DOM.liteTextInput.classList.add('on');
-  // Focus ngay lập tức (đa số trường hợp đã đủ), rồi focus lại 1 lần nữa ở animation frame kế tiếp để
-  // phòng trường hợp trình duyệt chưa kịp layout xong phần tử vừa chuyển từ display:none sang hiện ra.
+  // Focus ngay lập tức (đa số trường hợp đã đủ), rồi focus lại 1 lần nữa ở animation frame kế tiếp để phòng trường hợp trình duyệt chưa kịp layout xong phần tử vừa chuyển từ display:none sang hiện ra.
   DOM.liteTextInput.focus();
   if(editingShape){const v=DOM.liteTextInput.value;DOM.liteTextInput.setSelectionRange(v.length,v.length);}
   requestAnimationFrame(()=>DOM.liteTextInput.focus());
@@ -5214,10 +4764,7 @@ function _liteShapeAnchor(d){
     return{x:(x1+x2)/2,y:Math.min(...ys)};
   }
   if(d.type==='channel'){
-    // Lấy điểm cao nhất (y nhỏ nhất) trong CẢ 4 góc của kênh (2 góc cạnh gốc + 2 góc cạnh đã dịch offset).
-    // Trước đây chỉ xét y1b (góc dịch của điểm đầu) nên khi đường chéo kênh bị nghiêng, góc dịch của điểm
-    // cuối (y2b) có thể cao hơn mà không được tính tới → thanh điều chỉnh bị đặt thấp hơn đỉnh kênh thật,
-    // khiến nó nằm lọt vào trong kênh thay vì nằm hẳn phía trên.
+    // Lấy điểm cao nhất trong cả 4 góc kênh (kể cả 2 góc đã dịch offset) để thanh điều chỉnh luôn nằm hẳn trên đỉnh kênh, kể cả khi kênh nghiêng.
     const offPrice=_liteChannelOffset(d);
     const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
     const ys=[y1,y2];
@@ -5240,16 +4787,13 @@ function _liteShapeAnchor(d){
   }
   if(d.type==='rect'){
     const top=Math.min(y1,y2);
-    // Khi bật nhãn % (d.showPct) và giá đang tăng, nhãn % được vẽ ngay phía trên cạnh trên hộp
-    // (xem khối vẽ rect ở trên, boxY=ry-3-boxH) — đẩy anchor lên cao hơn 1 khoảng đủ rộng để
-    // thanh công cụ nổi không đè lên nhãn đó. Giá giảm thì nhãn nằm dưới hộp, không xung đột.
+    // Nhãn % vẽ trên cạnh hộp khi giá tăng (đẩy anchor lên để không đè thanh công cụ), dưới hộp khi giá giảm.
     const pct=d.showPct?_liteRectPct(d):null;
     return{x:(x1+x2)/2,y:(pct!==null&&pct>=0)?top-18:top};
   }
   return{x:(x1+x2)/2,y:Math.min(y1,y2)};
 }
-// Lấy hình đang được chọn (theo _liteSelectedId) — gộp lại 1 chỗ duy nhất thay vì lặp lại
-// cùng 1 biểu thức tra cứu ở rất nhiều handler bên dưới.
+// Lấy hình đang được chọn (theo _liteSelectedId) — gộp lại 1 chỗ duy nhất thay vì lặp lại cùng 1 biểu thức tra cứu ở rất nhiều handler bên dưới.
 function _liteGetSelectedShape(){
   return _liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
 }
@@ -5330,8 +4874,7 @@ function _liteSegDist(px,py,x1,y1,x2,y2){
   let t=((px-x1)*dx+(py-y1)*dy)/len2;t=Math.max(0,Math.min(1,t));
   return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
 }
-// Hit-test 4 góc của 1 khung 2-điểm (p0,p1 thật + c1,c2 là 2 góc ảo ghép chéo toạ độ) — dùng chung
-// cho cả Hộp (rect) và Target (position), tránh lặp lại cùng 4 dòng kiểm tra ở 2 nơi.
+// Hit-test 4 góc của 1 khung 2-điểm (p0,p1 thật + c1,c2 là 2 góc ảo ghép chéo toạ độ) — dùng chung cho cả Hộp (rect) và Target (position), tránh lặp lại cùng 4 dòng kiểm tra ở 2 nơi.
 function _liteCornerHitPart(x,y,x1,y1,x2,y2){
   if(Math.hypot(x-x1,y-y1)<=9)return'p0';
   if(Math.hypot(x-x2,y-y2)<=9)return'p1';
@@ -5406,9 +4949,7 @@ function _liteHitTestShape(d,x,y){
     const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
     const target2Y=Number.isFinite(d.target2P)?_litePriceToY(d.target2P):null;
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
-    // 4 góc của khung Entry-Target (điểm gốc p0=entry, p1=target + 2 góc ảo c1/c2) — cho phép
-    // chỉnh cả ngang (rộng khung) lẫn dọc (mức giá) cùng lúc, giống công cụ Hộp. Đặt trước test
-    // edgeL/edgeR/target để góc được ưu tiên thay vì chỉ nhận diện là kéo cạnh (chỉ ngang).
+    // 4 góc khung Entry-Target (gốc + 2 góc ảo) cho phép chỉnh cả ngang lẫn dọc cùng lúc, giống công cụ Hộp.
     const c=_liteCornerHitPart(x,y,x1,y1,x2,y2);
     if(c)return{part:c};
     if(x<rx-LITE_HIT_TOL||x>rx+rw+LITE_HIT_TOL)return null;
@@ -5432,9 +4973,7 @@ function _liteHitTest(x,y){
   }
   return null;
 }
-// Hover tooltip của hộp vẽ (rect) chỉ hiện sau khi con trỏ DỪNG một khoảng thời gian tại vị trí đó
-// (giống hover tooltip mã cổ phiếu trên HEATMAP — native title tooltip); di chuột đi là ẩn ngay và
-// phải dừng lại đủ thời gian mới hiện lại.
+// Tooltip hộp vẽ chỉ hiện sau khi con trỏ dừng lại một khoảng, giống tooltip mã trên Heatmap.
 const LITE_RECT_TOOLTIP_DELAY_MS=600;
 let _liteRectTooltipTimer=null;
 function _liteClearRectTooltipTimer(){
@@ -5444,16 +4983,14 @@ function _liteHideRectTooltip(){
   _liteClearRectTooltipTimer();
   if(DOM.liteRectTooltip)DOM.liteRectTooltip.style.display='none';
 }
-// % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp) của 1 hình chữ nhật — dùng chung cho cả
-// nhãn vẽ trên canvas lẫn tooltip hover, tránh lặp lại cùng phép tính ở 2 nơi.
+// % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp) của 1 hình chữ nhật — dùng chung cho cả nhãn vẽ trên canvas lẫn tooltip hover, tránh lặp lại cùng phép tính ở 2 nơi.
 function _liteRectPct(d){
   if(!d||d.type!=='rect'||!d.points||d.points.length<2)return null;
   const p0=d.points[0].p,p1=d.points[1].p;
   if(typeof p0!=='number'||typeof p1!=='number'||!p0)return null;
   return(p1-p0)/p0*100;
 }
-// Hiện % tăng/giảm ngay dưới con trỏ khi di chuột vào 1 hộp đã vẽ xong (giống hover trên heatmap),
-// bất kể hộp đó có đang bật hiển thị nhãn cố định (showPct) hay không.
+// Hiện % tăng/giảm ngay dưới con trỏ khi di chuột vào 1 hộp đã vẽ xong (giống hover trên heatmap), bất kể hộp đó có đang bật hiển thị nhãn cố định (showPct) hay không.
 function _liteShowRectTooltip(hit,x,y){
   const tip=DOM.liteRectTooltip;
   if(!tip)return;
@@ -5471,8 +5008,7 @@ function _liteApplyDrag(d,info,cur){
   if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
   else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
   else if(key==='rect:c1'||key==='position:c1'){
-    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển
-    // toàn khối, chỉ từng thành phần riêng, tạo hiệu ứng resize đúng từ góc đang kéo.
+    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển toàn khối, chỉ từng thành phần riêng, tạo hiệu ứng resize đúng từ góc đang kéo.
     d.points[0]={l:op[0].l+dl,p:op[0].p};
     d.points[1]={l:op[1].l,p:op[1].p+dp};
   }else if(key==='rect:c2'||key==='position:c2'){
@@ -5491,8 +5027,7 @@ function _liteApplyDrag(d,info,cur){
   }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
   }else if(key==='arc:offset'){
-    // pts[2] của arc là toạ độ (logical,price) của điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu
-    // theo cả 2 chiều (trái/phải lẫn lên/xuống), không chỉ riêng chiều dọc như channel.
+    // pts[2] của arc là toạ độ (logical,price) của điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu theo cả 2 chiều (trái/phải lẫn lên/xuống), không chỉ riêng chiều dọc như channel.
     const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
     const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
     d.points[2]={l:baseL+dl,p:baseP+dp};
@@ -5530,8 +5065,7 @@ function _liteStartShapeDrag(hit,ev){
   const d=hit.shape;
   _liteSelectShape(d.id);
   const startPt=_litePtFromEvent(ev);if(!startPt)return;
-  // Quy đổi l của origPoints về đúng khung thời gian hiện tại TRƯỚC KHI kéo,
-  // tránh dùng l cũ của khung thời gian trước làm hình vẽ bị nhảy sang mốc khác.
+  // Quy đổi l của origPoints về đúng khung thời gian hiện tại TRƯỚC KHI kéo, tránh dùng l cũ của khung thời gian trước làm hình vẽ bị nhảy sang mốc khác.
   const normalizedPoints=(d.points||[]).map(pt=>{
     if(!pt)return pt;
     const curL=_litePtLogical(pt);
@@ -5566,10 +5100,7 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
     x+=ctx.measureText(seg.text).width;
   }
 }
-// Vẽ badge tín hiệu (emoji + nhãn màu) lên canvas copy, y hệt badge #lite-chart-signal đang hiển
-// thị trên chart — badge đó là lớp DOM nổi phía trên canvas nên takeScreenshot() không chụp được,
-// phải tự vẽ vào canvas copy. Đọc trực tiếp kích thước/màu đã render của DOM badge thật (không tự
-// định nghĩa lại màu/kích thước riêng) để luôn khớp 100% với badge thật, kể cả khi CSS đổi màu sau này.
+// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi, takeScreenshot() không chụp được.
 function _liteDrawSignalBadge(ctx,x,y,dpr){
   const el=DOM.liteChartSignal;
   if(!el)return;
@@ -5660,8 +5191,7 @@ async function copyLiteChartImage(btn){
       const mainCanvas=panes[0].canvas;
       ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH+badgeH,mainCanvas.width,mainCanvas.height);
     }
-    // Mã hóa đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật, không phải Promise.
-    // Điều này giữ user-gesture trên các trình duyệt không xử lý Promise<Blob> ổn định.
+    // Mã hóa đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật, không phải Promise. Điều này giữ user-gesture trên các trình duyệt không xử lý Promise<Blob> ổn định.
     const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
     if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
       try{
@@ -5716,13 +5246,11 @@ function bindLiteDrawToolbar(){
     const sel=_liteGetSelectedShape();
     if(!sel||sel.type!=='position')return;
     if(Number.isFinite(sel.target2P)){
-      // Đang bật → tắt: đường Target (đang là Target 1) biến mất, đường Target 2 (giá đã vẽ/kéo ban đầu)
-      // trở lại thành đường Target duy nhất — quay về đúng mặc định chỉ 1 target.
+      // Đang bật → tắt: đường Target (đang là Target 1) biến mất, đường Target 2 (giá đã vẽ/kéo ban đầu) trở lại thành đường Target duy nhất — quay về đúng mặc định chỉ 1 target.
       sel.points[1]={...sel.points[1],p:sel.target2P};
       delete sel.target2P;
     }else{
-      // Đang tắt → bật: đường Target hiện có (đã vẽ) đổi thành Target 2 — giữ nguyên đúng giá đó.
-      // Đường Target mới (Target 1) được chèn vào giữa Entry và Target 2, nằm ở nửa khoảng cách.
+      // Đang tắt → bật: đường Target hiện có (đã vẽ) đổi thành Target 2 — giữ nguyên đúng giá đó. Đường Target mới (Target 1) được chèn vào giữa Entry và Target 2, nằm ở nửa khoảng cách.
       const entryP=sel.points[0].p,oldTargetP=sel.points[1].p;
       sel.target2P=oldTargetP;
       sel.points[1]={...sel.points[1],p:entryP+(oldTargetP-entryP)*0.5};
@@ -5773,9 +5301,7 @@ function bindLiteDrawToolbar(){
   });
   if(DOM.liteTextInput){
     DOM.liteTextInput.addEventListener('keydown',e=>{
-      // Chặn nổi bọt lên #lite-chart-frame để không kích hoạt phím tắt khác (mở ô tìm mã, xoá hình...)
-      // trong lúc đang gõ chữ. Enter giờ xuống dòng bình thường (mặc định của textarea) thay vì chốt chữ;
-      // Ctrl/Cmd+Enter chốt nhanh; Escape huỷ.
+      // Chặn nổi bọt phím tắt khác khi đang gõ chữ; Enter xuống dòng, Ctrl/Cmd+Enter chốt, Escape huỷ.
       e.stopPropagation();
       if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){
         e.preventDefault();
@@ -5837,9 +5363,7 @@ function bindLiteDrawToolbar(){
       _liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();
     }
   });
-  // ── Kéo / chọn / di chuyển hình đã vẽ (chế độ con trỏ) ──
-  // Bắt ở pha capture trên container chart để chặn thao tác pan/zoom mặc định của
-  // Lightweight Charts ĐÚNG lúc người dùng nhắm trúng 1 hình đã vẽ.
+  // Bắt sự kiện ở pha capture để chặn pan/zoom mặc định của thư viện khi người dùng nhắm trúng hình đã vẽ.
   if(DOM.liteChart){
     DOM.liteChart.addEventListener('pointerdown',e=>{
       if(_liteDrawTool!=='cursor'||!DOM.liteDrawCanvas)return;
@@ -5854,8 +5378,7 @@ function bindLiteDrawToolbar(){
       const{x,y}=_liteXYFromEvent(e);
       const hit=_liteHitTest(x,y);
       DOM.liteChart.style.cursor=hit?'move':'';
-      // Mỗi lần chuột di chuyển: ẩn tooltip đang hiện (nếu có) và huỷ hẹn giờ cũ — chỉ hiện lại
-      // sau khi con trỏ đứng yên đủ LITE_RECT_TOOLTIP_DELAY_MS tại 1 hộp.
+      // Mỗi lần chuột di chuyển: ẩn tooltip đang hiện (nếu có) và huỷ hẹn giờ cũ — chỉ hiện lại sau khi con trỏ đứng yên đủ LITE_RECT_TOOLTIP_DELAY_MS tại 1 hộp.
       _liteHideRectTooltip();
       if(hit){
         _liteRectTooltipTimer=setTimeout(()=>{_liteRectTooltipTimer=null;_liteShowRectTooltip(hit,x,y);},LITE_RECT_TOOLTIP_DELAY_MS);
@@ -5874,8 +5397,7 @@ function bindLiteDrawToolbar(){
     });
   }
   if(!DOM.liteDrawCanvas)return;
-  // Tính offset (theo giá) của điểm chuột hiện tại so với đường chéo gốc — dùng chung cho bước 2
-  // của cả công cụ Kênh giá (channel) và Đường cong bán nguyệt (arc).
+  // Tính offset (theo giá) của điểm chuột hiện tại so với đường chéo gốc — dùng chung cho bước 2 của cả công cụ Kênh giá (channel) và Đường cong bán nguyệt (arc).
   function _liteOffsetFromChord(pend,p){
     const denom=(pend.points[1].l-pend.points[0].l)||1e-6;
     const lineP=pend.points[0].p+(pend.points[1].p-pend.points[0].p)*(p.l-pend.points[0].l)/denom;
@@ -5912,8 +5434,7 @@ function bindLiteDrawToolbar(){
     // Kết thúc Zigzag bằng double-click: bỏ điểm cuối trùng do click thứ 2 của thao tác double-click sinh ra
     if(_liteDrawTool==='zigzag'&&_liteZigzagPending){
       e.preventDefault();
-      // Double-click sinh ra 2 lần click liên tiếp ở cùng 1 vị trí → click thứ 2 đã bị pointerdown
-      // phía dưới nối thêm thành điểm trùng, cần bỏ điểm cuối trùng đó trước khi chốt hình.
+      // Double-click sinh ra 2 lần click liên tiếp ở cùng 1 vị trí → click thứ 2 đã bị pointerdown phía dưới nối thêm thành điểm trùng, cần bỏ điểm cuối trùng đó trước khi chốt hình.
       if(_liteZigzagPending.points.length>1)_liteZigzagPending.points.pop();
       _liteFinishZigzag();
       setLiteDrawTool('cursor');
@@ -5952,16 +5473,13 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='text'){
-      // Đang soạn dở 1 ô chữ (chưa blur): click ra ngoài phạm vi ô chữ chỉ để KẾT THÚC soạn (chốt chữ),
-      // không mở thêm khung chữ mới tại vị trí vừa click. Muốn viết chữ tiếp, người dùng phải bấm lại
-      // công cụ Text rồi click vị trí mới.
+      // Click ra ngoài lúc đang soạn chữ chỉ kết thúc soạn, không mở khung chữ mới; phải bấm lại công cụ Text để viết tiếp.
       if(_liteTextEditPos){
         _liteCommitTextInput();
         setLiteDrawTool('cursor');
         return;
       }
-      // Chưa soạn gì (mới bật công cụ Text): click thẳng lên chart để gõ chữ tại đúng vị trí click,
-      // không dùng hộp thoại prompt() nữa.
+      // Chưa soạn gì (mới bật công cụ Text): click thẳng lên chart để gõ chữ tại đúng vị trí click, không dùng hộp thoại prompt() nữa.
       _liteOpenTextInput(p0,e);
       return;
     }
@@ -5980,9 +5498,7 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='trendline'||_liteDrawTool==='rect'||_liteDrawTool==='arrow'||_liteDrawTool==='channel'||_liteDrawTool==='arc'){
-      // Vẽ kiểu click-click: click điểm đầu, di chuột xem trước, click điểm cuối để chốt (không cần kéo giữ chuột).
-      // Với channel/arc, điểm cuối này CHƯA phải là chốt hình — chỉ xác định xong 2 điểm đầu-cuối (đường chéo),
-      // sau đó chuyển sang bước 2 (rê chuột lên/xuống để tạo kênh / uốn cong).
+      // Vẽ kiểu click-click (không kéo giữ chuột); với channel/arc, điểm cuối chỉ xác lập đường chéo, bước 2 mới tạo kênh/uốn cong.
       if(_liteLinePending&&_liteLinePending.type===_liteDrawTool){
         _liteLinePending.points[1]=p0;
         const moved=Math.abs(p0.l-_liteLinePending.points[0].l)>0.4||Math.abs(p0.p-_liteLinePending.points[0].p)>1e-9;
@@ -6059,19 +5575,13 @@ function resizeLiteSearchInput(){
   const n=Math.max(1,DOM.liteChartSearch.value.length);
   DOM.liteChartSearch.style.width=`${Math.min(120,Math.max(42,26+n*16))}px`;
 }
-// Mở ô tìm mã và focus — KHÔNG pre-fill ký tự: để IME/trình duyệt tự gõ vào ô sau khi
-// focus (giống click vào ô rồi gõ). Pre-fill tại keydown gây nhân đôi ký tự tiếng Việt
-// vì e.key là Latin thô chưa compose và event có thể bubble qua 2 listener trước khi
-// focus chuyển kịp. resizeLiteSearchInput() không cần gọi ở đây — đã gắn vào 'input'
-// event của ô search, tự resize sau mỗi ký tự thực sự được gõ vào.
+// Mở ô tìm mã không pre-fill ký tự — để IME tự gõ sau khi focus, tránh nhân đôi ký tự tiếng Việt.
 function openLiteSearch(){
   if(!DOM.liteChartSearch.classList.contains('on'))DOM.liteChartSearch.value='';
   DOM.liteChartSearch.classList.add('on');
   DOM.liteChartSearch.focus();
 }
-// Phím đơn chữ/số (không kèm Ctrl/Alt/Meta) gõ ngoài mọi input/textarea/select → mở ô tìm mã.
-// Không gọi preventDefault() — cần để IME gửi ký tự vào ô search sau khi focus() chuyển sang.
-// Trả về true nếu đã mở ô (để caller gọi stopPropagation() chặn bubble lên document listener).
+// Phím đơn (không Ctrl/Alt/Meta) ngoài input mở ô tìm mã; không preventDefault() để IME nhận ký tự.
 function _liteTryOpenSearchOnKey(e){
   if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return false;
   if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
@@ -6080,9 +5590,7 @@ function _liteTryOpenSearchOnKey(e){
   openLiteSearch();
   return true;
 }
-// _liteUpdateIndicatorData: phiên bản NHẾ của renderLiteIndicators() — dùng khi dữ liệu đã prepend (lazy-load).
-// CHỈ cập nhật dữ liệu của các series đang có sẵn, KHÔNG destroy/recreate bất kỳ series nào.
-// Nhờ vậy không trigger layout pass thừa → hoàn toàn không giật/nhấp nháy.
+// _liteUpdateIndicatorData: bản nhẹ của renderLiteIndicators() cho lazy-load — chỉ update dữ liệu series có sẵn, không destroy/recreate, tránh giật.
 function _liteUpdateIndicatorData(){
   if(!_liteChart)return;
   _liteIndicatorSeries.forEach(s=>{
@@ -6129,9 +5637,7 @@ function _liteUpdateIndicatorData(){
 }
 function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
-  // explicitRange: cho phép nơi gọi truyền sẵn range đã CHỐT TỪ TRƯỚC (vd. trước khi cập nhật nến mới
-  // ở _liteQuietRefreshChart) thay vì để hàm này tự đọc range HIỆN TẠI — vì nếu đọc lúc này, dữ liệu/nến
-  // mới có thể đã khiến thư viện tự dịch view trước đó rồi, đọc lại chỉ "khoá" luôn cái đã bị dịch.
+  // explicitRange cho phép truyền range đã chốt trước đó, tránh đọc range hiện tại có thể đã bị thư viện tự dịch.
   const prevRange=skipRangeRestore?null:(explicitRange!==undefined?explicitRange:_liteGetVisibleLogicalRange());
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
@@ -6143,14 +5649,9 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
-  // applyLitePaneLayout() gọi applyOptions({timeScale:{rightOffset:...}}) trên cả 3 chart — bản thân
-  // việc SET rightOffset (dù cùng giá trị cũ) khiến thư viện tự canh lại vị trí cuộn theo offset đó,
-  // ghi đè pan/zoom user đang xem. Auto-refresh 10s gọi renderLiteIndicators() liên tục trong khi
-  // layout (ẩn/hiện RSI/MACD, kích thước pane) KHÔNG hề đổi — nên bỏ qua bước này khi skipPaneLayout
-  // (xem _liteQuietRefreshChart) để tránh đúng nguyên nhân gây "nhảy chart" mỗi 10s.
+  // skipPaneLayout bỏ qua applyLitePaneLayout() khi layout không đổi — set rightOffset dù cùng giá trị vẫn khiến thư viện tự canh lại view, gây "nhảy chart" mỗi 10s.
   if(!skipPaneLayout)applyLitePaneLayout();
-  // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
-  // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
+  // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
   maOn.forEach(p=>{
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ma',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ma'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   });
@@ -6158,9 +5659,7 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ema',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ema'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   });
   if(bbOn){
-    // Chỉ vẽ 3 đường (upper/mid/lower) bằng series thật của thư viện.
-    // Phần TÔ MÀU giữa 2 đường band được vẽ riêng bằng canvas (xem _liteDrawBBBand)
-    // để clip chính xác trong dải, không đụng gì tới phần dưới đường band dưới.
+    // Chỉ vẽ 3 đường BB bằng series thật; phần tô màu giữa 2 đường vẽ riêng bằng canvas (_liteDrawBBBand) để clip chính xác.
     const bbCol=_liteIndColors.bb;
     _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-upper',series:_liteChart.addLineSeries({
       color:_liteHexToRgba(bbCol,.85),lineWidth:1,
@@ -6249,11 +5748,7 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   redrawLiteDrawings();
 }
 function _liteVolColorFor(volBar,showVpa){
-  // checkbox "volcolor" (nhóm Signal) BẬT → dùng nguyên màu server tính (kể cả cờ VPA
-  // xanh dương/tím). TẮT → phớt lờ cờ VPA, trả về màu xanh/đỏ mặc định theo close/open,
-  // giống hệt quy ước màu mặc định phía backend khi vpa_flag=0.
-  // showVpa truyền vào từ ngoài (đọc DOM 1 lần/lượt vẽ) để tránh querySelector lặp lại
-  // cho từng bar khi map qua cả nghìn nến.
+  // Checkbox volcolor BẬT dùng màu VPA server tính; TẮT dùng màu xanh/đỏ mặc định theo close/open. showVpa đọc DOM 1 lần/lượt vẽ để tránh querySelector lặp lại theo từng bar.
   if(showVpa)return volBar.color;
   const cd=_liteDataByTime.get(liteTimeKey(volBar.time));
   return cd?(cd.close>=cd.open?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR):volBar.color;
@@ -6262,17 +5757,14 @@ function _liteRefreshVolumeTop(showVpaVol){
   if(!_liteChart||!_liteVolume)return;
   _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v,showVpaVol)})));
 }
-// LITE_CHART_RETRY_MAX/DELAY: số lần thử lại tối đa và khoảng cách giữa mỗi lần khi API
-// /api/lightweight_chart/ lỗi (VNDirect tạm không phản hồi/không có dữ liệu) — retry vài
-// lần trước khi báo hẳn "không có dữ liệu" cho người dùng.
+// LITE_CHART_RETRY_MAX/DELAY: số lần và khoảng cách thử lại khi API lightweight_chart lỗi trước khi báo hết dữ liệu.
 const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
 async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  // KHÔNG xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire sự kiện 'input' lại,
-  // gây chồng chéo lệnh tải chart. Ô input tự được clear sau khi loadLiteChart hoàn tất.
+  // KHÔNG xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire sự kiện 'input' lại, gây chồng chéo lệnh tải chart. Ô input tự được clear sau khi loadLiteChart hoàn tất.
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -6329,11 +5821,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
 }
-// ═══════════════════════════════════════════════════════
-// AUTO-REFRESH CHART — chỉ vá đúng CÂY NẾN CUỐI CÙNG (dùng series.update(), KHÔNG
-// setData() lại toàn bộ) nên KHÔNG nháy màn hình, KHÔNG mất zoom/pan hiện tại, không
-// đụng tới các nét vẽ tay. Chạy nền định kỳ, chỉ cho mã đang hiển thị trên panel CHART.
-// ═══════════════════════════════════════════════════════
+// AUTO-REFRESH CHART — chỉ vá cây nến cuối (series.update(), không setData() lại toàn bộ) nên không nháy màn hình/mất zoom/pan.
 const LITE_CHART_AUTOREFRESH_SEC=10;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
@@ -6358,20 +5846,14 @@ async function _liteQuietRefreshChart(){
                           :(_liteData.length>1?_liteData[_liteData.length-2]:null);
     const pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
     const bar={...rawBar,pct};
-    // Chốt range NGAY TRƯỚC khi đụng vào series (update()/setData() bên dưới) — không phải sau — để
-    // chắc chắn đây là đúng vùng user đang xem (zoom/pan) tại thời điểm này, tránh trường hợp thư viện
-    // đã kịp tự dịch view (auto-scroll) ngay trong lúc update() rồi mới đọc lại thì "chốt" luôn view sai.
+    // Chốt range NGAY TRƯỚC khi update()/setData() (không phải sau) để tránh thư viện đã tự dịch view rồi mới đọc lại.
     const prevRangeBeforeUpdate=_liteGetVisibleLogicalRange();
     if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
     _liteDataByTime.set(key,bar);
     _liteCandle.update(bar);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
-      // rawVol.color đã đúng màu (kể cả cờ VPA) do server tính — giữ nguyên trong
-      // _liteVolumeData (dữ liệu gốc); màu THỰC vẽ ra tuỳ checkbox "volcolor" (nhóm Signal).
-      // Không gọi _liteVolume.update() ở đây: renderLiteIndicators() ngay bên dưới luôn
-      // chạy _liteRefreshVolumeTop() — hàm đó xoá + tạo lại series volume rồi setData()
-      // lại toàn bộ _liteVolumeData, nên patch ở đây sẽ bị ghi đè ngay, chỉ tốn công.
+      // rawVol.color giữ nguyên màu server tính; renderLiteIndicators() luôn dựng lại series volume nên không cần update() riêng ở đây.
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
@@ -6386,11 +5868,7 @@ async function _liteQuietRefreshChart(){
     _liteQuietRefreshing=false;
   }
 }
-// ═══════════════════════════════════════════════════════
-// LAZY LOAD LỊCH SỬ — khi user kéo trái đến đầu dữ liệu, tự fetch thêm 300 bar cũ
-// hơn và prepend vào chart — giống cách TradingView thật làm. Không náy
-// màn hình, không mất zoom/pan hiện tại.
-// ═══════════════════════════════════════════════════════
+// LAZY LOAD LỊCH SỬ — kéo trái tới đầu dữ liệu tự fetch thêm 300 bar cũ hơn và prepend, không nháy màn hình/mất zoom.
 async function _liteFetchMoreHistory(){
   if(_liteLoadingMore||!_liteHasMore||!_liteOldestDate||!_liteChart||!_liteCandle)return;
   const sym=_liteSymbol,tf=_liteTf,oldestDate=_liteOldestDate;
@@ -6422,11 +5900,9 @@ async function _liteFetchMoreHistory(){
     const prependCount=newBars.length;
     // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
     _liteCandle.setData(_liteData);
-    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu
-    // các series đang có sẵn, KHÔNG destroy/recreate → loại bỏ hoàn toàn hiện tượng giật.
+    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu các series đang có sẵn, KHÔNG destroy/recreate → loại bỏ hoàn toàn hiện tượng giật.
     _liteUpdateIndicatorData();
-    // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData()
-    // gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
+    // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData() gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
     if(prevRange&&Number.isFinite(prevRange.from)&&Number.isFinite(prevRange.to)){
       const target={from:prevRange.from+prependCount,to:prevRange.to+prependCount};
       requestAnimationFrame(()=>_liteApplyVisibleLogicalRange(target));
@@ -6459,13 +5935,7 @@ function bindLiteChartControls(){
   });
   DOM.liteIndicators?.addEventListener('change',(e)=>{
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
-    // Cả 4 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal),
-    // "bigprice" (Giá phóng to) và "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng
-    // mũi tên+badge tín hiệu (_liteApplyBuySignal), màu volume (_liteRefreshVolumeTop) và/hoặc
-    // khối giá phóng to (updateLiteBigPrice). Chúng KHÔNG đụng tới MA/EMA/BB/RSI/MACD hay pane
-    // layout, nên không gọi renderLiteIndicators() đầy đủ ở đây — hàm đó luôn chạy
-    // applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và xoá/dựng lại toàn bộ
-    // chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
+    // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge, màu volume, khối giá phóng to — không đụng MA/EMA/BB/RSI/MACD nên không gọi renderLiteIndicators() đầy đủ (tránh chart nhảy/co giãn vô ích).
     const val=e.target?.value;
     if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
       if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
@@ -6480,8 +5950,7 @@ function bindLiteChartControls(){
     }
   });
   DOM.liteChartFrame?.addEventListener('click',()=>{
-    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
-    // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
+    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
     if(_liteTextEditPos)return;
     DOM.liteChartFrame.focus();
   });
@@ -6493,9 +5962,7 @@ function bindLiteChartControls(){
   });
   DOM.liteChartFrame?.addEventListener('mouseleave',()=>{_litePointerInside=false;});
   DOM.liteChartFrame?.addEventListener('keydown',e=>{
-    // Đang gõ chữ (công cụ Text) → không xử lý phím tắt của khung chart (xoá hình, mở tìm mã...) ở đây.
-    // Bản thân ô chữ (#lite-text-input) đã tự xử lý Enter/Escape và stopPropagation() cho các phím khác,
-    // đây chỉ là lớp bảo vệ thêm phòng khi ô chữ chưa kịp nhận focus.
+    // Đang gõ chữ (công cụ Text) thì bỏ qua phím tắt khung chart; đây là lớp bảo vệ thêm phòng focus chưa kịp chuyển.
     if(_liteTextEditPos)return;
     if((e.key==='Delete'||e.key==='Backspace')&&_liteSelectedId!=null){
       e.preventDefault();
@@ -6516,9 +5983,7 @@ function bindLiteChartControls(){
       }
       return;
     }
-    // stopPropagation() chặn event bubble lên document listener bên dưới — nếu không, cả 2 listener
-    // cùng gọi openLiteSearch() cho 1 lần bấm phím. Không dựa vào timing của .focus() vì không đảm
-    // bảo 100% khi gõ nhanh hoặc qua IME tiếng Việt.
+    // stopPropagation() chặn bubble để tránh gọi openLiteSearch() 2 lần cho 1 phím bấm.
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
@@ -6539,9 +6004,7 @@ function bindLiteChartControls(){
   DOM.liteMacdResizer?.addEventListener('pointerdown',e=>{
     e.preventDefault();
     const startY=e.clientY,startH=_liteMacdSoloHeight||DOM.liteMacdChart.clientHeight||176;
-    // Gộp các sự kiện pointermove (bắn nhiều hơn tốc độ khung hình màn hình) thành đúng 1 lần
-    // cập nhật layout/chart mỗi khung hình bằng rAF — applyLitePaneLayout() gọi applyOptions() trên
-    // cả 2 chart nên là thao tác nặng, gọi trực tiếp theo từng pointermove sẽ gây giật khi kéo.
+    // Gộp pointermove bằng rAF thành 1 lần cập nhật layout/frame — applyLitePaneLayout() nặng nên gọi trực tiếp mỗi pointermove sẽ giật.
     let pendingH=null,rafId=null;
     const flush=()=>{
       rafId=null;
@@ -6590,9 +6053,8 @@ function _openMaximizedWindow(url,name,width,height,offsetLeft,offsetTop,extra='
 }
 function _refreshChartModeUI(){
   const chartBtn=$('hover-preview-btn');
-  chartBtn.classList.toggle('on',_hoverPreviewOn||_isPopoutMode);
-  chartBtn.textContent=_isPopoutMode?'Chart: POP':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
-  $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
+  chartBtn.classList.toggle('on',_hoverPreviewOn);
+  chartBtn.textContent=_hoverPreviewOn?'Chart: ON':'Chart: OFF';
 }
 function _resetPopupChrome(){
   $('popup-phdr').style.display='';
@@ -6601,14 +6063,10 @@ function _resetPopupChrome(){
   DOM.mobHdrLand.style.display='';
   DOM.mobClose.style.display='none';
 }
-// ═══════════════════════════════════════════════════════
 // HEATMAP DATA
-// ═══════════════════════════════════════════════════════
 const HMAP_COLS=__HMAP_COLS_CONFIG__;
 const TS_POOL=__TS_POOL_CONFIG__;
-// ═══════════════════════════════════════════════════════
 // HEATMAP RENDER
-// ═══════════════════════════════════════════════════════
 function cellStyle(pct){
   let r,g,b;
   const pos=[[235,248,238],[231,247,234],[225,245,228],[220,243,224],[215,242,220],[205,238,211],[195,235,200],[186,232,193],[178,228,186],[169,224,178],[160,220,170],[154,218,165],[148,216,160]];
@@ -6618,12 +6076,7 @@ function cellStyle(pct){
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-// Treemap dùng bảng màu riêng, tách khỏi Heatmap:
-// - Trần (>=+6.5%) / tham chiếu (~0%) / sàn (<=-6.5%): màu phẳng cố định, đo trực
-//   tiếp từ bảng màu mẫu (tím/vàng/xanh dương).
-// - Còn lại (xanh lá tăng giá / đỏ giảm giá): hue cố định đúng "xanh lá thật" (142°)
-//   và "đỏ thật" (0°), độ sáng nội suy theo đúng bậc đậm-nhạt 13 mức của cellStyle
-//   gốc (dùng lại mảng pos/neg đó làm nguồn "độ đậm theo %", không định nghĩa lại).
+// Treemap dùng bảng màu riêng: trần/tham chiếu/sàn màu phẳng cố định (tím/vàng/xanh dương); còn lại dùng hue cố định xanh lá 142°/đỏ 0°, độ sáng nội suy theo 13 mức của cellStyle.
 function _tmLightness(r,g,b){return(Math.max(r,g,b)+Math.min(r,g,b))/510;}
 function _tmHue2Rgb(p,q,t){
   if(t<0)t+=1;if(t>1)t-=1;
@@ -6643,8 +6096,7 @@ function _tmHslToRgb(h,s,l){
 }
 const TM_POS_L_MIN=0.714, TM_POS_L_MAX=0.947; // dải sáng gốc của thang xanh (đậm→nhạt theo %)
 const TM_NEG_L_MIN=0.755, TM_NEG_L_MAX=0.941; // dải sáng gốc của thang đỏ (đậm→nhạt theo %)
-// Pha màu gốc với trắng theo hệ số alpha cố định — tạo "màng mờ" đồng bộ,
-// áp cho cả 3 màu cố định (tím/vàng/xanh dương) để cùng chất liệu với xanh/đỏ.
+// Pha màu gốc với trắng theo hệ số alpha cố định — tạo "màng mờ" đồng bộ, áp cho cả 3 màu cố định (tím/vàng/xanh dương) để cùng chất liệu với xanh/đỏ.
 const TM_VEIL_ALPHA=0.82;
 function _tmVeil(r,g,b){
   const a=TM_VEIL_ALPHA;
@@ -6718,13 +6170,10 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(cell.dataset.sym);
-  updatePopout(cell.dataset.sym);
   _jumpLiteChart(cell.dataset.sym);
   openChart(cell.dataset.sym);
 });
-// Gửi mã sang cửa sổ CHART popout NGAY khi biết mã (không chờ chart cửa sổ chính tải
-// xong dữ liệu trước), để popout tự fetch song song luôn thay vì tuần tự sau — tránh mất
-// 2 lần đồng bộ nối tiếp làm chart trên popout nhảy chậm hơn hẳn so với chart mặc định.
+// Gửi mã sang cửa sổ CHART popout ngay khi biết mã, không chờ chart chính tải xong, để 2 chart fetch song song.
 function _syncChartPopoutSymbol(sym){
   const s=String(sym||'').toUpperCase().trim();
   if(s&&_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
@@ -6739,9 +6188,7 @@ function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _hmapClickTimer=setTimeout(()=>{
     _syncHoverPreview(sym);
-    updatePopout(sym);
     _jumpLiteChart(sym);
-    if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
     if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
@@ -6756,7 +6203,6 @@ DOM.sigList.addEventListener('dblclick',e=>{
   const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(row.dataset.sym);
-  updatePopout(row.dataset.sym);
   _jumpLiteChart(row.dataset.sym);
   openChart(row.dataset.sym);
 });
@@ -6768,12 +6214,9 @@ DOM.signalHeader.addEventListener('click',e=>{
   if(e.target.closest('#journal-open-btn'))return;
   DOM.momentumBox.classList.toggle('on');
 });
-// ═══════════════════════════════════════════════════════
 // MARKET HEALTH RENDER
-// ═══════════════════════════════════════════════════════
 function healthEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-// Nhãn trục thời gian dưới chart HEALTH chỉ cần Tháng/Năm (ngày cụ thể đã có sẵn
-// qua crosshair khi hover/chạm) — đổi "YYYY-MM-DD" thành "MM/YYYY".
+// Nhãn trục thời gian dưới chart HEALTH chỉ cần Tháng/Năm (ngày cụ thể đã có sẵn qua crosshair khi hover/chạm) — đổi "YYYY-MM-DD" thành "MM/YYYY".
 function healthAxisDate(dateStr){
   const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr||''));
   return m?`${m[2]}/${m[1]}`:String(dateStr||'');
@@ -6786,10 +6229,7 @@ function healthBand(score){
   if(s>=20)return{label:'Bi quan',fill:'#dc2626'};
   return{label:'Sợ hãi',fill:'#0284c7'};
 }
-// ── State cửa sổ xem + zoom của biểu đồ HEALTH ──────────────────────────────
-// Backend trả về nhiều phiên hơn (xem compute_market_health_index limit=120)
-// so với số điểm hiển thị mặc định — phần dư dùng để kéo/vuốt xem quá khứ và
-// để zoom (thu hẹp/mở rộng số điểm hiển thị) mà không cần gọi thêm API.
+// State cửa sổ xem + zoom của biểu đồ HEALTH: backend trả nhiều phiên hơn hiển thị mặc định để hỗ trợ kéo xem quá khứ và zoom mà không cần gọi thêm API.
 const HEALTH_DEFAULT_WINDOW=30;
 const HEALTH_MIN_WINDOW=10;
 let _healthFullHistory=[];      // toàn bộ lịch sử tải về gần nhất từ /api/market_health
@@ -6798,9 +6238,7 @@ let _healthWindowLen=HEALTH_DEFAULT_WINDOW; // số điểm đang hiển thị (
 let _healthLayout=null;         // toạ độ của lần vẽ khung gần nhất, dùng để tính crosshair/zoom mà không phải vẽ lại toàn bộ SVG
 let _healthShowVni=false;       // có đang bật overlay VNINDEX để đối chiếu không
 function renderHealthChart(history){
-  // Mỗi lần có dữ liệu mới (poll định kỳ) thì quay lại xem đúng phiên mới nhất,
-  // tránh trường hợp đang xem lịch sử cũ thì bị dữ liệu mới "kéo" lệch cửa sổ.
-  // Mức zoom (_healthWindowLen) được giữ nguyên qua các lần refresh.
+  // Mỗi lần có dữ liệu mới, tự quay về phiên mới nhất; mức zoom (_healthWindowLen) giữ nguyên qua các lần refresh.
   _healthFullHistory=(history||[]).filter(p=>Number.isFinite(Number(p.score)));
   _healthOffset=0;
   _healthRenderWindow();
@@ -6822,19 +6260,12 @@ function _healthRenderWindow(){
   const end=total-_healthOffset;
   const start=Math.max(0,end-windowLen);
   const h=_healthFullHistory.slice(start,end);
-  // Khung chart giờ được CSS Grid kéo cao bằng khung phân tích bên phải (thay vì
-  // cố định 328px) → viewBox phải tính lại theo ĐÚNG tỉ lệ thật của khung (thay vì
-  // cố định 900x360) để scale ngang/dọc bằng nhau, tránh chữ bị kéo cao méo dạng;
-  // đồng thời mọi cỡ chữ/lề/nét vẽ cũng lớn lên tương ứng với tỉ lệ khung mới cho
-  // cân đối, thay vì giữ nguyên kích thước gốc trong một khung lớn hơn.
+  // viewBox tính theo tỉ lệ thật của khung (CSS Grid co giãn) thay vì cố định 900x360, để chữ/nét vẽ không bị méo khi khung đổi kích thước.
   const rectBox=DOM.healthSvg.getBoundingClientRect();
   const aspect=(rectBox.width>0&&rectBox.height>0)?rectBox.height/rectBox.width:(360/900);
   const W=900,H=Math.round(Math.min(720,Math.max(320,W*aspect)));
   const scale=H/360;
-  // L/R (lề trái/phải) giữ cố định — không co theo `scale` (vốn phản ánh tỉ lệ
-  // CAO/rộng của khung, không phải độ rộng thật) để khỏi ăn vào vùng dải màu
-  // làm khung trông "co ngang lại", đồng thời giữ đúng vị trí checkbox VNINDEX
-  // (đặt theo % cố định, tính sẵn khớp với R=112) thẳng cột với nhãn "Hưng phấn".
+  // Lề trái/phải (L/R) giữ cố định, không co theo scale (tỉ lệ cao/rộng) để tránh ăn vào dải màu và giữ đúng vị trí checkbox VNINDEX.
   const L=52,R=112,T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
   const fs=Math.max(9,Math.round(10*scale));
   // Chừa khoảng đệm 2 bên để đường line không chạm sát mép trái/phải của khung.
@@ -6852,18 +6283,14 @@ function _healthRenderWindow(){
   const defs=bands.map((b,i)=>`<linearGradient id="healthBand${i}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${b.c2}" stop-opacity=".30"/><stop offset="1" stop-color="${b.c1}" stop-opacity=".74"/></linearGradient>`).join('');
   const rects=bands.map((b,i)=>{
     const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
-    // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải),
-    // giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
+    // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải), giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
     return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Sans, sans-serif" font-size="${fs}" font-weight="700">${b.label}</text>`;
   }).join('');
-  // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi
-  // ngưỡng phân vùng màu ở trên — hai việc khác nhau.
+  // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi ngưỡng phân vùng màu ở trên — hai việc khác nhau.
   const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Sans, sans-serif" font-size="${fs}">${v}</text>`).join('');
   const lineW=(1.75*scale).toFixed(2); // HEALTH và VNINDEX dùng chung độ dày nét
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
-  // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
-  // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
-  // vẫn hiển thị đúng số khi xem qua crosshair (xem _healthShowCrosshair).
+  // Overlay VNINDEX chuẩn hoá về thang 0-100 theo min/max cửa sổ đang xem để dùng chung trục dọc với HEALTH; giá trị thật vẫn hiện đúng qua crosshair.
   let vniPolyline='',vniMin=null,vniMax=null;
   if(_healthShowVni){
     const vals=h.map(p=>Number(p.vnindex)).filter(v=>Number.isFinite(v));
@@ -6890,19 +6317,11 @@ function _healthRenderWindow(){
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
 }
-// ── Crosshair khi di chuột/chạm: nhãn gắn vào trục dưới (thời gian) và trục
-// phải (giá trị) — giống hệt cách trục thời gian/giá của thẻ CHART hiển thị,
-// thay vì một khung nổi bên cạnh điểm như trước.
-// SVG dùng preserveAspectRatio="none" nên trục X/Y có thể co giãn khác tỉ lệ —
-// phải quy đổi toạ độ con trỏ (pixel thật) về hệ toạ độ viewBox (kích thước lấy
-// từ _healthLayout.W/H — viewBox co giãn theo khung thật, không còn cố định) theo
-// đúng tỉ lệ co giãn thực tế của từng trục trước khi tính điểm gần nhất.
+// Crosshair gắn nhãn vào trục dưới/phải (giống thẻ CHART); do SVG dùng preserveAspectRatio="none" nên phải quy đổi toạ độ pixel về hệ viewBox theo đúng tỉ lệ co giãn thực tế trước khi tính điểm gần nhất.
 function _healthClientX(evt){
   return evt.touches&&evt.touches.length?evt.touches[0].clientX:evt.clientX;
 }
-// Quy đổi toạ độ con trỏ (pixel thật) sang hệ toạ độ viewBox hiện tại của chart —
-// dùng chung cho cả việc tìm điểm gần nhất (hover) và kiểm tra chuột có đang ở
-// trong vùng dải màu hay không (chỉ zoom trong vùng đó).
+// Quy đổi toạ độ con trỏ (pixel thật) sang hệ viewBox — dùng chung cho tìm điểm gần nhất (hover) và kiểm tra vùng zoom.
 function _healthEventToSvgPoint(evt){
   if(!_healthLayout)return null;
   const cx=_healthClientX(evt);
@@ -6930,8 +6349,7 @@ function _healthShowCrosshair(idx){
   const{h,x,y,T,H,B,L,W,R,vniMin,vniMax,scale=1}=_healthLayout,p=h[idx];
   if(!p)return;
   const px=x(idx),py=y(Number(p.score)),band=healthBand(p.score),bottomY=H-B;
-  // Nhãn hover (thời gian/giá trị) dùng cỡ chữ + khung riêng, nhỏ hơn nhãn trục,
-  // để không bị to quá khổ khi khung chart giãn cao.
+  // Nhãn hover (thời gian/giá trị) dùng cỡ chữ + khung riêng, nhỏ hơn nhãn trục, để không bị to quá khổ khi khung chart giãn cao.
   const crossFs=Math.max(8,Math.round(8*scale));
   let svg=`<line x1="${px}" x2="${px}" y1="${T}" y2="${bottomY}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".55"/>`;
   svg+=`<line x1="${L}" x2="${W-R}" y1="${py}" y2="${py}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".35"/>`;
@@ -7024,10 +6442,7 @@ function _healthOnMove(evt){
       const rect=DOM.healthSvg.getBoundingClientRect();
       if(rect.width&&_healthWindowLen>1){
         const scaleX=_healthLayout.W/rect.width;
-        // plotW đang ở đơn vị viewBox (900) — quy đổi về pixel thật đang hiển thị
-        // bằng cách CHIA cho scaleX (không phải nhân), rồi mới suy ra pxPerPoint.
-        // Trừ 2*padX vì các điểm dữ liệu chỉ trải trong khoảng đã thu vào theo padX,
-        // không phải toàn bộ plotW (xem padX ở _healthRenderWindow).
+        // plotW ở đơn vị viewBox — chia cho scaleX để ra pixel thật rồi suy pxPerPoint; trừ 2*padX vì điểm dữ liệu chỉ trải trong khoảng đã thu vào theo padX.
         const pxPerPointReal=((_healthLayout.plotW-2*_healthLayout.padX)/scaleX)/(_healthWindowLen-1);
         // Kéo/vuốt sang trái (dx<0) → xem lịch sử (tăng offset); sang phải → tiến về hiện tại/gần đây.
         let newOffset=Math.round(_healthDrag.startOffset+dx/pxPerPointReal);
@@ -7042,13 +6457,7 @@ function _healthOnMove(evt){
   if(idx!=null)_healthShowCrosshair(idx);
 }
 function _healthOnUp(){_healthDrag=null;_healthPinch=null;}
-// ── Nút camera copy ảnh khung Mrk Health — tái dùng _liteCopyFeedback / _litePngBlobFromDataUrl ──
-// LƯU Ý: bản đầu dùng kỹ thuật SVG<foreignObject> để chụp cả khối HTML — kỹ thuật này nổi tiếng
-// không ổn định (nhiều trình duyệt, đặc biệt Chrome, coi canvas vẽ từ ảnh SVG có foreignObject là
-// "tainted" và chặn xuất ảnh bằng lỗi bảo mật). Cách làm dưới đây tránh hẳn foreignObject:
-// (1) rasterize thẳng SVG biểu đồ (health-svg) — SVG thuần, không phụ thuộc CSS ngoài nên an toàn;
-// (2) phần điểm số/nhãn/thẻ/nhận định được VẼ TAY bằng fillText, theo đúng cách đã dùng cho
-// tiêu đề/badge bên Chart (_liteDrawTitleSegments/_liteDrawSignalBadge) — không đụng canvas "bẩn".
+// Copy ảnh Mrk Health tránh SVG<foreignObject> (Chrome coi canvas là "tainted", chặn xuất ảnh) — rasterize SVG thuần rồi vẽ tay phần điểm số/nhãn bằng fillText.
 function _healthWrapText(ctx,text,maxWidth){
   const words=String(text||'').split(/\s+/).filter(Boolean);
   const lines=[];let line='';
@@ -7064,10 +6473,7 @@ async function copyHealthImage(btn){
   const svgEl=DOM.healthSvg;
   if(!svgEl)return;
   try{
-    // Đo trực tiếp vị trí + kích thước THẬT của 2 khung (chart trái / score-card+nhận
-    // định phải) ngay trên DOM đang hiển thị, rồi vẽ lại đúng như vậy trên canvas —
-    // thay vì tự suy ra tỉ lệ cột. Nhờ vậy ảnh xuất ra luôn khớp 1:1 với layout thật
-    // của .health-layout (kể cả khi co về 1 cột trên màn hẹp, do @media ở dòng ~2021).
+    // Đo trực tiếp vị trí/kích thước thật của 2 khung trên DOM rồi vẽ lại y hệt trên canvas, để ảnh xuất khớp 1:1 với layout thật kể cả khi responsive.
     const layoutEl=svgEl.closest('.health-layout');
     const chartBoxEl=svgEl.closest('.health-chartbox');
     const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
@@ -7097,16 +6503,12 @@ async function copyHealthImage(btn){
       chartImg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
     });
 
-    // Màu lấy từ đúng CSS variable đang dùng thật (--accent/--border/--muted), tránh
-    // hardcode lệch nếu theme đổi.
+    // Màu lấy từ đúng CSS variable đang dùng thật (--accent/--border/--muted), tránh hardcode lệch nếu theme đổi.
     const cs=getComputedStyle(document.documentElement);
     const cAccent=cs.getPropertyValue('--accent').trim()||'#1a56db';
     const cBorder=cs.getPropertyValue('--border').trim()||'#dde3ee';
     const cMuted=cs.getPropertyValue('--muted').trim()||'#6b7280';
-    // Điểm số (health-score) được tô màu ĐỘNG theo band (xanh/vàng/đỏ/tím/xanh dương —
-    // xem renderHealth: DOM.healthScore.style.color=localBand.fill), KHÁC với nhãn
-    // (health-label) vốn luôn dùng màu accent cố định. Lấy đúng màu đang hiển thị
-    // thật trên DOM thay vì hardcode cAccent để ảnh copy khớp 100% với dashboard.
+    // health-score tô màu động theo band (đọc từ DOM.healthScore.style.color) khác với health-label dùng màu accent cố định — lấy đúng màu DOM để ảnh copy khớp 100%.
     const cScore=DOM.healthScore?getComputedStyle(DOM.healthScore).color:cAccent;
 
     // Lấy nội dung khung phân tích trực tiếp từ DOM đang hiển thị (giá trị mới nhất đã render sẵn)
@@ -7120,8 +6522,7 @@ async function copyHealthImage(btn){
 
     const measCanvas=document.createElement('canvas'),mctx=measCanvas.getContext('2d');
 
-    // Đo trước nội dung "Nhận định" theo đúng bề rộng thật của khung phải (anaW) —
-    // .health-analysis{padding:18px 20px} nên trừ đúng 20px mỗi bên.
+    // Đo trước nội dung "Nhận định" theo đúng bề rộng thật của khung phải (anaW) — .health-analysis{padding:18px 20px} nên trừ đúng 20px mỗi bên.
     const anaPadX=20,anaContentW=anaW-2*anaPadX;
     mctx.font='400 15px "IBM Plex Sans",sans-serif';
     const bodyBlocks=[];
@@ -7135,8 +6536,7 @@ async function copyHealthImage(btn){
     const analysisLines=bodyBlocks.reduce((n,b)=>n+b.length,0);
     const contentH=bodyBlocks.length?(titleH+analysisLines*lineH+(bodyBlocks.length-1)*blockGap):0;
 
-    // Đo trước layout tag theo đúng bề rộng thật của score-card (cardW) —
-    // .health-score-card{padding:16px} nên trừ đúng 16px mỗi bên.
+    // Đo trước layout tag theo đúng bề rộng thật của score-card (cardW) — .health-score-card{padding:16px} nên trừ đúng 16px mỗi bên.
     const cardPadX=16,cardContentW=cardW-2*cardPadX;
     const pillH=24,pillGap=6,pillRowGap=8;
     mctx.font='800 11px "IBM Plex Sans",sans-serif';
@@ -7151,8 +6551,7 @@ async function copyHealthImage(btn){
       });
     }
 
-    // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài
-    // khớp .health-body{padding:12px 14px}.
+    // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài khớp .health-body{padding:12px 14px}.
     const outerPadX=14,outerPadY=12;
     const W=Math.round(layoutRect.width),H=Math.round(layoutRect.height);
     const canvasW=W+2*outerPadX,canvasH=H+2*outerPadY;
@@ -7173,10 +6572,7 @@ async function copyHealthImage(btn){
     ctx.drawImage(chartImg,ox+chartX,oy+chartY,chartW,chartH);
     roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
 
-    // ── Checkbox "VNINDEX" (label.health-vni-toggle, position:absolute top:6px
-    // left:88.4% trong .health-chartbox — xem CSS) — đây là overlay HTML nằm NGOÀI
-    // SVG nên rasterize chartImg ở trên không có nó; phải vẽ tay để ảnh copy khớp
-    // 100% với hiển thị thật, kể cả trạng thái tick/disable hiện tại.
+    // Checkbox VNINDEX là overlay HTML ngoài SVG nên rasterize không chụp được — phải vẽ tay để ảnh copy khớp trạng thái tick/disable thật.
     const vniChecked=!!DOM.healthVniCheckbox?.checked;
     const vniDisabled=!!DOM.healthVniCheckbox?.disabled;
     const vx=ox+chartX+chartW*0.884,vy=oy+chartY+6,boxSize=13;
@@ -7222,9 +6618,7 @@ async function copyHealthImage(btn){
       });
     }
 
-    // ── Cột phải, khối dưới: Nhận định — .health-analysis căn GIỮA theo chiều dọc
-    // (display:flex;flex-direction:column;justify-content:center), nên phải canh giữa
-    // nội dung trong anaH thay vì ghim lên đầu, để giống hệt cách hiển thị thật.
+    // Khối Nhận định căn giữa theo chiều dọc (flex column, justify-content:center) nên canh giữa nội dung trong anaH thay vì ghim đầu.
     roundBox(ox+anaX,oy+anaY,anaW,anaH,8,'#ffffff',cBorder);
     if(bodyBlocks.length){
       let ly=oy+anaY+Math.max(anaPadX,(anaH-contentH)/2)+titleH-12;
@@ -7235,8 +6629,7 @@ async function copyHealthImage(btn){
       bodyBlocks.forEach((block,bi)=>{
         const isFactor=summary&&bi>=1&&bi<=factors.length&&factors.length>0;
         ctx.font=isFactor?'400 14.5px "IBM Plex Sans",sans-serif':'400 15px "IBM Plex Sans",sans-serif';
-        // .health-analysis p{color:#1f2937} vs .health-analysis ul{color:#374151} — dùng đúng
-        // màu tương ứng cho từng loại dòng thay vì gộp chung 1 màu như trước.
+        // .health-analysis p{color:#1f2937} vs .health-analysis ul{color:#374151} — dùng đúng màu tương ứng cho từng loại dòng thay vì gộp chung 1 màu như trước.
         ctx.fillStyle=isFactor?'#374151':'#1f2937';
         block.forEach(line=>{ly+=lineH;ctx.fillText(line,ox+anaX+anaPadX,ly);});
         ly+=blockGap;
@@ -7279,9 +6672,7 @@ if(DOM.healthVniCheckbox){
     _healthRenderWindow();
   });
 }
-// viewBox được tính theo kích thước khung thật (xem _healthRenderWindow) nên khi
-// khung đổi kích thước (resize cửa sổ, thu/mở panel...) cần vẽ lại để không bị
-// lệch tỉ lệ; debounce nhẹ để không vẽ lại liên tục trong lúc đang kéo resize.
+// viewBox tính theo kích thước khung thật nên cần vẽ lại khi resize; debounce nhẹ để không vẽ liên tục lúc đang kéo.
 let _healthResizeTimer=null;
 window.addEventListener('resize',()=>{
   if(!_healthFullHistory.length)return;
@@ -7316,14 +6707,7 @@ function renderHealth(data){
   DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
   renderHealthChart(d.history||[]);
 }
-// Trong lúc hệ thống đang build lại history_cache lúc khởi động (hoặc đầu
-// phiên mới), /api/market_health trả ok:false (chưa từng có dữ liệu) HOẶC
-// pending_refresh:true (đang hiển thị tạm số CŨ trong lúc chờ tính lại — xem
-// _refresh_market_health() ở Python) vì chưa đủ dữ liệu. Thay vì bắt người
-// dùng F5 cả trang để thấy số mới khi cache build xong, tự động thử lại
-// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu
-// mới thực sự — một khi đã ok:true VÀ không còn pending_refresh thì mới dừng
-// vòng thử nhanh này, cơ chế làm mới định kỳ theo HEALTH_TTL vẫn chạy như cũ.
+// Khi /api/market_health trả ok:false hoặc pending_refresh:true (đang build cache), tự thử lại nhanh hơn HEALTH_TTL cho tới khi có dữ liệu mới, tránh phải F5 trang.
 const HEALTH_RETRY_MS=20000;
 let _healthRetryTimer=null;
 async function fetchHealth(){
@@ -7345,9 +6729,7 @@ async function fetchHealth(){
     _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
   }
 }
-// ═══════════════════════════════════════════════════════
 // SANKEY RENDER
-// ═══════════════════════════════════════════════════════
 const SANKEY_SECTORS=[];
 HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=='VN30')SANKEY_SECTORS.push(g);}));
 const SANKEY_SVG_NS='http://www.w3.org/2000/svg';
@@ -7480,11 +6862,9 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
-  updatePopout(sym);
   openChart(sym);
 });
-// ── Nút camera copy ảnh Sankey — cùng cơ chế với Treemap (SVG thuần, rasterize
-// thẳng theo đúng kích thước hiển thị thật của sankey-wrap) ──
+// ── Nút camera copy ảnh Sankey — cùng cơ chế với Treemap (SVG thuần, rasterize thẳng theo đúng kích thước hiển thị thật của sankey-wrap) ──
 async function copySankeyImage(btn){
   const svgEl=DOM.sankeySvg;
   if(!svgEl)return;
@@ -7528,11 +6908,7 @@ DOM.sankeyCopyBtn?.addEventListener('click',e=>{
   e.stopPropagation();
   copySankeyImage(e.currentTarget);
 });
-// ═══════════════════════════════════════════════════════
-// TREEMAP RENDER — dùng lại đúng nguồn dữ liệu của Sankey/Heatmap
-// (SANKEY_SECTORS, sankeyWeight, SANKEY_MIN_WEIGHT) và màu ô đúng bảng màu
-// của Heatmap (cellStyle) để 3 view luôn đồng nhất khi user đối chiếu qua lại.
-// ═══════════════════════════════════════════════════════
+// TREEMAP RENDER — dùng lại nguồn dữ liệu Sankey/Heatmap (SANKEY_SECTORS, sankeyWeight, cellStyle) để 3 view luôn đồng nhất.
 function treemapDataset(data){
   return SANKEY_SECTORS.map(g=>{
     const stocks=g.syms.map(sym=>{
@@ -7578,8 +6954,7 @@ function tmSquarify(items,x,y,w,h,out){
   if(vertical)tmSquarify(rest,x+rowThick,y,w-rowThick,h,out);
   else tmSquarify(rest,x,y+rowThick,w,h-rowThick,out);
 }
-// Định dạng tên ngành dùng CHUNG cho cả Sankey và Treemap — sửa 1 chỗ này,
-// cả 2 view tự động đồng bộ theo (chỉ viết hoa chữ cái đầu, VD "NGÂN HÀNG" -> "Ngân hàng").
+// Định dạng tên ngành dùng CHUNG cho cả Sankey và Treemap — sửa 1 chỗ này, cả 2 view tự động đồng bộ theo (chỉ viết hoa chữ cái đầu, VD "NGÂN HÀNG" -> "Ngân hàng").
 function sectorLabel(name){
   return name?name.charAt(0)+name.slice(1).toLowerCase():name;
 }
@@ -7597,20 +6972,13 @@ function renderTreemap(data){
   const secLayout=[];tmSquarify(sectors,0,0,W,H,secLayout);
   secLayout.forEach(sec=>{
     const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
-    // Nền chung cho CẢ khung ngành (header + vùng ô mã cổ phiếu) — cùng 1 màu
-    // xám-xanh rất nhạt (#f4f6f9), tránh lộ nền trắng của SVG ở khe hở giữa các
-    // ô mã cổ phiếu (đặc biệt ở đáy khung, nơi các ô không lấp kín hết chiều cao).
-    // Gộp chung 1 rect vừa tô nền vừa vẽ viền (fill + stroke) thay vì 2 rect
-    // trùng hình học, giảm số node SVG phải dựng mỗi lần render.
+    // Nền chung (header+vùng ô mã) 1 màu xám-xanh nhạt, gộp 1 rect vừa tô nền vừa vẽ viền để giảm số node SVG.
     svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'#f4f6f9',stroke:'#d8d6cc','stroke-width':1}));
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
-      // Đường kẻ phân cách (#e4e8ec) giữa header (tên ngành) và vùng ô mã cổ
-      // phiếu bên dưới — nền 2 vùng giờ đã đồng màu nên chỉ cần đường kẻ để
-      // tách biệt trực quan, không cần rect nền riêng cho header nữa.
+      // Đường kẻ phân cách header/vùng ô mã thay cho rect nền riêng (2 vùng đã đồng màu).
       svg.appendChild(sankeyEl('line',{x1:sx,y1:sy+headerH,x2:sx+sw,y2:sy+headerH,stroke:'#e4e8ec','stroke-width':1}));
-      // Cắt bớt tên ngành + thêm dấu "…" nếu không đủ chỗ trong khung, tránh tràn ra ngoài
-      // (đặc biệt các ô ngành nhỏ ở góc dưới cùng bên phải). ~7.3px/ký tự với font-size 12 monospace.
+      // Cắt bớt tên ngành + thêm dấu "…" nếu không đủ chỗ trong khung, tránh tràn ra ngoài (đặc biệt các ô ngành nhỏ ở góc dưới cùng bên phải). ~7.3px/ký tự với font-size 12 monospace.
       const label=sectorLabel(sec.item.name);
       const maxChars=Math.max(3,Math.floor((sw-12)/7.3));
       const shown=label.length>maxChars?label.slice(0,Math.max(1,maxChars-1))+'…':label;
@@ -7649,12 +7017,9 @@ DOM.treemapSvg.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
-  updatePopout(sym);
   openChart(sym);
 });
-// ── Nút camera copy ảnh Treemap — Treemap là SVG thuần (không lai HTML overlay như
-// Mrk Health) nên chỉ cần rasterize thẳng #treemap-svg theo đúng kích thước hiển thị
-// thật (treemap-wrap), không cần vẽ tay thêm phần nào khác.
+// Copy ảnh Treemap chỉ cần rasterize thẳng #treemap-svg (SVG thuần), không cần vẽ tay thêm phần nào.
 async function copyTreemapImage(btn){
   const svgEl=DOM.treemapSvg;
   if(!svgEl)return;
@@ -7698,10 +7063,7 @@ DOM.treemapCopyBtn?.addEventListener('click',e=>{
   e.stopPropagation();
   copyTreemapImage(e.currentTarget);
 });
-// ── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
-// Vẽ NGAY trong khung Mrk Health — tải lười (lazy) lần đầu tab "health" được mở
-// (đỡ gọi VNDIRECT khi người dùng không xem tới), sau đó tự làm mới định kỳ.
-// Cách lấy dữ liệu (API VNDIRECT) và vẽ SVG 2 trục dựa đúng theo vndirect_valuation_chart.py.
+// VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ (MA50/MA200) tải lười khi mở tab Mrk Health lần đầu, tự làm mới định kỳ theo vndirect_valuation_chart.py.
 const VND_AUTO_REFRESH_MS=5*60*1000;
 const vndValuationState={metric:'pe',period:365,rows:[]};
 const vndAllocationState={period:365,rows:[]};
@@ -7766,9 +7128,7 @@ async function loadVndAllocation(){
   }catch(e){vndShowError('vnd-allocation-status','vnd-allocation-error',e);}
 }
 
-// ── Khối ngoại & Tự doanh: 2 khung bar chart gộp theo phiên, nằm dưới HEALTH,
-// trên khung Định giá. Không có tab/kỳ thời gian chọn — luôn hiện đủ dữ liệu
-// gần nhất trả về từ API (khối ngoại ~100 phiên, tự doanh 45 ngày gần nhất).
+// Khối ngoại & Tự doanh: 2 bar chart theo phiên, luôn hiện đủ dữ liệu gần nhất trả về (không có bộ lọc kỳ thời gian).
 const vndForeignState={rows:[]};
 const vndProprietaryState={rows:[]};
 
@@ -7814,9 +7174,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
   const rawMin=Math.min(0,...vals),rawMax=Math.max(0,...vals);
   const pad=(rawMax-rawMin)*0.14||1;
   const yMin=rawMin-pad,yMax=rawMax+pad;
-  // Khoảng trắng bên phải 5% — đồng bộ với renderVndChart (khung Định giá/Phân bổ dùng
-  // xMaxPadded = xMax + xRange*0.05) để bar cuối cùng thẳng hàng theo chiều dọc với điểm
-  // giá trị cuối cùng bên khung Định giá/Phân bổ.
+  // Khoảng trắng phải 5% đồng bộ renderVndChart để bar cuối thẳng hàng với điểm giá trị cuối khung Định giá/Phân bổ.
   const rightPadRatio=0.05;
   const barAreaW=innerW/(1+rightPadRatio);
   const step=barAreaW/rows.length;
@@ -7830,9 +7188,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     svg.appendChild(el);
     return el;
   }
-  // Tick grid luôn đi qua đúng 0 và cách đều 2 phía trên/dưới — tránh trường hợp
-  // vndNiceTicks() (chia đều yMin..yMax, không neo vào 0) lỡ sinh ra 1 tick nằm rất
-  // sát 0 khiến nhìn như có 2 đường kề nhau cạnh đường 0.
+  // Tick grid luôn qua đúng 0 và cách đều 2 phía, tránh vndNiceTicks() sinh tick sát 0 gây nhìn nhầm 2 đường trùng.
   const flowStepUnit=Math.max(Math.abs(yMax),Math.abs(yMin),1e-9)/3;
   const flowGridTicks=[0];
   for(let t=flowStepUnit;t<=yMax+1e-9;t+=flowStepUnit)flowGridTicks.push(t);
@@ -7953,11 +7309,7 @@ function renderVndChart(config){
   }
   const last=rows[rows.length-1];
   config.onLast?.(last);
-  // ── Badges giá trị cuối bên phải chart ──────────────────────────────────────
-  // Vẽ nhãn màu (badge) sát mép phải tại vị trí Y của giá trị cuối cùng, giúp đọc
-  // nhanh VNINDEX hiện tại và chỉ số P/E, P/B hoặc % MA50/MA200 mà không cần hover.
-  // (Trước đây badge VNINDEX nằm bên trái — đã chuyển sang phải cùng các badge khác
-  // ngày 2026-08-06, nên hàm dưới đây không còn cần tham số căn trái/phải nữa.)
+  // Badge giá trị cuối bên phải chart để đọc nhanh không cần hover (đã chuyển badge VNINDEX từ trái sang phải ngày 2026-08-06).
   const _vBadge=(y,text,color)=>{
     const H=15,FONT=10,PAD=5,approxW=Math.max(text.length*6.3+PAD*2,28);
     add('rect',{x:width-margin.right,y:y-H/2,width:approxW,height:H,rx:2.5,fill:color});
@@ -8054,13 +7406,10 @@ function triActivateTab(tab){
     const el=document.getElementById('tri-content-'+t);
     if(el)el.classList.toggle('on',t===tab);
   });
-  // Tab HEALTH vẽ chart theo kích thước khung THẬT (getBoundingClientRect) — lúc tab đang ẩn
-  // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
-  // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
+  // Tab HEALTH vẽ theo kích thước khung thật — cần vẽ lại ngay khi tab vừa hiện (lúc ẩn kích thước=0), giống panel CHART.
   if(tab==='health'){
     if(_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
-    // Khung PE/PB + Phân bổ thị trường: nạp lần đầu (lazy), các lần mở lại sau chỉ
-    // cần vẽ lại theo đúng kích thước khung hiện tại (dữ liệu đã có sẵn trong state).
+    // Khung PE/PB + Phân bổ thị trường: nạp lần đầu (lazy), các lần mở lại sau chỉ cần vẽ lại theo đúng kích thước khung hiện tại (dữ liệu đã có sẵn trong state).
     vndInitOnce();
     requestAnimationFrame(vndRerenderVisible);
   }
@@ -8081,32 +7430,20 @@ DOM.triHdr.addEventListener('click',e=>{
     }
   }
 });
-// Mặc định mở thẻ MARKET ở tab Mrk Health (không phải Fireant). Bắt buộc phải GỌI HÀM
-// triActivateTab() ở đây (không chỉ set sẵn class "on" trong HTML) vì đây là nơi duy nhất
-// kích hoạt vndInitOnce()/vndRerenderVisible() để nạp dữ liệu 4 khung Định giá/Phân bổ/
-// Khối ngoại/Tự doanh — nếu bỏ qua, tab trông như đang active nhưng dữ liệu bên trong sẽ
-// không bao giờ được nạp (kẹt ở "Đang tải...").
+// Mặc định mở tab Mrk Health — phải gọi triActivateTab() (không chỉ set class "on") để kích hoạt vndInitOnce()/vndRerenderVisible() nạp dữ liệu 4 khung, nếu không sẽ kẹt "Đang tải...".
 triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
-  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...)
-  // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
+  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...) vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
   if(e.target.closest('button,input,.hmap-search-wrap'))return;
   DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
-  // Khi thẻ đang mở, các control bên trong thanh công cụ (tìm mã, D/W, chỉ báo, vẽ...)
-  // vẫn phải bấm được bình thường — chỉ coi là "bấm vào thẻ để thu/mở" khi không bấm
-  // trúng các vùng control đó. Khi thẻ đang thu gọn thì các vùng đó đã ẩn (display:none)
-  // nên toàn bộ header luôn hoạt động như nút mở ra, giống hệt SANKEY.
+  // Control trong thanh công cụ vẫn bấm được bình thường khi thẻ mở; chỉ coi là bấm để thu/mở khi không trúng control, giống SANKEY.
   if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
-    // Panel vừa được mở lại sau khi bị ẩn (display:none) — canvas của lightweight-charts
-    // có thể đang mang kích thước 0 nên cần ép resize lại đúng như handler window 'resize',
-    // đồng thời set lại visible logical range (số bar hiển thị + khoảng trống lề phải) như
-    // mặc định ban đầu, tránh trường hợp nến bị dồn cụm vào một góc do resize sau khi range
-    // đã được tính với width=0 lúc panel còn ẩn.
+    // Panel vừa mở lại sau khi ẩn cần ép resize canvas (có thể đang mang kích thước 0) và reset visible range, tránh nến bị dồn cụm.
     requestAnimationFrame(()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
       if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
@@ -8116,9 +7453,7 @@ DOM.liteChartToggle.addEventListener('click',e=>{
     });
   }
 });
-// ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
-// ═══════════════════════════════════════════════════════
 function tick(){
   const n=new Date();
   DOM.clock.textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+' '+n.toLocaleDateString('vi-VN');
@@ -8128,17 +7463,14 @@ async function loadConfig(){
   try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;HEALTH_TTL=j.market_health_ttl_sec||1800;}catch(e){}
   DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • Mrk Health ${Math.round(HEALTH_TTL/60)} phút`;
 }
-// ═══════════════════════════════════════════════════════
 // FETCH
-// ═══════════════════════════════════════════════════════
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`
       :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
-    // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung
-    // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
+    // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
     redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
@@ -8171,8 +7503,6 @@ async function fetchHmap(){
     renderTreemap(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
-    if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
-      _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
   }catch(e){console.error('fetchHmap:',e);}
 }
 function startBar(elOrId,sec){
@@ -8180,9 +7510,7 @@ function startBar(elOrId,sec){
   el.style.transition='none';el.style.width='0%';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
 }
-// ═══════════════════════════════════════════════════════
 // PRICE ALERTS
-// ═══════════════════════════════════════════════════════
 function _esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function alertReq(path,opts={}){
   const headers={...(opts.headers||{}),'X-Alert-Client-Id':getAlertClientId()};
@@ -8228,13 +7556,9 @@ function renderAlertRules(){
   }
   DOM.liteAlertList.innerHTML=rows.join('');
 }
-// Cửa sổ CHART mở riêng (openChartPopout) nạp lại đúng trang này với ?chartPopout=1 nên cũng
-// chạy init()/pollAlertFeed() y hệt cửa sổ chính. Cờ này dùng để cửa sổ riêng KHÔNG bắn thông
-// báo cảnh báo giá nữa, tránh báo trùng 2 lần (1 lần ở cửa sổ chính, 1 lần ở cửa sổ CHART popout).
+// Cửa sổ CHART popout (?chartPopout=1) cũng chạy init()/pollAlertFeed() — cờ này để nó không bắn thông báo giá trùng với cửa sổ chính.
 const _isChartPopoutWindow=new URLSearchParams(window.location.search).get('chartPopout')==='1';
-// Trình duyệt KHÔNG cho JS tự thu hồi quyền Notification đã granted (chỉ người dùng tắt được qua
-// cài đặt trình duyệt) — nên cần 1 cờ riêng ở tầng ứng dụng để biết có ĐANG MUỐN dùng desktop
-// notification hay không, độc lập với quyền của trình duyệt. Bấm nút 🖥 chỉ đổi cờ này.
+// Cờ ứng dụng riêng để biết có ĐANG MUỐN dùng desktop notification hay không, độc lập với quyền Notification của trình duyệt (JS không thể tự thu hồi quyền đã granted).
 const DESKTOP_NOTIFY_KEY='dashboard_desktop_notify_on';
 function desktopNotifyEnabled(){
   return 'Notification' in window&&Notification.permission==='granted'&&_liteLSGet(DESKTOP_NOTIFY_KEY,'0')==='1';
@@ -8306,8 +7630,7 @@ function showAlertToast(ev){
       return;
     }catch(e){console.error('Notification error:',e);}
   }
-  // Dự phòng: trình duyệt không hỗ trợ/chưa cấp/đã từ chối quyền, hoặc người dùng đã tắt qua nút 🖥
-  // -> vẫn hiện toast trên dashboard như trước để không mất cảnh báo.
+  // Dự phòng: trình duyệt không hỗ trợ/chưa cấp/đã từ chối quyền, hoặc người dùng đã tắt qua nút 🖥 -> vẫn hiện toast trên dashboard như trước để không mất cảnh báo.
   if(!DOM.alertToastWrap)return;
   const el=document.createElement('div');
   el.className='alert-toast';
@@ -8435,9 +7758,7 @@ function bindAlertControls(){
   });
   updateAlertFormVisibility();
 }
-// ═══════════════════════════════════════════════════════
 // SEARCH helper
-// ═══════════════════════════════════════════════════════
 function _bindSearch(el,onEnter){
   if(!el)return;
   el.addEventListener('keydown',function(e){
@@ -8465,7 +7786,6 @@ $('hmap-follow-btn').addEventListener('dblclick',function(e){
   editFollowSymbols();
   this.blur();
 });
-$('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 $('journal-open-btn').addEventListener('click',()=>{
   if(DOM.journalFrame.src==='about:blank')DOM.journalFrame.src='/journal';
@@ -8474,96 +7794,10 @@ $('journal-open-btn').addEventListener('click',()=>{
 });
 function closeJournal(){
   DOM.journalOverlay.classList.remove('on');
-  if(!DOM.overlay.classList.contains('on')&&!DOM.lb.classList.contains('on'))document.body.style.overflow='';
+  if(!DOM.overlay.classList.contains('on'))document.body.style.overflow='';
 }
 DOM.journalOverlay.addEventListener('click',e=>{if(e.target===DOM.journalOverlay)closeJournal();});
-// ═══════════════════════════════════════════════════════
-// ALBUM
-// ═══════════════════════════════════════════════════════
-function _showAlbum(images){
-  _albumImages=images;_albumTotal=images.length;_albumIdx=0;
-  const mob=IS_MOBILE();
-  DOM.albumSlides.innerHTML=images.map((img,i)=>`<div class="album-slide${i===0?' on':''}" data-idx="${i}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}></div>`).join('');
-  DOM.albumDots.innerHTML=images.map((_,i)=>`<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
-  _updateAlbumNav();
-  DOM.albumOuter.style.display='flex';DOM.loading.style.display='none';
-}
-function _appendAlbumImages(images){
-  if(!images.length)return;
-  const mob=IS_MOBILE(),start=_albumImages.length;
-  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
-  DOM.albumSlides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}></div>`;}).join(''));
-  DOM.albumDots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
-  _updateAlbumNav();
-}
-DOM.albumDots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
-DOM.albumSlides.addEventListener('click',e=>{
-  const img=e.target.closest('img');
-  if(img&&img.dataset.lb==='1'){const slide=img.closest('.album-slide');if(slide)lbOpen(_albumImages,+slide.dataset.idx);}
-});
-DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
-DOM.btnNext.addEventListener('click',()=>albumNav(1));
-function albumGoto(i){
-  if(i<0||i>=_albumTotal)return;
-  DOM.albumSlides.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
-  DOM.albumDots.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i;_updateAlbumNav();
-}
-function albumNav(dir){albumGoto(_albumIdx+dir);}
-function _updateAlbumNav(){
-  DOM.btnPrev.classList.toggle('disabled',_albumIdx===0);
-  DOM.btnNext.classList.toggle('disabled',_albumIdx===_albumTotal-1);
-}
-let _scanTouchX=0,_scanRaf=null;
-$('panel-scanner').addEventListener('touchstart',e=>{_scanTouchX=e.touches[0].clientX;},{passive:true});
-$('panel-scanner').addEventListener('touchend',e=>{
-  if(_scanRaf)cancelAnimationFrame(_scanRaf);
-  _scanRaf=requestAnimationFrame(()=>{const dx=e.changedTouches[0].clientX-_scanTouchX;if(Math.abs(dx)>50)albumNav(dx<0?1:-1);});
-},{passive:true});
-DOM.btnRef.addEventListener('click',async()=>{
-  if(!_sym)return;
-  DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
-  try{await fetch('/api/chart_cache_clear/'+_sym,{method:'DELETE'});}catch(e){}
-  DOM.btnRef.classList.remove('spinning');DOM.btnRef.disabled=false;
-  await loadScannerChart(_sym);
-});
-async function loadScannerChart(sym){
-  DOM.albumOuter.style.display='none';DOM.loading.style.display='flex';
-  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
-  try{
-    const r=await fetch('/api/chart_images/'+sym);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
-    const j=await r.json();
-    if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
-    _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent='Đang tải 15m...';
-    loadScannerChart15m(sym);
-  }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
-  }
-}
-async function loadScannerChart15m(sym){
-  const s=(sym||'').toUpperCase().trim();
-  try{
-    const r=await fetch('/api/chart_image_15m/'+s);
-    if(!r.ok){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='';return;}
-    const j=await r.json();
-    if((_sym||'').toUpperCase().trim()!==s)return;
-    if(!j.images?.length)return;
-    const labels=j.labels||['⚡ 15 phút [15m]'];
-    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
-    const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }catch(e){
-    const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }
-}
-// ═══════════════════════════════════════════════════════
 // POPUP — tab activation (dùng chung cho cả 3 header)
-// ═══════════════════════════════════════════════════════
 function _activateTab(tab){
   _tab=tab;
   // Desktop tabs
@@ -8576,7 +7810,6 @@ function _activateTab(tab){
   TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
   // Lazy iframes
   if(IFRAME_LAZY[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_LAZY[tab](_sym);}
-  if(tab==='scanner')loadScannerChart(_sym);
   // Scroll active tab into view (portrait)
   if(IS_MOBILE()&&!IS_LANDSCAPE()){
     const activeBtn=DOM.mobTabRow.querySelector('.mob-tab-btn.on');
@@ -8594,18 +7827,11 @@ DOM.popupCtabs.addEventListener('click',e=>{const btn=e.target.closest('.ctab');
 DOM.mobTabRow.addEventListener('click',e=>{const btn=e.target.closest('.mob-tab-btn');if(btn)_activateTab(btn.dataset.tab);});
 // Event delegation — mobile landscape tabs
 DOM.mobLandTabs.addEventListener('click',e=>{const btn=e.target.closest('.mob-land-tab');if(btn)_activateTab(btn.dataset.tab);});
-// ═══════════════════════════════════════════════════════
 // POPUP OPEN / CLOSE
-// ═══════════════════════════════════════════════════════
 function _updateSymDisplay(sym){
   DOM.ptitle.textContent=sym;
   DOM.mobPtitle.textContent=sym;
   DOM.mobLandSym.textContent=sym;
-}
-function _resetScannerUI(){
-  DOM.albumOuter.style.display='none';
-  DOM.loading.style.display='flex';
-  DOM.loading.innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
 }
 function _openPopup(){
   DOM.overlay.classList.add('on');
@@ -8617,13 +7843,12 @@ function _openPopup(){
   else
     DOM.mobClose.style.display='none';
 }
-function openChart(sym,tab='vs'){
+function openChart(sym,tab='chart'){
   _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
-  _resetScannerUI();
+  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _activateTab(tab);
   _openPopup();
   setTimeout(()=>DOM.pbox.focus(),0);
@@ -8635,7 +7860,7 @@ function closePopup(){
   _resetPopupChrome();
   pbox.style.visibility='hidden';
   DOM.ifVs.src='about:blank';
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   pbox.style.animation='none';
   DOM.overlay.classList.remove('on');
   document.body.style.overflow='';
@@ -8656,7 +7881,7 @@ _bindSearch(DOM.mobLandSearch,sym=>openChart(sym));
 if(IS_MOBILE()){
   let _swX=0,_swDir='',_swFired=false;
   DOM.pbox.addEventListener('touchstart',e=>{
-    if(!DOM.overlay.classList.contains('on')||DOM.lb.classList.contains('on'))return;
+    if(!DOM.overlay.classList.contains('on'))return;
     if(e.touches[0].clientX>40)return;
     _swX=e.touches[0].clientX;_swDir='';_swFired=false;
   },{passive:true});
@@ -8680,149 +7905,17 @@ window.addEventListener('orientationchange',()=>{
 });
 // Keyboard
 document.addEventListener('keydown',e=>{
-  if(DOM.lb.classList.contains('on'))return;
   if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
   if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){closeJournal();return;}
-  if(!DOM.overlay.classList.contains('on'))return;
-  const activeSearch=[DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch];
-  if(activeSearch.includes(document.activeElement))return;
-  if(_tab!=='scanner'||_albumTotal===0)return;
-  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
-  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
-// ═══════════════════════════════════════════════════════
-// LIGHTBOX
-// ═══════════════════════════════════════════════════════
-const lb=DOM.lb;
-const lbS={
-  idx:0,W:0,images:[],
-  dragging:false,dragDir:'',dragDx:0,dragDy:0,dragStartX:0,dragStartY:0,stripOffset:0,
-  scale:1,panX:0,panY:0,
-  isPinching:false,pinchStartDist:0,pinchStartScale:1,pinchStartPanX:0,pinchStartPanY:0,
-  isPanning:false,panStartX:0,panStartY:0,panStartPanX:0,panStartPanY:0,
-  lastTapTime:0,lastTapX:0,lastTapY:0,hintShown:false,pending:false,
-};
-function _lbImg(){return DOM.lbStrip.querySelectorAll('.lb-slide img')[lbS.idx]||null;}
-function _lbResetZoom(){lbS.scale=1;lbS.panX=0;lbS.panY=0;const img=_lbImg();if(img){img.classList.remove('zooming');img.style.transform='';}}
-function _lbApplyZoom(){const img=_lbImg();if(!img)return;img.classList.add('zooming');img.style.transform=`translate(${lbS.panX}px,${lbS.panY}px) scale(${lbS.scale})`;}
-function _lbClamp(){
-  if(lbS.scale<=1){lbS.panX=0;lbS.panY=0;return;}
-  const img=_lbImg();if(!img)return;
-  const r=img.getBoundingClientRect();
-  const mX=Math.max(0,(r.width-window.innerWidth)/2),mY=Math.max(0,(r.height-window.innerHeight)/2);
-  lbS.panX=Math.max(-mX,Math.min(mX,lbS.panX));lbS.panY=Math.max(-mY,Math.min(mY,lbS.panY));
-}
-function lbOpen(images,idx){
-  lbS.images=images;lbS.idx=idx;lbS.W=window.innerWidth;
-  DOM.lbStrip.innerHTML=images.map(img=>`<div class="lb-slide"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async" draggable="false"></div>`).join('');
-  DOM.lbStrip.style.width=`${lbS.W*images.length}px`;
-  lbS.scale=1;lbS.panX=0;lbS.panY=0;
-  _lbSnap(idx,false);_lbMeta();
-  lb.classList.add('on');document.body.style.overflow='hidden';
-  if(!lbS.hintShown){lbS.hintShown=true;setTimeout(()=>{DOM.lbZoomHint.classList.add('show');setTimeout(()=>DOM.lbZoomHint.classList.remove('show'),2200);},600);}
-}
-function lbClose(){_lbResetZoom();lb.classList.remove('on');document.body.style.overflow='';}
-$('mob-lightbox-close').addEventListener('click',lbClose);
-function _lbSnap(idx,animate){
-  lbS.scale=1;lbS.panX=0;lbS.panY=0;
-  const prev=_lbImg();if(prev){prev.classList.remove('zooming');prev.style.transform='';}
-  lbS.idx=Math.max(0,Math.min(idx,lbS.images.length-1));
-  const tx=-lbS.idx*lbS.W;lbS.stripOffset=tx;
-  DOM.lbStrip.classList.remove('snapping','dragging');
-  if(animate){DOM.lbStrip.classList.add('snapping');DOM.lbStrip.style.transform=`translateX(${tx}px)`;setTimeout(()=>DOM.lbStrip.classList.remove('snapping'),350);}
-  else DOM.lbStrip.style.transform=`translateX(${tx}px)`;
-  _lbMeta();
-}
-function _lbMeta(){
-  if(!lbS.images.length)return;
-  DOM.lbLabel.textContent=lbS.images[lbS.idx].label;
-  DOM.lbCounter.innerHTML=lbS.images.map((_,i)=>`<div class="mob-lb-dot${i===lbS.idx?' on':''}"></div>`).join('');
-}
-function _pd(t){const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.sqrt(dx*dx+dy*dy);}
-function _lbTS(e){
-  if(e.touches.length===2){e.preventDefault();lbS.isPinching=true;lbS.dragging=false;lbS.pinchStartDist=_pd(e.touches);lbS.pinchStartScale=lbS.scale;lbS.pinchStartPanX=lbS.panX;lbS.pinchStartPanY=lbS.panY;return;}
-  if(e.touches.length!==1)return;
-  const now=Date.now(),tx=e.touches[0].clientX,ty=e.touches[0].clientY;
-  if(now-lbS.lastTapTime<300&&Math.hypot(tx-lbS.lastTapX,ty-lbS.lastTapY)<40){e.preventDefault();_lbDbl(tx,ty);lbS.lastTapTime=0;return;}
-  lbS.lastTapTime=now;lbS.lastTapX=tx;lbS.lastTapY=ty;
-  if(lbS.scale>1.05){lbS.isPanning=true;lbS.panStartX=tx;lbS.panStartY=ty;lbS.panStartPanX=lbS.panX;lbS.panStartPanY=lbS.panY;lbS.dragging=false;return;}
-  lbS.dragging=true;lbS.isPanning=false;lbS.dragDir='';lbS.dragDx=0;lbS.dragDy=0;lbS.dragStartX=tx;lbS.dragStartY=ty;
-}
-function _lbTM(e){
-  if(lbS.isPinching&&e.touches.length===2){
-    e.preventDefault();if(lbS.pending)return;lbS.pending=true;
-    const ratio=_pd(e.touches)/lbS.pinchStartDist;
-    const ns=Math.min(4,Math.max(1,lbS.pinchStartScale*ratio));
-    requestAnimationFrame(()=>{lbS.scale=ns;lbS.panX=lbS.pinchStartPanX;lbS.panY=lbS.pinchStartPanY;_lbClamp();_lbApplyZoom();lbS.pending=false;});
-    return;
-  }
-  if(e.touches.length!==1)return;
-  const tx=e.touches[0].clientX,ty=e.touches[0].clientY;
-  if(lbS.isPanning){
-    e.preventDefault();if(lbS.pending)return;lbS.pending=true;
-    const nx=lbS.panStartPanX+(tx-lbS.panStartX),ny=lbS.panStartPanY+(ty-lbS.panStartY);
-    requestAnimationFrame(()=>{lbS.panX=nx;lbS.panY=ny;_lbClamp();_lbApplyZoom();lbS.pending=false;});
-    return;
-  }
-  if(!lbS.dragging)return;
-  const dx=tx-lbS.dragStartX,dy=ty-lbS.dragStartY;
-  if(!lbS.dragDir&&(Math.abs(dx)>6||Math.abs(dy)>6))lbS.dragDir=Math.abs(dy)>Math.abs(dx)?'v':'h';
-  if(!lbS.dragDir)return;
-  e.preventDefault();if(lbS.pending)return;lbS.pending=true;
-  if(lbS.dragDir==='v'){
-    const pull=Math.max(0,dy);lbS.dragDy=dy;
-    requestAnimationFrame(()=>{lb.style.opacity=Math.max(0,1-pull/280);DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px) translateY(${pull*.6}px) scale(${Math.max(.85,1-pull/900)})`;DOM.lbStrip.classList.add('dragging');lbS.pending=false;});
-    return;
-  }
-  lbS.dragDx=dx;
-  let offset=lbS.stripOffset+dx;
-  const maxO=0,minO=-(lbS.images.length-1)*lbS.W;
-  if(offset>maxO)offset=dx*.3;if(offset<minO)offset=minO+(offset-minO)*.3;
-  requestAnimationFrame(()=>{DOM.lbStrip.classList.add('dragging');DOM.lbStrip.style.transform=`translateX(${offset}px)`;lbS.pending=false;});
-}
-function _lbTE(e){
-  lbS.pending=false;
-  if(lbS.isPinching){lbS.isPinching=false;if(lbS.scale<1.1)_lbResetZoom();else{const img=_lbImg();if(img)img.classList.remove('zooming');}return;}
-  if(lbS.isPanning){lbS.isPanning=false;return;}
-  if(!lbS.dragging)return;
-  lbS.dragging=false;DOM.lbStrip.classList.remove('dragging');
-  if(lbS.dragDir==='v'){
-    const pull=Math.max(0,lbS.dragDy);
-    if(pull>80){DOM.lbStrip.style.transition='transform .22s ease';lb.style.transition='opacity .22s ease';DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px) translateY(100vh) scale(.9)`;lb.style.opacity='0';setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';lb.style.opacity='';lbClose();},230);}
-    else{DOM.lbStrip.style.transition='transform .22s ease';lb.style.transition='opacity .15s ease';DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px)`;lb.style.opacity='1';setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';},230);}
-    lbS.dragDy=0;lbS.dragDir='';return;
-  }
-  const dx=lbS.dragDx,absX=Math.abs(dx),THR=lbS.W*.25;
-  let next=lbS.idx;
-  if(absX>THR&&dx<0)next=lbS.idx+1;else if(absX>THR&&dx>0)next=lbS.idx-1;
-  else if(absX>80&&dx<0&&lbS.idx<lbS.images.length-1)next=lbS.idx+1;
-  else if(absX>80&&dx>0&&lbS.idx>0)next=lbS.idx-1;
-  _lbSnap(next,true);lbS.dragDx=0;lbS.dragDir='';
-}
-function _lbDbl(tapX,tapY){
-  if(lbS.scale>1.05)_lbResetZoom();
-  else{lbS.scale=2.5;lbS.panX=(window.innerWidth/2-tapX)*(lbS.scale-1);lbS.panY=(window.innerHeight/2-tapY)*(lbS.scale-1);_lbClamp();_lbApplyZoom();}
-}
-const lbVP=$('lb-viewport');
-lbVP.addEventListener('touchstart',_lbTS,{passive:false});
-lbVP.addEventListener('touchmove',_lbTM,{passive:false});
-lbVP.addEventListener('touchend',_lbTE,{passive:false});
-lbVP.addEventListener('touchcancel',()=>{lbS.isPinching=false;lbS.isPanning=false;lbS.dragging=false;lbS.pending=false;},{passive:true});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&lb.classList.contains('on'))lbClose();});
-// ═══════════════════════════════════════════════════════
 // HOVER PREVIEW
-// ═══════════════════════════════════════════════════════
 const _hvGroups=[];
 (function(){
   _hvGroups.push({name:'TRADING',syms:TS_POOL});
   _hvGroups.push({name:'VN30',syms:HMAP_COLS[0].groups[0].syms});
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')_hvGroups.push({name:g.name,syms:g.syms});}));
 })();
-// ═══════════════════════════════════════════════════════
-// Helper dùng chung giữa cột NHÓM NGÀNH (CHART) và HOVER PREVIEW (HEATMAP) —
-// cả hai đều đọc từ window._lastHmapData nên gộp vào 1 chỗ, tránh phải sửa
-// nhiều nơi khi đổi công thức định dạng %/màu hoặc thứ tự sort.
-// ═══════════════════════════════════════════════════════
+// Helper dùng chung giữa NHÓM NGÀNH (CHART) và HOVER PREVIEW (HEATMAP), cả 2 đọc window._lastHmapData.
 function _symDisplayFields(sym,data){
   const entry=(data||window._lastHmapData||{})[sym];
   const pct=entry&&typeof entry.pct==='number'?entry.pct:null;
@@ -8836,9 +7929,7 @@ function _sortSymsByMode(syms,alpha){
   const d=window._lastHmapData||{};
   return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
 }
-// ═══════════════════════════════════════════════════════
 // CHART — SIDEBAR NHÓM NGÀNH / FAVORITE (overlay, không đụng logic vẽ chart)
-// ═══════════════════════════════════════════════════════
 const LG_FAVORITE_KEY='dashboard_favorite_symbols';
 let LG_FAVORITES=_lgLoadFavorites();
 function _lgLoadFavorites(){
@@ -8851,9 +7942,7 @@ function _lgFollowFirstOrder(syms){
   const rest=syms.filter(s=>!FOLLOW.includes(s));
   return [...inFollow,...rest];
 }
-// Chèn 1 mã mới vào LG_FAVORITES đúng vị trí: mã thuộc FOLLOW → chèn vào cuối khối Follow
-// (khối này luôn nằm ở đầu danh sách); mã không thuộc FOLLOW → thêm xuống cuối danh sách.
-// Dùng chung cho: đồng bộ Follow, bấm sao (★), và nhập nhanh nhiều mã.
+// Chèn mã mới vào LG_FAVORITES: mã FOLLOW chèn cuối khối Follow (đầu danh sách), mã khác thêm cuối danh sách. Dùng chung cho sync Follow, bấm sao, nhập nhanh.
 function _lgInsertFavorite(sym){
   if(FOLLOW.includes(sym)){
     let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
@@ -8862,8 +7951,7 @@ function _lgInsertFavorite(sym){
     LG_FAVORITES.push(sym);
   }
 }
-// Danh sách FOLLOW tự động được gắn ⭐ (thêm vào FAVORITE), xếp thành khối ở đầu danh sách.
-// Không tự bỏ sao nếu người dùng gỡ mã khỏi FOLLOW hoặc tự tay bỏ sao trong FAVORITE.
+// Danh sách FOLLOW tự động được gắn ⭐ (thêm vào FAVORITE), xếp thành khối ở đầu danh sách. Không tự bỏ sao nếu người dùng gỡ mã khỏi FOLLOW hoặc tự tay bỏ sao trong FAVORITE.
 function _lgSyncFollowIntoFavorites(){
   let changed=false;
   FOLLOW.forEach(sym=>{
@@ -8882,15 +7970,12 @@ function _lgToggleFavorite(sym){
   _lgSaveFavorites();_lgRenderList();
   _broadcastFavorites();
 }
-// Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ, và sang cửa sổ POP-OUT
-// (cửa sổ riêng, không dùng chung localStorage nên phải gửi qua postMessage).
+// Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ.
 function _broadcastFavorites(){
   if(_hoverPreviewOn){_hvBuildTabs();if(_hvActiveGroup!==-1)_hvRenderSymList();}
-  if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'SYNC_FAVORITES',favorites:LG_FAVORITES},'*');
 }
 function _lgReorderFavorite(dragSym,targetSym){
-  // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường —
-  // hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
+  // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường — hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
   if(FOLLOW.includes(dragSym)!==FOLLOW.includes(targetSym))return;
   const from=LG_FAVORITES.indexOf(dragSym);if(from===-1)return;
   LG_FAVORITES.splice(from,1);
@@ -8963,8 +8048,7 @@ DOM.lgToggleBtn?.addEventListener('click',e=>{
     _lgRenderList();
   }
 });
-// Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để
-// luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
+// Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
 function _updateVietstockIframeIfActive(sym){
   if(!DOM.liteChartFrame.classList.contains('vietstock-mode'))return;
   DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(sym||_liteSymbol||'VNINDEX').toLowerCase();
@@ -9034,7 +8118,7 @@ DOM.lgList?.addEventListener('drop',e=>{
   const targetSym=item.dataset.sym;
   if(targetSym!==_lgDragSym)_lgReorderFavorite(_lgDragSym,targetSym);
 });
-// Điều hướng phím lên/xuống trong nhóm đang mở — giống hệt hành vi ở POP-OUT
+// Điều hướng phím lên/xuống trong nhóm đang mở
 let _lgKeyThrottle=false,_lgKeyLoadTimer=null;
 document.addEventListener('keydown',e=>{
   if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on')||!_lgActiveGroupName)return;
@@ -9054,20 +8138,17 @@ document.addEventListener('keydown',e=>{
   const el=items[next],relTop=el.offsetTop-DOM.lgList.offsetTop,h=el.offsetHeight;
   if(relTop-h<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
-  // Debounce load giống POP-OUT (_kd, 300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại,
-  // không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
+  // Debounce load (300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại, không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
   clearTimeout(_lgKeyLoadTimer);
   _lgKeyLoadTimer=setTimeout(()=>loadLiteChart(_lgActiveSym),300);
 });
-// Click ra ngoài khu vực sidebar (ví dụ vào khung chart) sau khi đã lướt mã bằng phím lên/xuống:
-// bỏ nền xanh (bỏ focus) khỏi ô mã cuối cùng đang được tô trong cột danh sách.
+// Click ra ngoài khu vực sidebar (ví dụ vào khung chart) sau khi đã lướt mã bằng phím lên/xuống: bỏ nền xanh (bỏ focus) khỏi ô mã cuối cùng đang được tô trong cột danh sách.
 document.addEventListener('click',e=>{
   if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
   if(DOM.lgSidebar.contains(e.target))return;
   DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
 });
-// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, ATTENT, BREAKVOL, TRADING, VN30, nhóm ngành...)
-// để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
+// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, ATTENT, BREAKVOL, TRADING, VN30, nhóm ngành...) để Hover Preview (Pop-up) luôn đồng bộ với thẻ CHART.
 function _hvBuildTabs(){
   const groups=_lgGetGroups();
   DOM.hpGrouptabs.innerHTML=groups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</button>`).join('');
@@ -9080,9 +8161,7 @@ function _hvSelectGroup(idx){
   DOM.hpSymlist.style.display='';_hvRenderSymList();
 }
 DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
-// Vẽ lại danh sách mã của nhóm đang mở, đồng thời tự ẩn/hiện nút sort (FAVORITE giữ thứ tự
-// thủ công nên không cho sort) — gộp về đây để mọi nơi gọi hàm này (mở nhóm, đổi sort,
-// quay lại từ POP-OUT, đổi Favorite...) đều nhận đúng trạng thái mà không cần lặp lại logic.
+// Vẽ lại danh sách mã của nhóm đang mở, tự ẩn/hiện nút sort (FAVORITE không cho sort); dùng chung mọi nơi cần refresh trạng thái.
 function _hvRenderSymList(){
   if(_hvActiveGroup===-1)return;
   const g=_lgGetGroups()[_hvActiveGroup];if(!g)return;
@@ -9117,7 +8196,7 @@ DOM.hpSymlist.addEventListener('click',e=>{
   if(star){_lgToggleFavorite(star.dataset.star);return;}
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
-  _syncHoverPreview(sym);updatePopout(sym);
+  _syncHoverPreview(sym);
 });
 document.addEventListener('keydown',e=>{
   if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
@@ -9132,7 +8211,7 @@ document.addEventListener('keydown',e=>{
   if(next===cur&&cur!==-1)return;
   const sym=items[next].dataset.sym;_syncHoverPreview(sym,false);
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);updatePopout(sym);},300);
+  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
@@ -9141,14 +8220,11 @@ function _closeHoverPanel(){
   _hoverPreviewOn=false;
   DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
   DOM.hpIframe.src='about:blank';_hoverPreviewCurrent='';
-  if(_isPopoutMode){_isPopoutMode=false;if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}_popoutWin=null;}
   _refreshChartModeUI();
 }
 $('hv-close-btn').addEventListener('click',_closeHoverPanel);
 $('hv-full-btn').addEventListener('click',()=>openChart(_hoverPreviewCurrent||'VNINDEX'));
-$('hv-pop-btn').addEventListener('click',()=>popOutHover());
 function toggleHoverPreview(){
-  if(_isPopoutMode){minimizePopout();return;}
   if(_hoverPreviewOn){_closeHoverPanel();return;}
   _hoverPreviewOn=true;
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
@@ -9164,271 +8240,8 @@ function toggleHoverPreview(){
   document.addEventListener('mousemove',e=>{if(!drag)return;const newH=Math.min(window.innerHeight*.9,Math.max(120,startH+(startY-e.clientY)));DOM.hpPanel.style.height=newH+'px';DOM.wrap.style.paddingBottom=newH+16+'px';});
   document.addEventListener('mouseup',()=>{if(!drag)return;drag=false;document.body.style.userSelect='';document.body.style.cursor='';});
 })();
-function quickPopout(){
-  if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
-  if(!_hoverPreviewOn){_hoverPreviewOn=true;_hvActiveGroup=0;}
-  popOutHover();
-}
-// ═══════════════════════════════════════════════════════
-// POPOUT WINDOW
-// ═══════════════════════════════════════════════════════
-function popOutHover(){
-  const sym=_hoverPreviewCurrent||'VNINDEX';
-  if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
-  DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
-  _isPopoutMode=true;_hoverPreviewOn=false;
-  _refreshChartModeUI();
-  const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),h=box.height;
-  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,0,0,'scrollbars=no');
-  if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
-  _popoutWin.document.write(_buildPopoutHTML(sym));
-  _popoutWin.document.close();
-  const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)closePopoutWindow();}},1000);
-}
-function _buildPopoutHTML(initSym){
-  const gJ=JSON.stringify(_lgGetGroups().map(g=>({name:g.name,syms:g.syms,isFavorite:!!g.isFavorite})));
-  const dJ=JSON.stringify(window._lastHmapData||{});
-  const favJ=JSON.stringify(LG_FAVORITES);
-  const ig=_hvActiveGroup>=0?_hvActiveGroup:0;
-  return '<!DOCTYPE html><html><head>'
-    +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
-    +'<title>Chart \u2014 '+initSym+'</title>'
-    +'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">'
-    +'<style>'
-    +'*{margin:0;padding:0;box-sizing:border-box}'
-    +':root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:\'IBM Plex Mono\',monospace;--font-ui:\'Barlow Condensed\',sans-serif}'
-    +'body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}'
-    +'#hdr{display:flex;align-items:center;padding:0 10px;background:var(--surf2);height:42px;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0}'
-    +'#sym{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.5px;color:var(--accent);flex-shrink:0;white-space:nowrap}'
-    +'#sw{position:relative;flex-shrink:0}'
-    +'#si-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}'
-    +'#si{width:85px;padding:4px 6px 4px 22px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}'
-    +'#si::placeholder{color:var(--muted)}'
-    +'#si:focus{width:130px;border-color:var(--accent)}'
-    +'@media(max-width:768px){'
-    +'  #si{width:68px !important; transition:border-color .15s !important}'
-    +'  #si:focus{width:68px !important; box-shadow:0 0 0 2px rgba(26,86,219,.12)}'
-    +'}'
-    +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
-    +'#gtabs::-webkit-scrollbar{display:none}'
-    +'.gtab{height:28px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
-    +'.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}'
-    +'.gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}'
-    +'#ctrls{display:flex;gap:3px;align-items:center;flex-shrink:0}'
-    +'.ctrl{padding:0 10px;height:28px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}'
-    +'.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}'
-    +'.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}'
-    +'#main{display:flex;height:calc(100% - 42px);overflow:hidden}'
-    +'#symlist{width:190px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
-    +'#symlist::-webkit-scrollbar{width:3px}'
-    +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
-    +'.si{display:grid;grid-template-columns:18px 40px 44px 1fr;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:4px}'
-    +'.si:hover,.si.on{background:#dce8ff}'
-    +'.si.on .sn{color:#0f3fb3;font-weight:800}'
-    +'.star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}'
-    +'.star.on{color:#f59e0b}'
-    +'.sn{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
-    +'.sp{font-size:10px;text-align:right;font-weight:700;white-space:nowrap}'
-    +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600;white-space:nowrap}'
-    +'.pos{color:var(--green)}.neg{color:var(--red)}.zer{color:#b45309}'
-    +'#cw{flex:1;overflow:hidden;position:relative;background:#fff}'
-    +'#cf{width:100%;height:100%;border:none;display:block}'
-    +'#ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);font-size:13px;z-index:2;transition:opacity .3s}'
-    +'#ld.hide{opacity:0;pointer-events:none}'
-    +'</style></head><body>'
-    +'<div id="hdr">'
-    +'<span id="sym">'+initSym+'</span>'
-    +'<div id="sw"><span id="si-icon">\uD83D\uDD0D</span>'
-    +'<input id="si" type="text" placeholder="T\xECm m\xE3" maxlength="10" autocomplete="off" spellcheck="false"></div>'
-    +'<div id="gtabs"></div>'
-    +'<div id="ctrls">'
-    +'<button class="ctrl" id="sort-btn">A↕Z</button>'
-    +'<button class="ctrl" id="full-btn"> ⛶ </button>'
-    +'<button class="ctrl" id="min-btn"> ❐ </button>'
-    +'<button class="ctrl close" id="close-btn"> ✕ </button>'
-    +'</div></div>'
-    +'<div id="main">'
-    +'<div id="symlist"></div>'
-    +'<div id="cw"><div id="ld">Đang tải...</div><iframe id="cf" src="about:blank"></iframe></div>'
-    +'</div>'
-    +'<script>'
-    +'"use strict";'
-    +'var _$=function(id){return document.getElementById(id);};'
-    +'var groups='+gJ+';'
-    +'var hdata='+dJ+';'
-    +'var favs='+favJ+';'
-    +'var ag='+ig+';'
-    +'var sa='+(_hvSortAlpha?'true':'false')+';'
-    +'var cur="'+initSym+'";'
-    +'var full=false;'
-    +'function fp(v){return(!v||v<=0)?"--":(v<100?Number(v).toFixed(2):Number(v).toFixed(1));}'
-    +'function buildTabs(){'
-    +'  var el=_$("gtabs");'
-    +'  var html=groups.map(function(g,i){'
-    +'    var lbl=g.name+(g.isFavorite?" ("+favs.length+")":"");'
-    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+lbl+"</button>";'
-    +'  }).join("");'
-    +'  el.innerHTML=html;'
-    +'}'
-    +'function selGroup(idx){'
-    +'  ag=idx;'
-    +'  document.querySelectorAll(".gtab").forEach(function(b,i){b.classList.toggle("on",i===idx);});'
-    +'  var g=groups[idx];'
-    +'  _$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";'
-    +'  render();'
-    +'}'
-    +'function getSorted(){'
-    +'  var g=groups[ag];if(!g)return [];'
-    +'  if(g.isFavorite)return favs.slice();'
-    +'  if(sa)return g.syms.slice().sort(function(a,b){return a.localeCompare(b);});'
-    +'  return g.syms.slice().sort(function(a,b){'
-    +'    var pa=hdata[a]?hdata[a].pct||0:-999;'
-    +'    var pb=hdata[b]?hdata[b].pct||0:-999;'
-    +'    return pb-pa;'
-    +'  });'
-    +'}'
-    +'function render(){'
-    +'  var syms=getSorted();'
-    +'  _$("symlist").innerHTML=syms.map(function(sym){'
-    +'    var d=hdata[sym];'
-    +'    var pct=d&&typeof d.pct==="number"?d.pct:null;'
-    +'    var pctStr=pct!==null?((pct>=0?"+":"")+pct.toFixed(1)+"%"):"--";'
-    +'    var cls=pct===null?"zer":pct>0?"pos":pct<0?"neg":"zer";'
-    +'    var st=favs.indexOf(sym)!==-1;'
-    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'">\''
-    +'      +\'<span class="star\'+(st?" on":"")+\'" data-star="\'+sym+\'" title="Thêm/bỏ khỏi Favorite">\'+(st?"★":"☆")+"</span>"'
-    +'      +\'<span class="sn">\'+sym+"</span>"'
-    +'      +\'<span class="sp \'+cls+\'">\'+pctStr+"</span>"'
-    +'      +\'<span class="spr">\'+fp(d&&d.price)+"</span></div>";'
-    +'  }).join("");'
-    +'}'
-    +'function patch(nd){'
-    +'  hdata=nd;'
-    +'  document.querySelectorAll(".si").forEach(function(el){'
-    +'    var sym=el.dataset.sym,d=nd[sym];if(!d)return;'
-    +'    var pct=typeof d.pct==="number"?d.pct:null;'
-    +'    var sp=el.querySelector(".sp"),spr=el.querySelector(".spr");'
-    +'    if(sp&&pct!==null){sp.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"%";sp.className="sp "+(pct>0?"pos":pct<0?"neg":"zer");}'
-    +'    if(spr&&typeof d.price==="number")spr.textContent=fp(d.price);'
-    +'  });'
-    +'}'
-    +'function clickSym(sym){'
-    +'  if(sym===cur)return;'
-    +'  cur=sym;'
-    +'  document.querySelectorAll(".si").forEach(function(e){e.classList.toggle("on",e.dataset.sym===sym);});'
-    +'  setSym(sym);'
-    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
-    +'}'
-    +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
-    +'function loadChart(sym){'
-    +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
-    +'  if(cf.src===url)return;'
-    +'  ld.classList.remove("hide");'
-    +'  cf.onload=function(){ld.classList.add("hide");};'
-    +'  cf.src=url;'
-    +'}'
-    +'_$("gtabs").addEventListener("click",function(e){'
-    +'  var b=e.target.closest(".gtab");if(!b)return;'
-    +'  selGroup(parseInt(b.dataset.idx));'
-    +'});'
-    +'_$("symlist").addEventListener("click",function(e){'
-    +'  var star=e.target.closest(".star");'
-    +'  if(star){'
-    +'    var sym=star.dataset.star,i=favs.indexOf(sym);'
-    +'    if(i===-1)favs.push(sym);else favs.splice(i,1);'
-    +'    buildTabs();render();'
-    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_TOGGLE_FAVORITE",symbol:sym},"*");'
-    +'    return;'
-    +'  }'
-    +'  var item=e.target.closest(".si");if(!item)return;'
-    +'  clickSym(item.dataset.sym);'
-    +'});'
-    +'_$("sort-btn").addEventListener("click",function(){'
-    +'  sa=!sa;'
-    +'  this.textContent=sa?"%↕":"A↕Z";'
-    +'  render();'
-    +'});'
-    +'_$("full-btn").addEventListener("click",function(){full=true;loadChart(cur);});'
-    +'_$("min-btn").addEventListener("click",function(){'
-    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_MINIMIZE"},"*");'
-    +'  window.close();'
-    +'});'
-    +'_$("close-btn").addEventListener("click",function(){'
-    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_CLOSE"},"*");'
-    +'  window.close();'
-    +'});'
-    +'_$("si").addEventListener("keydown",function(e){'
-    +'  if(e.key==="Enter"){'
-    +'    var s=this.value.trim().toUpperCase();'
-    +'    if(s.length>=2){this.value="";this.blur();cur=s;setSym(s);render();'
-    +'      if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:s},"*");}'
-    +'  }'
-    +'  if(e.key==="Escape"){this.value="";this.blur();}'
-    +'});'
-    +'var _kt=false,_kd=null;'
-    +'document.addEventListener("keydown",function(e){'
-    +'  if(document.activeElement===_$("si"))return;'
-    +'  if(e.key!=="ArrowUp"&&e.key!=="ArrowDown")return;'
-    +'  e.preventDefault();'
-    +'  if(_kt)return;_kt=true;setTimeout(function(){_kt=false;},60);'
-    +'  var items=[].slice.call(_$("symlist").children);if(!items.length)return;'
-    +'  var c=items.findIndex(function(el){return el.classList.contains("on");});'
-    +'  var n=c===-1?0:(e.key==="ArrowDown"?c+1:c-1);'
-    +'  n=Math.max(0,Math.min(n,items.length-1));'
-    +'  if(n===c&&c!==-1)return;'
-    +'  items.forEach(function(el){el.classList.remove("on");});items[n].classList.add("on");'
-    +'  var sym=items[n].dataset.sym;cur=sym;_$("sym").textContent=sym;document.title="Chart "+sym;'
-    +'  if(_kd)clearTimeout(_kd);'
-    +'  _kd=setTimeout(function(){'
-    +'    loadChart(sym);'
-    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
-    +'  },300);'
-    +'  var list=_$("symlist"),el=items[n];'
-    +'  var rt=el.offsetTop-list.offsetTop,h=el.offsetHeight;'
-    +'  if(rt-h<list.scrollTop)list.scrollTop=Math.max(0,rt-h);'
-    +'  else if(rt+h*2>list.scrollTop+list.clientHeight)list.scrollTop=rt+h*2-list.clientHeight;'
-    +'});'
-    +'window.addEventListener("message",function(e){'
-    +'  if(e.data.type==="UPDATE_CHART"){cur=e.data.symbol;setSym(cur);render();}'
-    +'  if(e.data.type==="UPDATE_HEATMAP"){patch(e.data.data||{});}'
-    +'  if(e.data.type==="SYNC_FAVORITES"){favs=e.data.favorites||[];buildTabs();render();}'
-    +'  if(e.data.type==="EMBEDDED_FULL_SYMBOL"){cur=(e.data.symbol||cur).toUpperCase();_$("sym").textContent=cur;render();}'
-    +'  if(e.data.type==="EMBEDDED_FULL_CLOSE"){full=false;cur=(e.data.symbol||cur).toUpperCase();setSym(cur);render();}'
-    +'});'
-    +'buildTabs();(function(){var g=groups[ag];_$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";})();render();setSym(cur);'
-    +'<\/script></body></html>';
-}
-
-function minimizePopout(){
-  _isPopoutMode=false;
-  if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
-  _popoutWin=null;
-  _hoverPreviewOn=true;
-  DOM.hpPanel.style.display='flex';_hvBuildTabs();
-  if(_hvActiveGroup>=0){
-    DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===_hvActiveGroup));
-    DOM.hpSymlist.style.display='';_hvRenderSymList();
-  }else _hvSelectGroup(0);
-  DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
-  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
-  _refreshChartModeUI();
-}
-function closePopoutWindow(){
-  _isPopoutMode=false;
-  if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
-  _popoutWin=null;
-  _refreshChartModeUI();
-}
-function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');}
-
 window.addEventListener('message',e=>{
-  if(e.data.type==='POPOUT_SYM_SELECT'){
-    _syncHoverPreview(e.data.symbol);
-  }else if(e.data.type==='POPOUT_TOGGLE_FAVORITE'&&e.data.symbol){
-    _lgToggleFavorite(e.data.symbol);
-  }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
+  if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
     _hmapDesktopClick(sym);
@@ -9437,33 +8250,17 @@ window.addEventListener('message',e=>{
     if(!sym)return;
     if(_hoverPreviewOn)_syncHoverPreview(sym);
     else _syncHoverPreview(sym,false);
-    updatePopout(sym);
     openChart(sym);
   }else if(e.data.type==='JOURNAL_CLOSE'){
     closeJournal();
-  }else if(e.data.type==='POPOUT_MINIMIZE'){
-    minimizePopout();
-  }else if(e.data.type==='POPOUT_CLOSE'){
-    closePopoutWindow();
   }
 });
 
-// ═══════════════════════════════════════════════════════
 // CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
-// ═══════════════════════════════════════════════════════
 let _chartPopoutWin=null,_lastChartSyncSymbol=null;
-// Chiều cao nội dung panel CHART khi mở popout, tính sẵn từ các trị CSS cố định — để mở cửa
-// sổ đúng kích thước ngay từ đầu, KHÔNG mở full màn hình rồi co lại (tránh giật hình):
-//   720   = chiều cao khung chart (.lite-chart-frame{height:720px})
-//   80    = phần toolbar/header phía trên (dự trù tối đa 2 dòng khi màn hình hẹp hơn)
-//   18    = padding trên/dưới #main-wrap ở chart-popout-mode (8px * 2) + viền panel
-//   34    = dòng footer "Scanner Bot Dashboard • ..." (footer nằm ngoài #main-wrap nên vẫn
-//           hiện trong popout, cần cộng thêm để không bị hụt/mất chữ)
-// Nếu ước tính hụt vài px trên màn hình quá hẹp, cửa sổ đã có scrollbars=yes làm phương án
-// dự phòng an toàn (hiện thanh cuộn thay vì bị cắt nội dung), thay vì phải đo rồi co giật cục.
+// CHART_POPOUT_CONTENT_H tính sẵn từ CSS cố định (720 chart + 80 header + 18 padding + 34 footer) để mở cửa sổ đúng kích thước ngay từ đầu; scrollbars=yes là phương án dự phòng nếu hụt vài px.
 const CHART_POPOUT_CONTENT_H=720+80+18+34;
-// Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại
-// (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
+// Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
 const CHART_POPOUT_WIDTH_RATIO=0.855;
 function openChartPopout(){
   if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
@@ -9475,40 +8272,35 @@ function openChartPopout(){
   if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
 }
 document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openChartPopout);
-// Đồng bộ 2 chiều: dùng chung 1 listener cho cả cửa sổ chính (nhận từ popout con) lẫn
-// cửa sổ popout (nhận từ cửa sổ chính, qua window.opener). _lastChartSyncSymbol đánh dấu
-// mã vừa nhận từ phía kia để loadLiteChart() không gửi ngược lại, tránh lặp vô hạn.
+// Đồng bộ 2 chiều dùng chung 1 listener; _lastChartSyncSymbol tránh gửi ngược lại gây lặp vô hạn.
 window.addEventListener('message',e=>{
   if(e.data&&e.data.type==='CHART_POPOUT_SYNC'&&e.data.symbol){
     _lastChartSyncSymbol=String(e.data.symbol).toUpperCase().trim();
     loadLiteChart(_lastChartSyncSymbol,0);
   }
 });
-// Nếu chính trang này được mở lại bởi openChartPopout() ở trên (?chartPopout=1) thì tự mở
-// sẵn panel CHART, ẩn phần còn lại của dashboard, và nạp đúng mã đã chọn từ cửa sổ chính
-// (đánh dấu sẵn _lastChartSyncSymbol để lần nạp đầu tiên này không gửi ngược lại cửa sổ chính).
+// Trang mở lại với ?chartPopout=1 tự mở panel CHART, ẩn phần còn lại, nạp đúng mã từ cửa sổ chính (đánh dấu _lastChartSyncSymbol để không gửi ngược).
 (function(){
   if(!_isChartPopoutWindow)return;
-  document.body.classList.add('chart-popout-mode');
+  // class chart-popout-mode đã gắn vào <html> từ đầu <head> (script inline); dòng dưới chỉ để tương thích ngược.
+  document.documentElement.classList.add('chart-popout-mode');
   DOM.liteChartPanel.classList.remove('collapsed');
   const qsym=(new URLSearchParams(window.location.search).get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
 })();
 
-// ═══════════════════════════════════════════════════════
 // INIT
-// ═══════════════════════════════════════════════════════
 async function init(){
   initDesktopNotifyBtn();
   _refreshChartModeUI();
   bindLiteChartControls();
   bindAlertControls();
+  if(IS_MOBILE()){
+    DOM.liteChartPanel.classList.remove('collapsed');
+    _isChartPanelOpen=true;
+  }
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
-  // Bắn tải CHART NGAY LẬP TỨC — không await, không chờ config/tín hiệu/heatmap/health xong
-  // trước. Trước đây 4 API này chạy TUẦN TỰ (await Promise.all(...) rồi mới loadLiteChart())
-  // nên dù cache chart đã sẵn sàng, panel CHART vẫn phải đợi hết round-trip của 4 API không
-  // liên quan mới bắt đầu tải — giờ chạy song song, chart tự vẽ ngay khi request riêng của
-  // nó xong, không phụ thuộc các API kia.
+  // Tải CHART ngay lập tức, không chờ config/tín hiệu/heatmap/health (chạy song song thay vì tuần tự) để chart không phụ thuộc API khác.
   loadLiteChart(_liteSymbol);
   await Promise.all([loadConfig(),fetchSigs(),fetchHmap(),fetchHealth()]);
   await Promise.all([loadAlerts(),pollAlertFeed(false)]);
@@ -9518,5 +8310,12 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
+window.addEventListener('orientationchange',()=>{
+  setTimeout(()=>{
+    if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+    if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
+    if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+  },200);
+});
 init();
 """
