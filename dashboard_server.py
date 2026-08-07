@@ -4538,6 +4538,18 @@ function loadLiteDrawings(){
   _liteSelectedId=null;_liteChannelPending=null;_liteArcPending=null;_liteZigzagPending=null;_liteLinePending=null;_liteDrawActive=null;
 }
 function saveLiteDrawings(){
+  if(_liteDrawings&&_liteData&&_liteData.length){
+    for(const d of _liteDrawings){
+      if(d&&d.points){
+        d.points=d.points.map(pt=>{
+          if(!pt)return pt;
+          const l=pt.l,p=pt.p;
+          const t=pt.t||(_litePtWithTime(l,p).t);
+          return{...pt,t};
+        });
+      }
+    }
+  }
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
 // Đồng bộ hình vẽ realtime giữa cửa sổ CHART mặc định và cửa sổ CHART popout: 'storage' là sự
@@ -4555,7 +4567,34 @@ function resizeLiteDrawCanvas(){
   _liteDrawCtx=DOM.liteDrawCanvas.getContext('2d');
   _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
 }
-function _liteLogicalToX(l){
+function _litePtWithTime(l,p){
+  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null};
+  let t=null;
+  if(_liteData&&_liteData.length){
+    const idx=Math.max(0,Math.min(_liteData.length-1,Math.round(l)));
+    t=_liteData[idx]?liteTimeKey(_liteData[idx].time):null;
+  }
+  return{l,p,t};
+}
+function _litePtLogical(pt){
+  if(pt===null||pt===undefined)return null;
+  if(typeof pt==='number')return pt;
+  if(!pt.t||!_liteData||!_liteData.length)return pt.l;
+  const targetStr=String(pt.t);
+  const exactIdx=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
+  if(exactIdx!==-1)return exactIdx;
+  const targetTs=new Date(targetStr).getTime();
+  if(isNaN(targetTs))return pt.l;
+  let bestIdx=0,minDiff=Infinity;
+  for(let i=0;i<_liteData.length;i++){
+    const bTs=new Date(liteTimeKey(_liteData[i].time)).getTime();
+    const diff=Math.abs(bTs-targetTs);
+    if(diff<minDiff){minDiff=diff;bestIdx=i;}
+  }
+  return bestIdx;
+}
+function _liteLogicalToX(pt){
+  const l=(typeof pt==='object'&&pt!==null)?_litePtLogical(pt):pt;
   const c=_liteChart&&_liteChart.timeScale().logicalToCoordinate(l);
   return Number.isFinite(c)?c:null;
 }
@@ -4579,7 +4618,7 @@ function _litePtFromEvent(ev){
   const{x,y}=_liteXYFromEvent(ev);
   const l=_liteXToLogical(x),p=_liteYToPrice(y);
   if(l===null||p===null)return null;
-  return{l,p};
+  return _litePtWithTime(l,p);
 }
 function _liteDrawLine(ctx,x1,y1,x2,y2,color,dash,width){
   ctx.save();ctx.strokeStyle=color;ctx.lineWidth=width||1.4;if(dash)ctx.setLineDash(dash);
@@ -4659,7 +4698,7 @@ function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,widthScale){
 function _liteDrawShapeToCanvas(ctx,d){
   const pts=d.points,selected=(d.id===_liteSelectedId);
   if(d.type==='text'){
-    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    const x=_liteLogicalToX(pts[0]),y=_litePriceToY(pts[0].p);
     if(x===null||y===null)return;
     const m=_liteTextBoxMetrics(d);if(!m)return;
     ctx.save();
@@ -4683,7 +4722,7 @@ function _liteDrawShapeToCanvas(ctx,d){
       // Quy đổi trước toàn bộ điểm sang toạ độ pixel (bỏ điểm không hợp lệ) để dùng chung cho cả tô nền lẫn vẽ nét.
       const scr=[];
       for(const pt of pts){
-        const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
+        const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
         if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
       }
       // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng,
@@ -4708,17 +4747,17 @@ function _liteDrawShapeToCanvas(ctx,d){
       ctx.restore();
       if(d._hover&&pts.length){
         const last=pts[pts.length-1];
-        const lx=_liteLogicalToX(last.l),ly=_litePriceToY(last.p);
-        const hx=_liteLogicalToX(d._hover.l),hy=_litePriceToY(d._hover.p);
+        const lx=_liteLogicalToX(last),ly=_litePriceToY(last.p);
+        const hx=_liteLogicalToX(d._hover),hy=_litePriceToY(d._hover.p);
         if(lx!==null&&ly!==null&&hx!==null&&hy!==null)_liteDrawLine(ctx,lx,ly,hx,hy,_liteHexAlpha(color,.5),[4,3]);
       }
-      if(selected)for(const pt of pts){const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);if(xx!==null&&yy!==null)_liteDrawHandle(ctx,xx,yy);}
+      if(selected)for(const pt of pts){const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);if(xx!==null&&yy!==null)_liteDrawHandle(ctx,xx,yy);}
     }
     return;
   }
   if(pts.length<2)return;
-  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
-  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return;
   const color=d.color||_liteDrawColor;
   if(d.type==='trendline'){
@@ -4811,7 +4850,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     // ép về giữa 2 điểm đầu-cuối.
     // Quy đổi điểm "đáy" sang pixel TRƯỚC, rồi mới tính control-point trong pixel-space (xem ghi chú tại
     // _liteArcControlXY) → đường cong luôn đi qua đúng vị trí chuột dù trục giá tuyến tính hay log/percentage.
-    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const tx=pts[2]?_liteLogicalToX(pts[2]):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
     const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
     if(ctrl){
       const cx=ctrl.cx,cy=ctrl.cy;
@@ -4836,7 +4875,7 @@ function _liteDrawShapeToCanvas(ctx,d){
       if(selected){
         _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
         // Handle hiển thị đúng tại điểm đáy (nơi chuột đã rê tới), trực quan hơn control-point toán học.
-        const tx=_liteLogicalToX(pts[2].l),ty=_litePriceToY(pts[2].p);
+        const tx=_liteLogicalToX(pts[2]),ty=_litePriceToY(pts[2].p);
         if(tx!==null&&ty!==null)_liteDrawHandle(ctx,tx,ty);
       }
     }else{
@@ -5001,9 +5040,6 @@ function redrawLiteDrawings(){
   if(_liteLinePending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteLinePending);
   _liteUpdateFloatingBar();
 }
-// Kết thúc (chốt) zigzag đang vẽ dở: nếu đã có >=2 điểm thì lưu thành hình vẽ hoàn chỉnh,
-// nếu mới có 1 điểm (chưa đủ để thành hình) thì huỷ. Dùng chung cho double-click, phím
-// Enter/Space/Escape, và khi chuyển sang công cụ khác (đặc biệt là con trỏ chuột).
 function _liteFinishZigzag(){
   if(!_liteZigzagPending)return false;
   const pend=_liteZigzagPending;
@@ -5018,9 +5054,6 @@ function _liteFinishZigzag(){
   }
   return true;
 }
-// Công cụ Text: click lên chart mở 1 ô <textarea> ngay tại vị trí click để gõ chữ trực tiếp (hỗ trợ nhiều dòng
-// tự nhiên nhờ textarea), thay vì hộp thoại prompt(). Enter xuống dòng bình thường; rời focus (blur) sẽ chốt
-// chữ; Escape huỷ. Có thể gọi lại hàm này với 1 hình text có sẵn (editingShape) để SỬA nội dung đã viết.
 function _liteApplyTextInputStyle(){
   if(!DOM.liteTextInput)return;
   DOM.liteTextInput.style.color=_liteDrawColor;
@@ -5030,10 +5063,6 @@ function _liteApplyTextInputStyle(){
 }
 function _liteOpenTextInput(p0,ev,editingShape){
   if(!DOM.liteTextInput)return;
-  // Chặn hành vi mặc định của trình duyệt khi click chuột trái lên 1 phần tử không focus-able (canvas):
-  // mặc định trình duyệt sẽ tự dời focus sang phần tử focus-able gần nhất (khung chart), "cướp" mất focus
-  // trước khi kịp focus ô chữ bên dưới → gõ chữ bị lọt ra ngoài (thành phím tắt / tìm mã). preventDefault()
-  // trên pointerdown/mousedown ngăn được việc dời focus mặc định này.
   if(ev&&ev.preventDefault)ev.preventDefault();
   let x,y;
   if(ev){({x,y}=_liteXYFromEvent(ev));}
@@ -5443,6 +5472,12 @@ function _liteApplyDrag(d,info,cur){
     d.points[1]={...op[1],l:op[1].l+dl};
   }else if(key==='text:p0'){
     d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
+  }
+  if(d&&d.points){
+    d.points=d.points.map(pt=>{
+      if(!pt||!Number.isFinite(pt.l))return pt;
+      return{...pt,..._litePtWithTime(pt.l,pt.p)};
+    });
   }
 }
 function _liteStartShapeDrag(hit,ev){
@@ -6237,7 +6272,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
 // setData() lại toàn bộ) nên KHÔNG nháy màn hình, KHÔNG mất zoom/pan hiện tại, không
 // đụng tới các nét vẽ tay. Chạy nền định kỳ, chỉ cho mã đang hiển thị trên panel CHART.
 // ═══════════════════════════════════════════════════════
-const LITE_CHART_AUTOREFRESH_SEC=20;
+const LITE_CHART_AUTOREFRESH_SEC=10;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
   if(_liteQuietRefreshing)return;                          // lượt trước chưa xong, khỏi chồng lượt
