@@ -1098,8 +1098,8 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         })
         flags = _calc_vpa_flag_fn(vdf).tolist()
         for bar, f in zip(raw_bars, flags):
-            dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
-            flags_by_date[dt.strftime("%Y-%m-%d")] = int(f)
+            dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
+            flags_by_date[dt_str] = int(f)
     except Exception as exc:
         pass
     with _vpa_cache_lock:
@@ -1190,9 +1190,9 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=400, before_date=None):
     else:
         final_bars = []
         for bar in raw_bars:
-            dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
+            dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
             final_bars.append({
-                "time": dt.strftime("%Y-%m-%d"),
+                "time": dt_str,
                 "open": bar["open"], "high": bar["high"], "low": bar["low"],
                 "close": bar["close"], "volume": bar["volume"]
             })
