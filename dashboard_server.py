@@ -4129,7 +4129,7 @@ function fmtLiteDate(t){
 }
 function _liteTitleSegments(bar){
   if(!bar)return [];
-  const tf=_liteTf;
+  const tf=(_liteTf||'D').replace(/^1/,'');
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
@@ -6171,13 +6171,8 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     // Màu volume (đã được server tính sẵn)
     _liteVolumeData=j.volume||[];
     _liteCandle.setData(_liteData);
-    // Không setData cho _liteVolume ở đây: renderLiteIndicators() gọi ngay bên dưới
-    // sẽ chạy _liteRefreshVolumeTop() — hàm đó xoá + tạo lại series volume rồi tự
-    // setData (có áp dụng toggle "volcolor") nên gọi ở đây trước đó chỉ phí công.
     _liteUpdateWhitespace();
     renderLiteIndicators();
-    setLiteRightOffset();
-    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.12,bottom:.18}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteVolForecast=null; // đổi mã — xoá dự báo cũ, khỏi hiện nhầm số của mã trước trong lúc chờ fetch
