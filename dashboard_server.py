@@ -2493,16 +2493,6 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
-  #hmap-popout-btn:hover, #hmap-popout-btn:focus {
-    background: var(--surface) !important;
-    color: var(--muted) !important;
-    border-color: var(--border) !important;
-  }
-  #hmap-popout-btn:active {
-    background: var(--surf2) !important;
-    color: var(--text) !important;
-    border-color: var(--border) !important;
-  }
   .sankey-wrap{
     width:100% !important;
     margin-left:0 !important;
@@ -2813,7 +2803,6 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
         </div>
         <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
         <button id="hover-preview-btn">Chart: OFF</button>
-        <button class="hmap-link-btn" id="hmap-popout-btn" style="color:var(--muted)">⧉</button>
       </div>
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
       <span class="hmap-toggle-icon">▶</span>
@@ -3207,7 +3196,6 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
     <div style="display:flex;gap:4px;align-items:center;margin-left:auto;padding-right:4px;flex-shrink:0">
       <button class="hv-ctrl" id="hv-sort-btn" style="display:none">A↕Z</button>
       <button class="hv-ctrl" id="hv-full-btn"> ⛶ </button>
-      <button class="hv-ctrl" id="hv-pop-btn"> ⧉ </button>
       <button class="hv-ctrl danger" id="hv-close-btn"> ✕ </button>
     </div>
   </div>
@@ -3473,7 +3461,6 @@ function editFollowSymbols(){
 }
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
-let _isPopoutMode=false,_popoutWin=null;
 let _isChartPanelOpen=false;
 let _iframeDelay=null,_keyThrottle=false;
 const LITE_IND_KEY='dashboard_lite_indicators';
@@ -6255,9 +6242,8 @@ function _openMaximizedWindow(url,name,width,height,offsetLeft,offsetTop,extra='
 }
 function _refreshChartModeUI(){
   const chartBtn=$('hover-preview-btn');
-  chartBtn.classList.toggle('on',_hoverPreviewOn||_isPopoutMode);
-  chartBtn.textContent=_isPopoutMode?'Chart: POP':_hoverPreviewOn?'Chart: ON':'Chart: OFF';
-  $('hmap-popout-btn').classList.toggle('on',_isPopoutMode);
+  chartBtn.classList.toggle('on',_hoverPreviewOn);
+  chartBtn.textContent=_hoverPreviewOn?'Chart: ON':'Chart: OFF';
 }
 function _resetPopupChrome(){
   $('popup-phdr').style.display='';
@@ -6383,7 +6369,6 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(cell.dataset.sym);
-  updatePopout(cell.dataset.sym);
   _jumpLiteChart(cell.dataset.sym);
   openChart(cell.dataset.sym);
 });
@@ -6404,9 +6389,7 @@ function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _hmapClickTimer=setTimeout(()=>{
     _syncHoverPreview(sym);
-    updatePopout(sym);
     _jumpLiteChart(sym);
-    if(_isPopoutMode)return;
     if(_isChartPanelOpen)return;
     if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
     if(!_hoverPreviewOn){openChart(sym);return;}
@@ -6421,7 +6404,6 @@ DOM.sigList.addEventListener('dblclick',e=>{
   const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(row.dataset.sym);
-  updatePopout(row.dataset.sym);
   _jumpLiteChart(row.dataset.sym);
   openChart(row.dataset.sym);
 });
@@ -7145,7 +7127,6 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
-  updatePopout(sym);
   openChart(sym);
 });
 // ── Nút camera copy ảnh Sankey — cùng cơ chế với Treemap (SVG thuần, rasterize
@@ -7314,7 +7295,6 @@ DOM.treemapSvg.addEventListener('dblclick',e=>{
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
-  updatePopout(sym);
   openChart(sym);
 });
 // ── Nút camera copy ảnh Treemap — Treemap là SVG thuần (không lai HTML overlay như
@@ -7836,8 +7816,6 @@ async function fetchHmap(){
     renderTreemap(j.data||{});
     if(_hoverPreviewOn)_hvPatchSymList(j.data||{});
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
-    if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed)
-      _popoutWin.postMessage({type:'UPDATE_HEATMAP',data:j.data||{}},'*');
   }catch(e){console.error('fetchHmap:',e);}
 }
 function startBar(elOrId,sec){
@@ -8130,7 +8108,6 @@ $('hmap-follow-btn').addEventListener('dblclick',function(e){
   editFollowSymbols();
   this.blur();
 });
-$('hmap-popout-btn').addEventListener('click',function(){ quickPopout(); this.blur(); });
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 $('journal-open-btn').addEventListener('click',()=>{
   if(DOM.journalFrame.src==='about:blank')DOM.journalFrame.src='/journal';
@@ -8330,11 +8307,9 @@ function _lgToggleFavorite(sym){
   _lgSaveFavorites();_lgRenderList();
   _broadcastFavorites();
 }
-// Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ, và sang cửa sổ POP-OUT
-// (cửa sổ riêng, không dùng chung localStorage nên phải gửi qua postMessage).
+// Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ.
 function _broadcastFavorites(){
   if(_hoverPreviewOn){_hvBuildTabs();if(_hvActiveGroup!==-1)_hvRenderSymList();}
-  if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'SYNC_FAVORITES',favorites:LG_FAVORITES},'*');
 }
 function _lgReorderFavorite(dragSym,targetSym){
   // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường —
@@ -8565,7 +8540,7 @@ DOM.hpSymlist.addEventListener('click',e=>{
   if(star){_lgToggleFavorite(star.dataset.star);return;}
   const item=e.target.closest('.hv-sym-item');if(!item)return;
   const sym=item.dataset.sym;if(sym===_hoverPreviewCurrent)return;
-  _syncHoverPreview(sym);updatePopout(sym);
+  _syncHoverPreview(sym);
 });
 document.addEventListener('keydown',e=>{
   if(!_hoverPreviewOn||_hvActiveGroup===-1)return;
@@ -8580,7 +8555,7 @@ document.addEventListener('keydown',e=>{
   if(next===cur&&cur!==-1)return;
   const sym=items[next].dataset.sym;_syncHoverPreview(sym,false);
   if(_iframeDelay)clearTimeout(_iframeDelay);
-  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);updatePopout(sym);},300);
+  _iframeDelay=setTimeout(()=>{_syncHoverPreview(sym);},300);
   const list=DOM.hpSymlist,el=items[next],relTop=el.offsetTop-list.offsetTop,h=el.offsetHeight;
   if(relTop-h<list.scrollTop)list.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>list.scrollTop+list.clientHeight)list.scrollTop=relTop+h*2-list.clientHeight;
@@ -8589,14 +8564,11 @@ function _closeHoverPanel(){
   _hoverPreviewOn=false;
   DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
   DOM.hpIframe.src='about:blank';_hoverPreviewCurrent='';
-  if(_isPopoutMode){_isPopoutMode=false;if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}_popoutWin=null;}
   _refreshChartModeUI();
 }
 $('hv-close-btn').addEventListener('click',_closeHoverPanel);
 $('hv-full-btn').addEventListener('click',()=>openChart(_hoverPreviewCurrent||'VNINDEX'));
-$('hv-pop-btn').addEventListener('click',()=>popOutHover());
 function toggleHoverPreview(){
-  if(_isPopoutMode){minimizePopout();return;}
   if(_hoverPreviewOn){_closeHoverPanel();return;}
   _hoverPreviewOn=true;
   DOM.hpPanel.style.display='flex';_hvBuildTabs();
@@ -8612,266 +8584,8 @@ function toggleHoverPreview(){
   document.addEventListener('mousemove',e=>{if(!drag)return;const newH=Math.min(window.innerHeight*.9,Math.max(120,startH+(startY-e.clientY)));DOM.hpPanel.style.height=newH+'px';DOM.wrap.style.paddingBottom=newH+16+'px';});
   document.addEventListener('mouseup',()=>{if(!drag)return;drag=false;document.body.style.userSelect='';document.body.style.cursor='';});
 })();
-function quickPopout(){
-  if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
-  if(!_hoverPreviewOn){_hoverPreviewOn=true;_hvActiveGroup=0;}
-  popOutHover();
-}
-// ═══════════════════════════════════════════════════════
-// POPOUT WINDOW
-// ═══════════════════════════════════════════════════════
-function popOutHover(){
-  const sym=_hoverPreviewCurrent||'VNINDEX';
-  if(_isPopoutMode&&_popoutWin&&!_popoutWin.closed){_popoutWin.focus();return;}
-  DOM.hpPanel.style.display='none';DOM.wrap.style.paddingBottom='';
-  _isPopoutMode=true;_hoverPreviewOn=false;
-  _refreshChartModeUI();
-  const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40),h=box.height;
-  _popoutWin=_openMaximizedWindow('','ScannerPopout',w,h,0,0,'scrollbars=no');
-  if(!_popoutWin){alert('Trình duyệt chặn popup!');minimizePopout();return;}
-  _popoutWin.document.write(_buildPopoutHTML(sym));
-  _popoutWin.document.close();
-  const chk=setInterval(()=>{if(_popoutWin&&_popoutWin.closed){clearInterval(chk);if(_isPopoutMode)closePopoutWindow();}},1000);
-}
-function _buildPopoutHTML(initSym){
-  const gJ=JSON.stringify(_lgGetGroups().map(g=>({name:g.name,syms:g.syms,isFavorite:!!g.isFavorite})));
-  const dJ=JSON.stringify(window._lastHmapData||{});
-  const favJ=JSON.stringify(LG_FAVORITES);
-  const ig=_hvActiveGroup>=0?_hvActiveGroup:0;
-  return '<!DOCTYPE html><html><head>'
-    +'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
-    +'<title>Chart \u2014 '+initSym+'</title>'
-    +'<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">'
-    +'<style>'
-    +'*{margin:0;padding:0;box-sizing:border-box}'
-    +':root{--accent:#1a56db;--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--green:#0e9f6e;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:\'IBM Plex Mono\',monospace;--font-ui:\'Barlow Condensed\',sans-serif}'
-    +'body,html{height:100%;overflow:hidden;background:var(--bg);font-family:var(--font-mono);font-size:13px;color:var(--text)}'
-    +'#hdr{display:flex;align-items:center;padding:0 10px;background:var(--surf2);height:42px;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0}'
-    +'#sym{font-family:var(--font-ui);font-size:18px;font-weight:800;letter-spacing:1.5px;color:var(--accent);flex-shrink:0;white-space:nowrap}'
-    +'#sw{position:relative;flex-shrink:0}'
-    +'#si-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}'
-    +'#si{width:85px;padding:4px 6px 4px 22px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:10px;outline:none;transition:width .2s,border-color .15s}'
-    +'#si::placeholder{color:var(--muted)}'
-    +'#si:focus{width:130px;border-color:var(--accent)}'
-    +'@media(max-width:768px){'
-    +'  #si{width:68px !important; transition:border-color .15s !important}'
-    +'  #si:focus{width:68px !important; box-shadow:0 0 0 2px rgba(26,86,219,.12)}'
-    +'}'
-    +'#gtabs{display:flex;overflow-x:auto;gap:2px;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}'
-    +'#gtabs::-webkit-scrollbar{display:none}'
-    +'.gtab{height:28px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:var(--font-mono)}'
-    +'.gtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}'
-    +'.gtab:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}'
-    +'#ctrls{display:flex;gap:3px;align-items:center;flex-shrink:0}'
-    +'.ctrl{padding:0 10px;height:28px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-mono);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}'
-    +'.ctrl:hover{background:var(--accent);color:#fff;border-color:var(--accent)}'
-    +'.ctrl.close:hover{background:var(--red);color:#fff;border-color:var(--red)}'
-    +'#main{display:flex;height:calc(100% - 42px);overflow:hidden}'
-    +'#symlist{width:190px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}'
-    +'#symlist::-webkit-scrollbar{width:3px}'
-    +'#symlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}'
-    +'.si{display:grid;grid-template-columns:18px 40px 44px 1fr;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);transition:background .12s;gap:4px}'
-    +'.si:hover,.si.on{background:#dce8ff}'
-    +'.si.on .sn{color:#0f3fb3;font-weight:800}'
-    +'.star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:12px;line-height:1}'
-    +'.star.on{color:#f59e0b}'
-    +'.sn{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
-    +'.sp{font-size:10px;text-align:right;font-weight:700;white-space:nowrap}'
-    +'.spr{font-size:10px;text-align:right;color:#334155;font-weight:600;white-space:nowrap}'
-    +'.pos{color:var(--green)}.neg{color:var(--red)}.zer{color:#b45309}'
-    +'#cw{flex:1;overflow:hidden;position:relative;background:#fff}'
-    +'#cf{width:100%;height:100%;border:none;display:block}'
-    +'#ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);font-size:13px;z-index:2;transition:opacity .3s}'
-    +'#ld.hide{opacity:0;pointer-events:none}'
-    +'</style></head><body>'
-    +'<div id="hdr">'
-    +'<span id="sym">'+initSym+'</span>'
-    +'<div id="sw"><span id="si-icon">\uD83D\uDD0D</span>'
-    +'<input id="si" type="text" placeholder="T\xECm m\xE3" maxlength="10" autocomplete="off" spellcheck="false"></div>'
-    +'<div id="gtabs"></div>'
-    +'<div id="ctrls">'
-    +'<button class="ctrl" id="sort-btn">A↕Z</button>'
-    +'<button class="ctrl" id="min-btn"> ❐ </button>'
-    +'<button class="ctrl close" id="close-btn"> ✕ </button>'
-    +'</div></div>'
-    +'<div id="main">'
-    +'<div id="symlist"></div>'
-    +'<div id="cw"><div id="ld">Đang tải...</div><iframe id="cf" src="about:blank"></iframe></div>'
-    +'</div>'
-    +'<script>'
-    +'"use strict";'
-    +'var _$=function(id){return document.getElementById(id);};'
-    +'var groups='+gJ+';'
-    +'var hdata='+dJ+';'
-    +'var favs='+favJ+';'
-    +'var ag='+ig+';'
-    +'var sa='+(_hvSortAlpha?'true':'false')+';'
-    +'var cur="'+initSym+'";'
-    +'function fp(v){return(!v||v<=0)?"--":(v<100?Number(v).toFixed(2):Number(v).toFixed(1));}'
-    +'function buildTabs(){'
-    +'  var el=_$("gtabs");'
-    +'  var html=groups.map(function(g,i){'
-    +'    var lbl=g.name+(g.isFavorite?" ("+favs.length+")":"");'
-    +'    return \'<button class="gtab\'+(i===ag?\' on\':\'\')+\'" data-idx="\'+i+\'">\'+lbl+"</button>";'
-    +'  }).join("");'
-    +'  el.innerHTML=html;'
-    +'}'
-    +'function selGroup(idx){'
-    +'  ag=idx;'
-    +'  document.querySelectorAll(".gtab").forEach(function(b,i){b.classList.toggle("on",i===idx);});'
-    +'  var g=groups[idx];'
-    +'  _$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";'
-    +'  render();'
-    +'}'
-    +'function getSorted(){'
-    +'  var g=groups[ag];if(!g)return [];'
-    +'  if(g.isFavorite)return favs.slice();'
-    +'  if(sa)return g.syms.slice().sort(function(a,b){return a.localeCompare(b);});'
-    +'  return g.syms.slice().sort(function(a,b){'
-    +'    var pa=hdata[a]?hdata[a].pct||0:-999;'
-    +'    var pb=hdata[b]?hdata[b].pct||0:-999;'
-    +'    return pb-pa;'
-    +'  });'
-    +'}'
-    +'function render(){'
-    +'  var syms=getSorted();'
-    +'  _$("symlist").innerHTML=syms.map(function(sym){'
-    +'    var d=hdata[sym];'
-    +'    var pct=d&&typeof d.pct==="number"?d.pct:null;'
-    +'    var pctStr=pct!==null?((pct>=0?"+":"")+pct.toFixed(1)+"%"):"--";'
-    +'    var cls=pct===null?"zer":pct>0?"pos":pct<0?"neg":"zer";'
-    +'    var st=favs.indexOf(sym)!==-1;'
-    +'    return \'<div class="si\'+(sym===cur?\' on\':\'\')+\'" data-sym="\'+sym+\'">\''
-    +'      +\'<span class="star\'+(st?" on":"")+\'" data-star="\'+sym+\'" title="Thêm/bỏ khỏi Favorite">\'+(st?"★":"☆")+"</span>"'
-    +'      +\'<span class="sn">\'+sym+"</span>"'
-    +'      +\'<span class="sp \'+cls+\'">\'+pctStr+"</span>"'
-    +'      +\'<span class="spr">\'+fp(d&&d.price)+"</span></div>";'
-    +'  }).join("");'
-    +'}'
-    +'function patch(nd){'
-    +'  hdata=nd;'
-    +'  document.querySelectorAll(".si").forEach(function(el){'
-    +'    var sym=el.dataset.sym,d=nd[sym];if(!d)return;'
-    +'    var pct=typeof d.pct==="number"?d.pct:null;'
-    +'    var sp=el.querySelector(".sp"),spr=el.querySelector(".spr");'
-    +'    if(sp&&pct!==null){sp.textContent=(pct>=0?"+":"")+pct.toFixed(1)+"%";sp.className="sp "+(pct>0?"pos":pct<0?"neg":"zer");}'
-    +'    if(spr&&typeof d.price==="number")spr.textContent=fp(d.price);'
-    +'  });'
-    +'}'
-    +'function clickSym(sym){'
-    +'  if(sym===cur)return;'
-    +'  cur=sym;'
-    +'  document.querySelectorAll(".si").forEach(function(e){e.classList.toggle("on",e.dataset.sym===sym);});'
-    +'  setSym(sym);'
-    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
-    +'}'
-    +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
-    +'function loadChart(sym){'
-    +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url="https://ta.vietstock.vn/?stockcode="+sym.toLowerCase();'
-    +'  if(cf.src===url)return;'
-    +'  ld.classList.remove("hide");'
-    +'  cf.onload=function(){ld.classList.add("hide");};'
-    +'  cf.src=url;'
-    +'}'
-    +'_$("gtabs").addEventListener("click",function(e){'
-    +'  var b=e.target.closest(".gtab");if(!b)return;'
-    +'  selGroup(parseInt(b.dataset.idx));'
-    +'});'
-    +'_$("symlist").addEventListener("click",function(e){'
-    +'  var star=e.target.closest(".star");'
-    +'  if(star){'
-    +'    var sym=star.dataset.star,i=favs.indexOf(sym);'
-    +'    if(i===-1)favs.push(sym);else favs.splice(i,1);'
-    +'    buildTabs();render();'
-    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_TOGGLE_FAVORITE",symbol:sym},"*");'
-    +'    return;'
-    +'  }'
-    +'  var item=e.target.closest(".si");if(!item)return;'
-    +'  clickSym(item.dataset.sym);'
-    +'});'
-    +'_$("sort-btn").addEventListener("click",function(){'
-    +'  sa=!sa;'
-    +'  this.textContent=sa?"%↕":"A↕Z";'
-    +'  render();'
-    +'});'
-    +'_$("min-btn").addEventListener("click",function(){'
-    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_MINIMIZE"},"*");'
-    +'  window.close();'
-    +'});'
-    +'_$("close-btn").addEventListener("click",function(){'
-    +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_CLOSE"},"*");'
-    +'  window.close();'
-    +'});'
-    +'_$("si").addEventListener("keydown",function(e){'
-    +'  if(e.key==="Enter"){'
-    +'    var s=this.value.trim().toUpperCase();'
-    +'    if(s.length>=2){this.value="";this.blur();cur=s;setSym(s);render();'
-    +'      if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:s},"*");}'
-    +'  }'
-    +'  if(e.key==="Escape"){this.value="";this.blur();}'
-    +'});'
-    +'var _kt=false,_kd=null;'
-    +'document.addEventListener("keydown",function(e){'
-    +'  if(document.activeElement===_$("si"))return;'
-    +'  if(e.key!=="ArrowUp"&&e.key!=="ArrowDown")return;'
-    +'  e.preventDefault();'
-    +'  if(_kt)return;_kt=true;setTimeout(function(){_kt=false;},60);'
-    +'  var items=[].slice.call(_$("symlist").children);if(!items.length)return;'
-    +'  var c=items.findIndex(function(el){return el.classList.contains("on");});'
-    +'  var n=c===-1?0:(e.key==="ArrowDown"?c+1:c-1);'
-    +'  n=Math.max(0,Math.min(n,items.length-1));'
-    +'  if(n===c&&c!==-1)return;'
-    +'  items.forEach(function(el){el.classList.remove("on");});items[n].classList.add("on");'
-    +'  var sym=items[n].dataset.sym;cur=sym;_$("sym").textContent=sym;document.title="Chart "+sym;'
-    +'  if(_kd)clearTimeout(_kd);'
-    +'  _kd=setTimeout(function(){'
-    +'    loadChart(sym);'
-    +'    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_SYM_SELECT",symbol:sym},"*");'
-    +'  },300);'
-    +'  var list=_$("symlist"),el=items[n];'
-    +'  var rt=el.offsetTop-list.offsetTop,h=el.offsetHeight;'
-    +'  if(rt-h<list.scrollTop)list.scrollTop=Math.max(0,rt-h);'
-    +'  else if(rt+h*2>list.scrollTop+list.clientHeight)list.scrollTop=rt+h*2-list.clientHeight;'
-    +'});'
-    +'window.addEventListener("message",function(e){'
-    +'  if(e.data.type==="UPDATE_CHART"){cur=e.data.symbol;setSym(cur);render();}'
-    +'  if(e.data.type==="UPDATE_HEATMAP"){patch(e.data.data||{});}'
-    +'  if(e.data.type==="SYNC_FAVORITES"){favs=e.data.favorites||[];buildTabs();render();}'
-    +'});'
-    +'buildTabs();(function(){var g=groups[ag];_$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";})();render();setSym(cur);'
-    +'<\/script></body></html>';
-}
-
-function minimizePopout(){
-  _isPopoutMode=false;
-  if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
-  _popoutWin=null;
-  _hoverPreviewOn=true;
-  DOM.hpPanel.style.display='flex';_hvBuildTabs();
-  if(_hvActiveGroup>=0){
-    DOM.hpGrouptabs.querySelectorAll('.hv-gtab').forEach((b,i)=>b.classList.toggle('on',i===_hvActiveGroup));
-    DOM.hpSymlist.style.display='';_hvRenderSymList();
-  }else _hvSelectGroup(0);
-  DOM.wrap.style.paddingBottom=DOM.hpPanel.offsetHeight+16+'px';
-  if(_hoverPreviewCurrent)DOM.hpIframe.src='https://ta.vietstock.vn/?stockcode='+_hoverPreviewCurrent.toLowerCase();
-  _refreshChartModeUI();
-}
-function closePopoutWindow(){
-  _isPopoutMode=false;
-  if(_popoutWin&&!_popoutWin.closed)try{_popoutWin.close();}catch(e){}
-  _popoutWin=null;
-  _refreshChartModeUI();
-}
-function updatePopout(sym){if(_popoutWin&&!_popoutWin.closed)_popoutWin.postMessage({type:'UPDATE_CHART',symbol:sym},'*');}
-
 window.addEventListener('message',e=>{
-  if(e.data.type==='POPOUT_SYM_SELECT'){
-    _syncHoverPreview(e.data.symbol);
-  }else if(e.data.type==='POPOUT_TOGGLE_FAVORITE'&&e.data.symbol){
-    _lgToggleFavorite(e.data.symbol);
-  }else if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
+  if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
     const sym=String(e.data.symbol).toUpperCase().trim();
     if(!sym)return;
     _hmapDesktopClick(sym);
@@ -8880,14 +8594,9 @@ window.addEventListener('message',e=>{
     if(!sym)return;
     if(_hoverPreviewOn)_syncHoverPreview(sym);
     else _syncHoverPreview(sym,false);
-    updatePopout(sym);
     openChart(sym);
   }else if(e.data.type==='JOURNAL_CLOSE'){
     closeJournal();
-  }else if(e.data.type==='POPOUT_MINIMIZE'){
-    minimizePopout();
-  }else if(e.data.type==='POPOUT_CLOSE'){
-    closePopoutWindow();
   }
 });
 
