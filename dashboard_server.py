@@ -4218,10 +4218,13 @@ function _liteCleanSym(v){
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Gắn sự kiện làm sạch ký tự cho ô nhập mã, TRÁNH ép sửa value trong lúc IME (Unikey Telex/VNI...)
-// đang composing — ép sửa value giữa chừng composition sẽ xung đột với bộ đệm nội bộ của IME,
-// khiến IME chèn lại phần đang gõ dở đè lên giá trị đã bị sửa → gây lặp chữ liên tục kiểu "VNVNVND".
-// Chỉ làm sạch khi: (a) input bình thường không composing, hoặc (b) composition vừa kết thúc.
+// Gắn sự kiện làm sạch ký tự cho ô nhập mã. Mã CK luôn chỉ gồm A-Z0-9 nên chặn THẲNG mọi ký tự
+// khác NGAY TỪ LÚC CHÈN (beforeinput) thay vì để gõ vào rồi mới "dọn" sau — đây là lý do cách cũ
+// (chỉ dựa vào compositionstart/compositionend) vẫn bị lặp chữ: Unikey kiểu gõ hệ điều hành (khác
+// IME phần mềm) không phát sinh sự kiện composition của trình duyệt, nó gõ ký tự có dấu bằng cách tự
+// gửi liên tiếp lệnh xoá lùi + gõ đè — mỗi lệnh đó đều là 1 sự kiện 'beforeinput' riêng, nên vẫn bắt
+// được và chặn được ở đây dù không có composition. Chặn xong thì ô input KHÔNG BAO GIỜ nhận ký tự có
+// dấu để mà phải "dọn", nên hết hẳn hiện tượng tự gõ đè gây lặp chữ.
 function _liteBindSymInput(el,onClean){
   if(!el)return;
   let composing=false,_busy=false;
@@ -4233,6 +4236,12 @@ function _liteBindSymInput(el,onClean){
     _busy=false;
     onClean(raw);
   }
+  el.addEventListener('beforeinput',e=>{
+    // e.data=null với các thao tác không chèn ký tự (xoá, di chuyển con trỏ...) — bỏ qua, chỉ chặn
+    // khi thật sự có nội dung sắp chèn và nội dung đó chứa ký tự ngoài A-Z0-9 (chữ có dấu, khoảng
+    // trắng, ký tự đặc biệt...). Cho qua a-z thường để _apply() phía dưới tự viết hoa như trước.
+    if(e.data&&/[^A-Za-z0-9]/.test(e.data))e.preventDefault();
+  });
   el.addEventListener('compositionstart',()=>{composing=true;});
   el.addEventListener('compositionend',()=>{
     composing=false;
