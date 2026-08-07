@@ -4608,10 +4608,15 @@ function _litePtWithTime(l,p){
   }
   return{l,p,t,offset};
 }
-function _liteTimeframePeriodMs(tf){
-  if(tf==='1W'||tf==='W')return 7*86400000;
-  if(tf==='1M'||tf==='M')return 30*86400000;
-  return 86400000;
+function _liteSubBarOffset(targetStr,barStr){
+  if(!targetStr||!barStr)return 0;
+  const tTs=new Date(targetStr).getTime();
+  const bTs=new Date(barStr).getTime();
+  if(isNaN(tTs)||isNaN(bTs)||tTs<=bTs)return 0;
+  const diffDays=(tTs-bTs)/86400000;
+  if(_liteTf==='1W'||_liteTf==='W')return Math.max(0,Math.min(0.8, (diffDays/7)*0.8));
+  if(_liteTf==='1M'||_liteTf==='M')return Math.max(0,Math.min(0.85,(diffDays/30)*0.85));
+  return 0;
 }
 function _litePtLogical(pt){
   if(pt===null||pt===undefined)return null;
@@ -4620,26 +4625,34 @@ function _litePtLogical(pt){
   const offset=pt.offset||0;
   if(!pt.t)return pt.l;
   const targetStr=String(pt.t);
-  const exactIdx=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
-  if(exactIdx!==-1)return exactIdx+offset;
-  const targetTs=new Date(targetStr).getTime();
-  if(isNaN(targetTs))return pt.l;
-  let bestIdx=0,minDiff=Infinity;
-  for(let i=0;i<_liteData.length;i++){
-    const bTs=new Date(liteTimeKey(_liteData[i].time)).getTime();
-    const diff=Math.abs(bTs-targetTs);
-    if(diff<minDiff){minDiff=diff;bestIdx=i;}
-  }
-  let frac=0;
-  if((_liteTf==='1W'||_liteTf==='1M'||_liteTf==='W'||_liteTf==='M')&&_liteData[bestIdx]){
-    const barTs=new Date(liteTimeKey(_liteData[bestIdx].time)).getTime();
-    const periodMs=_liteTimeframePeriodMs(_liteTf);
-    if(targetTs>=barTs&&targetTs<=barTs+periodMs){
-      frac=(targetTs-barTs)/periodMs;
-      frac=Math.max(0,Math.min(0.95,frac));
+  
+  // 1. Khớp ngày chính xác (khung D)
+  let idx=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
+  if(idx!==-1)return idx+offset;
+  
+  // 2. Khớp Tháng 'YYYY-MM' (khung M) kèm sub-offset ngày trong tháng
+  if(_liteTf==='1M'||_liteTf==='M'){
+    const prefix=targetStr.slice(0,7);
+    idx=_liteData.findIndex(b=>liteTimeKey(b.time).startsWith(prefix));
+    if(idx!==-1){
+      const sub=_liteSubBarOffset(targetStr,liteTimeKey(_liteData[idx].time));
+      return idx+sub+offset;
     }
   }
-  return bestIdx+frac+offset;
+  
+  // 3. Khớp Tuần gần nhất (khung W) kèm sub-offset ngày trong tuần
+  const targetTs=new Date(targetStr).getTime();
+  if(!isNaN(targetTs)){
+    let bestIdx=0,minDiff=Infinity;
+    for(let i=0;i<_liteData.length;i++){
+      const bTs=new Date(liteTimeKey(_liteData[i].time)).getTime();
+      const diff=Math.abs(bTs-targetTs);
+      if(diff<minDiff){minDiff=diff;bestIdx=i;}
+    }
+    const sub=_liteData[bestIdx]?_liteSubBarOffset(targetStr,liteTimeKey(_liteData[bestIdx].time)):0;
+    return bestIdx+sub+offset;
+  }
+  return pt.l;
 }
 function _liteLogicalToX(pt){
   const l=(typeof pt==='object'&&pt!==null)?_litePtLogical(pt):pt;
