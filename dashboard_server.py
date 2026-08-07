@@ -1301,6 +1301,9 @@ def api_chart_cache_clear(symbol):
         removed = symbol in _chart_cache or f"{symbol}:15m" in _chart_cache
         _chart_cache.pop(symbol, None)
         _chart_cache.pop(f"{symbol}:15m", None)
+    with _lite_chart_cache_lock:
+        for tf in ("1D", "1W", "1M", "D", "W", "M"):
+            _lite_chart_cache.pop((symbol, tf), None)
     return jsonify({"symbol": symbol, "cleared": removed})
 
 @app.route("/api/config")
@@ -4217,14 +4220,6 @@ function _liteBindSymInput(el,onClean){
   });
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
-  if(typeof lastTimeStr === 'number'){
-    const out=[];
-    const step = (tf==='15m'||tf==='15M'||tf==='15')? 900 : 3600;
-    for(let i=1; i<=n; i++){
-      out.push(lastTimeStr + i*step);
-    }
-    return out;
-  }
   const out=[];
   let stepDays = 1;
   if(tf==='1W'||tf==='W') stepDays=7;
