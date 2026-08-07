@@ -93,8 +93,6 @@ _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
 _fetch_market_health_fn = None
-_fetch_chart_fn = None
-_fetch_chart_15m_fn = None
 _ensure_chart_symbol_fn = None
 _chart_symbol_status_fn = None
 _vol_forecast_fn = None
@@ -469,10 +467,6 @@ def api_proprietary_flow():
         print(f"  [Dashboard] ❌ Fetch dữ liệu tự doanh lỗi: {e}")
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
-
-_chart_cache: dict = {}
-_chart_lock = threading.Lock()
-CHART_TTL_SEC = 120
 
 # Màu cột Volume: 0=trung tính (xanh/đỏ theo close-open), 1=cảnh báo suy yếu
 # (gate xu hướng + Nhánh1-biến A / upThrustBar / topRevBar), 2=tín hiệu tích
@@ -891,33 +885,6 @@ def _uploaded_ext(filename):
 # =============================================================================
 # API
 # =============================================================================
-def _serve_chart_images(symbol, fetch_fn, cache_key, label):
-    symbol = symbol.upper().strip()
-    now = time.time()
-    with _chart_lock:
-        cached = _chart_cache.get(cache_key)
-        if cached and (now - cached["updated_at"]) < CHART_TTL_SEC:
-            return jsonify({"symbol": symbol, "images": cached["images"],
-                            "labels": cached["labels"], "cached": True})
-    if not fetch_fn:
-        return jsonify({"error": f"{label}_fn_not_registered"}), 503
-    try:
-        ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [Dashboard] 📊 Tạo {label} {symbol}...")
-        png_list, labels = fetch_fn(symbol)
-        if not png_list:
-            return jsonify({"error": "no_data"}), 404
-        b64_list = [base64.b64encode(b).decode() for b in png_list]
-        with _chart_lock:
-            _chart_cache[cache_key] = {"images": b64_list, "labels": labels,
-                                       "updated_at": time.time()}
-        print(f"  [Dashboard] ✅ {label} {symbol}: {len(b64_list)} ảnh ({ts}→{datetime.now(TZ_VN).strftime('%H:%M:%S')})")
-        return jsonify({"symbol": symbol, "images": b64_list,
-                        "labels": labels, "cached": False})
-    except Exception as e:
-        print(f"  [Dashboard] ❌ {label} {symbol} lỗi: {e}")
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
@@ -1002,16 +969,6 @@ def api_market_health():
     # (xem fetchHealth() ở JS) thay vì tưởng đã có số mới rồi đợi hết TTL mới hỏi lại.
     payload["pending_refresh"] = pending_refresh
     return jsonify(_json_safe(payload))
-
-@app.route("/api/chart_images/<symbol>")
-def api_chart_images(symbol):
-    symbol = symbol.upper().strip()
-    return _serve_chart_images(symbol, _fetch_chart_fn, symbol, "chart")
-
-@app.route("/api/chart_image_15m/<symbol>")
-def api_chart_image_15m(symbol):
-    symbol = symbol.upper().strip()
-    return _serve_chart_images(symbol, _fetch_chart_15m_fn, f"{symbol}:15m", "chart_15m")
 
 @app.route("/api/vol_forecast/<symbol>")
 def api_vol_forecast(symbol):
@@ -1308,18 +1265,6 @@ def api_status():
     cache = _get_history_cache() if _get_history_cache else {}
     return jsonify({"status": "running", "cache_symbols": len(cache),
                     "server_time": datetime.now(TZ_VN).strftime("%H:%M:%S %d/%m/%Y")})
-
-@app.route("/api/chart_cache_clear/<symbol>", methods=["DELETE"])
-def api_chart_cache_clear(symbol):
-    symbol = symbol.upper().strip()
-    with _chart_lock:
-        removed = symbol in _chart_cache or f"{symbol}:15m" in _chart_cache
-        _chart_cache.pop(symbol, None)
-        _chart_cache.pop(f"{symbol}:15m", None)
-    with _lite_chart_cache_lock:
-        for tf in ("1D", "1W", "1M", "D", "W", "M"):
-            _lite_chart_cache.pop((symbol, tf), None)
-    return jsonify({"symbol": symbol, "cleared": removed})
 
 @app.route("/api/config")
 def api_config():
@@ -1697,11 +1642,6 @@ def api_journal_delete_image(image_id):
         pass
     return jsonify({"ok": True})
 
-@app.route("/popout_full/<symbol>")
-def popout_full(symbol):
-    return Response(POPOUT_FULL_HTML.replace("__SYMBOL__", symbol.upper().strip()),
-                    mimetype="text/html")
-
 @app.route("/")
 def index():
     # __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ giờ nằm trong DASHBOARD_MAIN_JS (đã tách ra
@@ -1732,7 +1672,6 @@ def dashboard_main_js():
 # =============================================================================
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
-                    fetch_chart_fn=None, fetch_chart_15m_fn=None,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
                     vol_forecast_fn=None,
@@ -1741,7 +1680,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -1751,8 +1690,6 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_market_health_fn = fetch_market_health_fn
-    _fetch_chart_fn    = fetch_chart_fn
-    _fetch_chart_15m_fn = fetch_chart_15m_fn
     _ensure_chart_symbol_fn = ensure_chart_symbol_fn
     _chart_symbol_status_fn = chart_symbol_status_fn
     _vol_forecast_fn   = vol_forecast_fn
@@ -1767,278 +1704,8 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
 
     threading.Thread(target=_run, daemon=True).start()
     print(f"🌐 Dashboard tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s | Chart: {'✅' if fetch_chart_fn else '❌'}")
+    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s")
 
-# =============================================================================
-# POPOUT FULL HTML
-# =============================================================================
-POPOUT_FULL_HTML = r"""<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Full Chart — __SYMBOL__</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<script>
-try{
-  const qs=new URLSearchParams(window.location.search);
-  if(qs.get('embedded')==='1')
-    document.documentElement.classList.add('embedded-popout');
-}catch(e){}
-</script>
-<style>
-:root{--bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;--accent:#1a56db;--red:#e02424;--text:#111827;--muted:#6b7280;--font-mono:'IBM Plex Mono',monospace}
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;overflow:hidden}
-body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px}
-.page{height:100vh;display:flex;flex-direction:column}
-.phdr{display:flex;align-items:center;justify-content:center;padding:7px 10px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
-html.embedded-popout .phdr{display:none !important}
-.phdr-center{display:flex;align-items:flex-end;justify-content:center}
-.phdr-right{display:flex;align-items:center;justify-content:flex-end}
-.ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center}
-.ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
-.ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
-.ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
-.phdr-right{margin-left:2px}
-.closebtn{width:30px;height:30px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
-.closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
-.pbody{flex:1;overflow:hidden;position:relative;background:#fff}
-.tpanel{position:absolute;inset:0;display:none}
-.tpanel.on{display:block}
-.tpanel iframe{width:100%;height:100%;border:none;display:block}
-#panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
-#panel-scanner.on{display:flex}
-.scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
-.album-outer{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:6px;gap:6px;background:#fff;scrollbar-width:thin}
-.album-slide{display:none;flex-direction:column;align-items:center;width:100%}
-.album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(100vh - 140px);object-fit:contain;border-radius:3px;border:1px solid var(--border)}
-.album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0}
-.album-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;user-select:none}
-.album-nav-btn:hover:not(.disabled){background:var(--accent);color:#fff;border-color:var(--accent)}
-.album-nav-btn.disabled{opacity:.25;pointer-events:none}
-.album-dots-wrap{display:flex;gap:6px;align-items:center}
-.album-dot{width:8px;height:8px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
-.album-dot.on{background:var(--accent);transform:scale(1.3)}
-.album-refresh-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.album-refresh-btn:hover{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
-.album-refresh-btn.spinning span{display:inline-block;animation:spin .7s linear infinite}
-.album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 6px;flex-shrink:0}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes popIn{from{opacity:0;transform:scale(.96) translateY(14px)}to{opacity:1;transform:none}}
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-@media (min-width: 769px) {
-    body.embedded-popout-desktop .phdr{display:none !important}
-  }
-@media(max-width:980px){
-  .phdr{grid-template-columns:1fr;gap:8px}
-  .phdr-center,.phdr-right{justify-content:center}
-}
-@media(max-width:768px){
-  .phdr{display:flex !important;align-items:center !important;justify-content:flex-start !important;padding:4px 6px !important;gap:4px !important}
-  .phdr-center{display:flex !important;flex:1;min-width:0;align-items:center !important;justify-content:flex-start !important}
-  .phdr-right{display:flex !important;flex-shrink:0}
-  .ctabs{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto !important;overflow-y:hidden !important;justify-content:flex-start !important;align-items:center !important;gap:4px;width:100%;min-width:0;scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch}
-  .ctabs::-webkit-scrollbar{display:none}
-  .ctab{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:4px;border:1px solid var(--border);font-size:11px;white-space:nowrap}
-  .ctab.on{border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent)}
-  .closebtn{width:30px;height:30px;border-radius:4px;flex-shrink:0}
-}
-</style>
-</head>
-<body>
-<div class="page">
-  <div class="phdr">
-    <div class="phdr-center">
-      <div class="ctabs" id="ctabs">
-        <button class="ctab" data-tab="vs">📈 Vietstock</button>
-        <button class="ctab on" data-tab="chart">📊 Chart</button>
-        <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
-        <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-        <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
-        <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
-        <button class="ctab" data-tab="24h">💬 Fireant</button>
-      </div>
-    </div>
-    <div class="phdr-right">
-      <button class="closebtn" id="close-btn">✕</button>
-    </div>
-  </div>
-  <div class="pbody">
-    <div class="tpanel" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel on" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-scanner">
-      <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
-      <div class="album-outer" id="album-outer" style="display:none">
-        <div class="album-center"><div id="album-slides"></div></div>
-        <div class="album-nav-bar">
-          <button class="album-nav-btn disabled" id="btn-prev">&#9664;</button>
-          <div class="album-dots-wrap" id="album-dots"></div>
-          <button class="album-nav-btn" id="btn-next">&#9654;</button>
-          <button class="album-refresh-btn" id="btn-refresh"><span>&#8635;</span></button>
-        </div>
-        <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
-      </div>
-    </div>
-    <div class="tpanel" id="panel-vnd-cs"><iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-vnd-news"><iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-vnd-sum"><iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-24h"><iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe></div>
-  </div>
-</div>
-<script>
-'use strict';
-const $=id=>document.getElementById(id);
-const DOM={
-  ifVs:$('iframe-vs'),
-  loading:$('scanner-loading'),outer:$('album-outer'),
-  slides:$('album-slides'),dots:$('album-dots'),
-  btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
-  ctabs:$('ctabs'),
-};
-const IFRAME_MAP={
-  'chart':    s=>`/?chartPopout=1&embedded=1&sym=${s}`,
-  'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
-  'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
-};
-const TABS_ALL=['vs','chart','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
-let _sym='__SYMBOL__',_tab='chart';
-let _albumIdx=0,_albumTotal=0,_albumImages=[];
-function _applyEmbeddedMode(){
-  const qs=new URLSearchParams(window.location.search);
-  const isEmbedded = qs.get('embedded')==='1';
-  const isMobile = (window.innerWidth <= 768);
-  document.documentElement.classList.toggle('embedded-popout', isEmbedded);
-  document.body.classList.toggle('embedded-popout-mobile-full', isEmbedded && isMobile);
-  document.body.classList.toggle('embedded-popout-desktop', isEmbedded && !isMobile);
-}
-window.addEventListener('resize', _applyEmbeddedMode);
-window.addEventListener('orientationchange', _applyEmbeddedMode);
-_applyEmbeddedMode();
-function notifyHost(sym){
-  try{
-    if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_SYMBOL',symbol:sym},'*');
-    if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'POPOUT_SYM_SELECT',symbol:sym},'*');
-  }catch(e){}
-}
-function handleClose(){
-  try{if(window.self!==window.top)return window.parent.postMessage({type:'EMBEDDED_FULL_CLOSE',symbol:_sym},'*');}catch(e){}
-  window.close();
-}
-
-DOM.ctabs.addEventListener('click',e=>{
-  const btn=e.target.closest('.ctab');if(btn)_activateTab(btn.dataset.tab);
-});
-function _activateTab(tab){
-  _tab=tab;
-  DOM.ctabs.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
-  if(IFRAME_MAP[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_MAP[tab](_sym);}
-  if(tab==='scanner')loadScannerChart(_sym);
-}
-
-function setSymbol(sym){
-  _sym=(sym||'').toUpperCase().trim();if(!_sym)return;
-  document.title=_sym+' • Full Chart';
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
-  Object.keys(IFRAME_MAP).forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
-  DOM.outer.style.display='none';
-  DOM.loading.style.display='flex';
-  DOM.loading.innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-  _activateTab('chart');
-  try{history.replaceState(null,'','/popout_full/'+_sym);}catch(e){}
-  notifyHost(_sym);
-}
-
-function _showAlbum(images){
-  _albumImages=images;_albumTotal=images.length;_albumIdx=0;
-  DOM.slides.innerHTML=images.map((img,i)=>`<div class="album-slide${i===0?' on':''}" data-idx="${i}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`).join('');
-  DOM.dots.innerHTML=images.map((_,i)=>`<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
-  _updateAlbumNav();
-  DOM.outer.style.display='flex';DOM.loading.style.display='none';
-}
-function _appendAlbumImages(images){
-  if(!images.length)return;
-  const start=_albumImages.length;
-  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
-  DOM.slides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"></div>`;}).join(''));
-  DOM.dots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
-  _updateAlbumNav();
-}
-DOM.dots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
-DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
-DOM.btnNext.addEventListener('click',()=>albumNav(1));
-function albumGoto(i){
-  if(i<0||i>=_albumTotal)return;
-  DOM.slides.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
-  DOM.dots.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i;_updateAlbumNav();
-}
-function albumNav(dir){albumGoto(_albumIdx+dir);}
-function _updateAlbumNav(){
-  DOM.btnPrev.classList.toggle('disabled',_albumIdx===0);
-  DOM.btnNext.classList.toggle('disabled',_albumIdx===_albumTotal-1);
-}
-DOM.btnRef.addEventListener('click',async()=>{
-  if(!_sym)return;
-  DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
-  try{await fetch('/api/chart_cache_clear/'+_sym,{method:'DELETE'});}catch(e){}
-  DOM.btnRef.classList.remove('spinning');DOM.btnRef.disabled=false;
-  await loadScannerChart(_sym);
-});
-async function loadScannerChart(sym){
-  DOM.outer.style.display='none';DOM.loading.style.display='flex';
-  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
-  try{
-    const r=await fetch('/api/chart_images/'+sym);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
-    const j=await r.json();
-    if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
-    _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent='Đang tải 15m...';
-    loadScannerChart15m(sym);
-  }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
-  }
-}
-async function loadScannerChart15m(sym){
-  const s=(sym||'').toUpperCase().trim();
-  try{
-    const r=await fetch('/api/chart_image_15m/'+s);
-    if(!r.ok){const h=DOM.outer.querySelector('.album-hint');if(h)h.textContent='';return;}
-    const j=await r.json();
-    if((_sym||'').toUpperCase().trim()!==s)return;
-    if(!j.images?.length)return;
-    const labels=j.labels||['⚡ 15 phút [15m]'];
-    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
-    const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }catch(e){
-    const h=DOM.outer.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }
-}
-document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){window.close();return;}
-  if(_tab!=='scanner'||_albumTotal===0)return;
-  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
-  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
-});
-$('close-btn').addEventListener('click',handleClose);
-window.addEventListener('message',e=>{if(e.data.type==='UPDATE_CHART'&&e.data.symbol)setSymbol(e.data.symbol);});
-_applyEmbeddedMode();
-setSymbol(_sym);
-</script>
-</body>
-</html>
-"""
 
 # =============================================================================
 # TRADE JOURNAL HTML
@@ -9033,7 +8700,6 @@ function _buildPopoutHTML(initSym){
     +'<div id="gtabs"></div>'
     +'<div id="ctrls">'
     +'<button class="ctrl" id="sort-btn">A↕Z</button>'
-    +'<button class="ctrl" id="full-btn"> ⛶ </button>'
     +'<button class="ctrl" id="min-btn"> ❐ </button>'
     +'<button class="ctrl close" id="close-btn"> ✕ </button>'
     +'</div></div>'
@@ -9050,7 +8716,6 @@ function _buildPopoutHTML(initSym){
     +'var ag='+ig+';'
     +'var sa='+(_hvSortAlpha?'true':'false')+';'
     +'var cur="'+initSym+'";'
-    +'var full=false;'
     +'function fp(v){return(!v||v<=0)?"--":(v<100?Number(v).toFixed(2):Number(v).toFixed(1));}'
     +'function buildTabs(){'
     +'  var el=_$("gtabs");'
@@ -9112,7 +8777,7 @@ function _buildPopoutHTML(initSym){
     +'function setSym(sym){_$("sym").textContent=sym;document.title="Chart "+sym;loadChart(sym);}'
     +'function loadChart(sym){'
     +'  var cf=_$("cf"),ld=_$("ld");'
-    +'  var url=full?(window.location.origin+"/popout_full/"+sym):("https://ta.vietstock.vn/?stockcode="+sym.toLowerCase());'
+    +'  var url="https://ta.vietstock.vn/?stockcode="+sym.toLowerCase();'
     +'  if(cf.src===url)return;'
     +'  ld.classList.remove("hide");'
     +'  cf.onload=function(){ld.classList.add("hide");};'
@@ -9139,7 +8804,6 @@ function _buildPopoutHTML(initSym){
     +'  this.textContent=sa?"%↕":"A↕Z";'
     +'  render();'
     +'});'
-    +'_$("full-btn").addEventListener("click",function(){full=true;loadChart(cur);});'
     +'_$("min-btn").addEventListener("click",function(){'
     +'  if(window.opener&&!window.opener.closed)window.opener.postMessage({type:"POPOUT_MINIMIZE"},"*");'
     +'  window.close();'
@@ -9183,8 +8847,6 @@ function _buildPopoutHTML(initSym){
     +'  if(e.data.type==="UPDATE_CHART"){cur=e.data.symbol;setSym(cur);render();}'
     +'  if(e.data.type==="UPDATE_HEATMAP"){patch(e.data.data||{});}'
     +'  if(e.data.type==="SYNC_FAVORITES"){favs=e.data.favorites||[];buildTabs();render();}'
-    +'  if(e.data.type==="EMBEDDED_FULL_SYMBOL"){cur=(e.data.symbol||cur).toUpperCase();_$("sym").textContent=cur;render();}'
-    +'  if(e.data.type==="EMBEDDED_FULL_CLOSE"){full=false;cur=(e.data.symbol||cur).toUpperCase();setSym(cur);render();}'
     +'});'
     +'buildTabs();(function(){var g=groups[ag];_$("sort-btn").style.display=(g&&g.isFavorite)?"none":"";})();render();setSym(cur);'
     +'<\/script></body></html>';
