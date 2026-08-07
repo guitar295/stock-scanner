@@ -1266,8 +1266,22 @@ def api_lightweight_chart(symbol):
     if not err and dchart_data and dchart_data.get("candles"):
         # Đánh dấu has_more=True khi load đầu (còn lịch sử cũ phía trước)
         dchart_data["has_more"] = True
-        with _lite_chart_cache_lock:
-            _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
+        # CHỈ GHI FULL DATA (limit >= 400) VÀO CACHE — KHÔNG ĐÈ 50-BAR QUIET REFRESH LÊN CACHE
+        if limit >= 400 and not nocache:
+            with _lite_chart_cache_lock:
+                _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
+        elif entry and entry.get("payload") and dchart_data.get("candles"):
+            # Nếu có cache đầy đủ cũ, chỉ vá nến mới nhất vào cache đầy đủ
+            with _lite_chart_cache_lock:
+                full_payload = entry["payload"]
+                full_candles = full_payload.get("candles", [])
+                latest_bar = dchart_data["candles"][-1]
+                if full_candles:
+                    if full_candles[-1].get("time") == latest_bar.get("time"):
+                        full_candles[-1] = latest_bar
+                    else:
+                        full_candles.append(latest_bar)
+                entry["ts"] = now_ts
         return jsonify(dchart_data)
 
     # Nếu fetch mới lỗi nhưng có cache cũ → trả cache cũ (stale-while-revalidate)
