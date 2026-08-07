@@ -1106,15 +1106,15 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
     return flags_by_date
 
-def fetch_vndirect_dchart(symbol, tf="1D", limit=150, before_date=None):
+def fetch_vndirect_dchart(symbol, tf="1D", limit=250, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
-    - limit: số nến tối đa muốn trả (default 150 ≈ 9 tháng D — cực nhanh ~100-200ms).
+    - limit: số nến tối đa muốn trả (default 250 ≈ 1 năm D — cực nhanh ~150-250ms).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
       (dùng cho lazy load lịch sử khi user kéo trái đến đầu dữ liệu).
     """
     symbol = symbol.upper().strip()
     tf_upper = tf.upper().strip()
-    limit = max(50, min(1000, int(limit or 150)))
+    limit = max(50, min(1000, int(limit or 250)))
 
     # ── Xác định khoảng thời gian cần fetch ──────────────────────────────────
     if before_date:
@@ -1237,9 +1237,9 @@ def api_lightweight_chart(symbol):
     before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 150) or 150)
+        limit = int(request.args.get("limit", 250) or 250)
     except (TypeError, ValueError):
-        limit = 150
+        limit = 250
     limit = max(50, min(1000, limit))
 
     # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
@@ -6146,7 +6146,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=150');
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=250');
     if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
