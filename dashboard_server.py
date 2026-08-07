@@ -4290,7 +4290,10 @@ function _liteApplyBuySignal(){
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
-  const last=_liteData.length-1,to=last+LITE_RIGHT_OFFSET,from=Math.max(0,to-LITE_BARS_VISIBLE);
+  const last=_liteData.length-1;
+  const rightOffset=15;
+  const to=last+rightOffset;
+  const from=0; // 250 nến phủ 94% chiều rộng màn hình, 6% lề phải
   _liteApplyVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
@@ -6168,6 +6171,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteCandle.setData(_liteData);
     _liteUpdateWhitespace();
     renderLiteIndicators();
+    setLiteRightOffset();
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteVolForecast=null; // đổi mã — xoá dự báo cũ, khỏi hiện nhầm số của mã trước trong lúc chờ fetch
