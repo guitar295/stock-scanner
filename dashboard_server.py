@@ -1776,7 +1776,7 @@ POPOUT_FULL_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Full Chart — __SYMBOL__</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <script>
@@ -1855,6 +1855,7 @@ html.embedded-popout .phdr{display:none !important}
     <div class="phdr-center">
       <div class="ctabs" id="ctabs">
         <button class="ctab on" data-tab="vs">📈 Vietstock</button>
+        <button class="ctab" data-tab="chart">📊 Chart</button>
         <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
         <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
@@ -1868,6 +1869,7 @@ html.embedded-popout .phdr{display:none !important}
   </div>
   <div class="pbody">
     <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
+    <div class="tpanel" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
     <div class="tpanel" id="panel-scanner">
       <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
       <div class="album-outer" id="album-outer" style="display:none">
@@ -1898,12 +1900,13 @@ const DOM={
   ctabs:$('ctabs'),
 };
 const IFRAME_MAP={
-  'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
-  'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://fireant.vn/ma-chung-khoan/${s}`,
+  'chart':    s=>`/?chartPopout=1&embedded=1&sym=${s}`,
+  'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
+  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
+  'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
+  '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
-const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+const TABS_ALL=['vs','chart','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 let _sym='__SYMBOL__',_tab='vs';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
@@ -2303,7 +2306,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Scanner Dashboard</title>
 <!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
      viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
@@ -2867,15 +2870,12 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .tri-tabs [data-tab="fireant"],
   #tri-content-fireant{display:none !important}
 
-  /* ─── Panel CHART trên mobile ───────────────────────────────────────────
-     Trước đây bị display:none hẳn. Giờ hiện lại nhưng thiết kế riêng bề rộng/
-     chiều cao cho màn hẹp: toolbar (search/tf/indicators/vẽ) quá nhiều nút để
-     nhét vừa 1-2 hàng trên ~360-420px, nên cho cuộn ngang 1 hàng duy nhất
-     (giống cách .hmap-hdr-row1 đã làm ở trên) thay vì wrap xuống nhiều hàng
-     làm chart bị đẩy xuống quá sâu. Khung chart hạ từ 720px (cố định cho
-     desktop) xuống theo % chiều cao màn hình, có min/max để không quá lùn
-     trên máy nhỏ hoặc quá cao khi xoay ngang. Toàn bộ khối này chỉ áp dụng
-     trong @media(max-width:768px) nên KHÔNG ảnh hưởng gì tới desktop. */
+  /* ─── Panel CHART trên mobile & iPhone ───────────────────────────────────
+     Bật và tối ưu hiển thị/thao tác panel CHART trên thiết bị di động:
+     - Khung toolbar cuộn ngang 1 hàng mượt mà bằng tay trên iPhone (-webkit-overflow-scrolling: touch).
+     - Loại bỏ hiện tượng tự động phóng to (zoom) của iOS Safari khi chạm vào ô input (font-size 16px).
+     - Hỗ trợ safe area insets cho iPhone có notch / Dynamic Island và thanh Home bar.
+     - Hiển thị bảng chỉ báo (Indicators) dạng bottom sheet nổi tiện chạm trên màn hình nhỏ. */
   #lite-chart-panel{display:block}
   .lite-chart-toolbar{
     flex-wrap:nowrap;
@@ -2889,8 +2889,33 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .lite-chart-toolbar>*{flex-shrink:0}
   .lite-indicators{flex-wrap:nowrap}
   .lite-draw-toolbar{flex-wrap:nowrap}
-  .lite-chart-input{width:80px}
-  .lite-chart-input:focus{width:96px}
+  .lite-chart-input{width:90px;font-size:16px !important}
+  .lite-chart-input:focus{width:110px}
+  .mob-search-input, .mob-land-search, .popup-search-input, .hmap-search-input {
+    font-size: 16px !important;
+  }
+  button, input, select, .ctab, .mob-tab-btn, .mob-land-tab, .lite-draw-btn, .lite-tf-btn, .lite-ind-group-btn {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #lite-chart {
+    touch-action: pan-x pan-y;
+  }
+  .lite-ind-dropdown {
+    position: fixed !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    top: auto !important;
+    bottom: 20px !important;
+    width: min(340px, 92vw) !important;
+    max-height: 55vh !important;
+    overflow-y: auto !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
+    border-radius: 12px !important;
+    z-index: 99999 !important;
+    padding: 12px 16px !important;
+    -webkit-overflow-scrolling: touch;
+  }
   .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
   .lite-groups-sidebar{width:150px}
   .lite-groups-sidebar.on~.lite-vietstock-iframe{left:150px;width:calc(100% - 150px)}
@@ -3586,6 +3611,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="phdr-center">
         <div class="ctabs" id="popup-ctabs">
           <button class="ctab on" data-tab="vs">📈 Vietstock</button>
+          <button class="ctab" data-tab="chart">📊 Chart</button>
           <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
           <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
@@ -3610,6 +3636,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <!-- Mobile portrait header — Row 2: tabs cuộn -->
     <div class="mob-tab-row" id="mob-tab-row" style="display:none">
       <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
+      <button class="mob-tab-btn" data-tab="chart">📊 Chart</button>
       <button class="mob-tab-btn" data-tab="scanner">🖼 Scanner</button>
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
       <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
@@ -3626,6 +3653,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       </div>
       <div class="mob-land-tabs" id="mob-land-tabs">
         <button class="mob-land-tab on" data-tab="vs">📈 Vietstock</button>
+        <button class="mob-land-tab" data-tab="chart">📊 Chart</button>
         <button class="mob-land-tab" data-tab="scanner">🖼 Scanner</button>
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
@@ -3638,6 +3666,7 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 
     <div class="pbody">
       <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
+      <div class="tpanel" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-scanner">
         <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
         <div class="album-outer" id="album-outer" style="display:none">
@@ -3783,12 +3812,13 @@ const DOM={
 // ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-const TABS_ALL=['vs','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+const TABS_ALL=['vs','chart','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
-  'vnd-cs': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news':s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
-  'vnd-sum': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
-  '24h':     s=>`https://fireant.vn/ma-chung-khoan/${s}`,
+  'chart':    s=>`/?chartPopout=1&embedded=1&sym=${encodeURIComponent(s)}`,
+  'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
+  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
+  'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
+  '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
 const BADGE_MAP={
   'BREAKOUT':'b-BREAKOUT','POCKET PIVOT':'b-POCKET','PRE-BREAK':'b-PREBREAK',
@@ -8662,7 +8692,7 @@ function openChart(sym,tab='vs'){
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _resetScannerUI();
   _activateTab(tab);
   _openPopup();
@@ -8675,7 +8705,7 @@ function closePopup(){
   _resetPopupChrome();
   pbox.style.visibility='hidden';
   DOM.ifVs.src='about:blank';
-  ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   pbox.style.animation='none';
   DOM.overlay.classList.remove('on');
   document.body.style.overflow='';
@@ -9543,6 +9573,10 @@ async function init(){
   _refreshChartModeUI();
   bindLiteChartControls();
   bindAlertControls();
+  if(IS_MOBILE()){
+    DOM.liteChartPanel.classList.remove('collapsed');
+    _isChartPanelOpen=true;
+  }
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   // Bắn tải CHART NGAY LẬP TỨC — không await, không chờ config/tín hiệu/heatmap/health xong
   // trước. Trước đây 4 API này chạy TUẦN TỰ (await Promise.all(...) rồi mới loadLiteChart())
@@ -9558,5 +9592,12 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
+window.addEventListener('orientationchange',()=>{
+  setTimeout(()=>{
+    if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+    if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
+    if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+  },200);
+});
 init();
 """
