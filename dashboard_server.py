@@ -4010,8 +4010,8 @@ function initLiteChart(){
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     redrawLiteDrawings();
     _liteSyncVisibleRangeFrom(_liteChart,range);
-    // Lazy load: khi user kéo trái đến gần đầu dữ liệu → fetch thêm lịch sử cũ
-    if(range&&range.from<=5&&_liteHasMore&&!_liteLoadingMore){
+    // Lazy load đón đầu: khi user tiến về gần mốc 100 nến sát trái → tự fetch trước 1 bước ngầm
+    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore){
       _liteFetchMoreHistory();
     }
   });
@@ -6174,6 +6174,10 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteFetchVolForecast(_liteSymbol);
     _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
+    // Tải đón đầu trước 1 bước (Pre-fetch Step Ahead): Tải ngầm tiếp 300 nến quá khứ
+    // ngay sau khi load chart 120ms — giúp vá trọn vẹn đường MA200 bên trái và chuẩn bị
+    // sẵn dữ liệu RAM khi user kéo lùi lịch sử.
+    setTimeout(_liteFetchMoreHistory,120);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     updateLiteBigPrice(null);
