@@ -3957,6 +3957,7 @@ const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
 let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load (server báo)
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
 let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
+let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
 // Phần chung của mọi cấu hình rightPriceScale trong initLiteChart()/applyLitePaneLayout() —
 // borderColor và minimumWidth giống hệt nhau ở cả 3 chart (main/RSI/MACD) và ở mọi lần áp dụng,
 // chỉ scaleMargins (và autoScale ở main/RSI khi đổi layout) là khác nhau nên vẫn để riêng.
@@ -4012,7 +4013,7 @@ function initLiteChart(){
     redrawLiteDrawings();
     _liteSyncVisibleRangeFrom(_liteChart,range);
     // Lazy load đón đầu: khi user tiến về gần mốc 100 nến sát trái → tự fetch trước 1 bước ngầm
-    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore){
+    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
   });
@@ -4210,14 +4211,25 @@ function _liteCleanSym(v){
 // Chỉ làm sạch khi: (a) input bình thường không composing, hoặc (b) composition vừa kết thúc.
 function _liteBindSymInput(el,onClean){
   if(!el)return;
-  let composing=false;
-  el.addEventListener('compositionstart',()=>{composing=true;});
-  el.addEventListener('compositionend',()=>{composing=false;});
-  el.addEventListener('input',e=>{
-    if(composing||e.isComposing)return;
-    const raw=_liteCleanSym(e.target.value);
-    e.target.value=raw;
+  let composing=false,_busy=false;
+  function _apply(){
+    if(_busy)return;
+    _busy=true;
+    const raw=_liteCleanSym(el.value);
+    el.value=raw;      // programmatic set — không fire input nhờ _busy guard
+    _busy=false;
     onClean(raw);
+  }
+  el.addEventListener('compositionstart',()=>{composing=true;});
+  el.addEventListener('compositionend',()=>{
+    composing=false;
+    // Defer 1 tick: để IME commit xong hoàn toàn rồi mới đọc giá trị ô input,
+    // tránh đọc trúng chuỗi chưa ổn định → nhân đôi ký tự đầu tiên.
+    setTimeout(_apply,0);
+  });
+  el.addEventListener('input',e=>{
+    if(_busy||composing||e.isComposing)return;
+    _apply();
   });
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
@@ -5074,7 +5086,7 @@ function _liteOpenTextInput(p0,ev,editingShape){
   if(ev&&ev.preventDefault)ev.preventDefault();
   let x,y;
   if(ev){({x,y}=_liteXYFromEvent(ev));}
-  else{x=_liteLogicalToX(p0.l);y=_litePriceToY(p0.p);}
+  else{x=_liteLogicalToX(p0);y=_litePriceToY(p0.p);}
   if(x===null||x===undefined||y===null||y===undefined)return;
   _liteTextEditPos=p0;
   _liteTextEditId=editingShape?editingShape.id:null;
@@ -5152,15 +5164,15 @@ function _liteShapeAnchor(d){
   const pts=d.points;
   if(!pts||!pts.length)return null;
   if(d.type==='text'){
-    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    const x=_liteLogicalToX(pts[0]),y=_litePriceToY(pts[0].p);
     if(x===null||y===null)return null;
     const m=_liteTextBoxMetrics(d);
     const w=m?m.width:0;
     return{x:x+w/2,y:y-6};
   }
   if(pts.length<2)return null;
-  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
-  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return null;
   if(d.type==='hline')return{x:DOM.liteChart.clientWidth/2,y:y1};
   if(d.type==='vline')return{x:x1,y:12};
@@ -5194,7 +5206,7 @@ function _liteShapeAnchor(d){
   if(d.type==='zigzag'){
     let minY=Infinity,sumX=0,n=0;
     for(const pt of pts){
-      const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
+      const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
       if(xx===null||yy===null)continue;
       minY=Math.min(minY,yy);sumX+=xx;n++;
     }
@@ -5304,7 +5316,7 @@ function _liteCornerHitPart(x,y,x1,y1,x2,y2){
 function _liteHitTestShape(d,x,y){
   const pts=d.points;
   if(d.type==='text'){
-    const px=_liteLogicalToX(pts[0].l),py=_litePriceToY(pts[0].p);
+    const px=_liteLogicalToX(pts[0]),py=_litePriceToY(pts[0].p);
     if(px===null||py===null)return null;
     const m=_liteTextBoxMetrics(d);
     const w=m?m.width:20,h=m?m.height:16;
@@ -5312,8 +5324,8 @@ function _liteHitTestShape(d,x,y){
     return null;
   }
   if(pts.length<2)return null;
-  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
-  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return null;
   if(d.type==='hline')return Math.abs(y-y1)<=LITE_HIT_TOL?{part:'line'}:null;
   if(d.type==='vline')return Math.abs(x-x1)<=LITE_HIT_TOL?{part:'line'}:null;
@@ -5324,12 +5336,12 @@ function _liteHitTestShape(d,x,y){
   }
   if(d.type==='zigzag'){
     for(let i=0;i<pts.length;i++){
-      const px=_liteLogicalToX(pts[i].l),py=_litePriceToY(pts[i].p);
+      const px=_liteLogicalToX(pts[i]),py=_litePriceToY(pts[i].p);
       if(px!==null&&py!==null&&Math.hypot(x-px,y-py)<=9)return{part:'v'+i};
     }
     for(let i=0;i<pts.length-1;i++){
-      const ax=_liteLogicalToX(pts[i].l),ay=_litePriceToY(pts[i].p);
-      const bx=_liteLogicalToX(pts[i+1].l),by=_litePriceToY(pts[i+1].p);
+      const ax=_liteLogicalToX(pts[i]),ay=_litePriceToY(pts[i].p);
+      const bx=_liteLogicalToX(pts[i+1]),by=_litePriceToY(pts[i+1].p);
       if(ax!==null&&ay!==null&&bx!==null&&by!==null&&_liteSegDist(x,y,ax,ay,bx,by)<=LITE_HIT_TOL)return{part:'line'};
     }
     return null;
@@ -5353,7 +5365,7 @@ function _liteHitTestShape(d,x,y){
   if(d.type==='arc'){
     if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
     if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
-    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const tx=pts[2]?_liteLogicalToX(pts[2]):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
     const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
     if(ctrl){
       if(tx!==null&&ty!==null&&Math.hypot(x-tx,y-ty)<=9)return{part:'offset'};
@@ -6220,7 +6232,8 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  if(DOM.liteChartInput)DOM.liteChartInput.value='';
+  // KHÔNG xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire sự kiện 'input' lại,
+  // gây chồng chéo lệnh tải chart. Ô input tự được clear sau khi loadLiteChart hoàn tất.
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -6253,13 +6266,19 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteLoadingMore=false;
     // Màu volume (đã được server tính sẵn)
     _liteVolumeData=j.volume||[];
-    _liteCandle.setData(_liteData);
-    _liteUpdateWhitespace();
-    renderLiteIndicators();
-    setLiteRightOffset();
+    _liteChartLoading=true;  // block lazy-load trong suốt quá trình set data + render
+    try{
+      _liteCandle.setData(_liteData);
+      _liteUpdateWhitespace();
+      renderLiteIndicators();
+      setLiteRightOffset();
+    }finally{
+      _liteChartLoading=false;
+    }
+    if(DOM.liteChartInput)DOM.liteChartInput.value='';  // xoá ô input SAU KHI chart đã ổn định
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
-    _liteVolForecast=null; // đổi mã — xoá dự báo cũ, khỏi hiện nhầm số của mã trước trong lúc chờ fetch
+    _liteVolForecast=null;
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(_liteSymbol);
     _liteApplyBuySignal();
