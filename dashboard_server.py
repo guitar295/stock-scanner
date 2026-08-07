@@ -483,13 +483,22 @@ CHART_TTL_SEC = 120
 # màu trung tính — chấp nhận được vì các tín hiệu VPA lõi vốn chỉ có ý nghĩa ở
 # khung ngày.
 _VPA_FLAG_COLOR = {1: "#254fcc", 2: "#00ffe5"}
-# calc_vpa_flag (scanner_full.py) cần tối thiểu ~140 phiên mới ra tín hiệu (xem
-# min_bars trong hàm), cộng thêm buffer cho các rolling window nội bộ (rolling(80)
-# avg_spread, RWI dài hạn lùi tới 40 phiên...) — nên khi tính Volume-Signal trực
-# tiếp trên dữ liệu vừa kéo từ VNDirect (không còn dùng history_cache), luôn kéo
-# tối thiểu ngần này phiên bất kể `limit` frontend yêu cầu (vd quiet-refresh chỉ
-# xin limit=50), để tín hiệu không bị "rỗng" do thiếu dữ liệu nền.
+# calc_vpa_flag cần tối thiểu ~140 phiên mới ra tín hiệu (xem min_bars trong hàm),
+# cộng buffer cho rolling window nội bộ (rolling(80) avg_spread, RWI dài hạn lùi
+# tới 40 phiên...) — nên khi tính Volume-Signal, luôn kéo tối thiểu ngần này phiên.
+# CHỈ dùng cho lượt fetch/tính riêng của _refresh_vpa_flags() (xem bên dưới),
+# KHÔNG áp cho lượt fetch hiển thị nến chính (giữ nhẹ = đúng `limit` FE xin, cho
+# chart tải nhanh như tham khảo).
 _VPA_MIN_HIST_BARS = 300
+# Volume-Signal (vpa_flag) tốn CPU (nhiều rolling window/vòng lặp RWI) nên KHÔNG
+# tính lại trên mỗi request — nhất là panel CHART tự quiet-refresh mỗi 20s. Thay
+# vào đó cache kết quả (map ngày → flag) theo mã, TTL ngắn, tính lại NỀN (thread)
+# khi hết hạn — KHÔNG chặn response hiển thị nến. Cache này ĐỘC LẬP hoàn toàn với
+# history_cache bên scanner_full.py: tự fetch VNDirect riêng, tự tính, không đọc/
+# ghi gì vào history_cache cả — chỉ để khỏi tính lại thứ tốn CPU quá thường xuyên.
+_VPA_CACHE_TTL_SEC = 300
+_vpa_flag_cache: dict = {}   # symbol -> {"updated_at": float, "computing": bool, "flags_by_date": {date_str: flag}}
+_vpa_cache_lock = threading.Lock()
 
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
@@ -1011,60 +1020,36 @@ def api_vol_forecast(symbol):
     except Exception as exc:
         return jsonify({"symbol": symbol, "error": "exception", "detail": str(exc)}), 500
 
-def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
+def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
+    """Gọi thẳng VNDirect DChart API (resolution=D), trả về list bar thô đã lọc
+    hợp lệ, sort tăng dần theo thời gian — dùng CHUNG cho cả lượt fetch hiển thị
+    nến (fetch_vndirect_dchart) lẫn lượt fetch riêng để tính Volume-Signal
+    (_refresh_vpa_flags), tránh trùng lặp logic gọi mạng/parse JSON."""
     symbol = symbol.upper().strip()
-    tf_upper = tf.upper().strip()
-    now_ts = int(time.time())
-    limit = max(50, min(1000, int(limit or 1000)))
-    # Chỉ kéo đủ dữ liệu thô (theo ngày) cần thiết để dựng đủ `limit` cây nến
-    # ở khung đích — tránh tải nguyên 25 năm lịch sử mỗi request (rất chậm).
-    if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
-        res = "D"
-        from_ts = now_ts - (limit * 7 + 60) * 86400   # +buffer ~2 tháng
-        target_tf = "1W"
-    elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
-        res = "D"
-        from_ts = now_ts - (limit * 31 + 90) * 86400  # +buffer ~3 tháng
-        target_tf = "1M"
-    else:
-        res = "D"
-        # Volume-Signal (vpa_flag) tính trực tiếp trên chuỗi vừa kéo (xem bên dưới)
-        # nên luôn kéo tối thiểu _VPA_MIN_HIST_BARS phiên, bất kể `limit` FE xin.
-        hist_bars = max(limit, _VPA_MIN_HIST_BARS)
-        from_ts = now_ts - int(hist_bars * 1.6 + 30) * 86400  # ~1.6 ngày lịch/nến (bù T7,CN,lễ) + buffer
-        target_tf = "1D"
-
-    url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution={res}&symbol={symbol}&from={from_ts}&to={now_ts}"
+    url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol={symbol}&from={from_ts}&to={to_ts}"
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         "Accept": "application/json,*/*",
         "Referer": "https://dstock.vndirect.com.vn/",
     })
-
-    try:
-        with urllib.request.urlopen(req, timeout=15) as res_obj:
-            data = json.loads(res_obj.read().decode("utf-8"))
-    except Exception as exc:
-        return None, str(exc)
+    with urllib.request.urlopen(req, timeout=15) as res_obj:
+        data = json.loads(res_obj.read().decode("utf-8"))
 
     if not data or data.get("s") != "ok" or not data.get("t"):
-        return None, "no_data_from_vndirect"
+        return None
 
-    times = data.get("t", [])
-    opens = data.get("o", [])
-    highs = data.get("h", [])
-    lows = data.get("l", [])
+    times  = data.get("t", [])
+    opens  = data.get("o", [])
+    highs  = data.get("h", [])
+    lows   = data.get("l", [])
     closes = data.get("c", [])
-    vols = data.get("v", [])
+    vols   = data.get("v", [])
 
     raw_bars = []
     for i in range(len(times)):
         try:
-            o = float(opens[i])
-            h = float(highs[i])
-            l = float(lows[i])
-            c = float(closes[i])
-            v = float(vols[i])
+            o = float(opens[i]); h = float(highs[i]); l = float(lows[i])
+            c = float(closes[i]); v = float(vols[i])
             if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
                 raw_bars.append({
                     "t": int(times[i]),
@@ -1072,9 +1057,89 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
                 })
         except (IndexError, ValueError, TypeError):
             continue
+    return raw_bars or None
 
+def _refresh_vpa_flags(symbol):
+    """Tính lại Volume-Signal (vpa_flag) cho `symbol`: tự fetch riêng
+    _VPA_MIN_HIST_BARS phiên gần nhất từ VNDirect (đủ dữ liệu nền cho các
+    rolling window bên trong calc_vpa_flag), tính, rồi lưu vào _vpa_flag_cache
+    kèm timestamp. Hàm này có thể chạy nền (xem _kick_vpa_background_refresh)
+    để không chặn response hiển thị nến."""
+    flags_by_date = {}
+    try:
+        now_ts = int(time.time())
+        from_ts = now_ts - int(_VPA_MIN_HIST_BARS * 1.6 + 30) * 86400
+        raw_bars = _fetch_vndirect_raw_daily(symbol, from_ts, now_ts)
+        if raw_bars and _calc_vpa_flag_fn:
+            vdf = pd.DataFrame({
+                "open":   [b["open"] for b in raw_bars],
+                "high":   [b["high"] for b in raw_bars],
+                "low":    [b["low"] for b in raw_bars],
+                "close":  [b["close"] for b in raw_bars],
+                "volume": [b["volume"] for b in raw_bars],
+            })
+            flags = _calc_vpa_flag_fn(vdf).tolist()
+            for bar, f in zip(raw_bars, flags):
+                dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
+                flags_by_date[dt.strftime("%Y-%m-%d")] = int(f)
+    except Exception as exc:
+        print(f"  [LiteChart] {symbol}: tính Volume-Signal (VPA) lỗi: {exc}")
+    with _vpa_cache_lock:
+        _vpa_flag_cache[symbol] = {"updated_at": time.time(), "computing": False,
+                                    "flags_by_date": flags_by_date}
+    return flags_by_date
+
+def _kick_vpa_background_refresh(symbol):
+    with _vpa_cache_lock:
+        entry = _vpa_flag_cache.setdefault(symbol, {"updated_at": 0, "computing": False, "flags_by_date": {}})
+        if entry["computing"]:
+            return  # đã có 1 lượt tính nền đang chạy cho mã này, khỏi trùng
+        entry["computing"] = True
+    threading.Thread(target=_refresh_vpa_flags, args=(symbol,), daemon=True).start()
+
+def _get_vpa_flags_for_symbol(symbol):
+    """Trả về map {date_str: flag} cho Volume-Signal — ưu tiên trả NGAY từ cache
+    nếu còn hạn (_VPA_CACHE_TTL_SEC); nếu hết hạn/chưa có, bắn 1 thread nền tính
+    lại (kết quả có sẵn cho lần request kế tiếp) và trả tạm cache cũ (nếu có) hoặc
+    rỗng — response hiển thị nến KHÔNG bao giờ phải chờ tính VPA."""
+    if not _calc_vpa_flag_fn:
+        return {}
+    now = time.time()
+    with _vpa_cache_lock:
+        entry = _vpa_flag_cache.get(symbol)
+        fresh = entry and (now - entry["updated_at"]) < _VPA_CACHE_TTL_SEC
+        stale_data = entry["flags_by_date"] if entry else {}
+    if fresh:
+        return entry["flags_by_date"]
+    _kick_vpa_background_refresh(symbol)
+    return stale_data
+
+def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
+    symbol = symbol.upper().strip()
+    tf_upper = tf.upper().strip()
+    now_ts = int(time.time())
+    limit = max(50, min(1000, int(limit or 1000)))
+    # Chỉ kéo đủ dữ liệu thô (theo ngày) cần thiết để dựng đủ `limit` cây nến ở
+    # khung đích — tránh tải nguyên nhiều năm lịch sử mỗi request (chậm). Volume-
+    # Signal KHÔNG còn ảnh hưởng tới độ lớn lượt fetch này nữa (xem _refresh_vpa_flags
+    # ở trên — tự fetch riêng, cache TTL, tính nền), nên giữ lượt fetch hiển thị
+    # nhẹ đúng bằng nhu cầu thật của FE, y hệt cách tiếp cận nhanh (<1s) tham khảo.
+    if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
+        from_ts = now_ts - (limit * 7 + 60) * 86400   # +buffer ~2 tháng
+        target_tf = "1W"
+    elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
+        from_ts = now_ts - (limit * 31 + 90) * 86400  # +buffer ~3 tháng
+        target_tf = "1M"
+    else:
+        from_ts = now_ts - int(limit * 1.6 + 30) * 86400  # ~1.6 ngày lịch/nến (bù T7,CN,lễ) + buffer
+        target_tf = "1D"
+
+    try:
+        raw_bars = _fetch_vndirect_raw_daily(symbol, from_ts, now_ts)
+    except Exception as exc:
+        return None, str(exc)
     if not raw_bars:
-        return None, "empty_bars"
+        return None, "no_data_from_vndirect"
 
     if target_tf == "1W":
         weeks = {}
@@ -1126,39 +1191,23 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
                 "close": bar["close"], "volume": bar["volume"]
             })
 
-    # Volume-Signal (tô màu volume theo vpa_flag) — tính NGAY trên chuỗi vừa kéo
-    # từ VNDirect (đủ dài nhờ _VPA_MIN_HIST_BARS ở trên), không đọc history_cache
-    # nữa. Chỉ áp dụng cho khung 1D (giống hành vi cũ: bar tuần/tháng không có cờ
-    # VPA vì calc_vpa_flag chạy trên chuỗi ngày). Phải tính TRƯỚC khi cắt theo
-    # `limit` để không thiếu dữ liệu nền cho các rolling window bên trong.
-    vpa_flags = None
-    if target_tf == "1D" and _calc_vpa_flag_fn and final_bars:
-        try:
-            vdf = pd.DataFrame({
-                "open":   [b["open"] for b in final_bars],
-                "high":   [b["high"] for b in final_bars],
-                "low":    [b["low"] for b in final_bars],
-                "close":  [b["close"] for b in final_bars],
-                "volume": [b["volume"] for b in final_bars],
-            })
-            vpa_flags = [int(x) for x in _calc_vpa_flag_fn(vdf).tolist()]
-        except Exception as exc:
-            print(f"  [LiteChart] {symbol}: tính Volume-Signal (VPA) lỗi: {exc}")
-            vpa_flags = None
-
-    if vpa_flags is not None:
-        vpa_flags = vpa_flags[-limit:]
     final_bars = final_bars[-limit:]
+
+    # Volume-Signal: tra cứu từ cache TTL riêng (dict lookup, gần như miễn phí) —
+    # KHÔNG tính lại calc_vpa_flag ở đây nữa. Chỉ áp dụng cho khung 1D, giống hành
+    # vi cũ (bar tuần/tháng không có cờ VPA vì calc_vpa_flag chạy trên chuỗi ngày).
+    vpa_flags_by_date = _get_vpa_flags_for_symbol(symbol) if target_tf == "1D" else {}
 
     candles = []
     volume = []
-    for i, b in enumerate(final_bars):
+    for b in final_bars:
         t_val = b["time"]
         o, h, l, c, v = b["open"], b["high"], b["low"], b["close"], b["volume"]
         candles.append({"time": t_val, "open": o, "high": h, "low": l, "close": c})
         color = "#26a69a" if c >= o else "#ef5350"
-        if vpa_flags is not None:
-            color = _VPA_FLAG_COLOR.get(vpa_flags[i]) or color
+        flag = vpa_flags_by_date.get(t_val)
+        if flag:
+            color = _VPA_FLAG_COLOR.get(flag) or color
         volume.append({"time": t_val, "value": v, "color": color})
 
     return {"symbol": symbol, "timeframe": target_tf, "candles": candles, "volume": volume,
