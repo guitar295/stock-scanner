@@ -1854,8 +1854,8 @@ html.embedded-popout .phdr{display:none !important}
   <div class="phdr">
     <div class="phdr-center">
       <div class="ctabs" id="ctabs">
-        <button class="ctab on" data-tab="vs">📈 Vietstock</button>
-        <button class="ctab" data-tab="chart">📊 Chart</button>
+        <button class="ctab" data-tab="vs">📈 Vietstock</button>
+        <button class="ctab on" data-tab="chart">📊 Chart</button>
         <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
         <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
@@ -1868,8 +1868,8 @@ html.embedded-popout .phdr{display:none !important}
     </div>
   </div>
   <div class="pbody">
-    <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
-    <div class="tpanel" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
+    <div class="tpanel" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
+    <div class="tpanel on" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
     <div class="tpanel" id="panel-scanner">
       <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
       <div class="album-outer" id="album-outer" style="display:none">
@@ -1907,7 +1907,7 @@ const IFRAME_MAP={
   '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
 const TABS_ALL=['vs','chart','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
-let _sym='__SYMBOL__',_tab='vs';
+let _sym='__SYMBOL__',_tab='chart';
 let _albumIdx=0,_albumTotal=0,_albumImages=[];
 function _applyEmbeddedMode(){
   const qs=new URLSearchParams(window.location.search);
@@ -1950,7 +1950,7 @@ function setSymbol(sym){
   DOM.outer.style.display='none';
   DOM.loading.style.display='flex';
   DOM.loading.innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-  _activateTab('vs');
+  _activateTab('chart');
   try{history.replaceState(null,'','/popout_full/'+_sym);}catch(e){}
   notifyHost(_sym);
 }
@@ -2308,6 +2308,19 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Scanner Dashboard</title>
+<!-- Cửa sổ CHART popout (?chartPopout=1, xem openChartPopout()) chỉ cần hiện panel CHART,
+     ẩn hết phần còn lại của dashboard — class chart-popout-mode trước đây chỉ được JS ở
+     cuối trang gắn vào <body> SAU KHI toàn bộ dashboard-main.js tải/parse xong, nên người
+     dùng thấy cả trang dashboard load nháy lên rồi mới thu về đúng mỗi chart. Gắn class này
+     vào <html> NGAY TỪ ĐẦU <head> (chạy đồng bộ, trước khi <body> được parse/paint) để CSS
+     bên dưới ẩn mọi thứ trừ panel CHART ngay từ lần vẽ đầu tiên — bỏ qua hẳn cảnh load full
+     dashboard rồi mới nhảy vào chart. -->
+<script>
+try{
+  if(new URLSearchParams(window.location.search).get('chartPopout')==='1')
+    document.documentElement.classList.add('chart-popout-mode');
+}catch(e){}
+</script>
 <!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
      viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
      tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
@@ -2523,11 +2536,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
 .lite-chart-panel.collapsed .lite-chart-frame{display:none}
-/* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard */
-body.chart-popout-mode>header,
-body.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
-body.chart-popout-mode #main-wrap{padding:8px}
-body.chart-popout-mode #lite-chart-popout-btn{display:none}
+/* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard.
+   Dùng selector html.chart-popout-mode (thay vì body.chart-popout-mode) vì class này giờ
+   được gắn vào <html> ngay từ đầu <head> — xem script inline phía trên — để có hiệu lực
+   ngay từ lần vẽ đầu tiên, không đợi JS cuối trang chạy xong mới ẩn. */
+html.chart-popout-mode>body>header,
+html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
+html.chart-popout-mode #main-wrap{padding:8px}
+html.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -2734,30 +2750,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
 
 /* ═══════════════════════════════════════════
-   ALBUM — dùng chung
-   ═══════════════════════════════════════════ */
-#panel-scanner{overflow:hidden;background:#fff;display:none;flex-direction:column}
-#panel-scanner.on{display:flex}
-.scanner-loading{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:14px}
-.album-outer{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.album-center{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:4px;gap:4px;background:#fff;scrollbar-width:thin}
-.album-slide{display:none;flex-direction:column;align-items:center;width:100%}
-.album-slide.on{display:flex}
-.album-slide img{max-width:100%;max-height:calc(94vh - 120px);object-fit:contain;border-radius:3px;border:1px solid var(--border)}
-.album-nav-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 8px;flex-shrink:0}
-.album-nav-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;user-select:none}
-.album-nav-btn:hover:not(.disabled){background:var(--accent);color:#fff;border-color:var(--accent)}
-.album-nav-btn.disabled{opacity:.25;pointer-events:none}
-.album-dots-wrap{display:flex;gap:6px;align-items:center}
-.album-dot{width:8px;height:8px;border-radius:50%;background:#dde3ee;cursor:pointer;transition:all .15s}
-.album-dot.on{background:var(--accent);transform:scale(1.3)}
-.album-refresh-btn{width:30px;height:30px;border-radius:50%;border:1px solid #dde3ee;background:#f4f6fb;color:var(--muted);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.album-refresh-btn:hover{background:#0e9f6e;color:#fff;border-color:#0e9f6e}
-.album-refresh-btn.spinning span{display:inline-block;animation:spin .7s linear infinite}
-.album-hint{text-align:center;font-size:10px;color:#9ca3af;padding:0 0 4px;flex-shrink:0}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* ═══════════════════════════════════════════
    HOVER PREVIEW
    ═══════════════════════════════════════════ */
 #hover-preview-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:60vh;min-height:120px;max-height:90vh;z-index:500;background:var(--surface);border-top:2px solid var(--accent);box-shadow:0 -4px 24px rgba(0,0,0,.13);flex-direction:column}
@@ -2841,7 +2833,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   .vnd-chart-area{height:220px}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   #hover-preview-btn,#hover-preview-panel{display:none !important}
-  .album-slide img{cursor:zoom-in}
   .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
   #hmap-popout-btn:hover, #hmap-popout-btn:focus {
     background: var(--surface) !important;
@@ -3096,9 +3087,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     display:none !important;
   }
 
-  /* Album img cao hơn khi landscape */
-  .album-slide img{max-height:calc(100dvh - 50px)}
-
   /* FIX #5 Landscape: hover preview tabs dễ nhấn hơn — tăng chiều cao và vùng chạm */
   .hv-gtab{
     height:40px !important;
@@ -3112,26 +3100,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   }
 }
 
-/* ═══════════════════════════════════════════
-   MOBILE LIGHTBOX
-   ═══════════════════════════════════════════ */
-#mob-lightbox{display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow:hidden;touch-action:none}
-#mob-lightbox.on{display:block}
-#lb-viewport{position:absolute;inset:0;overflow:hidden}
-#lb-strip{display:flex;height:100%}
-#lb-strip.dragging{will-change:transform}
-#lb-strip.snapping{transition:transform .32s cubic-bezier(.25,.46,.45,.94)}
-.lb-slide{flex-shrink:0;width:100vw;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.lb-slide img{max-width:100vw;max-height:100dvh;object-fit:contain;display:block;transform-origin:center;user-select:none;-webkit-user-drag:none;pointer-events:none}
-.lb-slide img.zooming{will-change:transform;transition:none}
-#mob-lightbox-close{position:absolute;top:14px;right:14px;width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.07);border:1px solid rgba(0,0,0,.15);color:#333;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:10;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-#mob-lightbox-close:active{background:rgba(0,0,0,.2)}
-#mob-lightbox-counter{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;z-index:10;pointer-events:none}
-.mob-lb-dot{width:7px;height:7px;border-radius:50%;background:rgba(0,0,0,.18);transition:all .2s}
-.mob-lb-dot.on{background:var(--accent);transform:scale(1.4)}
-#mob-lightbox-label{position:absolute;top:16px;left:50%;transform:translateX(-50%);color:rgba(30,30,30,.85);font-family:var(--font-mono);font-size:12px;white-space:nowrap;z-index:10;pointer-events:none;background:rgba(0,0,0,.08);padding:3px 12px;border-radius:20px}
-#lb-zoom-hint{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.45);color:#fff;font-family:var(--font-mono);font-size:10px;padding:3px 10px;border-radius:20px;z-index:11;pointer-events:none;opacity:0;transition:opacity .3s;white-space:nowrap}
-#lb-zoom-hint.show{opacity:1}
 #edge-swipe-zone{position:fixed;left:0;top:0;width:30px;height:100%;z-index:10000;display:none;touch-action:pan-y}
 #edge-swipe-zone.on{display:block}
 
@@ -3612,7 +3580,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
         <div class="ctabs" id="popup-ctabs">
           <button class="ctab on" data-tab="vs">📈 Vietstock</button>
           <button class="ctab" data-tab="chart">📊 Chart</button>
-          <button class="ctab" data-tab="scanner">🖼 Scanner Chart</button>
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
           <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
           <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
@@ -3637,7 +3604,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <div class="mob-tab-row" id="mob-tab-row" style="display:none">
       <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
       <button class="mob-tab-btn" data-tab="chart">📊 Chart</button>
-      <button class="mob-tab-btn" data-tab="scanner">🖼 Scanner</button>
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
       <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
       <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
@@ -3654,7 +3620,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <div class="mob-land-tabs" id="mob-land-tabs">
         <button class="mob-land-tab on" data-tab="vs">📈 Vietstock</button>
         <button class="mob-land-tab" data-tab="chart">📊 Chart</button>
-        <button class="mob-land-tab" data-tab="scanner">🖼 Scanner</button>
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
         <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
@@ -3667,19 +3632,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
     <div class="pbody">
       <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
-      <div class="tpanel" id="panel-scanner">
-        <div class="scanner-loading" id="scanner-loading"><span>⏳ Đang tạo chart từ scanner...</span></div>
-        <div class="album-outer" id="album-outer" style="display:none">
-          <div class="album-center"><div id="album-slides"></div></div>
-          <div class="album-nav-bar">
-            <button class="album-nav-btn disabled" id="btn-prev">&#9664;</button>
-            <div class="album-dots-wrap" id="album-dots"></div>
-            <button class="album-nav-btn" id="btn-next">&#9654;</button>
-            <button class="album-refresh-btn" id="btn-refresh"><span>&#8635;</span></button>
-          </div>
-          <div class="album-hint">◀ ▶ hoặc phím ← → để chuyển ảnh</div>
-        </div>
-      </div>
       <div class="tpanel" id="panel-vnd-cs"><iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-news"><iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-sum"><iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe></div>
@@ -3688,14 +3640,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
   </div>
 </div>
 
-<!-- LIGHTBOX -->
-<div id="mob-lightbox">
-  <div id="lb-viewport"><div id="lb-strip"></div></div>
-  <div id="mob-lightbox-label">📊 Daily [D]</div>
-  <button id="mob-lightbox-close">✕</button>
-  <div id="mob-lightbox-counter"></div>
-  <div id="lb-zoom-hint">Chụm 2 ngón để zoom</div>
-</div>
 <div id="edge-swipe-zone"></div>
 
 <script src="/static/lightweight-charts.min.js"></script>
@@ -3792,18 +3736,11 @@ const DOM={
   mobLandSearch:$('mob-land-search'),mobLandTabs:$('mob-land-tabs'),
   // iframes
   ifVs:$('iframe-vs'),
-  // album
-  loading:$('scanner-loading'),albumOuter:$('album-outer'),
-  albumSlides:$('album-slides'),albumDots:$('album-dots'),
-  btnPrev:$('btn-prev'),btnNext:$('btn-next'),btnRef:$('btn-refresh'),
   // hover
   hpPanel:$('hover-preview-panel'),hpIframe:$('hover-preview-iframe'),
   hpGrouptabs:$('hv-grouptabs'),hpSymlist:$('hv-symlist'),hpSortBtn:$('hv-sort-btn'),
   edgeZone:$('edge-swipe-zone'),mobClose:$('mob-close-float'),
   wrap:$('main-wrap'),footer:$('footer-txt'),
-  lb:$('mob-lightbox'),lbStrip:$('lb-strip'),
-  lbLabel:$('mob-lightbox-label'),lbCounter:$('mob-lightbox-counter'),
-  lbZoomHint:$('lb-zoom-hint'),
   lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
   lgList:$('lite-groups-list'),
 };
@@ -3812,7 +3749,7 @@ const DOM={
 // ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-const TABS_ALL=['vs','chart','scanner','vnd-cs','vnd-news','vnd-sum','24h'];
+const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
   'chart':    s=>`/?chartPopout=1&embedded=1&sym=${encodeURIComponent(s)}`,
   'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
@@ -3875,7 +3812,6 @@ function editFollowSymbols(){
   renderHeatmap(window._lastHmapData||{});
   return true;
 }
-let _albumIdx=0,_albumTotal=0,_albumImages=[];
 let _hoverPreviewOn=false,_hoverPreviewCurrent='';
 let _hvActiveGroup=-1,_hvSortAlpha=false;
 let _isPopoutMode=false,_popoutWin=null;
@@ -8544,93 +8480,9 @@ $('journal-open-btn').addEventListener('click',()=>{
 });
 function closeJournal(){
   DOM.journalOverlay.classList.remove('on');
-  if(!DOM.overlay.classList.contains('on')&&!DOM.lb.classList.contains('on'))document.body.style.overflow='';
+  if(!DOM.overlay.classList.contains('on'))document.body.style.overflow='';
 }
 DOM.journalOverlay.addEventListener('click',e=>{if(e.target===DOM.journalOverlay)closeJournal();});
-// ═══════════════════════════════════════════════════════
-// ALBUM
-// ═══════════════════════════════════════════════════════
-function _showAlbum(images){
-  _albumImages=images;_albumTotal=images.length;_albumIdx=0;
-  const mob=IS_MOBILE();
-  DOM.albumSlides.innerHTML=images.map((img,i)=>`<div class="album-slide${i===0?' on':''}" data-idx="${i}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}></div>`).join('');
-  DOM.albumDots.innerHTML=images.map((_,i)=>`<div class="album-dot${i===0?' on':''}" data-idx="${i}"></div>`).join('');
-  _updateAlbumNav();
-  DOM.albumOuter.style.display='flex';DOM.loading.style.display='none';
-}
-function _appendAlbumImages(images){
-  if(!images.length)return;
-  const mob=IS_MOBILE(),start=_albumImages.length;
-  _albumImages=_albumImages.concat(images);_albumTotal=_albumImages.length;
-  DOM.albumSlides.insertAdjacentHTML('beforeend',images.map((img,i)=>{const idx=start+i;return`<div class="album-slide" data-idx="${idx}"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async"${mob?' data-lb="1"':''}></div>`;}).join(''));
-  DOM.albumDots.insertAdjacentHTML('beforeend',images.map((_,i)=>`<div class="album-dot" data-idx="${start+i}"></div>`).join(''));
-  _updateAlbumNav();
-}
-DOM.albumDots.addEventListener('click',e=>{const d=e.target.closest('.album-dot');if(d)albumGoto(+d.dataset.idx);});
-DOM.albumSlides.addEventListener('click',e=>{
-  const img=e.target.closest('img');
-  if(img&&img.dataset.lb==='1'){const slide=img.closest('.album-slide');if(slide)lbOpen(_albumImages,+slide.dataset.idx);}
-});
-DOM.btnPrev.addEventListener('click',()=>albumNav(-1));
-DOM.btnNext.addEventListener('click',()=>albumNav(1));
-function albumGoto(i){
-  if(i<0||i>=_albumTotal)return;
-  DOM.albumSlides.querySelectorAll('.album-slide').forEach((s,idx)=>s.classList.toggle('on',idx===i));
-  DOM.albumDots.querySelectorAll('.album-dot').forEach((d,idx)=>d.classList.toggle('on',idx===i));
-  _albumIdx=i;_updateAlbumNav();
-}
-function albumNav(dir){albumGoto(_albumIdx+dir);}
-function _updateAlbumNav(){
-  DOM.btnPrev.classList.toggle('disabled',_albumIdx===0);
-  DOM.btnNext.classList.toggle('disabled',_albumIdx===_albumTotal-1);
-}
-let _scanTouchX=0,_scanRaf=null;
-$('panel-scanner').addEventListener('touchstart',e=>{_scanTouchX=e.touches[0].clientX;},{passive:true});
-$('panel-scanner').addEventListener('touchend',e=>{
-  if(_scanRaf)cancelAnimationFrame(_scanRaf);
-  _scanRaf=requestAnimationFrame(()=>{const dx=e.changedTouches[0].clientX-_scanTouchX;if(Math.abs(dx)>50)albumNav(dx<0?1:-1);});
-},{passive:true});
-DOM.btnRef.addEventListener('click',async()=>{
-  if(!_sym)return;
-  DOM.btnRef.classList.add('spinning');DOM.btnRef.disabled=true;
-  try{await fetch('/api/chart_cache_clear/'+_sym,{method:'DELETE'});}catch(e){}
-  DOM.btnRef.classList.remove('spinning');DOM.btnRef.disabled=false;
-  await loadScannerChart(_sym);
-});
-async function loadScannerChart(sym){
-  DOM.albumOuter.style.display='none';DOM.loading.style.display='flex';
-  DOM.loading.innerHTML=`<span>⏳ Đang tạo chart <b>${sym}</b>…</span>`;
-  try{
-    const r=await fetch('/api/chart_images/'+sym);
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'HTTP '+r.status);}
-    const j=await r.json();
-    if(!j.images?.length)throw new Error('no_images');
-    const labels=j.labels||['📊 Daily [D]','📈 Weekly [W]'];
-    _showAlbum(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'Chart '+(i+1)})));
-    const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent='Đang tải 15m...';
-    loadScannerChart15m(sym);
-  }catch(e){
-    DOM.loading.innerHTML=`<div style="text-align:center;color:#aaa;padding:24px"><div style="font-size:24px;margin-bottom:10px">⚠️</div><div style="margin-bottom:8px">Không tải được chart <b style="color:#4d9ff5">${sym}</b></div><div style="font-size:11px;color:#666;margin-bottom:16px">${e.message}</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="loadScannerChart('${sym}')" style="padding:6px 14px;border-radius:5px;background:#1a56db;color:#fff;border:none;cursor:pointer;font-size:12px">🔄 Thử lại</button><a href="https://ta.vietstock.vn/?stockcode=${sym.toLowerCase()}" target="_blank" style="padding:6px 14px;border-radius:5px;background:#374151;color:#fff;text-decoration:none;font-size:12px">📈 Stockchart</a></div></div>`;
-  }
-}
-async function loadScannerChart15m(sym){
-  const s=(sym||'').toUpperCase().trim();
-  try{
-    const r=await fetch('/api/chart_image_15m/'+s);
-    if(!r.ok){const h=DOM.albumOuter.querySelector('.album-hint');if(h)h.textContent='';return;}
-    const j=await r.json();
-    if((_sym||'').toUpperCase().trim()!==s)return;
-    if(!j.images?.length)return;
-    const labels=j.labels||['⚡ 15 phút [15m]'];
-    _appendAlbumImages(j.images.map((b64,i)=>({url:'data:image/png;base64,'+b64,label:labels[i]||'15m'})));
-    const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }catch(e){
-    const h=DOM.albumOuter.querySelector('.album-hint');
-    if(h)h.textContent='';
-  }
-}
 // ═══════════════════════════════════════════════════════
 // POPUP — tab activation (dùng chung cho cả 3 header)
 // ═══════════════════════════════════════════════════════
@@ -8646,7 +8498,6 @@ function _activateTab(tab){
   TABS_ALL.forEach(t=>document.getElementById('panel-'+t).classList.toggle('on',t===tab));
   // Lazy iframes
   if(IFRAME_LAZY[tab]){const f=$('iframe-'+tab);if(f&&f.src==='about:blank')f.src=IFRAME_LAZY[tab](_sym);}
-  if(tab==='scanner')loadScannerChart(_sym);
   // Scroll active tab into view (portrait)
   if(IS_MOBILE()&&!IS_LANDSCAPE()){
     const activeBtn=DOM.mobTabRow.querySelector('.mob-tab-btn.on');
@@ -8672,11 +8523,6 @@ function _updateSymDisplay(sym){
   DOM.mobPtitle.textContent=sym;
   DOM.mobLandSym.textContent=sym;
 }
-function _resetScannerUI(){
-  DOM.albumOuter.style.display='none';
-  DOM.loading.style.display='flex';
-  DOM.loading.innerHTML='<span>⏳ Đang tạo chart từ scanner...</span>';
-}
 function _openPopup(){
   DOM.overlay.classList.add('on');
   document.body.style.overflow='hidden';
@@ -8693,7 +8539,6 @@ function openChart(sym,tab='vs'){
   _updateSymDisplay(_sym);
   DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
   ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
-  _resetScannerUI();
   _activateTab(tab);
   _openPopup();
   setTimeout(()=>DOM.pbox.focus(),0);
@@ -8726,7 +8571,7 @@ _bindSearch(DOM.mobLandSearch,sym=>openChart(sym));
 if(IS_MOBILE()){
   let _swX=0,_swDir='',_swFired=false;
   DOM.pbox.addEventListener('touchstart',e=>{
-    if(!DOM.overlay.classList.contains('on')||DOM.lb.classList.contains('on'))return;
+    if(!DOM.overlay.classList.contains('on'))return;
     if(e.touches[0].clientX>40)return;
     _swX=e.touches[0].clientX;_swDir='';_swFired=false;
   },{passive:true});
@@ -8750,135 +8595,9 @@ window.addEventListener('orientationchange',()=>{
 });
 // Keyboard
 document.addEventListener('keydown',e=>{
-  if(DOM.lb.classList.contains('on'))return;
   if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
   if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){closeJournal();return;}
-  if(!DOM.overlay.classList.contains('on'))return;
-  const activeSearch=[DOM.popupSearch,DOM.mobSearch,DOM.mobLandSearch];
-  if(activeSearch.includes(document.activeElement))return;
-  if(_tab!=='scanner'||_albumTotal===0)return;
-  if(e.key==='ArrowLeft'){e.preventDefault();albumNav(-1);}
-  if(e.key==='ArrowRight'){e.preventDefault();albumNav(1);}
 });
-// ═══════════════════════════════════════════════════════
-// LIGHTBOX
-// ═══════════════════════════════════════════════════════
-const lb=DOM.lb;
-const lbS={
-  idx:0,W:0,images:[],
-  dragging:false,dragDir:'',dragDx:0,dragDy:0,dragStartX:0,dragStartY:0,stripOffset:0,
-  scale:1,panX:0,panY:0,
-  isPinching:false,pinchStartDist:0,pinchStartScale:1,pinchStartPanX:0,pinchStartPanY:0,
-  isPanning:false,panStartX:0,panStartY:0,panStartPanX:0,panStartPanY:0,
-  lastTapTime:0,lastTapX:0,lastTapY:0,hintShown:false,pending:false,
-};
-function _lbImg(){return DOM.lbStrip.querySelectorAll('.lb-slide img')[lbS.idx]||null;}
-function _lbResetZoom(){lbS.scale=1;lbS.panX=0;lbS.panY=0;const img=_lbImg();if(img){img.classList.remove('zooming');img.style.transform='';}}
-function _lbApplyZoom(){const img=_lbImg();if(!img)return;img.classList.add('zooming');img.style.transform=`translate(${lbS.panX}px,${lbS.panY}px) scale(${lbS.scale})`;}
-function _lbClamp(){
-  if(lbS.scale<=1){lbS.panX=0;lbS.panY=0;return;}
-  const img=_lbImg();if(!img)return;
-  const r=img.getBoundingClientRect();
-  const mX=Math.max(0,(r.width-window.innerWidth)/2),mY=Math.max(0,(r.height-window.innerHeight)/2);
-  lbS.panX=Math.max(-mX,Math.min(mX,lbS.panX));lbS.panY=Math.max(-mY,Math.min(mY,lbS.panY));
-}
-function lbOpen(images,idx){
-  lbS.images=images;lbS.idx=idx;lbS.W=window.innerWidth;
-  DOM.lbStrip.innerHTML=images.map(img=>`<div class="lb-slide"><img src="${img.url}" alt="${img.label}" loading="lazy" decoding="async" draggable="false"></div>`).join('');
-  DOM.lbStrip.style.width=`${lbS.W*images.length}px`;
-  lbS.scale=1;lbS.panX=0;lbS.panY=0;
-  _lbSnap(idx,false);_lbMeta();
-  lb.classList.add('on');document.body.style.overflow='hidden';
-  if(!lbS.hintShown){lbS.hintShown=true;setTimeout(()=>{DOM.lbZoomHint.classList.add('show');setTimeout(()=>DOM.lbZoomHint.classList.remove('show'),2200);},600);}
-}
-function lbClose(){_lbResetZoom();lb.classList.remove('on');document.body.style.overflow='';}
-$('mob-lightbox-close').addEventListener('click',lbClose);
-function _lbSnap(idx,animate){
-  lbS.scale=1;lbS.panX=0;lbS.panY=0;
-  const prev=_lbImg();if(prev){prev.classList.remove('zooming');prev.style.transform='';}
-  lbS.idx=Math.max(0,Math.min(idx,lbS.images.length-1));
-  const tx=-lbS.idx*lbS.W;lbS.stripOffset=tx;
-  DOM.lbStrip.classList.remove('snapping','dragging');
-  if(animate){DOM.lbStrip.classList.add('snapping');DOM.lbStrip.style.transform=`translateX(${tx}px)`;setTimeout(()=>DOM.lbStrip.classList.remove('snapping'),350);}
-  else DOM.lbStrip.style.transform=`translateX(${tx}px)`;
-  _lbMeta();
-}
-function _lbMeta(){
-  if(!lbS.images.length)return;
-  DOM.lbLabel.textContent=lbS.images[lbS.idx].label;
-  DOM.lbCounter.innerHTML=lbS.images.map((_,i)=>`<div class="mob-lb-dot${i===lbS.idx?' on':''}"></div>`).join('');
-}
-function _pd(t){const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.sqrt(dx*dx+dy*dy);}
-function _lbTS(e){
-  if(e.touches.length===2){e.preventDefault();lbS.isPinching=true;lbS.dragging=false;lbS.pinchStartDist=_pd(e.touches);lbS.pinchStartScale=lbS.scale;lbS.pinchStartPanX=lbS.panX;lbS.pinchStartPanY=lbS.panY;return;}
-  if(e.touches.length!==1)return;
-  const now=Date.now(),tx=e.touches[0].clientX,ty=e.touches[0].clientY;
-  if(now-lbS.lastTapTime<300&&Math.hypot(tx-lbS.lastTapX,ty-lbS.lastTapY)<40){e.preventDefault();_lbDbl(tx,ty);lbS.lastTapTime=0;return;}
-  lbS.lastTapTime=now;lbS.lastTapX=tx;lbS.lastTapY=ty;
-  if(lbS.scale>1.05){lbS.isPanning=true;lbS.panStartX=tx;lbS.panStartY=ty;lbS.panStartPanX=lbS.panX;lbS.panStartPanY=lbS.panY;lbS.dragging=false;return;}
-  lbS.dragging=true;lbS.isPanning=false;lbS.dragDir='';lbS.dragDx=0;lbS.dragDy=0;lbS.dragStartX=tx;lbS.dragStartY=ty;
-}
-function _lbTM(e){
-  if(lbS.isPinching&&e.touches.length===2){
-    e.preventDefault();if(lbS.pending)return;lbS.pending=true;
-    const ratio=_pd(e.touches)/lbS.pinchStartDist;
-    const ns=Math.min(4,Math.max(1,lbS.pinchStartScale*ratio));
-    requestAnimationFrame(()=>{lbS.scale=ns;lbS.panX=lbS.pinchStartPanX;lbS.panY=lbS.pinchStartPanY;_lbClamp();_lbApplyZoom();lbS.pending=false;});
-    return;
-  }
-  if(e.touches.length!==1)return;
-  const tx=e.touches[0].clientX,ty=e.touches[0].clientY;
-  if(lbS.isPanning){
-    e.preventDefault();if(lbS.pending)return;lbS.pending=true;
-    const nx=lbS.panStartPanX+(tx-lbS.panStartX),ny=lbS.panStartPanY+(ty-lbS.panStartY);
-    requestAnimationFrame(()=>{lbS.panX=nx;lbS.panY=ny;_lbClamp();_lbApplyZoom();lbS.pending=false;});
-    return;
-  }
-  if(!lbS.dragging)return;
-  const dx=tx-lbS.dragStartX,dy=ty-lbS.dragStartY;
-  if(!lbS.dragDir&&(Math.abs(dx)>6||Math.abs(dy)>6))lbS.dragDir=Math.abs(dy)>Math.abs(dx)?'v':'h';
-  if(!lbS.dragDir)return;
-  e.preventDefault();if(lbS.pending)return;lbS.pending=true;
-  if(lbS.dragDir==='v'){
-    const pull=Math.max(0,dy);lbS.dragDy=dy;
-    requestAnimationFrame(()=>{lb.style.opacity=Math.max(0,1-pull/280);DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px) translateY(${pull*.6}px) scale(${Math.max(.85,1-pull/900)})`;DOM.lbStrip.classList.add('dragging');lbS.pending=false;});
-    return;
-  }
-  lbS.dragDx=dx;
-  let offset=lbS.stripOffset+dx;
-  const maxO=0,minO=-(lbS.images.length-1)*lbS.W;
-  if(offset>maxO)offset=dx*.3;if(offset<minO)offset=minO+(offset-minO)*.3;
-  requestAnimationFrame(()=>{DOM.lbStrip.classList.add('dragging');DOM.lbStrip.style.transform=`translateX(${offset}px)`;lbS.pending=false;});
-}
-function _lbTE(e){
-  lbS.pending=false;
-  if(lbS.isPinching){lbS.isPinching=false;if(lbS.scale<1.1)_lbResetZoom();else{const img=_lbImg();if(img)img.classList.remove('zooming');}return;}
-  if(lbS.isPanning){lbS.isPanning=false;return;}
-  if(!lbS.dragging)return;
-  lbS.dragging=false;DOM.lbStrip.classList.remove('dragging');
-  if(lbS.dragDir==='v'){
-    const pull=Math.max(0,lbS.dragDy);
-    if(pull>80){DOM.lbStrip.style.transition='transform .22s ease';lb.style.transition='opacity .22s ease';DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px) translateY(100vh) scale(.9)`;lb.style.opacity='0';setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';lb.style.opacity='';lbClose();},230);}
-    else{DOM.lbStrip.style.transition='transform .22s ease';lb.style.transition='opacity .15s ease';DOM.lbStrip.style.transform=`translateX(${lbS.stripOffset}px)`;lb.style.opacity='1';setTimeout(()=>{DOM.lbStrip.style.transition='';lb.style.transition='';},230);}
-    lbS.dragDy=0;lbS.dragDir='';return;
-  }
-  const dx=lbS.dragDx,absX=Math.abs(dx),THR=lbS.W*.25;
-  let next=lbS.idx;
-  if(absX>THR&&dx<0)next=lbS.idx+1;else if(absX>THR&&dx>0)next=lbS.idx-1;
-  else if(absX>80&&dx<0&&lbS.idx<lbS.images.length-1)next=lbS.idx+1;
-  else if(absX>80&&dx>0&&lbS.idx>0)next=lbS.idx-1;
-  _lbSnap(next,true);lbS.dragDx=0;lbS.dragDir='';
-}
-function _lbDbl(tapX,tapY){
-  if(lbS.scale>1.05)_lbResetZoom();
-  else{lbS.scale=2.5;lbS.panX=(window.innerWidth/2-tapX)*(lbS.scale-1);lbS.panY=(window.innerHeight/2-tapY)*(lbS.scale-1);_lbClamp();_lbApplyZoom();}
-}
-const lbVP=$('lb-viewport');
-lbVP.addEventListener('touchstart',_lbTS,{passive:false});
-lbVP.addEventListener('touchmove',_lbTM,{passive:false});
-lbVP.addEventListener('touchend',_lbTE,{passive:false});
-lbVP.addEventListener('touchcancel',()=>{lbS.isPinching=false;lbS.isPanning=false;lbS.dragging=false;lbS.pending=false;},{passive:true});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&lb.classList.contains('on'))lbClose();});
 // ═══════════════════════════════════════════════════════
 // HOVER PREVIEW
 // ═══════════════════════════════════════════════════════
@@ -9559,7 +9278,10 @@ window.addEventListener('message',e=>{
 // (đánh dấu sẵn _lastChartSyncSymbol để lần nạp đầu tiên này không gửi ngược lại cửa sổ chính).
 (function(){
   if(!_isChartPopoutWindow)return;
-  document.body.classList.add('chart-popout-mode');
+  // class chart-popout-mode đã được gắn vào <html> ngay từ đầu <head> (script inline) để
+  // ẩn toàn bộ dashboard từ lần vẽ đầu tiên — dòng dưới chỉ để phòng hờ/tương thích ngược,
+  // không còn là nơi ẩn giao diện chính nữa.
+  document.documentElement.classList.add('chart-popout-mode');
   DOM.liteChartPanel.classList.remove('collapsed');
   const qsym=(new URLSearchParams(window.location.search).get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
