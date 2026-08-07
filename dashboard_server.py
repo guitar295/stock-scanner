@@ -1250,13 +1250,14 @@ def api_lightweight_chart(symbol):
         return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
                         "detail": err or "no_data"}), 502
 
-    # ── Load thường: kiểm tra RAM cache trước ────────────────────────────────
+    # ── Load thường: kiểm tra RAM cache trừ khi nocache=1 ────────────────────
+    nocache = (request.args.get("nocache") == "1") or (request.args.get("refresh") == "1")
     cache_key = (symbol, tf)
     now_ts = time.time()
     with _lite_chart_cache_lock:
         entry = _lite_chart_cache.get(cache_key)
 
-    if entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
+    if not nocache and entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
         # Cache còn hạn → trả ngay ~0ms
         return jsonify(entry["payload"])
 
@@ -4544,8 +4545,10 @@ function saveLiteDrawings(){
         d.points=d.points.map(pt=>{
           if(!pt)return pt;
           const l=pt.l,p=pt.p;
-          const t=pt.t||(_litePtWithTime(l,p).t);
-          return{...pt,t};
+          const info=_litePtWithTime(l,p);
+          const t=pt.t||info.t;
+          const offset=(pt.offset!==undefined&&pt.offset!==null)?pt.offset:info.offset;
+          return{...pt,t,offset};
         });
       }
     }
@@ -4568,21 +4571,26 @@ function resizeLiteDrawCanvas(){
   _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
 }
 function _litePtWithTime(l,p){
-  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null};
-  let t=null;
+  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null,offset:0};
+  let t=null,offset=0;
   if(_liteData&&_liteData.length){
-    const idx=Math.max(0,Math.min(_liteData.length-1,Math.round(l)));
+    const lastIdx=_liteData.length-1;
+    let idx=Math.round(l);
+    if(idx>lastIdx){offset=idx-lastIdx;idx=lastIdx;}
+    else if(idx<0){offset=idx;idx=0;}
     t=_liteData[idx]?liteTimeKey(_liteData[idx].time):null;
   }
-  return{l,p,t};
+  return{l,p,t,offset};
 }
 function _litePtLogical(pt){
   if(pt===null||pt===undefined)return null;
   if(typeof pt==='number')return pt;
-  if(!pt.t||!_liteData||!_liteData.length)return pt.l;
+  if(!_liteData||!_liteData.length)return pt.l;
+  const offset=pt.offset||0;
+  if(!pt.t)return pt.l;
   const targetStr=String(pt.t);
   const exactIdx=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
-  if(exactIdx!==-1)return exactIdx;
+  if(exactIdx!==-1)return exactIdx+offset;
   const targetTs=new Date(targetStr).getTime();
   if(isNaN(targetTs))return pt.l;
   let bestIdx=0,minDiff=Infinity;
@@ -4591,7 +4599,7 @@ function _litePtLogical(pt){
     const diff=Math.abs(bTs-targetTs);
     if(diff<minDiff){minDiff=diff;bestIdx=i;}
   }
-  return bestIdx;
+  return bestIdx+offset;
 }
 function _liteLogicalToX(pt){
   const l=(typeof pt==='object'&&pt!==null)?_litePtLogical(pt):pt;
@@ -6256,10 +6264,6 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteFetchVolForecast(_liteSymbol);
     _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
-    // Tải đón đầu trước 1 bước (Pre-fetch Step Ahead): Tải ngầm tiếp 300 nến quá khứ
-    // ngay sau khi load chart 120ms — giúp vá trọn vẹn đường MA200 bên trái và chuẩn bị
-    // sẵn dữ liệu RAM khi user kéo lùi lịch sử.
-    setTimeout(_liteFetchMoreHistory,120);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     updateLiteBigPrice(null);
@@ -6283,8 +6287,8 @@ async function _liteQuietRefreshChart(){
   const sym=_liteSymbol,tf=_liteTf;
   _liteQuietRefreshing=true;
   try{
-    // limit nhỏ vì chỉ cần nến cuối cùng — backend tự chốt tối thiểu 50 nến, vẫn rất nhẹ.
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=50');
+    // limit nhỏ vì chỉ cần nến cuối cùng — backend tự chốt tối thiểu 50 nến. Bỏ qua cache với nocache=1 để lấy giá realtime mới nhất.
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=50&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
     // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
@@ -6361,9 +6365,11 @@ async function _liteFetchMoreHistory(){
     _liteUpdateIndicatorData();
     // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData()
     // gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
-    if(prevRange){
+    if(prevRange&&Number.isFinite(prevRange.from)&&Number.isFinite(prevRange.to)){
       const target={from:prevRange.from+prependCount,to:prevRange.to+prependCount};
       requestAnimationFrame(()=>_liteApplyVisibleLogicalRange(target));
+    }else{
+      setLiteRightOffset();
     }
   }catch(e){
     // Lỗi mạng: bỏ qua êm, tự retry khi user kéo trái lần nữa
@@ -6382,7 +6388,10 @@ function bindLiteChartControls(){
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
   });
   DOM.liteChartInput?.addEventListener('keydown',e=>{
-    if(e.key==='Enter')loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
+    if(e.key==='Enter'){
+      if(_liteInputTimer)clearTimeout(_liteInputTimer);
+      loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
+    }
   });
   DOM.liteChartTf?.addEventListener('click',e=>{
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
