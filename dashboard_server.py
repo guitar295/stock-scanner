@@ -1240,7 +1240,7 @@ def api_lightweight_chart(symbol):
         limit = int(request.args.get("limit", 450) or 450)
     except (TypeError, ValueError):
         limit = 450
-    limit = max(50, min(1000, limit))
+    limit = max(5, min(1000, limit))
 
     # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
     if before_date:
@@ -6327,8 +6327,8 @@ async function _liteQuietRefreshChart(){
   const sym=_liteSymbol,tf=_liteTf;
   _liteQuietRefreshing=true;
   try{
-    // limit nhỏ vì chỉ cần nến cuối cùng — backend tự chốt tối thiểu 50 nến. Bỏ qua cache với nocache=1 để lấy giá realtime mới nhất.
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=50&nocache=1');
+    // limit nhỏ vì chỉ cần nến cuối cùng (limit=10 cực nhẹ ~1KB). Bỏ qua cache với nocache=1 để lấy giá realtime mới nhất.
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
     // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
