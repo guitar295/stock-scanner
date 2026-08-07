@@ -7843,7 +7843,7 @@ function _openPopup(){
   else
     DOM.mobClose.style.display='none';
 }
-function openChart(sym,tab='vs'){
+function openChart(sym,tab='chart'){
   _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
