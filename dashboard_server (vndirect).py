@@ -1100,13 +1100,13 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         for bar, f in zip(raw_bars, flags):
             dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
             flags_by_date[dt_str] = int(f)
-    except Exception as exc:
+    except Exception:
         pass
     with _vpa_cache_lock:
         _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
     return flags_by_date
 
-def fetch_vndirect_dchart(symbol, tf="1D", limit=400, before_date=None):
+def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
     - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
@@ -1237,10 +1237,10 @@ def api_lightweight_chart(symbol):
     before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 400) or 400)
+        limit = int(request.args.get("limit", 450) or 450)
     except (TypeError, ValueError):
-        limit = 400
-    limit = max(50, min(1000, limit))
+        limit = 450
+    limit = max(5, min(1000, limit))
 
     # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
     if before_date:
@@ -1250,13 +1250,14 @@ def api_lightweight_chart(symbol):
         return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
                         "detail": err or "no_data"}), 502
 
-    # ── Load thường: kiểm tra RAM cache trước ────────────────────────────────
+    # ── Load thường: kiểm tra RAM cache trừ khi nocache=1 ────────────────────
+    nocache = (request.args.get("nocache") == "1") or (request.args.get("refresh") == "1")
     cache_key = (symbol, tf)
     now_ts = time.time()
     with _lite_chart_cache_lock:
         entry = _lite_chart_cache.get(cache_key)
 
-    if entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
+    if not nocache and entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
         # Cache còn hạn → trả ngay ~0ms
         return jsonify(entry["payload"])
 
@@ -1265,8 +1266,22 @@ def api_lightweight_chart(symbol):
     if not err and dchart_data and dchart_data.get("candles"):
         # Đánh dấu has_more=True khi load đầu (còn lịch sử cũ phía trước)
         dchart_data["has_more"] = True
-        with _lite_chart_cache_lock:
-            _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
+        # CHỈ GHI FULL DATA (limit >= 400) VÀO CACHE — KHÔNG ĐÈ 50-BAR QUIET REFRESH LÊN CACHE
+        if limit >= 400 and not nocache:
+            with _lite_chart_cache_lock:
+                _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
+        elif entry and entry.get("payload") and dchart_data.get("candles"):
+            # Nếu có cache đầy đủ cũ, chỉ vá nến mới nhất vào cache đầy đủ
+            with _lite_chart_cache_lock:
+                full_payload = entry["payload"]
+                full_candles = full_payload.get("candles", [])
+                latest_bar = dchart_data["candles"][-1]
+                if full_candles:
+                    if full_candles[-1].get("time") == latest_bar.get("time"):
+                        full_candles[-1] = latest_bar
+                    else:
+                        full_candles.append(latest_bar)
+                entry["ts"] = now_ts
         return jsonify(dchart_data)
 
     # Nếu fetch mới lỗi nhưng có cache cũ → trả cache cũ (stale-while-revalidate)
@@ -2621,9 +2636,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lg-sym-item.lg-follow:hover{background:#eaf1fd}
 .lg-sym-item.lg-follow.on{background:#dbe8ff}
 .lg-sym-item.lg-follow+.lg-sym-item:not(.lg-follow){border-top:1px solid var(--border)}
-.lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
-.lite-chart-status.on{opacity:1}
-.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
 .lite-rect-tooltip{position:absolute;z-index:8;display:none;padding:3px 8px;border-radius:5px;font-family:var(--font-mono);font-size:11px;font-weight:700;background:rgba(255,255,255,.94);border:1px solid var(--border);box-shadow:0 2px 8px rgba(17,24,39,.16);pointer-events:none;white-space:nowrap;transform:translate(8px,-100%)}
 .lite-xhair-v{position:absolute;top:0;bottom:0;left:0;width:0;border-left:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
 .lite-xhair-h{position:absolute;left:0;right:0;top:0;height:0;border-top:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
@@ -3303,7 +3315,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
       <span class="lite-chart-signal" id="lite-chart-signal"></span>
       <span class="lite-chart-bigprice" id="lite-chart-bigprice" title="Giá phóng to + biến động/khối lượng (ước tính hết phiên)"></span>
-      <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
       <div class="lite-rect-tooltip" id="lite-rect-tooltip"></div>
       <div class="lite-shape-bar" id="lite-shape-bar">
         <input type="color" id="lite-shape-color" class="lite-shape-color" title="Đổi màu hình vẽ">
@@ -3673,7 +3684,6 @@ const DOM={
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
   liteChartSignal:$('lite-chart-signal'),
   liteChartBigPrice:$('lite-chart-bigprice'),
-  liteChartStatus:$('lite-chart-status'),
   liteRectTooltip:$('lite-rect-tooltip'),
   liteXhairV:$('lite-xhair-v'),liteXhairH:$('lite-xhair-h'),liteXhairPrice:$('lite-xhair-price'),liteXhairTime:$('lite-xhair-time'),
   liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
@@ -3956,6 +3966,7 @@ const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
 let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load (server báo)
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
 let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
+let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
 // Phần chung của mọi cấu hình rightPriceScale trong initLiteChart()/applyLitePaneLayout() —
 // borderColor và minimumWidth giống hệt nhau ở cả 3 chart (main/RSI/MACD) và ở mọi lần áp dụng,
 // chỉ scaleMargins (và autoScale ở main/RSI khi đổi layout) là khác nhau nên vẫn để riêng.
@@ -3971,7 +3982,11 @@ function initLiteChart(){
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET},
+    // shiftVisibleRangeOnNewBar:false — mặc định thư viện TỰ CUỘN chart về bên phải mỗi khi có 1 nến
+    // mới xuất hiện (dù nến đó nằm ngoài vùng đang xem). Auto-refresh 10s (_liteQuietRefreshChart) gọi
+    // _liteCandle.update() liên tục nên hành vi này làm chart "nhảy" về mặc định ngay cả khi user đang
+    // zoom-out/kéo xem vùng khác — tắt hẳn để chart CHỈ đổi vị trí khi chính user thao tác.
+    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET,shiftVisibleRangeOnNewBar:false},
     crosshair:{
       mode:LightweightCharts.CrosshairMode.Normal,
       vertLine:{visible:false,labelVisible:false},
@@ -4011,7 +4026,7 @@ function initLiteChart(){
     redrawLiteDrawings();
     _liteSyncVisibleRangeFrom(_liteChart,range);
     // Lazy load đón đầu: khi user tiến về gần mốc 100 nến sát trái → tự fetch trước 1 bước ngầm
-    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore){
+    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
   });
@@ -4203,21 +4218,33 @@ function _liteCleanSym(v){
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Gắn sự kiện làm sạch ký tự cho ô nhập mã, TRÁNH ép sửa value trong lúc IME (Unikey Telex/VNI...)
-// đang composing — ép sửa value giữa chừng composition sẽ xung đột với bộ đệm nội bộ của IME,
-// khiến IME chèn lại phần đang gõ dở đè lên giá trị đã bị sửa → gây lặp chữ liên tục kiểu "VNVNVND".
-// Chỉ làm sạch khi: (a) input bình thường không composing, hoặc (b) composition vừa kết thúc.
+// Gắn sự kiện làm sạch ký tự cho ô nhập mã — ÁP DỤNG CÙNG TRIẾT LÝ với ô tìm kiếm ở header
+// (#hmap-search, #popup-search, #mob-search dùng _bindSearch): TUYỆT ĐỐI KHÔNG ghi đè el.value
+// giữa lúc người dùng còn đang gõ. Bản cũ từng thử "dọn" ngay trong lúc gõ (chặn ở beforeinput +
+// ghi lại el.value mỗi sự kiện input) để vừa auto-uppercase vừa auto-tìm sau khi ngừng gõ — nhưng
+// với Unikey kiểu gõ hệ điều hành (gõ dấu bằng cách tự gửi liên tiếp lệnh xoá lùi + gõ đè, không
+// phát sinh composition của trình duyệt), việc code ghi đè el.value xen giữa đúng lúc đó chính là
+// nguyên nhân gây lặp ký tự đầu — vì code và Unikey cùng đụng vào value trong cùng một khoảng rất
+// ngắn. Ô tìm kiếm ở header không có lỗi này chỉ vì nó không đụng vào value lúc đang gõ, mà đợi tới
+// khi gõ xong (Enter) mới đọc 1 lần. Ở đây áp dụng đúng nguyên tắc đó: chỉ "dọn" (viết hoa, bỏ dấu,
+// loại ký tự lạ) tại các ĐIỂM CHỐT đã gõ xong — hết giờ debounce tự-tìm, bấm Enter, hoặc rời focus
+// (blur) — không bao giờ đụng vào value giữa chừng lúc còn đang gõ.
 function _liteBindSymInput(el,onClean){
-  if(!el)return;
-  let composing=false;
-  el.addEventListener('compositionstart',()=>{composing=true;});
-  el.addEventListener('compositionend',()=>{composing=false;});
-  el.addEventListener('input',e=>{
-    if(composing||e.isComposing)return;
-    const raw=_liteCleanSym(e.target.value);
-    e.target.value=raw;
+  if(!el)return ()=>'';
+  let timer=null;
+  function _apply(){
+    clearTimeout(timer);timer=null;
+    const raw=_liteCleanSym(el.value);
+    if(el.value!==raw)el.value=raw; // chỉ ghi khi thực sự đã đến điểm chốt, không còn đang gõ dở
     onClean(raw);
+    return raw;
+  }
+  el.addEventListener('input',()=>{
+    clearTimeout(timer);
+    timer=setTimeout(_apply,300); // đợi ngừng gõ 300ms (đủ để Unikey/IME ổn định xong) rồi mới dọn
   });
+  el.addEventListener('blur',_apply);
+  return _apply; // trả về hàm dọn-ngay để nơi gọi dùng khi cần chốt tức thì (vd: bấm Enter)
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
   const out=[];
@@ -4538,6 +4565,20 @@ function loadLiteDrawings(){
   _liteSelectedId=null;_liteChannelPending=null;_liteArcPending=null;_liteZigzagPending=null;_liteLinePending=null;_liteDrawActive=null;
 }
 function saveLiteDrawings(){
+  if(_liteDrawings&&_liteData&&_liteData.length){
+    for(const d of _liteDrawings){
+      if(d&&d.points){
+        d.points=d.points.map(pt=>{
+          if(!pt)return pt;
+          const l=pt.l,p=pt.p;
+          const info=_litePtWithTime(l,p);
+          const t=pt.t||info.t;
+          const offset=(pt.offset!==undefined&&pt.offset!==null)?pt.offset:info.offset;
+          return{...pt,t,offset};
+        });
+      }
+    }
+  }
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
 // Đồng bộ hình vẽ realtime giữa cửa sổ CHART mặc định và cửa sổ CHART popout: 'storage' là sự
@@ -4555,7 +4596,66 @@ function resizeLiteDrawCanvas(){
   _liteDrawCtx=DOM.liteDrawCanvas.getContext('2d');
   _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
 }
-function _liteLogicalToX(l){
+function _litePtWithTime(l,p){
+  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null,offset:0};
+  let t=null,offset=0;
+  if(_liteData&&_liteData.length){
+    const lastIdx=_liteData.length-1;
+    let idx=Math.round(l);
+    if(idx>lastIdx){offset=idx-lastIdx;idx=lastIdx;}
+    else if(idx<0){offset=idx;idx=0;}
+    t=_liteData[idx]?liteTimeKey(_liteData[idx].time):null;
+  }
+  return{l,p,t,offset};
+}
+function _liteSubBarOffset(targetStr,barStr){
+  if(!targetStr||!barStr)return 0;
+  const tTs=new Date(targetStr).getTime();
+  const bTs=new Date(barStr).getTime();
+  if(isNaN(tTs)||isNaN(bTs)||tTs<=bTs)return 0;
+  const diffDays=(tTs-bTs)/86400000;
+  if(_liteTf==='1W'||_liteTf==='W')return Math.max(0,Math.min(0.8, (diffDays/7)*0.8));
+  if(_liteTf==='1M'||_liteTf==='M')return Math.max(0,Math.min(0.85,(diffDays/30)*0.85));
+  return 0;
+}
+function _litePtLogical(pt){
+  if(pt===null||pt===undefined)return null;
+  if(typeof pt==='number')return pt;
+  if(!_liteData||!_liteData.length)return pt.l;
+  const offset=pt.offset||0;
+  if(!pt.t)return pt.l;
+  const targetStr=String(pt.t);
+  
+  // 1. Khớp ngày chính xác (khung D)
+  let idx=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
+  if(idx!==-1)return idx+offset;
+  
+  // 2. Khớp Tháng 'YYYY-MM' (khung M) kèm sub-offset ngày trong tháng
+  if(_liteTf==='1M'||_liteTf==='M'){
+    const prefix=targetStr.slice(0,7);
+    idx=_liteData.findIndex(b=>liteTimeKey(b.time).startsWith(prefix));
+    if(idx!==-1){
+      const sub=_liteSubBarOffset(targetStr,liteTimeKey(_liteData[idx].time));
+      return idx+sub+offset;
+    }
+  }
+  
+  // 3. Khớp Tuần gần nhất (khung W) kèm sub-offset ngày trong tuần
+  const targetTs=new Date(targetStr).getTime();
+  if(!isNaN(targetTs)){
+    let bestIdx=0,minDiff=Infinity;
+    for(let i=0;i<_liteData.length;i++){
+      const bTs=new Date(liteTimeKey(_liteData[i].time)).getTime();
+      const diff=Math.abs(bTs-targetTs);
+      if(diff<minDiff){minDiff=diff;bestIdx=i;}
+    }
+    const sub=_liteData[bestIdx]?_liteSubBarOffset(targetStr,liteTimeKey(_liteData[bestIdx].time)):0;
+    return bestIdx+sub+offset;
+  }
+  return pt.l;
+}
+function _liteLogicalToX(pt){
+  const l=(typeof pt==='object'&&pt!==null)?_litePtLogical(pt):pt;
   const c=_liteChart&&_liteChart.timeScale().logicalToCoordinate(l);
   return Number.isFinite(c)?c:null;
 }
@@ -4579,7 +4679,7 @@ function _litePtFromEvent(ev){
   const{x,y}=_liteXYFromEvent(ev);
   const l=_liteXToLogical(x),p=_liteYToPrice(y);
   if(l===null||p===null)return null;
-  return{l,p};
+  return _litePtWithTime(l,p);
 }
 function _liteDrawLine(ctx,x1,y1,x2,y2,color,dash,width){
   ctx.save();ctx.strokeStyle=color;ctx.lineWidth=width||1.4;if(dash)ctx.setLineDash(dash);
@@ -4659,7 +4759,7 @@ function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,widthScale){
 function _liteDrawShapeToCanvas(ctx,d){
   const pts=d.points,selected=(d.id===_liteSelectedId);
   if(d.type==='text'){
-    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    const x=_liteLogicalToX(pts[0]),y=_litePriceToY(pts[0].p);
     if(x===null||y===null)return;
     const m=_liteTextBoxMetrics(d);if(!m)return;
     ctx.save();
@@ -4683,7 +4783,7 @@ function _liteDrawShapeToCanvas(ctx,d){
       // Quy đổi trước toàn bộ điểm sang toạ độ pixel (bỏ điểm không hợp lệ) để dùng chung cho cả tô nền lẫn vẽ nét.
       const scr=[];
       for(const pt of pts){
-        const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
+        const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
         if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
       }
       // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng,
@@ -4708,17 +4808,17 @@ function _liteDrawShapeToCanvas(ctx,d){
       ctx.restore();
       if(d._hover&&pts.length){
         const last=pts[pts.length-1];
-        const lx=_liteLogicalToX(last.l),ly=_litePriceToY(last.p);
-        const hx=_liteLogicalToX(d._hover.l),hy=_litePriceToY(d._hover.p);
+        const lx=_liteLogicalToX(last),ly=_litePriceToY(last.p);
+        const hx=_liteLogicalToX(d._hover),hy=_litePriceToY(d._hover.p);
         if(lx!==null&&ly!==null&&hx!==null&&hy!==null)_liteDrawLine(ctx,lx,ly,hx,hy,_liteHexAlpha(color,.5),[4,3]);
       }
-      if(selected)for(const pt of pts){const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);if(xx!==null&&yy!==null)_liteDrawHandle(ctx,xx,yy);}
+      if(selected)for(const pt of pts){const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);if(xx!==null&&yy!==null)_liteDrawHandle(ctx,xx,yy);}
     }
     return;
   }
   if(pts.length<2)return;
-  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
-  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return;
   const color=d.color||_liteDrawColor;
   if(d.type==='trendline'){
@@ -4811,7 +4911,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     // ép về giữa 2 điểm đầu-cuối.
     // Quy đổi điểm "đáy" sang pixel TRƯỚC, rồi mới tính control-point trong pixel-space (xem ghi chú tại
     // _liteArcControlXY) → đường cong luôn đi qua đúng vị trí chuột dù trục giá tuyến tính hay log/percentage.
-    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const tx=pts[2]?_liteLogicalToX(pts[2]):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
     const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
     if(ctrl){
       const cx=ctrl.cx,cy=ctrl.cy;
@@ -4836,7 +4936,7 @@ function _liteDrawShapeToCanvas(ctx,d){
       if(selected){
         _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
         // Handle hiển thị đúng tại điểm đáy (nơi chuột đã rê tới), trực quan hơn control-point toán học.
-        const tx=_liteLogicalToX(pts[2].l),ty=_litePriceToY(pts[2].p);
+        const tx=_liteLogicalToX(pts[2]),ty=_litePriceToY(pts[2].p);
         if(tx!==null&&ty!==null)_liteDrawHandle(ctx,tx,ty);
       }
     }else{
@@ -5001,9 +5101,6 @@ function redrawLiteDrawings(){
   if(_liteLinePending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteLinePending);
   _liteUpdateFloatingBar();
 }
-// Kết thúc (chốt) zigzag đang vẽ dở: nếu đã có >=2 điểm thì lưu thành hình vẽ hoàn chỉnh,
-// nếu mới có 1 điểm (chưa đủ để thành hình) thì huỷ. Dùng chung cho double-click, phím
-// Enter/Space/Escape, và khi chuyển sang công cụ khác (đặc biệt là con trỏ chuột).
 function _liteFinishZigzag(){
   if(!_liteZigzagPending)return false;
   const pend=_liteZigzagPending;
@@ -5018,9 +5115,6 @@ function _liteFinishZigzag(){
   }
   return true;
 }
-// Công cụ Text: click lên chart mở 1 ô <textarea> ngay tại vị trí click để gõ chữ trực tiếp (hỗ trợ nhiều dòng
-// tự nhiên nhờ textarea), thay vì hộp thoại prompt(). Enter xuống dòng bình thường; rời focus (blur) sẽ chốt
-// chữ; Escape huỷ. Có thể gọi lại hàm này với 1 hình text có sẵn (editingShape) để SỬA nội dung đã viết.
 function _liteApplyTextInputStyle(){
   if(!DOM.liteTextInput)return;
   DOM.liteTextInput.style.color=_liteDrawColor;
@@ -5030,14 +5124,10 @@ function _liteApplyTextInputStyle(){
 }
 function _liteOpenTextInput(p0,ev,editingShape){
   if(!DOM.liteTextInput)return;
-  // Chặn hành vi mặc định của trình duyệt khi click chuột trái lên 1 phần tử không focus-able (canvas):
-  // mặc định trình duyệt sẽ tự dời focus sang phần tử focus-able gần nhất (khung chart), "cướp" mất focus
-  // trước khi kịp focus ô chữ bên dưới → gõ chữ bị lọt ra ngoài (thành phím tắt / tìm mã). preventDefault()
-  // trên pointerdown/mousedown ngăn được việc dời focus mặc định này.
   if(ev&&ev.preventDefault)ev.preventDefault();
   let x,y;
   if(ev){({x,y}=_liteXYFromEvent(ev));}
-  else{x=_liteLogicalToX(p0.l);y=_litePriceToY(p0.p);}
+  else{x=_liteLogicalToX(p0);y=_litePriceToY(p0.p);}
   if(x===null||x===undefined||y===null||y===undefined)return;
   _liteTextEditPos=p0;
   _liteTextEditId=editingShape?editingShape.id:null;
@@ -5115,15 +5205,15 @@ function _liteShapeAnchor(d){
   const pts=d.points;
   if(!pts||!pts.length)return null;
   if(d.type==='text'){
-    const x=_liteLogicalToX(pts[0].l),y=_litePriceToY(pts[0].p);
+    const x=_liteLogicalToX(pts[0]),y=_litePriceToY(pts[0].p);
     if(x===null||y===null)return null;
     const m=_liteTextBoxMetrics(d);
     const w=m?m.width:0;
     return{x:x+w/2,y:y-6};
   }
   if(pts.length<2)return null;
-  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
-  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return null;
   if(d.type==='hline')return{x:DOM.liteChart.clientWidth/2,y:y1};
   if(d.type==='vline')return{x:x1,y:12};
@@ -5157,7 +5247,7 @@ function _liteShapeAnchor(d){
   if(d.type==='zigzag'){
     let minY=Infinity,sumX=0,n=0;
     for(const pt of pts){
-      const xx=_liteLogicalToX(pt.l),yy=_litePriceToY(pt.p);
+      const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
       if(xx===null||yy===null)continue;
       minY=Math.min(minY,yy);sumX+=xx;n++;
     }
@@ -5267,7 +5357,7 @@ function _liteCornerHitPart(x,y,x1,y1,x2,y2){
 function _liteHitTestShape(d,x,y){
   const pts=d.points;
   if(d.type==='text'){
-    const px=_liteLogicalToX(pts[0].l),py=_litePriceToY(pts[0].p);
+    const px=_liteLogicalToX(pts[0]),py=_litePriceToY(pts[0].p);
     if(px===null||py===null)return null;
     const m=_liteTextBoxMetrics(d);
     const w=m?m.width:20,h=m?m.height:16;
@@ -5275,8 +5365,8 @@ function _liteHitTestShape(d,x,y){
     return null;
   }
   if(pts.length<2)return null;
-  const x1=_liteLogicalToX(pts[0].l),y1=_litePriceToY(pts[0].p);
-  const x2=_liteLogicalToX(pts[1].l),y2=_litePriceToY(pts[1].p);
+  const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
+  const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return null;
   if(d.type==='hline')return Math.abs(y-y1)<=LITE_HIT_TOL?{part:'line'}:null;
   if(d.type==='vline')return Math.abs(x-x1)<=LITE_HIT_TOL?{part:'line'}:null;
@@ -5287,12 +5377,12 @@ function _liteHitTestShape(d,x,y){
   }
   if(d.type==='zigzag'){
     for(let i=0;i<pts.length;i++){
-      const px=_liteLogicalToX(pts[i].l),py=_litePriceToY(pts[i].p);
+      const px=_liteLogicalToX(pts[i]),py=_litePriceToY(pts[i].p);
       if(px!==null&&py!==null&&Math.hypot(x-px,y-py)<=9)return{part:'v'+i};
     }
     for(let i=0;i<pts.length-1;i++){
-      const ax=_liteLogicalToX(pts[i].l),ay=_litePriceToY(pts[i].p);
-      const bx=_liteLogicalToX(pts[i+1].l),by=_litePriceToY(pts[i+1].p);
+      const ax=_liteLogicalToX(pts[i]),ay=_litePriceToY(pts[i].p);
+      const bx=_liteLogicalToX(pts[i+1]),by=_litePriceToY(pts[i+1].p);
       if(ax!==null&&ay!==null&&bx!==null&&by!==null&&_liteSegDist(x,y,ax,ay,bx,by)<=LITE_HIT_TOL)return{part:'line'};
     }
     return null;
@@ -5316,7 +5406,7 @@ function _liteHitTestShape(d,x,y){
   if(d.type==='arc'){
     if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
     if(Math.hypot(x-x2,y-y2)<=9)return{part:'p1'};
-    const tx=pts[2]?_liteLogicalToX(pts[2].l):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
+    const tx=pts[2]?_liteLogicalToX(pts[2]):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
     const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
     if(ctrl){
       if(tx!==null&&ty!==null&&Math.hypot(x-tx,y-ty)<=9)return{part:'offset'};
@@ -5444,14 +5534,27 @@ function _liteApplyDrag(d,info,cur){
   }else if(key==='text:p0'){
     d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
   }
+  if(d&&d.points){
+    d.points=d.points.map(pt=>{
+      if(!pt||!Number.isFinite(pt.l))return pt;
+      return{...pt,..._litePtWithTime(pt.l,pt.p)};
+    });
+  }
 }
 function _liteStartShapeDrag(hit,ev){
   const d=hit.shape;
   _liteSelectShape(d.id);
   const startPt=_litePtFromEvent(ev);if(!startPt)return;
+  // Quy đổi l của origPoints về đúng khung thời gian hiện tại TRƯỚC KHI kéo,
+  // tránh dùng l cũ của khung thời gian trước làm hình vẽ bị nhảy sang mốc khác.
+  const normalizedPoints=(d.points||[]).map(pt=>{
+    if(!pt)return pt;
+    const curL=_litePtLogical(pt);
+    return{...pt,l:curL};
+  });
   _liteDragInfo={
     part:hit.part,
-    origPoints:JSON.parse(JSON.stringify(d.points||[])),
+    origPoints:JSON.parse(JSON.stringify(normalizedPoints)),
     origStopP:d.stopP,
     origTarget2P:d.target2P,
     origOffsetPrice:d.points&&d.points[2]&&d.points[2].offsetPrice,
@@ -5971,32 +6074,80 @@ function resizeLiteSearchInput(){
   const n=Math.max(1,DOM.liteChartSearch.value.length);
   DOM.liteChartSearch.style.width=`${Math.min(120,Math.max(42,26+n*16))}px`;
 }
-function openLiteSearchWithChar(ch){
-  const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
-  DOM.liteChartSearch.value=(cur+String(ch||'').toUpperCase()).slice(0,10);
-  resizeLiteSearchInput();
+// Mở ô tìm mã và focus — KHÔNG pre-fill ký tự: để IME/trình duyệt tự gõ vào ô sau khi
+// focus (giống click vào ô rồi gõ). Pre-fill tại keydown gây nhân đôi ký tự tiếng Việt
+// vì e.key là Latin thô chưa compose và event có thể bubble qua 2 listener trước khi
+// focus chuyển kịp. resizeLiteSearchInput() không cần gọi ở đây — đã gắn vào 'input'
+// event của ô search, tự resize sau mỗi ký tự thực sự được gõ vào.
+function openLiteSearch(){
+  if(!DOM.liteChartSearch.classList.contains('on'))DOM.liteChartSearch.value='';
   DOM.liteChartSearch.classList.add('on');
   DOM.liteChartSearch.focus();
 }
-// Phím đơn (không kèm Ctrl/Alt/Meta) là chữ/số thường — dùng chung cho 2 nơi bắt phím gõ nhanh mã cổ phiếu.
-function _liteIsPlainAlnumKey(e){
-  return !(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key));
-}
-// Đuôi dùng chung cho 2 nơi bắt phím gõ nhanh mở ô tìm mã (#lite-chart-frame và document):
-// chỉ xử lý phím chữ/số đơn, bỏ qua khi đang gõ chú thích Text hoặc đang focus sẵn 1 input/textarea/select
-// khác (để input đó tự nhận phím, tránh lặp chữ khi gõ tiếng Việt qua IME). Trả về true nếu đã mở ô tìm mã.
+// Phím đơn chữ/số (không kèm Ctrl/Alt/Meta) gõ ngoài mọi input/textarea/select → mở ô tìm mã.
+// Không gọi preventDefault() — cần để IME gửi ký tự vào ô search sau khi focus() chuyển sang.
+// Trả về true nếu đã mở ô (để caller gọi stopPropagation() chặn bubble lên document listener).
 function _liteTryOpenSearchOnKey(e){
-  if(!_liteIsPlainAlnumKey(e))return false;
+  if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return false;
   if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
   const tag=(document.activeElement?.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea'||tag==='select')return false;
-  e.preventDefault();
-  openLiteSearchWithChar(e.key);
+  openLiteSearch();
   return true;
 }
-function renderLiteIndicators(){
+// _liteUpdateIndicatorData: phiên bản NHẾ của renderLiteIndicators() — dùng khi dữ liệu đã prepend (lazy-load).
+// CHỈ cập nhật dữ liệu của các series đang có sẵn, KHÔNG destroy/recreate bất kỳ series nào.
+// Nhờ vậy không trigger layout pass thừa → hoàn toàn không giật/nhấp nháy.
+function _liteUpdateIndicatorData(){
+  if(!_liteChart)return;
+  _liteIndicatorSeries.forEach(s=>{
+    if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
+    else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
+    else if(s.kind==='bb-upper'||s.kind==='bb-mid'||s.kind==='bb-lower'){/* handled below */}
+  });
+  // BB: tính 1 lần, cập nhật 3 series
+  const bbEntry=_liteIndicatorSeries.find(s=>s.kind==='bb-upper');
+  if(bbEntry){
+    const bb=_bbands(_liteData,20,2);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-upper').series.setData(bb.upper);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-mid').series.setData(bb.mid);
+    _liteIndicatorSeries.find(s=>s.kind==='bb-lower').series.setData(bb.lower);
+    _liteBBFillData={upper:bb.upper,lower:bb.lower,color:_liteIndColors.bb};
+  }
+  // Trend cloud
+  if(_liteTrendFillData){
+    _liteTrendFillData=_trendCloudData(_liteData,LITE_TREND_PERIOD,LITE_TREND_MULT,_liteTrendMode());
+  }
+  // RSI
+  if(_liteRsiCrosshairSeries){
+    const rsiAligned=alignLiteSeries(_rsi(_liteData,LITE_RSI_PERIOD));
+    _liteRsiCrosshairSeries.setData(rsiAligned);
+    // RSI các đường nằm ngang (70/50/30/band) không đổi theo số nến — bỏ qua, tiết kiệm CPU.
+  }
+  // MACD
+  if(_liteMacdCrosshairSeries){
+    const m=_macd(_liteData);
+    const histEntry=_liteIndicatorSeries.find(s=>s.chart===_liteMacdChart&&s.series!==_liteMacdCrosshairSeries&&_liteIndicatorSeries.indexOf(s)>_liteIndicatorSeries.indexOf(_liteIndicatorSeries.find(x=>x.series===_liteMacdCrosshairSeries))-2);
+    // Tìm series histogram (loại HistogramSeries) và signal line trong MACD panel
+    const macdPanelSeries=_liteIndicatorSeries.filter(s=>s.chart===_liteMacdChart);
+    if(macdPanelSeries.length>=3){
+      const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
+      macdPanelSeries[0].series.setData(histScaled);
+      macdPanelSeries[1].series.setData(alignLiteSeries(m.macd));
+      macdPanelSeries[2].series.setData(alignLiteSeries(m.signal));
+    }
+  }
+  // Volume: cập nhật data màu (giữ đúng VPA)
+  const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
+  _liteRefreshVolumeTop(showVpaVol);
+  redrawLiteDrawings();
+}
+function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
-  const prevRange=_liteGetVisibleLogicalRange();
+  // explicitRange: cho phép nơi gọi truyền sẵn range đã CHỐT TỪ TRƯỚC (vd. trước khi cập nhật nến mới
+  // ở _liteQuietRefreshChart) thay vì để hàm này tự đọc range HIỆN TẠI — vì nếu đọc lúc này, dữ liệu/nến
+  // mới có thể đã khiến thư viện tự dịch view trước đó rồi, đọc lại chỉ "khoá" luôn cái đã bị dịch.
+  const prevRange=skipRangeRestore?null:(explicitRange!==undefined?explicitRange:_liteGetVisibleLogicalRange());
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showRsi=_liteChecked('rsi');
@@ -6007,7 +6158,12 @@ function renderLiteIndicators(){
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
-  applyLitePaneLayout();
+  // applyLitePaneLayout() gọi applyOptions({timeScale:{rightOffset:...}}) trên cả 3 chart — bản thân
+  // việc SET rightOffset (dù cùng giá trị cũ) khiến thư viện tự canh lại vị trí cuộn theo offset đó,
+  // ghi đè pan/zoom user đang xem. Auto-refresh 10s gọi renderLiteIndicators() liên tục trong khi
+  // layout (ẩn/hiện RSI/MACD, kích thước pane) KHÔNG hề đổi — nên bỏ qua bước này khi skipPaneLayout
+  // (xem _liteQuietRefreshChart) để tránh đúng nguyên nhân gây "nhảy chart" mỗi 10s.
+  if(!skipPaneLayout)applyLitePaneLayout();
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
   // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
   maOn.forEach(p=>{
@@ -6130,7 +6286,8 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  if(DOM.liteChartInput)DOM.liteChartInput.value='';
+  // KHÔNG xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire sự kiện 'input' lại,
+  // gây chồng chéo lệnh tải chart. Ô input tự được clear sau khi loadLiteChart hoàn tất.
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -6139,7 +6296,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=400');
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
     if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
@@ -6163,21 +6320,23 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteLoadingMore=false;
     // Màu volume (đã được server tính sẵn)
     _liteVolumeData=j.volume||[];
-    _liteCandle.setData(_liteData);
-    _liteUpdateWhitespace();
-    renderLiteIndicators();
-    setLiteRightOffset();
+    _liteChartLoading=true;  // block lazy-load trong suốt quá trình set data + render
+    try{
+      _liteCandle.setData(_liteData);
+      _liteUpdateWhitespace();
+      setLiteRightOffset();           // căn đúng 250 bar + 8% lề phải TRƯỚC
+      renderLiteIndicators(true);     // skipRangeRestore=true → không ghi đè range vừa set
+    }finally{
+      _liteChartLoading=false;
+    }
+    if(DOM.liteChartInput)DOM.liteChartInput.value='';  // xoá ô input SAU KHI chart đã ổn định
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
-    _liteVolForecast=null; // đổi mã — xoá dự báo cũ, khỏi hiện nhầm số của mã trước trong lúc chờ fetch
+    _liteVolForecast=null;
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(_liteSymbol);
     _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
-    // Tải đón đầu trước 1 bước (Pre-fetch Step Ahead): Tải ngầm tiếp 300 nến quá khứ
-    // ngay sau khi load chart 120ms — giúp vá trọn vẹn đường MA200 bên trái và chuẩn bị
-    // sẵn dữ liệu RAM khi user kéo lùi lịch sử.
-    setTimeout(_liteFetchMoreHistory,120);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     updateLiteBigPrice(null);
@@ -6190,7 +6349,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
 // setData() lại toàn bộ) nên KHÔNG nháy màn hình, KHÔNG mất zoom/pan hiện tại, không
 // đụng tới các nét vẽ tay. Chạy nền định kỳ, chỉ cho mã đang hiển thị trên panel CHART.
 // ═══════════════════════════════════════════════════════
-const LITE_CHART_AUTOREFRESH_SEC=20;
+const LITE_CHART_AUTOREFRESH_SEC=10;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
   if(_liteQuietRefreshing)return;                          // lượt trước chưa xong, khỏi chồng lượt
@@ -6201,8 +6360,8 @@ async function _liteQuietRefreshChart(){
   const sym=_liteSymbol,tf=_liteTf;
   _liteQuietRefreshing=true;
   try{
-    // limit nhỏ vì chỉ cần nến cuối cùng — backend tự chốt tối thiểu 50 nến, vẫn rất nhẹ.
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=50');
+    // limit nhỏ vì chỉ cần nến cuối cùng (limit=10 cực nhẹ ~1KB). Bỏ qua cache với nocache=1 để lấy giá realtime mới nhất.
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
     // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
@@ -6214,6 +6373,10 @@ async function _liteQuietRefreshChart(){
                           :(_liteData.length>1?_liteData[_liteData.length-2]:null);
     const pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
     const bar={...rawBar,pct};
+    // Chốt range NGAY TRƯỚC khi đụng vào series (update()/setData() bên dưới) — không phải sau — để
+    // chắc chắn đây là đúng vùng user đang xem (zoom/pan) tại thời điểm này, tránh trường hợp thư viện
+    // đã kịp tự dịch view (auto-scroll) ngay trong lúc update() rồi mới đọc lại thì "chốt" luôn view sai.
+    const prevRangeBeforeUpdate=_liteGetVisibleLogicalRange();
     if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
     _liteDataByTime.set(key,bar);
     _liteCandle.update(bar);
@@ -6227,7 +6390,7 @@ async function _liteQuietRefreshChart(){
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
-    renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
+    renderLiteIndicators(false,prevRangeBeforeUpdate,true); // skipPaneLayout=true — layout không đổi, chỉ vá dữ liệu
     updateLiteTitle(_liteData[_liteData.length-1]);
     updateLiteBigPrice(_liteData[_liteData.length-1]); // vẽ lại ngay với dự báo đang có (chưa chờ fetch)
     _liteFetchVolForecast(sym); // cùng nhịp 20s với refresh nến — lấy lại progress/ratio mới nhất từ server
@@ -6274,12 +6437,16 @@ async function _liteFetchMoreHistory(){
     const prependCount=newBars.length;
     // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
     _liteCandle.setData(_liteData);
-    renderLiteIndicators();
+    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu
+    // các series đang có sẵn, KHÔNG destroy/recreate → loại bỏ hoàn toàn hiện tượng giật.
+    _liteUpdateIndicatorData();
     // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData()
     // gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
-    if(prevRange){
+    if(prevRange&&Number.isFinite(prevRange.from)&&Number.isFinite(prevRange.to)){
       const target={from:prevRange.from+prependCount,to:prevRange.to+prependCount};
       requestAnimationFrame(()=>_liteApplyVisibleLogicalRange(target));
+    }else{
+      setLiteRightOffset();
     }
   }catch(e){
     // Lỗi mạng: bỏ qua êm, tự retry khi user kéo trái lần nữa
@@ -6293,12 +6460,19 @@ function bindLiteChartControls(){
   bindLiteIndColorPickers();
   bindLiteIndGroupDropdowns();
   bindLiteDrawToolbar();
-  _liteBindSymInput(DOM.liteChartInput,raw=>{
+  const _liteApplyChartInput=_liteBindSymInput(DOM.liteChartInput,raw=>{
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
   });
   DOM.liteChartInput?.addEventListener('keydown',e=>{
-    if(e.key==='Enter')loadLiteChart(DOM.liteChartInput.value||_liteSymbol,0);
+    if(e.key==='Enter'){
+      // _liteApplyChartInput() tự chạy lại onClean(raw) bên trong (xem _liteBindSymInput), mà onClean
+      // lại đặt lịch _liteInputTimer 450ms để tự tải chart — nên PHẢI clearTimeout SAU khi gọi apply(),
+      // không phải trước, kẻo còn sót 1 lịch tải chart thừa chạy ngầm 450ms sau khi Enter đã tải xong.
+      const raw=_liteApplyChartInput(); // chốt dọn ngay (không đợi 300ms) rồi mới tìm
+      if(_liteInputTimer)clearTimeout(_liteInputTimer);
+      loadLiteChart(raw||_liteSymbol,0);
+    }
   });
   DOM.liteChartTf?.addEventListener('click',e=>{
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
@@ -6363,29 +6537,33 @@ function bindLiteChartControls(){
       }
       return;
     }
-    // #lite-chart-search nằm lồng bên trong #lite-chart-frame nên keydown của nó vẫn nổi bọt lên tới đây;
-    // _liteTryOpenSearchOnKey tự bỏ qua khi đang focus sẵn 1 input/textarea/select để input đó tự nhận phím
-    // (tránh lặp chữ khi gõ tiếng Việt qua IME).
-    // stopPropagation() ở đây là bắt buộc: nếu không, event vẫn nổi bọt tiếp lên listener trên document bên
-    // dưới và event đó CŨNG cố mở ô tìm mã lần nữa cho cùng 1 lần bấm phím. Bình thường .focus() đã chuyển
-    // focus đồng bộ nên listener document tự bỏ qua (activeElement đã là input) — nhưng việc dựa vào đúng
-    // thời điểm đó không chắc chắn 100% khi gõ rất nhanh hoặc qua bộ gõ tiếng Việt, khiến ký tự ĐẦU TIÊN
-    // (lúc ô tìm mã còn chưa tồn tại/focus) có thể bị 2 nơi cùng xử lý → chữ bị lặp. stopPropagation() chặn
-    // triệt để, không phụ thuộc timing của trình duyệt nữa.
+    // stopPropagation() chặn event bubble lên document listener bên dưới — nếu không, cả 2 listener
+    // cùng gọi openLiteSearch() cho 1 lần bấm phím. Không dựa vào timing của .focus() vì không đảm
+    // bảo 100% khi gõ nhanh hoặc qua IME tiếng Việt.
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
     if(!_litePointerInside)return;
     _liteTryOpenSearchOnKey(e);
   });
-  _liteBindSymInput(DOM.liteChartSearch,raw=>{
-    resizeLiteSearchInput();
+  const _liteApplyChartSearch=_liteBindSymInput(DOM.liteChartSearch,raw=>{
     if(_liteInputTimer)clearTimeout(_liteInputTimer);
     if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
   });
+  // Đổi độ rộng theo số ký tự ngay khi gõ: chỉ ĐỌC độ dài value, không ghi lại value nên an toàn,
+  // không đụng vào cơ chế "chốt mới dọn" ở trên. Đã lo hết việc resize theo từng phím gõ nên KHÔNG
+  // cần gọi lại resizeLiteSearchInput() trong onClean phía trên nữa (trùng việc, tốn công vô ích).
+  DOM.liteChartSearch?.addEventListener('input',resizeLiteSearchInput);
   DOM.liteChartSearch?.addEventListener('keydown',e=>{
     if(e.key==='Escape'){DOM.liteChartSearch.classList.remove('on');DOM.liteChartFrame.focus();}
-    if(e.key==='Enter'&&DOM.liteChartSearch.value){DOM.liteChartSearch.classList.remove('on');loadLiteChart(DOM.liteChartSearch.value,0);}
+    if(e.key==='Enter'&&DOM.liteChartSearch.value){
+      // Xem chú thích ở nhánh Enter của #lite-chart-input phía trên: clearTimeout PHẢI đứng SAU
+      // apply(), vì apply() tự chạy onClean() đặt lịch _liteInputTimer mới — clear trước sẽ vô ích.
+      const raw=_liteApplyChartSearch(); // chốt dọn ngay rồi mới tìm
+      if(_liteInputTimer)clearTimeout(_liteInputTimer);
+      DOM.liteChartSearch.classList.remove('on');
+      loadLiteChart(raw,0);
+    }
   });
   DOM.liteMacdResizer?.addEventListener('pointerdown',e=>{
     e.preventDefault();
