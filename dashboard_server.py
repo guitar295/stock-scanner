@@ -1028,20 +1028,28 @@ def api_vol_forecast(symbol):
     except Exception as exc:
         return jsonify({"symbol": symbol, "error": "exception", "detail": str(exc)}), 500
 
+# ── Connection Pool cho VNDirect DChart API ────────────────────────────────────
+# Giữ kết nối HTTP Keep-Alive / TLS warm với server VNDirect, tránh việc mỗi request
+# phải handshake lại SSL (tiết kiệm ~150-250ms latency mạng mỗi lần fetch).
+_vndirect_http_session = requests.Session()
+_vndirect_http_session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "Accept": "application/json,*/*",
+    "Referer": "https://dstock.vndirect.com.vn/",
+})
+
 def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
-    """Gọi thẳng VNDirect DChart API (resolution=D), trả về list bar thô đã lọc
-    hợp lệ, sort tăng dần theo thời gian — dùng CHUNG cho cả lượt fetch hiển thị
-    nến (fetch_vndirect_dchart) lẫn lượt fetch riêng để tính Volume-Signal
-    (_refresh_vpa_flags), tránh trùng lặp logic gọi mạng/parse JSON."""
+    """Gọi thẳng VNDirect DChart API (resolution=D) dùng HTTP Keep-Alive Session,
+    trả về list bar thô đã lọc hợp lệ, sort tăng dần theo thời gian."""
     symbol = symbol.upper().strip()
     url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol={symbol}&from={from_ts}&to={to_ts}"
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Accept": "application/json,*/*",
-        "Referer": "https://dstock.vndirect.com.vn/",
-    })
-    with urllib.request.urlopen(req, timeout=15) as res_obj:
-        data = json.loads(res_obj.read().decode("utf-8"))
+    try:
+        res = _vndirect_http_session.get(url, timeout=10)
+        if res.status_code != 200:
+            return None
+        data = res.json()
+    except Exception:
+        return None
 
     if not data or data.get("s") != "ok" or not data.get("t"):
         return None
@@ -1067,70 +1075,46 @@ def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
             continue
     return raw_bars or None
 
-def _refresh_vpa_flags(symbol):
-    """Tính lại Volume-Signal (vpa_flag) cho `symbol`: tự fetch riêng
-    _VPA_MIN_HIST_BARS phiên gần nhất từ VNDirect (đủ dữ liệu nền cho các
-    rolling window bên trong calc_vpa_flag), tính, rồi lưu vào _vpa_flag_cache
-    kèm timestamp. Hàm này có thể chạy nền (xem _kick_vpa_background_refresh)
-    để không chặn response hiển thị nến."""
-    flags_by_date = {}
-    try:
-        now_ts = int(time.time())
-        from_ts = now_ts - int(_VPA_MIN_HIST_BARS * 1.6 + 30) * 86400
-        raw_bars = _fetch_vndirect_raw_daily(symbol, from_ts, now_ts)
-        if raw_bars and _calc_vpa_flag_fn:
-            vdf = pd.DataFrame({
-                "open":   [b["open"] for b in raw_bars],
-                "high":   [b["high"] for b in raw_bars],
-                "low":    [b["low"] for b in raw_bars],
-                "close":  [b["close"] for b in raw_bars],
-                "volume": [b["volume"] for b in raw_bars],
-            })
-            flags = _calc_vpa_flag_fn(vdf).tolist()
-            for bar, f in zip(raw_bars, flags):
-                dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
-                flags_by_date[dt.strftime("%Y-%m-%d")] = int(f)
-    except Exception as exc:
-        print(f"  [LiteChart] {symbol}: tính Volume-Signal (VPA) lỗi: {exc}")
-    with _vpa_cache_lock:
-        _vpa_flag_cache[symbol] = {"updated_at": time.time(), "computing": False,
-                                    "flags_by_date": flags_by_date}
-    return flags_by_date
-
-def _kick_vpa_background_refresh(symbol):
-    with _vpa_cache_lock:
-        entry = _vpa_flag_cache.setdefault(symbol, {"updated_at": 0, "computing": False, "flags_by_date": {}})
-        if entry["computing"]:
-            return  # đã có 1 lượt tính nền đang chạy cho mã này, khỏi trùng
-        entry["computing"] = True
-    threading.Thread(target=_refresh_vpa_flags, args=(symbol,), daemon=True).start()
-
-def _get_vpa_flags_for_symbol(symbol):
-    """Trả về map {date_str: flag} cho Volume-Signal — ưu tiên trả NGAY từ cache
-    nếu còn hạn (_VPA_CACHE_TTL_SEC); nếu hết hạn/chưa có, bắn 1 thread nền tính
-    lại (kết quả có sẵn cho lần request kế tiếp) và trả tạm cache cũ (nếu có) hoặc
-    rỗng — response hiển thị nến KHÔNG bao giờ phải chờ tính VPA."""
-    if not _calc_vpa_flag_fn:
+def _get_vpa_flags_from_raw(symbol, raw_bars):
+    """Tính Volume-Signal (VPA) TRỰC TIẾP trên `raw_bars` đã có trong RAM (~1ms).
+    KHÔNG bắn thêm request HTTP mạng thứ 2 tới VNDirect nữa → hoàn toàn triệt tiêu
+    nghẽn mạng trùng lặp và xung đột kết nối khi load mã mới."""
+    if not _calc_vpa_flag_fn or not raw_bars:
         return {}
     now = time.time()
     with _vpa_cache_lock:
         entry = _vpa_flag_cache.get(symbol)
-        fresh = entry and (now - entry["updated_at"]) < _VPA_CACHE_TTL_SEC
-        stale_data = entry["flags_by_date"] if entry else {}
-    if fresh:
-        return entry["flags_by_date"]
-    _kick_vpa_background_refresh(symbol)
-    return stale_data
+        if entry and (now - entry["updated_at"]) < _VPA_CACHE_TTL_SEC:
+            return entry["flags_by_date"]
 
-def fetch_vndirect_dchart(symbol, tf="1D", limit=300, before_date=None):
+    flags_by_date = {}
+    try:
+        vdf = pd.DataFrame({
+            "open":   [b["open"] for b in raw_bars],
+            "high":   [b["high"] for b in raw_bars],
+            "low":    [b["low"] for b in raw_bars],
+            "close":  [b["close"] for b in raw_bars],
+            "volume": [b["volume"] for b in raw_bars],
+        })
+        flags = _calc_vpa_flag_fn(vdf).tolist()
+        for bar, f in zip(raw_bars, flags):
+            dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
+            flags_by_date[dt.strftime("%Y-%m-%d")] = int(f)
+    except Exception as exc:
+        pass
+    with _vpa_cache_lock:
+        _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
+    return flags_by_date
+
+def fetch_vndirect_dchart(symbol, tf="1D", limit=150, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
-    - limit: số nến tối đa muốn trả (default 300 ≈ 1.4 năm D — nhanh ~3x so với 1000).
+    - limit: số nến tối đa muốn trả (default 150 ≈ 9 tháng D — cực nhanh ~100-200ms).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
       (dùng cho lazy load lịch sử khi user kéo trái đến đầu dữ liệu).
     """
     symbol = symbol.upper().strip()
     tf_upper = tf.upper().strip()
-    limit = max(50, min(1000, int(limit or 300)))
+    limit = max(50, min(1000, int(limit or 150)))
 
     # ── Xác định khoảng thời gian cần fetch ──────────────────────────────────
     if before_date:
@@ -1217,8 +1201,8 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=300, before_date=None):
     if not final_bars:
         return None, "no_data_after_resample"
 
-    # ── Volume-Signal (VPA) — chỉ khung 1D ───────────────────────────────────
-    vpa_flags_by_date = _get_vpa_flags_for_symbol(symbol) if target_tf == "1D" else {}
+    # ── Volume-Signal (VPA) — chỉ khung 1D, tính trực tiếp từ raw_bars (~1ms) ──
+    vpa_flags_by_date = _get_vpa_flags_from_raw(symbol, raw_bars) if target_tf == "1D" else {}
 
     candles = []
     volume = []
@@ -1253,9 +1237,9 @@ def api_lightweight_chart(symbol):
     before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 300) or 300)
+        limit = int(request.args.get("limit", 150) or 150)
     except (TypeError, ValueError):
-        limit = 300
+        limit = 150
     limit = max(50, min(1000, limit))
 
     # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
@@ -6162,7 +6146,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=300');
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=150');
     if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
