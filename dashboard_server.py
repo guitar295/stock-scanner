@@ -4608,6 +4608,11 @@ function _litePtWithTime(l,p){
   }
   return{l,p,t,offset};
 }
+function _liteTimeframePeriodMs(tf){
+  if(tf==='1W'||tf==='W')return 7*86400000;
+  if(tf==='1M'||tf==='M')return 30*86400000;
+  return 86400000;
+}
 function _litePtLogical(pt){
   if(pt===null||pt===undefined)return null;
   if(typeof pt==='number')return pt;
@@ -4625,7 +4630,16 @@ function _litePtLogical(pt){
     const diff=Math.abs(bTs-targetTs);
     if(diff<minDiff){minDiff=diff;bestIdx=i;}
   }
-  return bestIdx+offset;
+  let frac=0;
+  if((_liteTf==='1W'||_liteTf==='1M'||_liteTf==='W'||_liteTf==='M')&&_liteData[bestIdx]){
+    const barTs=new Date(liteTimeKey(_liteData[bestIdx].time)).getTime();
+    const periodMs=_liteTimeframePeriodMs(_liteTf);
+    if(targetTs>=barTs&&targetTs<=barTs+periodMs){
+      frac=(targetTs-barTs)/periodMs;
+      frac=Math.max(0,Math.min(0.95,frac));
+    }
+  }
+  return bestIdx+frac+offset;
 }
 function _liteLogicalToX(pt){
   const l=(typeof pt==='object'&&pt!==null)?_litePtLogical(pt):pt;
