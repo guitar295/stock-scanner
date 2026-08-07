@@ -3958,7 +3958,7 @@ let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price c
 // chen vào giữa (auto-refresh mỗi 20s đẩy thêm nến qua _liteQuietRefreshChart) mà _liteApplyBuySignal()
 // chưa kịp chạy lại, mũi tên sẽ trỏ vào toạ độ của nến CŨ trong khi trục thời gian đã dịch sang phải
 // nhường chỗ nến mới → mũi tên lệch khỏi tâm nến cuối, trông như nằm ở cạnh nến trước đó.
-let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
+let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
 const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
@@ -4218,33 +4218,18 @@ function _liteCleanSym(v){
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Gắn sự kiện làm sạch ký tự cho ô nhập mã — ÁP DỤNG CÙNG TRIẾT LÝ với ô tìm kiếm ở header
-// (#hmap-search, #popup-search, #mob-search dùng _bindSearch): TUYỆT ĐỐI KHÔNG ghi đè el.value
-// giữa lúc người dùng còn đang gõ. Bản cũ từng thử "dọn" ngay trong lúc gõ (chặn ở beforeinput +
-// ghi lại el.value mỗi sự kiện input) để vừa auto-uppercase vừa auto-tìm sau khi ngừng gõ — nhưng
-// với Unikey kiểu gõ hệ điều hành (gõ dấu bằng cách tự gửi liên tiếp lệnh xoá lùi + gõ đè, không
-// phát sinh composition của trình duyệt), việc code ghi đè el.value xen giữa đúng lúc đó chính là
-// nguyên nhân gây lặp ký tự đầu — vì code và Unikey cùng đụng vào value trong cùng một khoảng rất
-// ngắn. Ô tìm kiếm ở header không có lỗi này chỉ vì nó không đụng vào value lúc đang gõ, mà đợi tới
-// khi gõ xong (Enter) mới đọc 1 lần. Ở đây áp dụng đúng nguyên tắc đó: chỉ "dọn" (viết hoa, bỏ dấu,
-// loại ký tự lạ) tại các ĐIỂM CHỐT đã gõ xong — hết giờ debounce tự-tìm, bấm Enter, hoặc rời focus
-// (blur) — không bao giờ đụng vào value giữa chừng lúc còn đang gõ.
-function _liteBindSymInput(el,onClean){
+// Dọn value ô nhập mã (viết hoa, bỏ dấu, loại ký tự lạ) CHỈ tại điểm chốt: Enter/Space
+// (caller gọi _apply trực tiếp) hoặc blur. KHÔNG đụng value lúc đang gõ — tránh xung đột
+// với Unikey/IME gây giật/lặp ký tự. Không còn auto-load: load chỉ xảy ra khi Enter/Space.
+function _liteBindSymInput(el){
   if(!el)return ()=>'';
-  let timer=null;
   function _apply(){
-    clearTimeout(timer);timer=null;
     const raw=_liteCleanSym(el.value);
-    if(el.value!==raw)el.value=raw; // chỉ ghi khi thực sự đã đến điểm chốt, không còn đang gõ dở
-    onClean(raw);
+    if(el.value!==raw)el.value=raw;
     return raw;
   }
-  el.addEventListener('input',()=>{
-    clearTimeout(timer);
-    timer=setTimeout(_apply,300); // đợi ngừng gõ 300ms (đủ để Unikey/IME ổn định xong) rồi mới dọn
-  });
   el.addEventListener('blur',_apply);
-  return _apply; // trả về hàm dọn-ngay để nơi gọi dùng khi cần chốt tức thì (vd: bấm Enter)
+  return _apply;
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
   const out=[];
@@ -6460,17 +6445,11 @@ function bindLiteChartControls(){
   bindLiteIndColorPickers();
   bindLiteIndGroupDropdowns();
   bindLiteDrawToolbar();
-  const _liteApplyChartInput=_liteBindSymInput(DOM.liteChartInput,raw=>{
-    if(_liteInputTimer)clearTimeout(_liteInputTimer);
-    if(raw.length>=2)_liteInputTimer=setTimeout(()=>loadLiteChart(raw,0),450);
-  });
+  const _liteApplyChartInput=_liteBindSymInput(DOM.liteChartInput);
   DOM.liteChartInput?.addEventListener('keydown',e=>{
-    if(e.key==='Enter'){
-      // _liteApplyChartInput() tự chạy lại onClean(raw) bên trong (xem _liteBindSymInput), mà onClean
-      // lại đặt lịch _liteInputTimer 450ms để tự tải chart — nên PHẢI clearTimeout SAU khi gọi apply(),
-      // không phải trước, kẻo còn sót 1 lịch tải chart thừa chạy ngầm 450ms sau khi Enter đã tải xong.
-      const raw=_liteApplyChartInput(); // chốt dọn ngay (không đợi 300ms) rồi mới tìm
-      if(_liteInputTimer)clearTimeout(_liteInputTimer);
+    if(e.key==='Enter'||e.key===' '){
+      e.preventDefault();
+      const raw=_liteApplyChartInput();
       loadLiteChart(raw||_liteSymbol,0);
     }
   });
@@ -6546,21 +6525,13 @@ function bindLiteChartControls(){
     if(!_litePointerInside)return;
     _liteTryOpenSearchOnKey(e);
   });
-  const _liteApplyChartSearch=_liteBindSymInput(DOM.liteChartSearch,raw=>{
-    if(_liteInputTimer)clearTimeout(_liteInputTimer);
-    if(raw.length>=2)_liteInputTimer=setTimeout(()=>{DOM.liteChartSearch.classList.remove('on');loadLiteChart(raw,0);},450);
-  });
-  // Đổi độ rộng theo số ký tự ngay khi gõ: chỉ ĐỌC độ dài value, không ghi lại value nên an toàn,
-  // không đụng vào cơ chế "chốt mới dọn" ở trên. Đã lo hết việc resize theo từng phím gõ nên KHÔNG
-  // cần gọi lại resizeLiteSearchInput() trong onClean phía trên nữa (trùng việc, tốn công vô ích).
+  const _liteApplyChartSearch=_liteBindSymInput(DOM.liteChartSearch);
   DOM.liteChartSearch?.addEventListener('input',resizeLiteSearchInput);
   DOM.liteChartSearch?.addEventListener('keydown',e=>{
     if(e.key==='Escape'){DOM.liteChartSearch.classList.remove('on');DOM.liteChartFrame.focus();}
-    if(e.key==='Enter'&&DOM.liteChartSearch.value){
-      // Xem chú thích ở nhánh Enter của #lite-chart-input phía trên: clearTimeout PHẢI đứng SAU
-      // apply(), vì apply() tự chạy onClean() đặt lịch _liteInputTimer mới — clear trước sẽ vô ích.
-      const raw=_liteApplyChartSearch(); // chốt dọn ngay rồi mới tìm
-      if(_liteInputTimer)clearTimeout(_liteInputTimer);
+    if((e.key==='Enter'||e.key===' ')&&DOM.liteChartSearch.value){
+      e.preventDefault();
+      const raw=_liteApplyChartSearch();
       DOM.liteChartSearch.classList.remove('on');
       loadLiteChart(raw,0);
     }
