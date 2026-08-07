@@ -1100,7 +1100,7 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         for bar, f in zip(raw_bars, flags):
             dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
             flags_by_date[dt_str] = int(f)
-    except Exception as exc:
+    except Exception:
         pass
     with _vpa_cache_lock:
         _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
@@ -2636,9 +2636,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lg-sym-item.lg-follow:hover{background:#eaf1fd}
 .lg-sym-item.lg-follow.on{background:#dbe8ff}
 .lg-sym-item.lg-follow+.lg-sym-item:not(.lg-follow){border-top:1px solid var(--border)}
-.lite-chart-status{position:absolute;top:8px;right:10px;z-index:6;min-width:22px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;color:#0369a1;background:rgba(224,242,254,.92);border:1px solid #7dd3fc;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .25s}
-.lite-chart-status.on{opacity:1}
-.lite-chart-status.fetching{color:#b45309;background:rgba(255,247,237,.94);border-color:#fdba74}
 .lite-rect-tooltip{position:absolute;z-index:8;display:none;padding:3px 8px;border-radius:5px;font-family:var(--font-mono);font-size:11px;font-weight:700;background:rgba(255,255,255,.94);border:1px solid var(--border);box-shadow:0 2px 8px rgba(17,24,39,.16);pointer-events:none;white-space:nowrap;transform:translate(8px,-100%)}
 .lite-xhair-v{position:absolute;top:0;bottom:0;left:0;width:0;border-left:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
 .lite-xhair-h{position:absolute;left:0;right:0;top:0;height:0;border-top:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
@@ -3318,7 +3315,6 @@ body.chart-popout-mode #lite-chart-popout-btn{display:none}
       <span class="lite-chart-title" id="lite-chart-title">Đang tải...</span>
       <span class="lite-chart-signal" id="lite-chart-signal"></span>
       <span class="lite-chart-bigprice" id="lite-chart-bigprice" title="Giá phóng to + biến động/khối lượng (ước tính hết phiên)"></span>
-      <span class="lite-chart-status" id="lite-chart-status" title="Trạng thái tải chart">•••</span>
       <div class="lite-rect-tooltip" id="lite-rect-tooltip"></div>
       <div class="lite-shape-bar" id="lite-shape-bar">
         <input type="color" id="lite-shape-color" class="lite-shape-color" title="Đổi màu hình vẽ">
@@ -3688,7 +3684,6 @@ const DOM={
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
   liteChartSignal:$('lite-chart-signal'),
   liteChartBigPrice:$('lite-chart-bigprice'),
-  liteChartStatus:$('lite-chart-status'),
   liteRectTooltip:$('lite-rect-tooltip'),
   liteXhairV:$('lite-xhair-v'),liteXhairH:$('lite-xhair-h'),liteXhairPrice:$('lite-xhair-price'),liteXhairTime:$('lite-xhair-time'),
   liteDrawToolbar:$('lite-draw-toolbar'),liteDrawCanvas:$('lite-draw-canvas'),
@@ -3987,7 +3982,11 @@ function initLiteChart(){
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET},
+    // shiftVisibleRangeOnNewBar:false — mặc định thư viện TỰ CUỘN chart về bên phải mỗi khi có 1 nến
+    // mới xuất hiện (dù nến đó nằm ngoài vùng đang xem). Auto-refresh 10s (_liteQuietRefreshChart) gọi
+    // _liteCandle.update() liên tục nên hành vi này làm chart "nhảy" về mặc định ngay cả khi user đang
+    // zoom-out/kéo xem vùng khác — tắt hẳn để chart CHỈ đổi vị trí khi chính user thao tác.
+    timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET,shiftVisibleRangeOnNewBar:false},
     crosshair:{
       mode:LightweightCharts.CrosshairMode.Normal,
       vertLine:{visible:false,labelVisible:false},
@@ -6144,9 +6143,12 @@ function _liteUpdateIndicatorData(){
   _liteRefreshVolumeTop(showVpaVol);
   redrawLiteDrawings();
 }
-function renderLiteIndicators(skipRangeRestore){
+function renderLiteIndicators(skipRangeRestore,explicitRange){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
-  const prevRange=skipRangeRestore?null:_liteGetVisibleLogicalRange();
+  // explicitRange: cho phép nơi gọi truyền sẵn range đã CHỐT TỪ TRƯỚC (vd. trước khi cập nhật nến mới
+  // ở _liteQuietRefreshChart) thay vì để hàm này tự đọc range HIỆN TẠI — vì nếu đọc lúc này, dữ liệu/nến
+  // mới có thể đã khiến thư viện tự dịch view trước đó rồi, đọc lại chỉ "khoá" luôn cái đã bị dịch.
+  const prevRange=skipRangeRestore?null:(explicitRange!==undefined?explicitRange:_liteGetVisibleLogicalRange());
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showRsi=_liteChecked('rsi');
@@ -6367,6 +6369,10 @@ async function _liteQuietRefreshChart(){
                           :(_liteData.length>1?_liteData[_liteData.length-2]:null);
     const pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
     const bar={...rawBar,pct};
+    // Chốt range NGAY TRƯỚC khi đụng vào series (update()/setData() bên dưới) — không phải sau — để
+    // chắc chắn đây là đúng vùng user đang xem (zoom/pan) tại thời điểm này, tránh trường hợp thư viện
+    // đã kịp tự dịch view (auto-scroll) ngay trong lúc update() rồi mới đọc lại thì "chốt" luôn view sai.
+    const prevRangeBeforeUpdate=_liteGetVisibleLogicalRange();
     if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
     _liteDataByTime.set(key,bar);
     _liteCandle.update(bar);
@@ -6380,7 +6386,7 @@ async function _liteQuietRefreshChart(){
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
-    renderLiteIndicators();              // hàm này tự lưu & áp lại logical range đang xem, không nhảy khung
+    renderLiteIndicators(false,prevRangeBeforeUpdate); // áp lại ĐÚNG range đã chốt trước khi update, không nhảy khung
     updateLiteTitle(_liteData[_liteData.length-1]);
     updateLiteBigPrice(_liteData[_liteData.length-1]); // vẽ lại ngay với dự báo đang có (chưa chờ fetch)
     _liteFetchVolForecast(sym); // cùng nhịp 20s với refresh nến — lấy lại progress/ratio mới nhất từ server
