@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta
 from uuid import uuid4
 import pytz
+import pandas as pd
 
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 app = Flask(__name__)
@@ -97,6 +98,10 @@ _fetch_chart_15m_fn = None
 _ensure_chart_symbol_fn = None
 _chart_symbol_status_fn = None
 _vol_forecast_fn = None
+# Hàm tính vpa_flag (calc_vpa_flag bên scanner_full.py) — inject qua
+# start_dashboard(calc_vpa_flag_fn=...) để panel CHART tô màu Volume-Signal
+# TRỰC TIẾP trên dữ liệu vừa kéo từ VNDirect, không cần đọc lại history_cache.
+_calc_vpa_flag_fn = None
 _signal_emoji = {}
 _signal_rank = {}
 
@@ -478,6 +483,30 @@ CHART_TTL_SEC = 120
 # màu trung tính — chấp nhận được vì các tín hiệu VPA lõi vốn chỉ có ý nghĩa ở
 # khung ngày.
 _VPA_FLAG_COLOR = {1: "#254fcc", 2: "#00ffe5"}
+# calc_vpa_flag cần tối thiểu ~140 phiên mới ra tín hiệu (xem min_bars trong hàm),
+# cộng buffer cho rolling window nội bộ (rolling(80) avg_spread, RWI dài hạn lùi
+# tới 40 phiên...) — nên khi tính Volume-Signal, luôn kéo tối thiểu ngần này phiên.
+# CHỈ dùng cho lượt fetch/tính riêng của _refresh_vpa_flags() (xem bên dưới),
+# KHÔNG áp cho lượt fetch hiển thị nến chính (giữ nhẹ = đúng `limit` FE xin, cho
+# chart tải nhanh như tham khảo).
+_VPA_MIN_HIST_BARS = 300
+# Volume-Signal (vpa_flag) tốn CPU (nhiều rolling window/vòng lặp RWI) nên KHÔNG
+# tính lại trên mỗi request — nhất là panel CHART tự quiet-refresh mỗi 20s. Thay
+# vào đó cache kết quả (map ngày → flag) theo mã, TTL ngắn, tính lại NỀN (thread)
+# khi hết hạn — KHÔNG chặn response hiển thị nến. Cache này ĐỘC LẬP hoàn toàn với
+# history_cache bên scanner_full.py: tự fetch VNDirect riêng, tự tính, không đọc/
+# ghi gì vào history_cache cả — chỉ để khỏi tính lại thứ tốn CPU quá thường xuyên.
+_VPA_CACHE_TTL_SEC = 300
+_vpa_flag_cache: dict = {}   # symbol -> {"updated_at": float, "computing": bool, "flags_by_date": {date_str: flag}}
+_vpa_cache_lock = threading.Lock()
+
+# ── RAM cache cho /api/lightweight_chart ──────────────────────────────────────
+# Lưu toàn bộ payload đã build sẵn (candles + volume) theo (symbol, tf) để trả
+# ngay ~0ms cho request thứ 2 trở đi (đổi TF, quay lại mã cũ).
+# TTL ngắn (60s) để dữ liệu trong phiên giao dịch không bị stale quá lâu.
+_LITE_CHART_CACHE_TTL = 60          # giây
+_lite_chart_cache: dict = {}        # (symbol, tf) -> {"payload": dict, "ts": float}
+_lite_chart_cache_lock = threading.Lock()
 
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
@@ -984,26 +1013,6 @@ def api_chart_image_15m(symbol):
     symbol = symbol.upper().strip()
     return _serve_chart_images(symbol, _fetch_chart_15m_fn, f"{symbol}:15m", "chart_15m")
 
-@app.route("/api/lightweight_chart_status/<symbol>")
-def api_lightweight_chart_status(symbol):
-    """Kiểm tra nhanh, không gọi mạng: chart sẽ phục vụ từ cache hay cần
-    update (vnstock) — dùng để hiển thị trạng thái trước khi tải dữ liệu."""
-    symbol = symbol.upper().strip()
-    if _chart_symbol_status_fn:
-        try:
-            return jsonify(_chart_symbol_status_fn(symbol))
-        except Exception as exc:
-            return jsonify({"symbol": symbol, "cached": False, "need_fetch": True,
-                            "reason": "status_error", "detail": str(exc)})
-    cache = _get_history_cache() if _get_history_cache else {}
-    if not _cache_lock:
-        return jsonify({"symbol": symbol, "cached": False, "need_fetch": True, "reason": "unknown"})
-    with _cache_lock:
-        df = cache.get(symbol)
-        has_cache = df is not None and len(df) >= 60
-    return jsonify({"symbol": symbol, "cached": has_cache, "need_fetch": not has_cache,
-                    "reason": "fallback_check"})
-
 @app.route("/api/vol_forecast/<symbol>")
 def api_vol_forecast(symbol):
     """NGUỒN DUY NHẤT cho khối 'Giá phóng to' (bp-price/bp-sub) trên panel CHART —
@@ -1019,79 +1028,44 @@ def api_vol_forecast(symbol):
     except Exception as exc:
         return jsonify({"symbol": symbol, "error": "exception", "detail": str(exc)}), 500
 
-_chart_ensure_inflight: set = set()
-_chart_ensure_inflight_lock = threading.Lock()
+# ── Connection Pool cho VNDirect DChart API ────────────────────────────────────
+# Giữ kết nối HTTP Keep-Alive / TLS warm với server VNDirect, tránh việc mỗi request
+# phải handshake lại SSL (tiết kiệm ~150-250ms latency mạng mỗi lần fetch).
+_vndirect_http_session = requests.Session()
+_vndirect_http_session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "Accept": "application/json,*/*",
+    "Referer": "https://dstock.vndirect.com.vn/",
+})
 
-def _ensure_chart_symbol_background(symbol: str):
-    """Chạy _ensure_chart_symbol_fn(symbol) ở thread nền — dùng khi cache ĐÃ có
-    sẵn đủ dữ liệu để trả lời ngay, để việc update/vá nến (có thể gọi mạng
-    vnstock, tốn thời gian) không làm chậm response CHART hiện tại. Kết quả cập
-    nhật sẽ có sẵn cho lần tải chart kế tiếp."""
-    with _chart_ensure_inflight_lock:
-        if symbol in _chart_ensure_inflight:
-            return  # đã có 1 lượt ensure đang chạy nền cho mã này, khỏi trùng
-        _chart_ensure_inflight.add(symbol)
-    def _run():
-        try:
-            _ensure_chart_symbol_fn(symbol)
-        except Exception as exc:
-            print(f"  [LiteChart] {symbol}: ensure cache nền lỗi: {exc}")
-        finally:
-            with _chart_ensure_inflight_lock:
-                _chart_ensure_inflight.discard(symbol)
-    threading.Thread(target=_run, daemon=True).start()
-
-def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
+def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
+    """Gọi thẳng VNDirect DChart API (resolution=D) dùng HTTP Keep-Alive Session,
+    trả về list bar thô đã lọc hợp lệ, sort tăng dần theo thời gian."""
     symbol = symbol.upper().strip()
-    tf_upper = tf.upper().strip()
-    now_ts = int(time.time())
-    limit = max(50, min(1000, int(limit or 1000)))
-    # Chỉ kéo đủ dữ liệu thô (theo ngày) cần thiết để dựng đủ `limit` cây nến
-    # ở khung đích — tránh tải nguyên 25 năm lịch sử mỗi request (rất chậm).
-    if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
-        res = "D"
-        from_ts = now_ts - (limit * 7 + 60) * 86400   # +buffer ~2 tháng
-        target_tf = "1W"
-    elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
-        res = "D"
-        from_ts = now_ts - (limit * 31 + 90) * 86400  # +buffer ~3 tháng
-        target_tf = "1M"
-    else:
-        res = "D"
-        from_ts = now_ts - int(limit * 1.6 + 30) * 86400  # ~1.6 ngày lịch/nến (bù T7,CN,lễ) + buffer
-        target_tf = "1D"
-
-    url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution={res}&symbol={symbol}&from={from_ts}&to={now_ts}"
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Accept": "application/json,*/*",
-        "Referer": "https://dstock.vndirect.com.vn/",
-    })
-
+    url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol={symbol}&from={from_ts}&to={to_ts}"
     try:
-        with urllib.request.urlopen(req, timeout=15) as res_obj:
-            data = json.loads(res_obj.read().decode("utf-8"))
-    except Exception as exc:
-        return None, str(exc)
+        res = _vndirect_http_session.get(url, timeout=10)
+        if res.status_code != 200:
+            return None
+        data = res.json()
+    except Exception:
+        return None
 
     if not data or data.get("s") != "ok" or not data.get("t"):
-        return None, "no_data_from_vndirect"
+        return None
 
-    times = data.get("t", [])
-    opens = data.get("o", [])
-    highs = data.get("h", [])
-    lows = data.get("l", [])
+    times  = data.get("t", [])
+    opens  = data.get("o", [])
+    highs  = data.get("h", [])
+    lows   = data.get("l", [])
     closes = data.get("c", [])
-    vols = data.get("v", [])
+    vols   = data.get("v", [])
 
     raw_bars = []
     for i in range(len(times)):
         try:
-            o = float(opens[i])
-            h = float(highs[i])
-            l = float(lows[i])
-            c = float(closes[i])
-            v = float(vols[i])
+            o = float(opens[i]); h = float(highs[i]); l = float(lows[i])
+            c = float(closes[i]); v = float(vols[i])
             if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
                 raw_bars.append({
                     "t": int(times[i]),
@@ -1099,10 +1073,80 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
                 })
         except (IndexError, ValueError, TypeError):
             continue
+    return raw_bars or None
 
+def _get_vpa_flags_from_raw(symbol, raw_bars):
+    """Tính Volume-Signal (VPA) TRỰC TIẾP trên `raw_bars` đã có trong RAM (~1ms).
+    KHÔNG bắn thêm request HTTP mạng thứ 2 tới VNDirect nữa → hoàn toàn triệt tiêu
+    nghẽn mạng trùng lặp và xung đột kết nối khi load mã mới."""
+    if not _calc_vpa_flag_fn or not raw_bars:
+        return {}
+    now = time.time()
+    with _vpa_cache_lock:
+        entry = _vpa_flag_cache.get(symbol)
+        if entry and (now - entry["updated_at"]) < _VPA_CACHE_TTL_SEC:
+            return entry["flags_by_date"]
+
+    flags_by_date = {}
+    try:
+        vdf = pd.DataFrame({
+            "open":   [b["open"] for b in raw_bars],
+            "high":   [b["high"] for b in raw_bars],
+            "low":    [b["low"] for b in raw_bars],
+            "close":  [b["close"] for b in raw_bars],
+            "volume": [b["volume"] for b in raw_bars],
+        })
+        flags = _calc_vpa_flag_fn(vdf).tolist()
+        for bar, f in zip(raw_bars, flags):
+            dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
+            flags_by_date[dt_str] = int(f)
+    except Exception as exc:
+        pass
+    with _vpa_cache_lock:
+        _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
+    return flags_by_date
+
+def fetch_vndirect_dchart(symbol, tf="1D", limit=400, before_date=None):
+    """Fetch + build candles/volume cho panel CHART.
+    - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
+    - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
+      (dùng cho lazy load lịch sử khi user kéo trái đến đầu dữ liệu).
+    """
+    symbol = symbol.upper().strip()
+    tf_upper = tf.upper().strip()
+    limit = max(50, min(1000, int(limit or 400)))
+
+    # ── Xác định khoảng thời gian cần fetch ──────────────────────────────────
+    if before_date:
+        # Lazy load: lấy bar cũ hơn before_date → to_ts = ngay trước before_date
+        try:
+            from datetime import date as _date
+            bd = _date.fromisoformat(str(before_date))
+            to_ts = int(datetime(bd.year, bd.month, bd.day, tzinfo=TZ_VN).timestamp()) - 1
+        except Exception:
+            to_ts = int(time.time())
+    else:
+        to_ts = int(time.time())
+
+    if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
+        from_ts = to_ts - (limit * 7 + 60) * 86400
+        target_tf = "1W"
+    elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
+        from_ts = to_ts - (limit * 31 + 90) * 86400
+        target_tf = "1M"
+    else:
+        # ~1.6 ngày lịch/phiên (bù T7,CN,lễ) + buffer nhỏ
+        from_ts = to_ts - int(limit * 1.6 + 30) * 86400
+        target_tf = "1D"
+
+    try:
+        raw_bars = _fetch_vndirect_raw_daily(symbol, from_ts, to_ts)
+    except Exception as exc:
+        return None, str(exc)
     if not raw_bars:
-        return None, "empty_bars"
+        return None, "no_data_from_vndirect"
 
+    # ── Resample theo TF ─────────────────────────────────────────────────────
     if target_tf == "1W":
         weeks = {}
         for bar in raw_bars:
@@ -1146,14 +1190,19 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
     else:
         final_bars = []
         for bar in raw_bars:
-            dt = datetime.fromtimestamp(bar["t"], tz=TZ_VN)
+            dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
             final_bars.append({
-                "time": dt.strftime("%Y-%m-%d"),
+                "time": dt_str,
                 "open": bar["open"], "high": bar["high"], "low": bar["low"],
                 "close": bar["close"], "volume": bar["volume"]
             })
 
     final_bars = final_bars[-limit:]
+    if not final_bars:
+        return None, "no_data_after_resample"
+
+    # ── Volume-Signal (VPA) — chỉ khung 1D, tính trực tiếp từ raw_bars (~1ms) ──
+    vpa_flags_by_date = _get_vpa_flags_from_raw(symbol, raw_bars) if target_tf == "1D" else {}
 
     candles = []
     volume = []
@@ -1162,88 +1211,70 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=1000):
         o, h, l, c, v = b["open"], b["high"], b["low"], b["close"], b["volume"]
         candles.append({"time": t_val, "open": o, "high": h, "low": l, "close": c})
         color = "#26a69a" if c >= o else "#ef5350"
+        flag = vpa_flags_by_date.get(t_val)
+        if flag:
+            color = _VPA_FLAG_COLOR.get(flag) or color
         volume.append({"time": t_val, "value": v, "color": color})
 
-    return {"symbol": symbol, "timeframe": target_tf, "candles": candles, "volume": volume,
-            "last_date": str(candles[-1]["time"])}, None
+    # has_more: True khi đây là lazy-load chunk (before_date set) VÀ
+    # số bar trả về bằng limit (có thể còn lịch sử cũ hơn nữa).
+    has_more = before_date is not None and len(final_bars) >= limit
+
+    payload = {
+        "symbol": symbol,
+        "timeframe": target_tf,
+        "candles": candles,
+        "volume": volume,
+        "last_date": str(candles[-1]["time"]),
+        "has_more": has_more,
+    }
+    return payload, None
 
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
     tf = (request.args.get("tf") or "1D").strip()
+    before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 1000) or 1000)
+        limit = int(request.args.get("limit", 400) or 400)
     except (TypeError, ValueError):
-        limit = 1000
+        limit = 400
     limit = max(50, min(1000, limit))
 
-    # Priority 1: Fetch directly from VNDirect DChart API (Adjusted price, TradingView UDF standard)
+    # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
+    if before_date:
+        dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit, before_date=before_date)
+        if not err and dchart_data and dchart_data.get("candles"):
+            return jsonify(dchart_data)
+        return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
+                        "detail": err or "no_data"}), 502
+
+    # ── Load thường: kiểm tra RAM cache trước ────────────────────────────────
+    cache_key = (symbol, tf)
+    now_ts = time.time()
+    with _lite_chart_cache_lock:
+        entry = _lite_chart_cache.get(cache_key)
+
+    if entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
+        # Cache còn hạn → trả ngay ~0ms
+        return jsonify(entry["payload"])
+
+    # Cache miss hoặc stale → fetch từ VNDirect
     dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit)
     if not err and dchart_data and dchart_data.get("candles"):
+        # Đánh dấu has_more=True khi load đầu (còn lịch sử cũ phía trước)
+        dchart_data["has_more"] = True
+        with _lite_chart_cache_lock:
+            _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
         return jsonify(dchart_data)
 
-    # Fallback to internal cache if network call fails
-    if not _cache_lock:
-        return jsonify({"error": "cache_not_ready"}), 503
-    cache = _get_history_cache() if _get_history_cache else {}
-    if _ensure_chart_symbol_fn:
-        with _cache_lock:
-            cached_df = cache.get(symbol)
-            has_cache = cached_df is not None and len(cached_df) >= 60
-        if has_cache:
-            _ensure_chart_symbol_background(symbol)
-        else:
-            try:
-                _ensure_chart_symbol_fn(symbol)
-            except Exception as exc:
-                print(f"  [LiteChart] {symbol}: ensure cache lỗi: {exc}")
-    with _cache_lock:
-        raw_df = cache.get(symbol)
-        is_weekly = tf.upper() in ("1W", "W", "WEEK", "WEEKLY")
-        if raw_df is None or not len(raw_df):
-            df = None
-        elif is_weekly:
-            df = raw_df.copy()
-        else:
-            df = raw_df.tail(limit).copy()
-    if df is None or df.empty:
-        return jsonify({"error": "no_cache", "symbol": symbol}), 404
-    if is_weekly:
-        try:
-            df = df.resample("W-FRI").agg({
-                "open": "first", "high": "max", "low": "min",
-                "close": "last", "volume": "sum"
-            }).dropna(subset=["open", "high", "low", "close"])
-            tf_out = "1W"
-        except Exception as exc:
-            return jsonify({"error": "weekly_resample_failed", "detail": str(exc)}), 500
-    else:
-        tf_out = "1D"
-    df = df.tail(limit)
-    candles, volume = [], []
-    has_vpa = "vpa_flag" in df.columns
-    for row in df.itertuples():
-        try:
-            o = float(getattr(row, "open", 0) or 0)
-            h = float(getattr(row, "high", 0) or 0)
-            l = float(getattr(row, "low", 0) or 0)
-            c = float(getattr(row, "close", 0) or 0)
-            v = float(getattr(row, "volume", 0) or 0)
-        except (TypeError, ValueError):
-            continue
-        if not all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
-            continue
-        idx = row.Index
-        day = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
-        candles.append({"time": day, "open": o, "high": h, "low": l, "close": c})
-        vpa_flag = int(getattr(row, "vpa_flag", 0) or 0) if has_vpa else 0
-        color = _VPA_FLAG_COLOR.get(vpa_flag) or ("#26a69a" if c >= o else "#ef5350")
-        volume.append({"time": day, "value": max(0, v), "color": color})
-    if not candles:
-        return jsonify({"error": "no_data", "symbol": symbol}), 404
-    return jsonify({"symbol": symbol, "timeframe": tf_out, "candles": candles, "volume": volume,
-                    "last_date": candles[-1]["time"]})
+    # Nếu fetch mới lỗi nhưng có cache cũ → trả cache cũ (stale-while-revalidate)
+    if entry and entry.get("payload"):
+        return jsonify(entry["payload"])
+
+    return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
+                    "detail": err or "no_data"}), 502
 
 @app.route("/api/cache_info")
 def api_cache_info():
@@ -1270,6 +1301,9 @@ def api_chart_cache_clear(symbol):
         removed = symbol in _chart_cache or f"{symbol}:15m" in _chart_cache
         _chart_cache.pop(symbol, None)
         _chart_cache.pop(f"{symbol}:15m", None)
+    with _lite_chart_cache_lock:
+        for tf in ("1D", "1W", "1M", "D", "W", "M"):
+            _lite_chart_cache.pop((symbol, tf), None)
     return jsonify({"symbol": symbol, "cleared": removed})
 
 @app.route("/api/config")
@@ -1687,11 +1721,12 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     ensure_chart_symbol_fn=None,
                     chart_symbol_status_fn=None,
                     vol_forecast_fn=None,
+                    calc_vpa_flag_fn=None,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _vol_forecast_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _fetch_chart_fn, _fetch_chart_15m_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -1706,6 +1741,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _ensure_chart_symbol_fn = ensure_chart_symbol_fn
     _chart_symbol_status_fn = chart_symbol_status_fn
     _vol_forecast_fn   = vol_forecast_fn
+    _calc_vpa_flag_fn  = calc_vpa_flag_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
 
@@ -3915,7 +3951,11 @@ let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price c
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteInputTimer=null;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=50,LITE_HIST_SCALE=2.1;
+const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
+// Lazy load lịch sử: khi user kéo trái đến đầu dữ liệu, tự động fetch thêm bar cũ hơn.
+let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load (server báo)
+let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
+let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
 // Phần chung của mọi cấu hình rightPriceScale trong initLiteChart()/applyLitePaneLayout() —
 // borderColor và minimumWidth giống hệt nhau ở cả 3 chart (main/RSI/MACD) và ở mọi lần áp dụng,
 // chỉ scaleMargins (và autoScale ở main/RSI khi đổi layout) là khác nhau nên vẫn để riêng.
@@ -3970,6 +4010,10 @@ function initLiteChart(){
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     redrawLiteDrawings();
     _liteSyncVisibleRangeFrom(_liteChart,range);
+    // Lazy load đón đầu: khi user tiến về gần mốc 100 nến sát trái → tự fetch trước 1 bước ngầm
+    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore){
+      _liteFetchMoreHistory();
+    }
   });
   _liteRsiChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     _liteSyncVisibleRangeFrom(_liteRsiChart,range);
@@ -4088,7 +4132,7 @@ function fmtLiteDate(t){
 }
 function _liteTitleSegments(bar){
   if(!bar)return [];
-  const tf=_liteTf;
+  const tf=(_liteTf||'D').replace(/^1/,'');
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
@@ -4176,14 +4220,6 @@ function _liteBindSymInput(el,onClean){
   });
 }
 function _liteFutureTimes(lastTimeStr,n,tf){
-  if(typeof lastTimeStr === 'number'){
-    const out=[];
-    const step = (tf==='15m'||tf==='15M'||tf==='15')? 900 : 3600;
-    for(let i=1; i<=n; i++){
-      out.push(lastTimeStr + i*step);
-    }
-    return out;
-  }
   const out=[];
   let stepDays = 1;
   if(tf==='1W'||tf==='W') stepDays=7;
@@ -4254,7 +4290,11 @@ function _liteApplyBuySignal(){
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
-  const last=_liteData.length-1,to=last+LITE_RIGHT_OFFSET,from=Math.max(0,to-LITE_BARS_VISIBLE);
+  const last=_liteData.length-1;
+  const rightOffset=22; // Lề phải ~8% chiều rộng màn hình
+  const to=last+rightOffset;
+  const visibleCount=250; // Hiển thị chuẩn 250 nến gần nhất trên màn hình
+  const from=Math.max(0,last-visibleCount+1);
   _liteApplyVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
@@ -4491,7 +4531,7 @@ function _liteTextBoxMetrics(d){
   _liteDrawCtx.restore();
   return{pad,lh,size,family,lines,width:maxW+pad*2,height:lines.length*lh+pad*2};
 }
-function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
+function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol;}
 function loadLiteDrawings(){
   try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
   catch(e){_liteDrawings=[];}
@@ -4504,7 +4544,7 @@ function saveLiteDrawings(){
 // kiện có sẵn của trình duyệt, tự bắn sang các cửa sổ KHÁC (không bắn lại về cửa sổ vừa ghi)
 // mỗi khi localStorage thay đổi — nên chỉ cần lắng nghe và vẽ lại, không cần tự gửi message.
 window.addEventListener('storage',e=>{
-  if(e.key!==_liteDrawStoreKey())return; // không phải mã + khung thời gian đang xem — bỏ qua
+  if(e.key!==_liteDrawStoreKey())return; // không phải mã đang xem — bỏ qua (dùng chung mọi TF)
   loadLiteDrawings();redrawLiteDrawings();
 });
 function resizeLiteDrawCanvas(){
@@ -6060,7 +6100,6 @@ function renderLiteIndicators(){
     const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
     const macdAligned=alignLiteSeries(m.macd);
     hist.setData(histScaled);macdLine.setData(macdAligned);sigLine.setData(alignLiteSeries(m.signal));
-    hist.priceScale().applyOptions({autoScale:true,scaleMargins:{top:.07,bottom:.10}});
     _liteMacdCrosshairSeries=macdLine;
     _liteIndicatorSeries.push({chart:_liteMacdChart,series:hist},{chart:_liteMacdChart,series:macdLine},{chart:_liteMacdChart,series:sigLine});
   }
@@ -6079,28 +6118,12 @@ function _liteVolColorFor(volBar,showVpa){
   return cd?(cd.close>=cd.open?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR):volBar.color;
 }
 function _liteRefreshVolumeTop(showVpaVol){
-  // Vẽ lại volume sau cùng để nó luôn nổi trên phần fill/nền trắng của BB, không bị che.
   if(!_liteChart||!_liteVolume)return;
-  try{_liteChart.removeSeries(_liteVolume);}catch(e){}
-  _liteVolume=_liteChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false});
-  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  // showVpaVol truyền vào từ renderLiteIndicators() (đọc DOM 1 lần/lượt vẽ, giống maEmaOn/showRsi...).
   _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v,showVpaVol)})));
 }
-function showLiteChartStatus(status){
-  if(!DOM.liteChartStatus)return;
-  if(!status){DOM.liteChartStatus.classList.remove('on');return;}
-  const fetching=!!status.need_fetch;
-  DOM.liteChartStatus.title=fetching?'Đang update chart (vnstock)':'Đã tải từ cache';
-  DOM.liteChartStatus.classList.toggle('fetching',fetching);
-  DOM.liteChartStatus.classList.add('on');
-  clearTimeout(DOM.liteChartStatus._hideTimer);
-  DOM.liteChartStatus._hideTimer=setTimeout(()=>DOM.liteChartStatus.classList.remove('on'),3000);
-}
 // LITE_CHART_RETRY_MAX/DELAY: số lần thử lại tối đa và khoảng cách giữa mỗi lần khi API
-// /api/lightweight_chart/ trả no_cache (404) — trước đây chỉ 1 lần/5s (~10s tổng), không đủ
-// cho các mã phải fetch trực tiếp từ vnstock lúc cache chưa có (đặc biệt VNINDEX/VN30, xem
-// ensure_symbol_live_in_cache() ở backend — có thể mất 6-10s+ do tự retry nội bộ khi mạng chập chờn).
+// /api/lightweight_chart/ lỗi (VNDirect tạm không phản hồi/không có dữ liệu) — retry vài
+// lần trước khi báo hẳn "không có dữ liệu" cho người dùng.
 const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
 async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
@@ -6111,22 +6134,13 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
-  showLiteChartStatus(null);
   if(!window.LightweightCharts){
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),1200);
     return;
   }
-  // Gọi song song: status chỉ để hiển thị placeholder text, không cần chờ nó xong
-  // mới bắt đầu fetch data thật — gộp lại giúp giảm ~1 round-trip độ trễ tải chart.
-  const statusPromise=fetch('/api/lightweight_chart_status/'+encodeURIComponent(s))
-    .then(x=>x.json()).catch(()=>null);
-  statusPromise.then(st=>{
-    if(DOM.liteChartEmpty.style.display!=='none')
-      DOM.liteChartEmpty.textContent=(st&&st.need_fetch)?'Đang update chart (vnstock)...':'Đang tải cache...';
-  });
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=1000');
-    if(!r.ok)throw new Error('no_cache');
+    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=400');
+    if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
@@ -6143,18 +6157,16 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       return{...bar,pct};
     });
     _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
-    // Màu volume (bao gồm cờ VPA xanh dương/tím) đã được server tính sẵn theo từng
-    // bar, lưu nguyên trong _liteVolumeData. Màu THỰC hiển thị tuỳ checkbox "volcolor"
-    // (nhóm Signal) — xem _liteVolColorFor(), áp dụng ở _liteRefreshVolumeTop().
+    // Khởi động trạng thái lazy-load: server báo has_more=true khi còn lịch sử cũ có thể load thêm
+    _liteHasMore=j.has_more!==false;
+    _liteOldestDate=_liteData.length?liteTimeKey(_liteData[0].time):null;
+    _liteLoadingMore=false;
+    // Màu volume (đã được server tính sẵn)
     _liteVolumeData=j.volume||[];
     _liteCandle.setData(_liteData);
-    // Không setData cho _liteVolume ở đây: renderLiteIndicators() gọi ngay bên dưới
-    // sẽ chạy _liteRefreshVolumeTop() — hàm đó xoá + tạo lại series volume rồi tự
-    // setData (có áp dụng toggle "volcolor") nên gọi ở đây trước đó chỉ phí công.
     _liteUpdateWhitespace();
     renderLiteIndicators();
     setLiteRightOffset();
-    _liteChart.priceScale('right').applyOptions({autoScale:true,scaleMargins:{top:.12,bottom:.18}});
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteVolForecast=null; // đổi mã — xoá dự báo cũ, khỏi hiện nhầm số của mã trước trong lúc chờ fetch
@@ -6162,11 +6174,14 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteFetchVolForecast(_liteSymbol);
     _liteApplyBuySignal();
     loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
-    showLiteChartStatus(await statusPromise);
+    // Tải đón đầu trước 1 bước (Pre-fetch Step Ahead): Tải ngầm tiếp 300 nến quá khứ
+    // ngay sau khi load chart 120ms — giúp vá trọn vẹn đường MA200 bên trái và chuẩn bị
+    // sẵn dữ liệu RAM khi user kéo lùi lịch sử.
+    setTimeout(_liteFetchMoreHistory,120);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     updateLiteBigPrice(null);
-    DOM.liteChartEmpty.textContent='Chưa có dữ liệu cache cho '+s;
+    DOM.liteChartEmpty.textContent='Không lấy được dữ liệu VNDirect cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
 }
@@ -6221,6 +6236,55 @@ async function _liteQuietRefreshChart(){
     // Lỗi mạng/tạm thời — bỏ qua êm, chờ lượt refresh kế tiếp, không làm phiền người dùng.
   }finally{
     _liteQuietRefreshing=false;
+  }
+}
+// ═══════════════════════════════════════════════════════
+// LAZY LOAD LỊCH SỬ — khi user kéo trái đến đầu dữ liệu, tự fetch thêm 300 bar cũ
+// hơn và prepend vào chart — giống cách TradingView thật làm. Không náy
+// màn hình, không mất zoom/pan hiện tại.
+// ═══════════════════════════════════════════════════════
+async function _liteFetchMoreHistory(){
+  if(_liteLoadingMore||!_liteHasMore||!_liteOldestDate||!_liteChart||!_liteCandle)return;
+  const sym=_liteSymbol,tf=_liteTf,oldestDate=_liteOldestDate;
+  _liteLoadingMore=true;
+  try{
+    const url='/api/lightweight_chart/'+encodeURIComponent(sym)
+             +'?tf='+encodeURIComponent(tf)
+             +'&limit=300'
+             +'&before='+encodeURIComponent(oldestDate);
+    const r=await fetch(url);
+    if(!r.ok){_liteHasMore=false;return;}
+    const j=await r.json();
+    // Giám sát: đã đổi mã/TF trong lúc chờ → bỏ kết quả này, khỏi ghi nhầm
+    if(sym!==_liteSymbol||tf!==_liteTf)return;
+    if(!j.candles||!j.candles.length){_liteHasMore=false;return;}
+    _liteHasMore=j.has_more!==false;
+    // Build các bar mới (cũ hơn) với pct
+    const newBars=j.candles.map((bar,idx,arr)=>{
+      const prev=idx>0?arr[idx-1].close:null;
+      return{...bar,pct:prev?((bar.close-prev)/prev*100):0};
+    });
+    // Prepend vào mảng địa phương
+    _liteData=[...newBars,..._liteData];
+    _liteVolumeData=[...(j.volume||[]),..._liteVolumeData];
+    _liteDataByTime=new Map(_liteData.map(b=>[liteTimeKey(b.time),b]));
+    _liteOldestDate=liteTimeKey(_liteData[0].time);
+    // Lưu range đang xem để không bị nhảy sau setData()
+    const prevRange=_liteChart.timeScale().getVisibleLogicalRange();
+    const prependCount=newBars.length;
+    // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
+    _liteCandle.setData(_liteData);
+    renderLiteIndicators();
+    // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData()
+    // gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
+    if(prevRange){
+      const target={from:prevRange.from+prependCount,to:prevRange.to+prependCount};
+      requestAnimationFrame(()=>_liteApplyVisibleLogicalRange(target));
+    }
+  }catch(e){
+    // Lỗi mạng: bỏ qua êm, tự retry khi user kéo trái lần nữa
+  }finally{
+    _liteLoadingMore=false;
   }
 }
 function bindLiteChartControls(){
