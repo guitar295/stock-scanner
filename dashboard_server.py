@@ -4531,7 +4531,7 @@ function _liteTextBoxMetrics(d){
   _liteDrawCtx.restore();
   return{pad,lh,size,family,lines,width:maxW+pad*2,height:lines.length*lh+pad*2};
 }
-function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
+function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol;}
 function loadLiteDrawings(){
   try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
   catch(e){_liteDrawings=[];}
@@ -4544,7 +4544,7 @@ function saveLiteDrawings(){
 // kiện có sẵn của trình duyệt, tự bắn sang các cửa sổ KHÁC (không bắn lại về cửa sổ vừa ghi)
 // mỗi khi localStorage thay đổi — nên chỉ cần lắng nghe và vẽ lại, không cần tự gửi message.
 window.addEventListener('storage',e=>{
-  if(e.key!==_liteDrawStoreKey())return; // không phải mã + khung thời gian đang xem — bỏ qua
+  if(e.key!==_liteDrawStoreKey())return; // không phải mã đang xem — bỏ qua (dùng chung mọi TF)
   loadLiteDrawings();redrawLiteDrawings();
 });
 function resizeLiteDrawCanvas(){
@@ -6275,12 +6275,11 @@ async function _liteFetchMoreHistory(){
     // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
     _liteCandle.setData(_liteData);
     renderLiteIndicators();
-    // Dịch lại visible range: offset thêm prependCount để user không bị nhảy vị trí
+    // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData()
+    // gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
     if(prevRange){
-      _liteApplyVisibleLogicalRange({
-        from:prevRange.from+prependCount,
-        to:prevRange.to+prependCount
-      });
+      const target={from:prevRange.from+prependCount,to:prevRange.to+prependCount};
+      requestAnimationFrame(()=>_liteApplyVisibleLogicalRange(target));
     }
   }catch(e){
     // Lỗi mạng: bỏ qua êm, tự retry khi user kéo trái lần nữa
