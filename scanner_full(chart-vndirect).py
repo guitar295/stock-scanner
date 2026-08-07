@@ -2347,33 +2347,6 @@ def _build_daily_weekly_chart_paths(ctx):
         print(f"  [ChartCore] ❌ Weekly {symbol}: {e}")
     return paths, labels
 
-def _build_daily_weekly_chart_bytes(ctx):
-    png_bytes, labels = [], []
-    symbol = ctx["symbol"]
-    signal_type = ctx["signal_type"]
-    try:
-        png_bytes.append(draw_chart(
-            ctx["df_calc"].tail(250).copy(), symbol, signal_type, ctx["today"],
-            timeframe='Daily', add_arrow=False, date_str=ctx["date_str"], as_bytes=True
-        ))
-        labels.append('📊 Daily [D]')
-    except Exception as e:
-        print(f"  [ChartCore] ❌ Daily bytes {symbol}: {e}")
-
-    try:
-        df_weekly = build_weekly_df(ctx["df_raw"])
-        df_plot_w = df_weekly.tail(200).copy()
-        today_w = df_plot_w.iloc[-1]
-        date_str_w = _date_str_from_df(ctx["df_raw"])
-        png_bytes.append(draw_chart(
-            df_plot_w, symbol, signal_type, today_w,
-            timeframe='Weekly', add_arrow=False, date_str=date_str_w, as_bytes=True
-        ))
-        labels.append('📈 Weekly [W]')
-    except Exception as e:
-        print(f"  [ChartCore] ❌ Weekly bytes {symbol}: {e}")
-    return png_bytes, labels
-
 def _cleanup_chart_paths(paths):
     for path in paths:
         try:
@@ -2583,52 +2556,8 @@ def check_price_alerts():
     return triggered
 
 # =============================================================================
-# BƯỚC 8D: HÀM DASHBOARD CHART — trả về PNG bytes cho web dashboard
+# BƯỚC 8D: HÀM DASHBOARD VOL FORECAST
 # =============================================================================
-def dashboard_chart_fn(symbol: str):
-    """
-    Được truyền vào start_dashboard(fetch_chart_fn=...).
-    Tạo nhanh Daily + Weekly từ history_cache nếu có, trả về (list[bytes], list[str]).
-    Không gửi Telegram.
-    """
-    symbol = symbol.upper().strip()
-    try:
-        ctx = _get_chart_context(symbol)
-        if ctx is None:
-            return [], []
-        print(f"  [Chart] {symbol} | {_format_chart_trace(ctx)} | last_bar={ctx['df_raw'].index[-1].date()} | via=scanner_chart")
-        return _build_daily_weekly_chart_bytes(ctx)
-
-    except Exception as e:
-        print(f"  [DashChart] ❌ {symbol}: {e}")
-        return [], []
-
-def dashboard_chart_15m_fn(symbol: str):
-    """
-    Được truyền vào start_dashboard(fetch_chart_15m_fn=...).
-    Tạo riêng chart 15m để dashboard tải sau Daily/Weekly.
-    """
-    symbol = symbol.upper().strip()
-    try:
-        ctx = _get_chart_context(symbol)
-        if ctx is None or ctx["is_index"]:
-            return [], []
-        df_15m = fetch_intraday_15m(symbol)
-        if df_15m is None or len(df_15m) < 2:
-            print(f"  ⚠️  {symbol}: không có dữ liệu 15m")
-            return [], []
-        today_15m = df_15m.iloc[-1]
-        date_str_15m = _date_str_from_df(df_15m)
-        print(f"  [Chart] {symbol} | cache_state=intraday_15m | action=fetch_intraday_15m | source=vnstock_15m | last_bar={df_15m.index[-1]} | via=scanner_chart_15m")
-        png_15m = draw_chart(
-            df_15m.tail(200).copy(), symbol, ctx["signal_type"], today_15m,
-            timeframe='15m', add_arrow=False, date_str=date_str_15m, as_bytes=True
-        )
-        return [png_15m], ['⚡ 15 phút [15m]']
-    except Exception as e:
-        print(f"  [DashChart] ❌ 15m {symbol}: {e}")
-        return [], []
-
 def dashboard_vol_forecast_fn(symbol: str):
     """
     Được truyền vào start_dashboard(vol_forecast_fn=...) — NGUỒN DUY NHẤT cho khối
@@ -2983,10 +2912,6 @@ start_dashboard(
     fetch_heatmap_fn  = fetch_heatmap_data,
     signal_emoji_ref  = SIGNAL_EMOJI,
     signal_rank_ref   = SIGNAL_RANK,
-    fetch_chart_fn    = dashboard_chart_fn,
-    fetch_chart_15m_fn = dashboard_chart_15m_fn,
-    ensure_chart_symbol_fn = ensure_symbol_live_in_cache,
-    chart_symbol_status_fn = chart_symbol_status,
     vol_forecast_fn   = dashboard_vol_forecast_fn,
     calc_vpa_flag_fn  = calc_vpa_flag,
     momentum_today_ref = lambda: momentum_today,
