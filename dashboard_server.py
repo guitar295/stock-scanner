@@ -6096,9 +6096,9 @@ function _liteUpdateIndicatorData(){
   _liteRefreshVolumeTop(showVpaVol);
   redrawLiteDrawings();
 }
-function renderLiteIndicators(){
+function renderLiteIndicators(skipRangeRestore){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
-  const prevRange=_liteGetVisibleLogicalRange();
+  const prevRange=skipRangeRestore?null:_liteGetVisibleLogicalRange();
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
   const showRsi=_liteChecked('rsi');
@@ -6270,8 +6270,8 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     try{
       _liteCandle.setData(_liteData);
       _liteUpdateWhitespace();
-      renderLiteIndicators();
-      setLiteRightOffset();
+      setLiteRightOffset();           // căn đúng 250 bar + 8% lề phải TRƯỚC
+      renderLiteIndicators(true);     // skipRangeRestore=true → không ghi đè range vừa set
     }finally{
       _liteChartLoading=false;
     }
