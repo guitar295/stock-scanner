@@ -2203,6 +2203,14 @@ html.chart-popout-mode>body>header,
 html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
 html.chart-popout-mode #lite-chart-popout-btn{display:none}
+/* Mobile portrait + popout: frame chiếm toàn bộ chiều cao còn lại sau toolbar */
+@media screen and (max-width:768px) and (orientation:portrait){
+  html.chart-popout-mode .lite-chart-frame{
+    height:calc(100dvh - 44px)!important;
+    max-height:none!important;
+    min-height:0!important;
+  }
+}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -2557,6 +2565,17 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
     -webkit-overflow-scrolling: touch;
   }
   .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
+  /* Nút floating "Chỉ báo" — luôn hiển thị góc phải dưới trên mobile portrait,
+     không bị khuất trong toolbar cuộn ngang */
+  #mob-ind-fab{
+    display:flex;align-items:center;justify-content:center;
+    position:fixed;bottom:16px;right:14px;z-index:9999;
+    width:44px;height:44px;border-radius:50%;
+    background:var(--accent);color:#fff;
+    border:none;font-size:18px;cursor:pointer;
+    box-shadow:0 4px 14px rgba(26,86,219,.45);
+    -webkit-tap-highlight-color:transparent;
+  }
   .lite-groups-sidebar{width:150px}
   .lite-groups-sidebar.on~.lite-vietstock-iframe{left:150px;width:calc(100% - 150px)}
   .lite-groups-sidebar.on+.lite-chart-title,
@@ -2983,6 +3002,9 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
       <span class="lite-chart-toggle-icon">▶</span>
     </div>
     <div class="lite-chart-frame" id="lite-chart-frame" tabindex="0">
+      <!-- Nút floating Chỉ báo — chỉ hiện trên mobile portrait, thay thế cho
+           các nút indicator bị khuất trong toolbar cuộn ngang -->
+      <button id="mob-ind-fab" title="Chỉ báo" aria-label="Mở danh sách chỉ báo" style="display:none">📊</button>
       <div class="lite-groups-sidebar" id="lite-groups-sidebar">
         <div class="lg-toolbar">
           <span class="lg-toolbar-title">NHÓM NGÀNH</span>
@@ -3892,7 +3914,8 @@ function setLiteRightOffset(){
   const last=_liteData.length-1;
   const rightOffset=22; // Lề phải ~8% chiều rộng màn hình
   const to=last+rightOffset;
-  const visibleCount=250; // Hiển thị chuẩn 250 nến gần nhất trên màn hình
+  // Mobile portrait (~390px): 80 nến đủ rõ từng cây nến; landscape/desktop: 250 như cũ
+  const visibleCount=IS_MOBILE()&&window.innerHeight>window.innerWidth?80:250;
   const from=Math.max(0,last-visibleCount+1);
   _liteApplyVisibleLogicalRange({from,to});
 }
@@ -4056,7 +4079,13 @@ function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
   // Đọc chiều cao thực tế khung (.lite-chart-frame) thay vì cố định 720, để khớp cả CSS mobile.
-  const totalH=(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
+  // Mobile popout portrait: frame vừa được CSS set height=100dvh-44px nên clientHeight
+  // đã đúng — nhưng nếu JS chạy trước khi browser reflow xong thì vẫn trả 720.
+  // Dùng window.innerHeight - 44 (toolbar) làm fallback an toàn trong trường hợp đó.
+  const _mobilePopoutPortrait=_isChartPopoutWindow&&IS_MOBILE()&&window.innerHeight>window.innerWidth;
+  const totalH=_mobilePopoutPortrait
+    ?Math.max(300,window.innerHeight-44)
+    :(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
@@ -8310,11 +8339,53 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
+// ── Nút floating "Chỉ báo" (FAB) — mobile portrait only ─────────────────────
+// Hiện khi: mobile + portrait + panel chart đang mở.
+// Ẩn khi: landscape, desktop, hoặc panel chart đóng.
+// Khi bấm: mở group đầu tiên trong .lite-indicators (giống bấm nút Signal/MA/EMA).
+(function(){
+  const fab=document.getElementById('mob-ind-fab');
+  if(!fab)return;
+  function _fabShouldShow(){
+    return IS_MOBILE()
+      &&window.innerHeight>window.innerWidth   // portrait
+      &&_isChartPanelOpen;
+  }
+  function _updateFab(){
+    fab.style.display=_fabShouldShow()?'flex':'none';
+  }
+  fab.addEventListener('click',e=>{
+    e.stopPropagation();
+    // Tìm group đầu tiên chưa mở, hoặc đóng tất cả nếu đang mở
+    const groups=DOM.liteIndicators?.querySelectorAll('.lite-ind-group');
+    if(!groups||!groups.length)return;
+    // Toggle group đầu tiên (Signal) — user có thể cuộn toolbar để tới nhóm khác
+    const first=groups[0];
+    const isOpen=first.classList.contains('open');
+    // Đóng tất cả trước
+    groups.forEach(g=>g.classList.remove('open'));
+    // Nếu chưa mở thì mở
+    if(!isOpen)first.classList.add('open');
+  });
+  // Cập nhật trạng thái FAB mỗi khi panel chart thay đổi hoặc xoay màn hình
+  const _origSetChartPanelOpen=window._setChartPanelOpenHook;
+  // Patch: gọi _updateFab sau mỗi lần _isChartPanelOpen thay đổi
+  // Dùng MutationObserver theo class collapsed của panel thay vì monkey-patch biến
+  const obs=new MutationObserver(_updateFab);
+  if(DOM.liteChartPanel)obs.observe(DOM.liteChartPanel,{attributes:true,attributeFilter:['class']});
+  window.addEventListener('resize',_updateFab);
+  // Gọi lần đầu sau khi init() chạy xong
+  setTimeout(_updateFab,500);
+})();
 window.addEventListener('orientationchange',()=>{
+  // Đợi browser hoàn tất reflow sau khi xoay (200ms thường đủ trên iOS Safari)
+  // rồi mới tính lại layout — totalH/visibleCount đều phụ thuộc chiều cao/chiều rộng mới.
   setTimeout(()=>{
     if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
     if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
     if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+    // Tính lại pane layout (totalH thay đổi) và số nến hiển thị (portrait↔landscape)
+    if(_liteData.length){applyLitePaneLayout();setLiteRightOffset();}
   },200);
 });
 init();
