@@ -3312,9 +3312,7 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
 # chỉ đổi cách nó được gửi tới trình duyệt.
 DASHBOARD_MAIN_JS = r"""
 'use strict';
-// ═══════════════════════════════════════════════════════
 // DOM CACHE
-// ═══════════════════════════════════════════════════════
 const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
@@ -3391,9 +3389,7 @@ const DOM={
   lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
   lgList:$('lite-groups-list'),
 };
-// ═══════════════════════════════════════════════════════
 // HELPERS
-// ═══════════════════════════════════════════════════════
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
 const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
@@ -3413,8 +3409,7 @@ const SIGNAL_LABEL_MAP={
   'POCKET PIVOT':'POCKET'
 };
 const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
-// Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi
-// SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
+// Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
 let _attentTodayMap=new Map();
@@ -3480,8 +3475,7 @@ function _liteTrendMode(){
   const el=DOM.liteIndicators?.querySelector('input[name="trend-mode"]:checked');
   return el?el.value:'regular';
 }
-// Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch
-// lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
+// Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
 function _liteLSGet(key,fallback){
   try{return localStorage.getItem(key)||fallback;}catch(e){return fallback;}
 }
@@ -3596,16 +3590,9 @@ function _liteSyncVisibleRangeFrom(source,range){
 }
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
-// Mũi tên báo mua: KHÔNG dùng _liteCandle.setMarkers() nữa — bản lightweight-charts@4.2.3 đang dùng
-// luôn tính không gian marker vào autoScale của trục giá (option SeriesMarkersOptions.autoScale để tắt
-// hành vi này chỉ có từ bản 5.0.9), nên mỗi lần bật/tắt Buy-Signal, setMarkers()/setMarkers([]) làm
-// trục giá tính lại range → cả chart bị co giãn dù dữ liệu nến không đổi. Tự vẽ mũi tên lên canvas vẽ
-// tay (_liteDrawCtx, dùng chung với _liteDrawTrendCloud/_liteDrawBBBand) để tách hẳn khỏi autoScale.
+// Mũi tên báo mua tự vẽ canvas (không dùng setMarkers()) vì setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart.
 let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price của nến LUÔN đọc live từ _liteData
-// tại thời điểm vẽ (_liteDrawBuyArrow), không lưu cứng lúc bật tín hiệu — nếu lưu cứng, khi có nến mới
-// chen vào giữa (auto-refresh mỗi 20s đẩy thêm nến qua _liteQuietRefreshChart) mà _liteApplyBuySignal()
-// chưa kịp chạy lại, mũi tên sẽ trỏ vào toạ độ của nến CŨ trong khi trục thời gian đã dịch sang phải
-// nhường chỗ nến mới → mũi tên lệch khỏi tâm nến cuối, trông như nằm ở cạnh nến trước đó.
+// Vị trí mũi tên tính lại tại thời điểm vẽ (không lưu cứng) để luôn khớp nến mới nhất khi auto-refresh chèn nến mới vào giữa.
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
@@ -3615,25 +3602,15 @@ let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
 let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
 let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
-// Phần chung của mọi cấu hình rightPriceScale trong initLiteChart()/applyLitePaneLayout() —
-// borderColor và minimumWidth giống hệt nhau ở cả 3 chart (main/RSI/MACD) và ở mọi lần áp dụng,
-// chỉ scaleMargins (và autoScale ở main/RSI khi đổi layout) là khác nhau nên vẫn để riêng.
+// Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
 const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
-  // Crosshair gốc của thư viện bị TẮT HẲN trên cả 2 chart (vertLine + horzLine + label đều visible:false).
-  // Lý do: cách cũ dùng applyOptions() để bật/tắt horzLine mỗi khi đổi panel — applyOptions là thao tác
-  // nặng (buộc chart vẽ lại toàn bộ), gọi liên tục theo mousemove nên gây giật/nháy và có lúc lộ ra
-  // đồng thời 2 đường ngang (do độ trễ giữa 2 lệnh applyOptions ở 2 chart). Từ nay chỉ vẽ 1 crosshair
-  // DUY NHẤT bằng overlay DOM riêng (xem _liteMoveXhair/_liteHideXhair) — mượt tuyệt đối vì chỉ set
-  // style.left/top, không đụng tới engine vẽ của lightweight-charts.
+  // Crosshair gốc của thư viện tắt hẳn; dùng overlay DOM riêng (_liteMoveXhair/_liteHideXhair) để mượt, tránh giật/nháy khi applyOptions() chạy liên tục theo mousemove.
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    // shiftVisibleRangeOnNewBar:false — mặc định thư viện TỰ CUỘN chart về bên phải mỗi khi có 1 nến
-    // mới xuất hiện (dù nến đó nằm ngoài vùng đang xem). Auto-refresh 10s (_liteQuietRefreshChart) gọi
-    // _liteCandle.update() liên tục nên hành vi này làm chart "nhảy" về mặc định ngay cả khi user đang
-    // zoom-out/kéo xem vùng khác — tắt hẳn để chart CHỈ đổi vị trí khi chính user thao tác.
+    // Tắt shiftVisibleRangeOnNewBar để auto-refresh không tự cuộn chart về phải, tránh giật view khi user đang xem vùng khác.
     timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET,shiftVisibleRangeOnNewBar:false},
     crosshair:{
       mode:LightweightCharts.CrosshairMode.Normal,
@@ -3664,9 +3641,7 @@ function initLiteChart(){
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  // Series "whitespace" vô hình: chỉ chứa các mốc thời gian tương lai (vùng trống bên phải nến cuối),
-  // giúp time-scale nhận biết vùng này nên subscribeCrosshairMove vẫn trả về param.time hợp lệ khi
-  // trỏ vào vùng trống đó (để overlay crosshair + nhãn ngày vẫn hoạt động, không bị "rớt").
+  // Series whitespace vô hình giữ các mốc thời gian tương lai để crosshair vẫn hoạt động ở vùng trống bên phải nến cuối.
   _liteMainWhite=_liteChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteRsiWhite=_liteRsiChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteMacdWhite=_liteMacdChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
@@ -3684,14 +3659,7 @@ function initLiteChart(){
   _liteMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     _liteSyncVisibleRangeFrom(_liteMacdChart,range);
   });
-  // ─── Crosshair hợp nhất (1 đường dọc + 1 đường ngang) cho cả 2 panel ───────────────────────────
-  // Nguyên lý: KHÔNG dùng crosshair gốc của lightweight-charts nữa (đã tắt hẳn ở chartOpts phía trên).
-  // Mỗi panel tự báo toạ độ con trỏ (x,y cục bộ) qua subscribeCrosshairMove, ta cộng thêm offsetTop
-  // của panel đó so với khung frame để ra toạ độ TUYỆT ĐỐI trong #lite-chart-frame, rồi set thẳng
-  // style.left/top cho 4 phần tử overlay (vạch dọc xuyên suốt cả khung, vạch ngang, nhãn giá, nhãn ngày).
-  // Vì #lite-chart và #lite-macd-chart có cùng chiều rộng & cùng gốc trái (0), toạ độ x của 2 panel
-  // khớp tuyệt đối nhau nên vạch dọc luôn thẳng hàng liền mạch qua cả 2 panel — không lệch, không giật,
-  // vì mỗi lần di chuột chỉ là một phép gán style (rẻ), hoàn toàn không gọi applyOptions/setCrosshairPosition.
+  // Crosshair hợp nhất (1 dọc + 1 ngang) cho cả 2 panel: mỗi panel tự báo toạ độ cục bộ, cộng offsetTop rồi set trực tiếp style.left/top cho overlay — không dùng crosshair gốc/applyOptions() nên mượt, không giật.
   function _liteHideXhair(){
     if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
     if(DOM.liteXhairH)DOM.liteXhairH.style.display='none';
@@ -3716,11 +3684,7 @@ function initLiteChart(){
     const price=series&&series.coordinateToPrice&&series.coordinateToPrice(localY);
     return Number.isFinite(price)?fmtLiteNum(price):'';
   }
-  // _liteHandleCrosshairMove: dùng chung cho cả 3 panel (main/MACD/RSI) — gộp lại từ 3 khối
-  // subscribeCrosshairMove gần như giống hệt nhau trước đây để đỡ lặp code khi cần sửa sau này.
-  // isMain=true GIỮ NGUYÊN thứ tự xử lý gốc của chart chính (luôn cập nhật title kể cả khi con trỏ
-  // rời khỏi chart, để hiện title của nến cuối); isMain=false giữ nguyên hành vi gốc của MACD/RSI
-  // (chỉ cập nhật title khi có điểm trỏ hợp lệ, không có "else" fallback).
+  // _liteHandleCrosshairMove dùng chung cho main/MACD/RSI (gộp từ 3 khối trùng lặp); isMain giữ nguyên hành vi cập nhật title gốc của mỗi loại.
   function _liteHandleCrosshairMove(param,domEl,priceSeries,isMain){
     if(isMain){
       const key=param&&param.time?liteTimeKey(param.time):'';
@@ -3753,9 +3717,7 @@ function initLiteChart(){
       if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
       resizeLiteDrawCanvas();redrawLiteDrawings();
     });
-    // vẽ lại canvas liên tục (nhẹ) để bắt các thay đổi price-scale khi kéo trục Y (zoom trục);
-    // chỉ thực sự vẽ khi panel Chart đang hiển thị (offsetParent!==null) để không tốn CPU vô ích
-    // lúc người dùng đang ở tab khác của dashboard.
+    // Vẽ lại canvas liên tục để bắt thay đổi price-scale khi zoom trục Y; chỉ chạy khi panel Chart đang hiển thị để tránh tốn CPU.
     const _liteDrawLoop=()=>{
       if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData))redrawLiteDrawings();
       requestAnimationFrame(_liteDrawLoop);
@@ -3770,9 +3732,7 @@ function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
   DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-    // maema_on, signalgrp_on và volcolor mặc định BẬT (giữ hành vi cũ trước khi có
-    // checkbox này — MA/EMA hiển thị sẵn, Volume tô màu VPA sẵn) cho user chưa có key
-    // này trong localStorage. Các checkbox khác giữ quy ước cũ (mặc định TẮT).
+    // maema_on/signalgrp_on/volcolor mặc định BẬT (giữ hành vi cũ) cho user chưa có key trong localStorage; các checkbox khác mặc định TẮT.
     cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor'||cb.value==='bigprice')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
@@ -3814,13 +3774,7 @@ function _liteTitleSegments(bar){
     {text:')',color:'#111827'}
   ];
 }
-// ═══════════════════════════════════════════════════════
-// GIÁ PHÓNG TO (kiểu "Magnified Market Price" của AmiBroker) — hiển thị giá lớn + biến động/khối
-// lượng ngay giữa cạnh trên khung CHART. ratio_prev/ratio_ma50/progress KHÔNG tự tính ở đây nữa —
-// lấy nguyên từ /api/vol_forecast/<symbol> (scanner_full.dashboard_vol_forecast_fn), vốn dùng lại
-// CHÍNH XÁC VMA50 + _session_time_progress() mà tín hiệu ATTENT/BREAKVOL đang dùng, và progress
-// tính theo đồng hồ SERVER (giờ VN) thay vì đồng hồ trình duyệt — tránh 2 bản logic lệch nhau.
-// ═══════════════════════════════════════════════════════
+// GIÁ PHÓNG TO — lấy ratio_prev/ratio_ma50/progress nguyên từ /api/vol_forecast (dùng chung VMA50 + giờ server với tín hiệu ATTENT/BREAKVOL) để tránh 2 bản logic lệch nhau.
 let _liteVolForecast=null,_liteVolForecastReqId=0;
 async function _liteFetchVolForecast(sym){
   const reqId=++_liteVolForecastReqId; // chặn trường hợp 2 lượt fetch chồng nhau (đổi mã nhanh +
@@ -3859,16 +3813,13 @@ function updateLiteBigPrice(bar){
     `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
-  // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ:
-  // ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
+  // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ: ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
   return String(v||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Dọn value ô nhập mã (viết hoa, bỏ dấu, loại ký tự lạ) CHỈ tại điểm chốt: Enter/Space
-// (caller gọi _apply trực tiếp) hoặc blur. KHÔNG đụng value lúc đang gõ — tránh xung đột
-// với Unikey/IME gây giật/lặp ký tự. Không còn auto-load: load chỉ xảy ra khi Enter/Space.
+// Dọn value ô nhập mã chỉ tại điểm chốt (Enter/blur), không đụng lúc đang gõ để tránh xung đột IME.
 function _liteBindSymInput(el){
   if(!el)return ()=>'';
   function _apply(){
@@ -3915,9 +3866,7 @@ function updateLiteTitle(bar){
     seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
   ).join('');
 }
-// Gắn mũi tên điểm mua lên nến cuối cùng (= nến giao dịch gần nhất, kể cả khi hôm nay không phải
-// ngày giao dịch) cho mã đang xem, dựa HOÀN TOÀN vào _sigTodayMap đã cache sẵn từ fetchSigs() —
-// không gọi thêm API nào, không tính toán chỉ báo riêng, nên gần như không tốn thêm chi phí.
+// Mũi tên điểm mua gắn vào nến cuối dựa vào _sigTodayMap đã cache sẵn, không gọi API/tính toán thêm.
 function _liteApplyBuySignal(){
   if(!_liteCandle||!_liteData.length)return;
   const sig=(_liteChecked('signalgrp_on')&&_liteChecked('signal'))?_sigTodayMap.get(_liteSymbol):null;
@@ -3926,27 +3875,17 @@ function _liteApplyBuySignal(){
     if(DOM.liteChartSignal){
       DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
       DOM.liteChartSignal.classList.add('on');
-      // Lấy đúng màu chữ (color) của badge tín hiệu (đã áp class .b-*) để tô cho mũi tên — đây là màu
-      // đậm/đặc trưng nhất của từng loại tín hiệu (border chỉ là viền nhạt, không đại diện rõ bằng
-      // màu chữ). Không khai báo lại bảng màu riêng, mũi tên luôn đồng bộ với badge/icon tín hiệu kể
-      // cả khi CSS đổi màu sau này.
+      // Màu mũi tên lấy từ màu chữ badge tín hiệu đã render (không định nghĩa bảng màu riêng) để luôn đồng bộ với badge.
       const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
       if(badgeEl)arrowColor=getComputedStyle(badgeEl).color||arrowColor;
     }
-    // Mũi tên báo mua: vẽ tay lên canvas overlay (xem _liteDrawBuyArrow) thay vì series marker của
-    // thư viện — setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart (xem giải
-    // thích ở khai báo _liteBuyArrowData). Không set text để không hiện badge tên tín hiệu ngay dưới
-    // mũi tên trên chart (tên tín hiệu đã có ở badge riêng phía trên #lite-chart-signal).
+    // Mũi tên báo mua vẽ tay canvas (không setMarkers, xem lý do ở _liteBuyArrowData); không hiện text để tránh trùng badge tín hiệu phía trên.
     _liteBuyArrowData={color:arrowColor}; // time/price của nến đọc live ở _liteDrawBuyArrow, không lưu ở đây
   }else{
     _liteBuyArrowData=null;
     if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
   }
-  // Không tự redrawLiteDrawings() ở đây — nơi gọi hàm này tự quyết định có cần redraw ngay không (xem
-  // các lời gọi _liteApplyBuySignal()): loadLiteChart()/_liteQuietRefreshChart() đã tự redraw ngay sau
-  // đó rồi (qua renderLiteIndicators() hoặc redrawLiteDrawings() liền kề), tự vẽ thêm ở đây chỉ tốn
-  // công một lượt clear+redraw thừa. Handler checkbox và fetchSigs() (2 nơi không có redraw kèm theo)
-  // tự gọi redrawLiteDrawings() ngay sau khi gọi hàm này.
+  // Không tự redrawLiteDrawings() ở đây — nơi gọi hàm tự quyết định redraw để tránh vẽ lại thừa.
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -4037,10 +3976,7 @@ function _macd(data){
   });
   return{macd,signal,hist};
 }
-// ═══ TREND (Trailing Stop/Reverse kiểu NRTR) ═══
-// mult = hệ số nhân biên độ đảo chiều, period = chu kỳ WMA biên độ H-L.
-// mode: 'regular' dùng H-L/Close thường; 'smoothed' dùng nến Heikin Ashi (đúng công thức AFL gốc).
-// Không vẽ kênh hồi quy — chỉ tô vùng trailing-stop đổi màu theo xu hướng.
+// ═══ TREND (Trailing Stop/Reverse kiểu NRTR) ═══ mult=hệ số biên độ đảo chiều, period=chu kỳ WMA H-L; mode 'smoothed' dùng Heikin Ashi theo công thức AFL gốc. Không vẽ kênh hồi quy.
 const LITE_TREND_MULT=1.75, LITE_TREND_PERIOD=10;
 function _wma(values,n){
   // values: mảng số thô (không phải {time,value}) đã align 1-1 theo index với dữ liệu nến.
@@ -4119,10 +4055,7 @@ function alignLiteSeries(points){
 function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  // Đọc chiều cao THỰC TẾ của khung (.lite-chart-frame) thay vì số cố định 720 — trên
-  // desktop CSS vẫn set height:720px nên giá trị này luôn ra đúng 720 y hệt trước đây
-  // (không đổi hành vi desktop); trên mobile CSS đặt chiều cao khác (vd 56vh, xem
-  // @media(max-width:768px)) nên totalH tự khớp theo, chart không bị tràn/hụt khung.
+  // Đọc chiều cao thực tế khung (.lite-chart-frame) thay vì cố định 720, để khớp cả CSS mobile.
   const totalH=(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
@@ -4166,9 +4099,7 @@ function applyLitePaneLayout(){
   }
   resizeLiteDrawCanvas();redrawLiteDrawings();
 }
-// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══
-// Lấy cảm hứng thao tác kiểu TradingView: mọi hình vẽ xong đều chọn được, kéo-di-chuyển được,
-// đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định), kênh giá vẽ 2 bước.
+// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══ Thao tác kiểu TradingView: hình vẽ xong chọn/kéo/đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định).
 const LITE_DRAW_KEY='dashboard_lite_drawings';
 const LITE_DRAW_COLOR_KEY='dashboard_lite_draw_color';
 const LITE_TEXT_SIZE_KEY='dashboard_lite_text_size';
@@ -4218,9 +4149,7 @@ function saveLiteDrawings(){
   }
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
-// Đồng bộ hình vẽ realtime giữa cửa sổ CHART mặc định và cửa sổ CHART popout: 'storage' là sự
-// kiện có sẵn của trình duyệt, tự bắn sang các cửa sổ KHÁC (không bắn lại về cửa sổ vừa ghi)
-// mỗi khi localStorage thay đổi — nên chỉ cần lắng nghe và vẽ lại, không cần tự gửi message.
+// Đồng bộ hình vẽ giữa cửa sổ CHART chính và popout qua sự kiện 'storage' có sẵn của trình duyệt.
 window.addEventListener('storage',e=>{
   if(e.key!==_liteDrawStoreKey())return; // không phải mã đang xem — bỏ qua (dùng chung mọi TF)
   loadLiteDrawings();redrawLiteDrawings();
@@ -4327,14 +4256,12 @@ function _liteDrawHandle(ctx,x,y){
   ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#1a56db';ctx.lineWidth=1.3;
   ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
 }
-// Vẽ 4 chấm góc của khung 2-điểm (khớp đúng bộ 4 điểm p0/p1/c1/c2 mà _liteCornerHitPart nhận diện)
-// — dùng chung cho cả Hộp (rect) và Target (position, ở phần khung Entry-Target).
+// Vẽ 4 chấm góc của khung 2-điểm (khớp đúng bộ 4 điểm p0/p1/c1/c2 mà _liteCornerHitPart nhận diện) — dùng chung cho cả Hộp (rect) và Target (position, ở phần khung Entry-Target).
 function _liteDrawCornerHandles(ctx,x1,y1,x2,y2){
   _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
   _liteDrawHandle(ctx,x1,y2);_liteDrawHandle(ctx,x2,y1);
 }
-// Vẽ 1 cặp chấm trái/phải cùng 1 mức giá (y) trong khung rx..rx+rw — dùng cho các dòng Stop/Target2
-// của Target, vốn không thuộc bộ 4 góc chính (chỉ resize ngang qua edgeL/edgeR, không phải góc chéo).
+// Vẽ 1 cặp chấm trái/phải cùng 1 mức giá (y) trong khung rx..rx+rw — dùng cho các dòng Stop/Target2 của Target, vốn không thuộc bộ 4 góc chính (chỉ resize ngang qua edgeL/edgeR, không phải góc chéo).
 function _liteDrawHandlePair(ctx,rx,rw,y){
   _liteDrawHandle(ctx,rx,y);_liteDrawHandle(ctx,rx+rw,y);
 }
@@ -4342,16 +4269,7 @@ function _liteChannelOffset(d){
   const pts=d.points;
   return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
 }
-// Đường cong bán nguyệt (arc): pts[2] lưu trực tiếp toạ độ (logical,price) nơi người dùng rê chuột tới —
-// tức là điểm "đáy" (đỉnh cong) mà đường cong PHẢI đi qua.
-//
-// LƯU Ý QUAN TRỌNG: control-point của quadratic bezier PHẢI được tính trong không gian PIXEL (x,y trên canvas),
-// KHÔNG được tính trong không gian logical/price rồi mới quy đổi sang pixel. Lý do: công thức bù trừ
-// C = 2*target - trungĐiểm chỉ cho ra đường cong đi đúng qua "target" khi phép quy đổi (logical→x, price→y)
-// là TUYẾN TÍNH. Trục giá của chart có thể ở chế độ log/percentage (không tuyến tính) — khi đó nếu tính C theo
-// logical/price rồi quy đổi, điểm đáy hiển thị trên màn hình sẽ LỆCH khỏi đúng vị trí chuột (lệch càng nhiều khi
-// biên độ giá càng lớn), gây hiện tượng "đáy nhảy chéo xa chuột". Tính thẳng trong pixel-space thì luôn đúng,
-// bất kể trục giá tuyến tính hay không.
+// Control-point của quadratic bezier (đường cong bán nguyệt) PHẢI tính trong pixel-space, không phải logical/price rồi quy đổi — nếu trục giá log/percentage (phi tuyến), quy đổi sau sẽ làm đáy cong lệch khỏi vị trí chuột.
 function _liteArcControlXY(x1,y1,x2,y2,tx,ty){
   if(!Number.isFinite(tx)||!Number.isFinite(ty))return null;
   const midX=(x1+x2)/2,midY=(y1+y2)/2;
@@ -4367,9 +4285,7 @@ function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
   }
   return min;
 }
-// Mũi tên "vệt" (extended/spike arrow): thân thon dần từ đuôi nhọn, rồi xòe rộng hẳn ra thành đầu mũi tên
-// tam giác rõ nét ở phía ngọn — khác mũi tên thân thẳng + đầu tam giác nhỏ thông thường.
-// widthScale: hệ số độ dày do người dùng chọn trên thanh điều chỉnh (mặc định 2 = "Vừa").
+// Mũi tên "vệt": thân thon dần rồi xoè thành đầu tam giác rõ nét; widthScale = hệ số độ dày người dùng chọn.
 function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,widthScale){
   const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
   if(len<1e-3)return;
@@ -4423,8 +4339,7 @@ function _liteDrawShapeToCanvas(ctx,d){
         const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
         if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
       }
-      // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng,
-      // giống kiểu dải màu của Kênh giá / Bán nguyệt, để thấy rõ "vùng" mà ZigZag bao lấy.
+      // Tô dải màu phía trong: nối khép kín các điểm (đỉnh trên ↔ đáy ↔ đỉnh trên...) thành 1 vùng, giống kiểu dải màu của Kênh giá / Bán nguyệt, để thấy rõ "vùng" mà ZigZag bao lấy.
       if(scr.length>=3&&!d.noFill){
         ctx.save();
         ctx.beginPath();
@@ -4474,9 +4389,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     ctx.lineWidth=selected?1.8:1.2;const rx=Math.min(x1,x2),ry=Math.min(y1,y2),rw=Math.abs(x2-x1),rh=Math.abs(y2-y1);
     ctx.fillRect(rx,ry,rw,rh);ctx.strokeRect(rx,ry,rw,rh);ctx.restore();
     if(selected)_liteDrawCornerHandles(ctx,x1,y1,x2,y2);
-    // kéo xuống (giảm giá) -> nhãn ở cạnh dưới. Chỉ hiện realtime lúc đang vẽ dở (xem trước qua _liteLinePending
-    // — rect luôn được tạo theo kiểu click-click, không đi qua _liteDrawActive); khi đã chốt hình thì mặc định
-    // ẨN, chỉ hiện nếu bật tuỳ chọn "%" trên thanh công cụ của hộp (d.showPct).
+    // Nhãn % chỉ hiện realtime lúc đang vẽ dở, hoặc khi bật tuỳ chọn hiển thị (d.showPct).
     const pct=(d===_liteLinePending||d.showPct)?_liteRectPct(d):null;
     if(pct!==null){
       const pctColor=pct>=0?'#16a34a':'#ef4444';
@@ -4498,9 +4411,7 @@ function _liteDrawShapeToCanvas(ctx,d){
       ctx.restore();
     }
   }else if(d.type==='channel'){
-    // CHỈ hiện kênh (2 cạnh + tô nền) khi đã có điểm thứ 3 (độ rộng kênh) thật sự được xác lập
-    // ở bước 2 (rê chuột lên/xuống). Trong lúc bước 1 (mới chọn 2 điểm đầu-cuối, chưa rê) chỉ hiện
-    // 1 đường chéo xem trước — không hiện kênh sớm.
+    // Kênh (2 cạnh+nền) chỉ hiện khi đã xác lập điểm thứ 3 (độ rộng); bước 1 chỉ hiện đường chéo xem trước.
     if(pts[2]&&Number.isFinite(pts[2].offsetPrice)){
       const offPrice=pts[2].offsetPrice;
       const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
@@ -4543,17 +4454,12 @@ function _liteDrawShapeToCanvas(ctx,d){
     }
     if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
   }else if(d.type==='arc'){
-    // Đường cong bán nguyệt: 2 điểm đầu-cuối như đường thẳng, bước 2 rê chuột tự do (cả trái/phải lẫn
-    // lên/xuống) để chọn vị trí "đáy" (đỉnh cong) — đường cong luôn đi qua đúng vị trí chuột, không bị
-    // ép về giữa 2 điểm đầu-cuối.
-    // Quy đổi điểm "đáy" sang pixel TRƯỚC, rồi mới tính control-point trong pixel-space (xem ghi chú tại
-    // _liteArcControlXY) → đường cong luôn đi qua đúng vị trí chuột dù trục giá tuyến tính hay log/percentage.
+    // Đường cong bán nguyệt: bước 2 rê chuột tự do chọn điểm đáy; quy đổi sang pixel trước rồi tính control-point (_liteArcControlXY) để cong luôn đi đúng qua vị trí chuột.
     const tx=pts[2]?_liteLogicalToX(pts[2]):null,ty=pts[2]?_litePriceToY(pts[2].p):null;
     const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
     if(ctrl){
       const cx=ctrl.cx,cy=ctrl.cy;
-      // Tô màu phần diện tích giữa dây cung (đường thẳng nối 2 điểm đầu-cuối) và đường cong, giống kiểu
-      // dải màu của công cụ Kênh giá, để dễ nhìn thấy "vùng" mà bán nguyệt bao lấy.
+      // Tô màu phần diện tích giữa dây cung (đường thẳng nối 2 điểm đầu-cuối) và đường cong, giống kiểu dải màu của công cụ Kênh giá, để dễ nhìn thấy "vùng" mà bán nguyệt bao lấy.
       if(cx!==null&&cy!==null){
         ctx.save();
         ctx.beginPath();
@@ -4615,9 +4521,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     }
   }
 }
-// _liteHexAlpha: trước đây tự parse hex riêng (trùng logic với _liteHexToRgba ở trên) — nay chỉ là
-// lớp mỏng gọi lại _liteHexToRgba với màu fallback riêng của mình ('26,86,219' = #1a56db, màu vẽ mặc
-// định), kết quả đầu ra giữ NGUYÊN y hệt như cài đặt cũ cho mọi input hex hợp lệ/không hợp lệ.
+// _liteHexAlpha chỉ là lớp mỏng gọi lại _liteHexToRgba với màu fallback riêng (#1a56db), không tự parse hex nữa.
 function _liteHexAlpha(hex,a){
   return _liteHexToRgba(hex,a,'26,86,219');
 }
@@ -4692,20 +4596,15 @@ function _liteDrawTrendCloud(ctx){
   }
   ctx.restore();
 }
-// Vẽ mũi tên báo mua thay cho series marker của thư viện (xem giải thích ở khai báo _liteBuyArrowData
-// phía trên). Vẽ đúng hình mũi tên (đầu tam giác + thân que), không phải tam giác đặc — hẹp ngang và
-// đặt thấp xuống dưới low của nến một khoảng lớn hơn mặc định của thư viện (marker 'belowBar' mặc định
-// của lightweight-charts sát ngay dưới nến, dễ đụng bấc nến/volume).
+// Vẽ mũi tên báo mua thật (đầu tam giác+thân que), đặt cách xa dưới low hơn marker mặc định của thư viện để tránh đụng bấc nến/volume.
 function _liteDrawBuyArrow(ctx){
   if(!_liteBuyArrowData||!_liteChart||!_liteCandle||!_liteData.length)return;
-  // Đọc live nến cuối cùng ngay tại thời điểm vẽ (không dùng time/price lưu sẵn) — đảm bảo mũi tên
-  // luôn bám đúng tâm nến hiện tại, kể cả khi có nến mới chen vào giữa 2 lần _liteApplyBuySignal().
+  // Đọc live nến cuối cùng ngay tại thời điểm vẽ (không dùng time/price lưu sẵn) — đảm bảo mũi tên luôn bám đúng tâm nến hiện tại, kể cả khi có nến mới chen vào giữa 2 lần _liteApplyBuySignal().
   const lastBar=_liteData[_liteData.length-1];
   const{color}=_liteBuyArrowData;
   const x=_liteTimeToX(lastBar.time),yLow=_litePriceToY(lastBar.low);
   if(x===null||yLow===null)return;
-  // GAP: khoảng cách xuống dưới low nến tới ĐUÔI mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu mũi tên
-  // (nhỏ, hẹp). SHAFT_H/SHAFT_HALF_W: thân que nối đầu mũi tên xuống đuôi (mảnh hơn đầu).
+  // GAP: khoảng cách xuống dưới low nến tới ĐUÔI mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu mũi tên (nhỏ, hẹp). SHAFT_H/SHAFT_HALF_W: thân que nối đầu mũi tên xuống đuôi (mảnh hơn đầu).
   const GAP=14,HEAD_H=6,HEAD_HALF_W=2.5,SHAFT_H=5,SHAFT_HALF_W=1;
   const yTip=yLow+GAP;              // đỉnh mũi tên, hướng lên phía nến
   const yHeadBase=yTip+HEAD_H;      // đáy tam giác đầu mũi tên = đỉnh thân que
@@ -4781,8 +4680,7 @@ function _liteOpenTextInput(p0,ev,editingShape){
   DOM.liteTextInput.style.top=Math.max(0,y)+'px';
   _liteApplyTextInputStyle();
   DOM.liteTextInput.classList.add('on');
-  // Focus ngay lập tức (đa số trường hợp đã đủ), rồi focus lại 1 lần nữa ở animation frame kế tiếp để
-  // phòng trường hợp trình duyệt chưa kịp layout xong phần tử vừa chuyển từ display:none sang hiện ra.
+  // Focus ngay lập tức (đa số trường hợp đã đủ), rồi focus lại 1 lần nữa ở animation frame kế tiếp để phòng trường hợp trình duyệt chưa kịp layout xong phần tử vừa chuyển từ display:none sang hiện ra.
   DOM.liteTextInput.focus();
   if(editingShape){const v=DOM.liteTextInput.value;DOM.liteTextInput.setSelectionRange(v.length,v.length);}
   requestAnimationFrame(()=>DOM.liteTextInput.focus());
@@ -4866,10 +4764,7 @@ function _liteShapeAnchor(d){
     return{x:(x1+x2)/2,y:Math.min(...ys)};
   }
   if(d.type==='channel'){
-    // Lấy điểm cao nhất (y nhỏ nhất) trong CẢ 4 góc của kênh (2 góc cạnh gốc + 2 góc cạnh đã dịch offset).
-    // Trước đây chỉ xét y1b (góc dịch của điểm đầu) nên khi đường chéo kênh bị nghiêng, góc dịch của điểm
-    // cuối (y2b) có thể cao hơn mà không được tính tới → thanh điều chỉnh bị đặt thấp hơn đỉnh kênh thật,
-    // khiến nó nằm lọt vào trong kênh thay vì nằm hẳn phía trên.
+    // Lấy điểm cao nhất trong cả 4 góc kênh (kể cả 2 góc đã dịch offset) để thanh điều chỉnh luôn nằm hẳn trên đỉnh kênh, kể cả khi kênh nghiêng.
     const offPrice=_liteChannelOffset(d);
     const y1b=_litePriceToY(pts[0].p+offPrice),y2b=_litePriceToY(pts[1].p+offPrice);
     const ys=[y1,y2];
@@ -4892,16 +4787,13 @@ function _liteShapeAnchor(d){
   }
   if(d.type==='rect'){
     const top=Math.min(y1,y2);
-    // Khi bật nhãn % (d.showPct) và giá đang tăng, nhãn % được vẽ ngay phía trên cạnh trên hộp
-    // (xem khối vẽ rect ở trên, boxY=ry-3-boxH) — đẩy anchor lên cao hơn 1 khoảng đủ rộng để
-    // thanh công cụ nổi không đè lên nhãn đó. Giá giảm thì nhãn nằm dưới hộp, không xung đột.
+    // Nhãn % vẽ trên cạnh hộp khi giá tăng (đẩy anchor lên để không đè thanh công cụ), dưới hộp khi giá giảm.
     const pct=d.showPct?_liteRectPct(d):null;
     return{x:(x1+x2)/2,y:(pct!==null&&pct>=0)?top-18:top};
   }
   return{x:(x1+x2)/2,y:Math.min(y1,y2)};
 }
-// Lấy hình đang được chọn (theo _liteSelectedId) — gộp lại 1 chỗ duy nhất thay vì lặp lại
-// cùng 1 biểu thức tra cứu ở rất nhiều handler bên dưới.
+// Lấy hình đang được chọn (theo _liteSelectedId) — gộp lại 1 chỗ duy nhất thay vì lặp lại cùng 1 biểu thức tra cứu ở rất nhiều handler bên dưới.
 function _liteGetSelectedShape(){
   return _liteSelectedId!=null?_liteDrawings.find(d=>d.id===_liteSelectedId):null;
 }
@@ -4982,8 +4874,7 @@ function _liteSegDist(px,py,x1,y1,x2,y2){
   let t=((px-x1)*dx+(py-y1)*dy)/len2;t=Math.max(0,Math.min(1,t));
   return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
 }
-// Hit-test 4 góc của 1 khung 2-điểm (p0,p1 thật + c1,c2 là 2 góc ảo ghép chéo toạ độ) — dùng chung
-// cho cả Hộp (rect) và Target (position), tránh lặp lại cùng 4 dòng kiểm tra ở 2 nơi.
+// Hit-test 4 góc của 1 khung 2-điểm (p0,p1 thật + c1,c2 là 2 góc ảo ghép chéo toạ độ) — dùng chung cho cả Hộp (rect) và Target (position), tránh lặp lại cùng 4 dòng kiểm tra ở 2 nơi.
 function _liteCornerHitPart(x,y,x1,y1,x2,y2){
   if(Math.hypot(x-x1,y-y1)<=9)return'p0';
   if(Math.hypot(x-x2,y-y2)<=9)return'p1';
@@ -5058,9 +4949,7 @@ function _liteHitTestShape(d,x,y){
     const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
     const target2Y=Number.isFinite(d.target2P)?_litePriceToY(d.target2P):null;
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
-    // 4 góc của khung Entry-Target (điểm gốc p0=entry, p1=target + 2 góc ảo c1/c2) — cho phép
-    // chỉnh cả ngang (rộng khung) lẫn dọc (mức giá) cùng lúc, giống công cụ Hộp. Đặt trước test
-    // edgeL/edgeR/target để góc được ưu tiên thay vì chỉ nhận diện là kéo cạnh (chỉ ngang).
+    // 4 góc khung Entry-Target (gốc + 2 góc ảo) cho phép chỉnh cả ngang lẫn dọc cùng lúc, giống công cụ Hộp.
     const c=_liteCornerHitPart(x,y,x1,y1,x2,y2);
     if(c)return{part:c};
     if(x<rx-LITE_HIT_TOL||x>rx+rw+LITE_HIT_TOL)return null;
@@ -5084,9 +4973,7 @@ function _liteHitTest(x,y){
   }
   return null;
 }
-// Hover tooltip của hộp vẽ (rect) chỉ hiện sau khi con trỏ DỪNG một khoảng thời gian tại vị trí đó
-// (giống hover tooltip mã cổ phiếu trên HEATMAP — native title tooltip); di chuột đi là ẩn ngay và
-// phải dừng lại đủ thời gian mới hiện lại.
+// Tooltip hộp vẽ chỉ hiện sau khi con trỏ dừng lại một khoảng, giống tooltip mã trên Heatmap.
 const LITE_RECT_TOOLTIP_DELAY_MS=600;
 let _liteRectTooltipTimer=null;
 function _liteClearRectTooltipTimer(){
@@ -5096,16 +4983,14 @@ function _liteHideRectTooltip(){
   _liteClearRectTooltipTimer();
   if(DOM.liteRectTooltip)DOM.liteRectTooltip.style.display='none';
 }
-// % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp) của 1 hình chữ nhật — dùng chung cho cả
-// nhãn vẽ trên canvas lẫn tooltip hover, tránh lặp lại cùng phép tính ở 2 nơi.
+// % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp) của 1 hình chữ nhật — dùng chung cho cả nhãn vẽ trên canvas lẫn tooltip hover, tránh lặp lại cùng phép tính ở 2 nơi.
 function _liteRectPct(d){
   if(!d||d.type!=='rect'||!d.points||d.points.length<2)return null;
   const p0=d.points[0].p,p1=d.points[1].p;
   if(typeof p0!=='number'||typeof p1!=='number'||!p0)return null;
   return(p1-p0)/p0*100;
 }
-// Hiện % tăng/giảm ngay dưới con trỏ khi di chuột vào 1 hộp đã vẽ xong (giống hover trên heatmap),
-// bất kể hộp đó có đang bật hiển thị nhãn cố định (showPct) hay không.
+// Hiện % tăng/giảm ngay dưới con trỏ khi di chuột vào 1 hộp đã vẽ xong (giống hover trên heatmap), bất kể hộp đó có đang bật hiển thị nhãn cố định (showPct) hay không.
 function _liteShowRectTooltip(hit,x,y){
   const tip=DOM.liteRectTooltip;
   if(!tip)return;
@@ -5123,8 +5008,7 @@ function _liteApplyDrag(d,info,cur){
   if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
   else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
   else if(key==='rect:c1'||key==='position:c1'){
-    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển
-    // toàn khối, chỉ từng thành phần riêng, tạo hiệu ứng resize đúng từ góc đang kéo.
+    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển toàn khối, chỉ từng thành phần riêng, tạo hiệu ứng resize đúng từ góc đang kéo.
     d.points[0]={l:op[0].l+dl,p:op[0].p};
     d.points[1]={l:op[1].l,p:op[1].p+dp};
   }else if(key==='rect:c2'||key==='position:c2'){
@@ -5143,8 +5027,7 @@ function _liteApplyDrag(d,info,cur){
   }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
   }else if(key==='arc:offset'){
-    // pts[2] của arc là toạ độ (logical,price) của điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu
-    // theo cả 2 chiều (trái/phải lẫn lên/xuống), không chỉ riêng chiều dọc như channel.
+    // pts[2] của arc là toạ độ (logical,price) của điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu theo cả 2 chiều (trái/phải lẫn lên/xuống), không chỉ riêng chiều dọc như channel.
     const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
     const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
     d.points[2]={l:baseL+dl,p:baseP+dp};
@@ -5182,8 +5065,7 @@ function _liteStartShapeDrag(hit,ev){
   const d=hit.shape;
   _liteSelectShape(d.id);
   const startPt=_litePtFromEvent(ev);if(!startPt)return;
-  // Quy đổi l của origPoints về đúng khung thời gian hiện tại TRƯỚC KHI kéo,
-  // tránh dùng l cũ của khung thời gian trước làm hình vẽ bị nhảy sang mốc khác.
+  // Quy đổi l của origPoints về đúng khung thời gian hiện tại TRƯỚC KHI kéo, tránh dùng l cũ của khung thời gian trước làm hình vẽ bị nhảy sang mốc khác.
   const normalizedPoints=(d.points||[]).map(pt=>{
     if(!pt)return pt;
     const curL=_litePtLogical(pt);
@@ -5218,10 +5100,7 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
     x+=ctx.measureText(seg.text).width;
   }
 }
-// Vẽ badge tín hiệu (emoji + nhãn màu) lên canvas copy, y hệt badge #lite-chart-signal đang hiển
-// thị trên chart — badge đó là lớp DOM nổi phía trên canvas nên takeScreenshot() không chụp được,
-// phải tự vẽ vào canvas copy. Đọc trực tiếp kích thước/màu đã render của DOM badge thật (không tự
-// định nghĩa lại màu/kích thước riêng) để luôn khớp 100% với badge thật, kể cả khi CSS đổi màu sau này.
+// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi, takeScreenshot() không chụp được.
 function _liteDrawSignalBadge(ctx,x,y,dpr){
   const el=DOM.liteChartSignal;
   if(!el)return;
@@ -5312,8 +5191,7 @@ async function copyLiteChartImage(btn){
       const mainCanvas=panes[0].canvas;
       ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH+badgeH,mainCanvas.width,mainCanvas.height);
     }
-    // Mã hóa đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật, không phải Promise.
-    // Điều này giữ user-gesture trên các trình duyệt không xử lý Promise<Blob> ổn định.
+    // Mã hóa đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật, không phải Promise. Điều này giữ user-gesture trên các trình duyệt không xử lý Promise<Blob> ổn định.
     const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
     if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
       try{
@@ -5368,13 +5246,11 @@ function bindLiteDrawToolbar(){
     const sel=_liteGetSelectedShape();
     if(!sel||sel.type!=='position')return;
     if(Number.isFinite(sel.target2P)){
-      // Đang bật → tắt: đường Target (đang là Target 1) biến mất, đường Target 2 (giá đã vẽ/kéo ban đầu)
-      // trở lại thành đường Target duy nhất — quay về đúng mặc định chỉ 1 target.
+      // Đang bật → tắt: đường Target (đang là Target 1) biến mất, đường Target 2 (giá đã vẽ/kéo ban đầu) trở lại thành đường Target duy nhất — quay về đúng mặc định chỉ 1 target.
       sel.points[1]={...sel.points[1],p:sel.target2P};
       delete sel.target2P;
     }else{
-      // Đang tắt → bật: đường Target hiện có (đã vẽ) đổi thành Target 2 — giữ nguyên đúng giá đó.
-      // Đường Target mới (Target 1) được chèn vào giữa Entry và Target 2, nằm ở nửa khoảng cách.
+      // Đang tắt → bật: đường Target hiện có (đã vẽ) đổi thành Target 2 — giữ nguyên đúng giá đó. Đường Target mới (Target 1) được chèn vào giữa Entry và Target 2, nằm ở nửa khoảng cách.
       const entryP=sel.points[0].p,oldTargetP=sel.points[1].p;
       sel.target2P=oldTargetP;
       sel.points[1]={...sel.points[1],p:entryP+(oldTargetP-entryP)*0.5};
@@ -5425,9 +5301,7 @@ function bindLiteDrawToolbar(){
   });
   if(DOM.liteTextInput){
     DOM.liteTextInput.addEventListener('keydown',e=>{
-      // Chặn nổi bọt lên #lite-chart-frame để không kích hoạt phím tắt khác (mở ô tìm mã, xoá hình...)
-      // trong lúc đang gõ chữ. Enter giờ xuống dòng bình thường (mặc định của textarea) thay vì chốt chữ;
-      // Ctrl/Cmd+Enter chốt nhanh; Escape huỷ.
+      // Chặn nổi bọt phím tắt khác khi đang gõ chữ; Enter xuống dòng, Ctrl/Cmd+Enter chốt, Escape huỷ.
       e.stopPropagation();
       if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){
         e.preventDefault();
@@ -5489,9 +5363,7 @@ function bindLiteDrawToolbar(){
       _liteSelectedId=null;saveLiteDrawings();redrawLiteDrawings();
     }
   });
-  // ── Kéo / chọn / di chuyển hình đã vẽ (chế độ con trỏ) ──
-  // Bắt ở pha capture trên container chart để chặn thao tác pan/zoom mặc định của
-  // Lightweight Charts ĐÚNG lúc người dùng nhắm trúng 1 hình đã vẽ.
+  // Bắt sự kiện ở pha capture để chặn pan/zoom mặc định của thư viện khi người dùng nhắm trúng hình đã vẽ.
   if(DOM.liteChart){
     DOM.liteChart.addEventListener('pointerdown',e=>{
       if(_liteDrawTool!=='cursor'||!DOM.liteDrawCanvas)return;
@@ -5506,8 +5378,7 @@ function bindLiteDrawToolbar(){
       const{x,y}=_liteXYFromEvent(e);
       const hit=_liteHitTest(x,y);
       DOM.liteChart.style.cursor=hit?'move':'';
-      // Mỗi lần chuột di chuyển: ẩn tooltip đang hiện (nếu có) và huỷ hẹn giờ cũ — chỉ hiện lại
-      // sau khi con trỏ đứng yên đủ LITE_RECT_TOOLTIP_DELAY_MS tại 1 hộp.
+      // Mỗi lần chuột di chuyển: ẩn tooltip đang hiện (nếu có) và huỷ hẹn giờ cũ — chỉ hiện lại sau khi con trỏ đứng yên đủ LITE_RECT_TOOLTIP_DELAY_MS tại 1 hộp.
       _liteHideRectTooltip();
       if(hit){
         _liteRectTooltipTimer=setTimeout(()=>{_liteRectTooltipTimer=null;_liteShowRectTooltip(hit,x,y);},LITE_RECT_TOOLTIP_DELAY_MS);
@@ -5526,8 +5397,7 @@ function bindLiteDrawToolbar(){
     });
   }
   if(!DOM.liteDrawCanvas)return;
-  // Tính offset (theo giá) của điểm chuột hiện tại so với đường chéo gốc — dùng chung cho bước 2
-  // của cả công cụ Kênh giá (channel) và Đường cong bán nguyệt (arc).
+  // Tính offset (theo giá) của điểm chuột hiện tại so với đường chéo gốc — dùng chung cho bước 2 của cả công cụ Kênh giá (channel) và Đường cong bán nguyệt (arc).
   function _liteOffsetFromChord(pend,p){
     const denom=(pend.points[1].l-pend.points[0].l)||1e-6;
     const lineP=pend.points[0].p+(pend.points[1].p-pend.points[0].p)*(p.l-pend.points[0].l)/denom;
@@ -5564,8 +5434,7 @@ function bindLiteDrawToolbar(){
     // Kết thúc Zigzag bằng double-click: bỏ điểm cuối trùng do click thứ 2 của thao tác double-click sinh ra
     if(_liteDrawTool==='zigzag'&&_liteZigzagPending){
       e.preventDefault();
-      // Double-click sinh ra 2 lần click liên tiếp ở cùng 1 vị trí → click thứ 2 đã bị pointerdown
-      // phía dưới nối thêm thành điểm trùng, cần bỏ điểm cuối trùng đó trước khi chốt hình.
+      // Double-click sinh ra 2 lần click liên tiếp ở cùng 1 vị trí → click thứ 2 đã bị pointerdown phía dưới nối thêm thành điểm trùng, cần bỏ điểm cuối trùng đó trước khi chốt hình.
       if(_liteZigzagPending.points.length>1)_liteZigzagPending.points.pop();
       _liteFinishZigzag();
       setLiteDrawTool('cursor');
@@ -5604,16 +5473,13 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='text'){
-      // Đang soạn dở 1 ô chữ (chưa blur): click ra ngoài phạm vi ô chữ chỉ để KẾT THÚC soạn (chốt chữ),
-      // không mở thêm khung chữ mới tại vị trí vừa click. Muốn viết chữ tiếp, người dùng phải bấm lại
-      // công cụ Text rồi click vị trí mới.
+      // Click ra ngoài lúc đang soạn chữ chỉ kết thúc soạn, không mở khung chữ mới; phải bấm lại công cụ Text để viết tiếp.
       if(_liteTextEditPos){
         _liteCommitTextInput();
         setLiteDrawTool('cursor');
         return;
       }
-      // Chưa soạn gì (mới bật công cụ Text): click thẳng lên chart để gõ chữ tại đúng vị trí click,
-      // không dùng hộp thoại prompt() nữa.
+      // Chưa soạn gì (mới bật công cụ Text): click thẳng lên chart để gõ chữ tại đúng vị trí click, không dùng hộp thoại prompt() nữa.
       _liteOpenTextInput(p0,e);
       return;
     }
@@ -5632,9 +5498,7 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='trendline'||_liteDrawTool==='rect'||_liteDrawTool==='arrow'||_liteDrawTool==='channel'||_liteDrawTool==='arc'){
-      // Vẽ kiểu click-click: click điểm đầu, di chuột xem trước, click điểm cuối để chốt (không cần kéo giữ chuột).
-      // Với channel/arc, điểm cuối này CHƯA phải là chốt hình — chỉ xác định xong 2 điểm đầu-cuối (đường chéo),
-      // sau đó chuyển sang bước 2 (rê chuột lên/xuống để tạo kênh / uốn cong).
+      // Vẽ kiểu click-click (không kéo giữ chuột); với channel/arc, điểm cuối chỉ xác lập đường chéo, bước 2 mới tạo kênh/uốn cong.
       if(_liteLinePending&&_liteLinePending.type===_liteDrawTool){
         _liteLinePending.points[1]=p0;
         const moved=Math.abs(p0.l-_liteLinePending.points[0].l)>0.4||Math.abs(p0.p-_liteLinePending.points[0].p)>1e-9;
@@ -5711,19 +5575,13 @@ function resizeLiteSearchInput(){
   const n=Math.max(1,DOM.liteChartSearch.value.length);
   DOM.liteChartSearch.style.width=`${Math.min(120,Math.max(42,26+n*16))}px`;
 }
-// Mở ô tìm mã và focus — KHÔNG pre-fill ký tự: để IME/trình duyệt tự gõ vào ô sau khi
-// focus (giống click vào ô rồi gõ). Pre-fill tại keydown gây nhân đôi ký tự tiếng Việt
-// vì e.key là Latin thô chưa compose và event có thể bubble qua 2 listener trước khi
-// focus chuyển kịp. resizeLiteSearchInput() không cần gọi ở đây — đã gắn vào 'input'
-// event của ô search, tự resize sau mỗi ký tự thực sự được gõ vào.
+// Mở ô tìm mã không pre-fill ký tự — để IME tự gõ sau khi focus, tránh nhân đôi ký tự tiếng Việt.
 function openLiteSearch(){
   if(!DOM.liteChartSearch.classList.contains('on'))DOM.liteChartSearch.value='';
   DOM.liteChartSearch.classList.add('on');
   DOM.liteChartSearch.focus();
 }
-// Phím đơn chữ/số (không kèm Ctrl/Alt/Meta) gõ ngoài mọi input/textarea/select → mở ô tìm mã.
-// Không gọi preventDefault() — cần để IME gửi ký tự vào ô search sau khi focus() chuyển sang.
-// Trả về true nếu đã mở ô (để caller gọi stopPropagation() chặn bubble lên document listener).
+// Phím đơn (không Ctrl/Alt/Meta) ngoài input mở ô tìm mã; không preventDefault() để IME nhận ký tự.
 function _liteTryOpenSearchOnKey(e){
   if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return false;
   if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
@@ -5732,9 +5590,7 @@ function _liteTryOpenSearchOnKey(e){
   openLiteSearch();
   return true;
 }
-// _liteUpdateIndicatorData: phiên bản NHẾ của renderLiteIndicators() — dùng khi dữ liệu đã prepend (lazy-load).
-// CHỈ cập nhật dữ liệu của các series đang có sẵn, KHÔNG destroy/recreate bất kỳ series nào.
-// Nhờ vậy không trigger layout pass thừa → hoàn toàn không giật/nhấp nháy.
+// _liteUpdateIndicatorData: bản nhẹ của renderLiteIndicators() cho lazy-load — chỉ update dữ liệu series có sẵn, không destroy/recreate, tránh giật.
 function _liteUpdateIndicatorData(){
   if(!_liteChart)return;
   _liteIndicatorSeries.forEach(s=>{
@@ -5781,9 +5637,7 @@ function _liteUpdateIndicatorData(){
 }
 function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
-  // explicitRange: cho phép nơi gọi truyền sẵn range đã CHỐT TỪ TRƯỚC (vd. trước khi cập nhật nến mới
-  // ở _liteQuietRefreshChart) thay vì để hàm này tự đọc range HIỆN TẠI — vì nếu đọc lúc này, dữ liệu/nến
-  // mới có thể đã khiến thư viện tự dịch view trước đó rồi, đọc lại chỉ "khoá" luôn cái đã bị dịch.
+  // explicitRange cho phép truyền range đã chốt trước đó, tránh đọc range hiện tại có thể đã bị thư viện tự dịch.
   const prevRange=skipRangeRestore?null:(explicitRange!==undefined?explicitRange:_liteGetVisibleLogicalRange());
   _clearLiteIndicators();
   // Đọc trạng thái checkbox đúng 1 lần/chỉ báo (thay vì querySelector lại lần 2 lúc setData bên dưới).
@@ -5795,14 +5649,9 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
-  // applyLitePaneLayout() gọi applyOptions({timeScale:{rightOffset:...}}) trên cả 3 chart — bản thân
-  // việc SET rightOffset (dù cùng giá trị cũ) khiến thư viện tự canh lại vị trí cuộn theo offset đó,
-  // ghi đè pan/zoom user đang xem. Auto-refresh 10s gọi renderLiteIndicators() liên tục trong khi
-  // layout (ẩn/hiện RSI/MACD, kích thước pane) KHÔNG hề đổi — nên bỏ qua bước này khi skipPaneLayout
-  // (xem _liteQuietRefreshChart) để tránh đúng nguyên nhân gây "nhảy chart" mỗi 10s.
+  // skipPaneLayout bỏ qua applyLitePaneLayout() khi layout không đổi — set rightOffset dù cùng giá trị vẫn khiến thư viện tự canh lại view, gây "nhảy chart" mỗi 10s.
   if(!skipPaneLayout)applyLitePaneLayout();
-  // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ
-  // tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
+  // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
   maOn.forEach(p=>{
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ma',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ma'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   });
@@ -5810,9 +5659,7 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ema',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ema'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   });
   if(bbOn){
-    // Chỉ vẽ 3 đường (upper/mid/lower) bằng series thật của thư viện.
-    // Phần TÔ MÀU giữa 2 đường band được vẽ riêng bằng canvas (xem _liteDrawBBBand)
-    // để clip chính xác trong dải, không đụng gì tới phần dưới đường band dưới.
+    // Chỉ vẽ 3 đường BB bằng series thật; phần tô màu giữa 2 đường vẽ riêng bằng canvas (_liteDrawBBBand) để clip chính xác.
     const bbCol=_liteIndColors.bb;
     _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-upper',series:_liteChart.addLineSeries({
       color:_liteHexToRgba(bbCol,.85),lineWidth:1,
@@ -5901,11 +5748,7 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   redrawLiteDrawings();
 }
 function _liteVolColorFor(volBar,showVpa){
-  // checkbox "volcolor" (nhóm Signal) BẬT → dùng nguyên màu server tính (kể cả cờ VPA
-  // xanh dương/tím). TẮT → phớt lờ cờ VPA, trả về màu xanh/đỏ mặc định theo close/open,
-  // giống hệt quy ước màu mặc định phía backend khi vpa_flag=0.
-  // showVpa truyền vào từ ngoài (đọc DOM 1 lần/lượt vẽ) để tránh querySelector lặp lại
-  // cho từng bar khi map qua cả nghìn nến.
+  // Checkbox volcolor BẬT dùng màu VPA server tính; TẮT dùng màu xanh/đỏ mặc định theo close/open. showVpa đọc DOM 1 lần/lượt vẽ để tránh querySelector lặp lại theo từng bar.
   if(showVpa)return volBar.color;
   const cd=_liteDataByTime.get(liteTimeKey(volBar.time));
   return cd?(cd.close>=cd.open?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR):volBar.color;
@@ -5914,17 +5757,14 @@ function _liteRefreshVolumeTop(showVpaVol){
   if(!_liteChart||!_liteVolume)return;
   _liteVolume.setData(_liteVolumeData.map(v=>({...v,color:_liteVolColorFor(v,showVpaVol)})));
 }
-// LITE_CHART_RETRY_MAX/DELAY: số lần thử lại tối đa và khoảng cách giữa mỗi lần khi API
-// /api/lightweight_chart/ lỗi (VNDirect tạm không phản hồi/không có dữ liệu) — retry vài
-// lần trước khi báo hẳn "không có dữ liệu" cho người dùng.
+// LITE_CHART_RETRY_MAX/DELAY: số lần và khoảng cách thử lại khi API lightweight_chart lỗi trước khi báo hết dữ liệu.
 const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
 async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim();
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  // KHÔNG xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire sự kiện 'input' lại,
-  // gây chồng chéo lệnh tải chart. Ô input tự được clear sau khi loadLiteChart hoàn tất.
+  // KHÔNG xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire sự kiện 'input' lại, gây chồng chéo lệnh tải chart. Ô input tự được clear sau khi loadLiteChart hoàn tất.
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -5981,11 +5821,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }
 }
-// ═══════════════════════════════════════════════════════
-// AUTO-REFRESH CHART — chỉ vá đúng CÂY NẾN CUỐI CÙNG (dùng series.update(), KHÔNG
-// setData() lại toàn bộ) nên KHÔNG nháy màn hình, KHÔNG mất zoom/pan hiện tại, không
-// đụng tới các nét vẽ tay. Chạy nền định kỳ, chỉ cho mã đang hiển thị trên panel CHART.
-// ═══════════════════════════════════════════════════════
+// AUTO-REFRESH CHART — chỉ vá cây nến cuối (series.update(), không setData() lại toàn bộ) nên không nháy màn hình/mất zoom/pan.
 const LITE_CHART_AUTOREFRESH_SEC=10;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
@@ -6010,20 +5846,14 @@ async function _liteQuietRefreshChart(){
                           :(_liteData.length>1?_liteData[_liteData.length-2]:null);
     const pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
     const bar={...rawBar,pct};
-    // Chốt range NGAY TRƯỚC khi đụng vào series (update()/setData() bên dưới) — không phải sau — để
-    // chắc chắn đây là đúng vùng user đang xem (zoom/pan) tại thời điểm này, tránh trường hợp thư viện
-    // đã kịp tự dịch view (auto-scroll) ngay trong lúc update() rồi mới đọc lại thì "chốt" luôn view sai.
+    // Chốt range NGAY TRƯỚC khi update()/setData() (không phải sau) để tránh thư viện đã tự dịch view rồi mới đọc lại.
     const prevRangeBeforeUpdate=_liteGetVisibleLogicalRange();
     if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
     _liteDataByTime.set(key,bar);
     _liteCandle.update(bar);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
-      // rawVol.color đã đúng màu (kể cả cờ VPA) do server tính — giữ nguyên trong
-      // _liteVolumeData (dữ liệu gốc); màu THỰC vẽ ra tuỳ checkbox "volcolor" (nhóm Signal).
-      // Không gọi _liteVolume.update() ở đây: renderLiteIndicators() ngay bên dưới luôn
-      // chạy _liteRefreshVolumeTop() — hàm đó xoá + tạo lại series volume rồi setData()
-      // lại toàn bộ _liteVolumeData, nên patch ở đây sẽ bị ghi đè ngay, chỉ tốn công.
+      // rawVol.color giữ nguyên màu server tính; renderLiteIndicators() luôn dựng lại series volume nên không cần update() riêng ở đây.
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
@@ -6038,11 +5868,7 @@ async function _liteQuietRefreshChart(){
     _liteQuietRefreshing=false;
   }
 }
-// ═══════════════════════════════════════════════════════
-// LAZY LOAD LỊCH SỬ — khi user kéo trái đến đầu dữ liệu, tự fetch thêm 300 bar cũ
-// hơn và prepend vào chart — giống cách TradingView thật làm. Không náy
-// màn hình, không mất zoom/pan hiện tại.
-// ═══════════════════════════════════════════════════════
+// LAZY LOAD LỊCH SỬ — kéo trái tới đầu dữ liệu tự fetch thêm 300 bar cũ hơn và prepend, không nháy màn hình/mất zoom.
 async function _liteFetchMoreHistory(){
   if(_liteLoadingMore||!_liteHasMore||!_liteOldestDate||!_liteChart||!_liteCandle)return;
   const sym=_liteSymbol,tf=_liteTf,oldestDate=_liteOldestDate;
@@ -6074,11 +5900,9 @@ async function _liteFetchMoreHistory(){
     const prependCount=newBars.length;
     // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
     _liteCandle.setData(_liteData);
-    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu
-    // các series đang có sẵn, KHÔNG destroy/recreate → loại bỏ hoàn toàn hiện tượng giật.
+    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu các series đang có sẵn, KHÔNG destroy/recreate → loại bỏ hoàn toàn hiện tượng giật.
     _liteUpdateIndicatorData();
-    // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData()
-    // gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
+    // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData() gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
     if(prevRange&&Number.isFinite(prevRange.from)&&Number.isFinite(prevRange.to)){
       const target={from:prevRange.from+prependCount,to:prevRange.to+prependCount};
       requestAnimationFrame(()=>_liteApplyVisibleLogicalRange(target));
@@ -6111,13 +5935,7 @@ function bindLiteChartControls(){
   });
   DOM.liteIndicators?.addEventListener('change',(e)=>{
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
-    // Cả 4 checkbox của nhóm Signal — "signal" (Buy-Signal), "volcolor" (Volume-Signal),
-    // "bigprice" (Giá phóng to) và "signalgrp_on" (checkbox chung/master) — chỉ ảnh hưởng
-    // mũi tên+badge tín hiệu (_liteApplyBuySignal), màu volume (_liteRefreshVolumeTop) và/hoặc
-    // khối giá phóng to (updateLiteBigPrice). Chúng KHÔNG đụng tới MA/EMA/BB/RSI/MACD hay pane
-    // layout, nên không gọi renderLiteIndicators() đầy đủ ở đây — hàm đó luôn chạy
-    // applyLitePaneLayout() (ép tính lại autoScale + reset timeScale) và xoá/dựng lại toàn bộ
-    // chỉ báo khác dù chúng không đổi, khiến chart bị nhảy/co-giãn vô ích.
+    // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge, màu volume, khối giá phóng to — không đụng MA/EMA/BB/RSI/MACD nên không gọi renderLiteIndicators() đầy đủ (tránh chart nhảy/co giãn vô ích).
     const val=e.target?.value;
     if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
       if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
@@ -6132,8 +5950,7 @@ function bindLiteChartControls(){
     }
   });
   DOM.liteChartFrame?.addEventListener('click',()=>{
-    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại
-    // về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
+    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu không, focus bị giật lại về khung ngay sau click mở ô chữ, khiến phím gõ sau đó bị khung bắt và hiểu nhầm thành gõ mã.
     if(_liteTextEditPos)return;
     DOM.liteChartFrame.focus();
   });
@@ -6145,9 +5962,7 @@ function bindLiteChartControls(){
   });
   DOM.liteChartFrame?.addEventListener('mouseleave',()=>{_litePointerInside=false;});
   DOM.liteChartFrame?.addEventListener('keydown',e=>{
-    // Đang gõ chữ (công cụ Text) → không xử lý phím tắt của khung chart (xoá hình, mở tìm mã...) ở đây.
-    // Bản thân ô chữ (#lite-text-input) đã tự xử lý Enter/Escape và stopPropagation() cho các phím khác,
-    // đây chỉ là lớp bảo vệ thêm phòng khi ô chữ chưa kịp nhận focus.
+    // Đang gõ chữ (công cụ Text) thì bỏ qua phím tắt khung chart; đây là lớp bảo vệ thêm phòng focus chưa kịp chuyển.
     if(_liteTextEditPos)return;
     if((e.key==='Delete'||e.key==='Backspace')&&_liteSelectedId!=null){
       e.preventDefault();
@@ -6168,9 +5983,7 @@ function bindLiteChartControls(){
       }
       return;
     }
-    // stopPropagation() chặn event bubble lên document listener bên dưới — nếu không, cả 2 listener
-    // cùng gọi openLiteSearch() cho 1 lần bấm phím. Không dựa vào timing của .focus() vì không đảm
-    // bảo 100% khi gõ nhanh hoặc qua IME tiếng Việt.
+    // stopPropagation() chặn bubble để tránh gọi openLiteSearch() 2 lần cho 1 phím bấm.
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
@@ -6191,9 +6004,7 @@ function bindLiteChartControls(){
   DOM.liteMacdResizer?.addEventListener('pointerdown',e=>{
     e.preventDefault();
     const startY=e.clientY,startH=_liteMacdSoloHeight||DOM.liteMacdChart.clientHeight||176;
-    // Gộp các sự kiện pointermove (bắn nhiều hơn tốc độ khung hình màn hình) thành đúng 1 lần
-    // cập nhật layout/chart mỗi khung hình bằng rAF — applyLitePaneLayout() gọi applyOptions() trên
-    // cả 2 chart nên là thao tác nặng, gọi trực tiếp theo từng pointermove sẽ gây giật khi kéo.
+    // Gộp pointermove bằng rAF thành 1 lần cập nhật layout/frame — applyLitePaneLayout() nặng nên gọi trực tiếp mỗi pointermove sẽ giật.
     let pendingH=null,rafId=null;
     const flush=()=>{
       rafId=null;
@@ -6252,14 +6063,10 @@ function _resetPopupChrome(){
   DOM.mobHdrLand.style.display='';
   DOM.mobClose.style.display='none';
 }
-// ═══════════════════════════════════════════════════════
 // HEATMAP DATA
-// ═══════════════════════════════════════════════════════
 const HMAP_COLS=__HMAP_COLS_CONFIG__;
 const TS_POOL=__TS_POOL_CONFIG__;
-// ═══════════════════════════════════════════════════════
 // HEATMAP RENDER
-// ═══════════════════════════════════════════════════════
 function cellStyle(pct){
   let r,g,b;
   const pos=[[235,248,238],[231,247,234],[225,245,228],[220,243,224],[215,242,220],[205,238,211],[195,235,200],[186,232,193],[178,228,186],[169,224,178],[160,220,170],[154,218,165],[148,216,160]];
@@ -6269,12 +6076,7 @@ function cellStyle(pct){
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-// Treemap dùng bảng màu riêng, tách khỏi Heatmap:
-// - Trần (>=+6.5%) / tham chiếu (~0%) / sàn (<=-6.5%): màu phẳng cố định, đo trực
-//   tiếp từ bảng màu mẫu (tím/vàng/xanh dương).
-// - Còn lại (xanh lá tăng giá / đỏ giảm giá): hue cố định đúng "xanh lá thật" (142°)
-//   và "đỏ thật" (0°), độ sáng nội suy theo đúng bậc đậm-nhạt 13 mức của cellStyle
-//   gốc (dùng lại mảng pos/neg đó làm nguồn "độ đậm theo %", không định nghĩa lại).
+// Treemap dùng bảng màu riêng: trần/tham chiếu/sàn màu phẳng cố định (tím/vàng/xanh dương); còn lại dùng hue cố định xanh lá 142°/đỏ 0°, độ sáng nội suy theo 13 mức của cellStyle.
 function _tmLightness(r,g,b){return(Math.max(r,g,b)+Math.min(r,g,b))/510;}
 function _tmHue2Rgb(p,q,t){
   if(t<0)t+=1;if(t>1)t-=1;
@@ -6294,8 +6096,7 @@ function _tmHslToRgb(h,s,l){
 }
 const TM_POS_L_MIN=0.714, TM_POS_L_MAX=0.947; // dải sáng gốc của thang xanh (đậm→nhạt theo %)
 const TM_NEG_L_MIN=0.755, TM_NEG_L_MAX=0.941; // dải sáng gốc của thang đỏ (đậm→nhạt theo %)
-// Pha màu gốc với trắng theo hệ số alpha cố định — tạo "màng mờ" đồng bộ,
-// áp cho cả 3 màu cố định (tím/vàng/xanh dương) để cùng chất liệu với xanh/đỏ.
+// Pha màu gốc với trắng theo hệ số alpha cố định — tạo "màng mờ" đồng bộ, áp cho cả 3 màu cố định (tím/vàng/xanh dương) để cùng chất liệu với xanh/đỏ.
 const TM_VEIL_ALPHA=0.82;
 function _tmVeil(r,g,b){
   const a=TM_VEIL_ALPHA;
@@ -6372,9 +6173,7 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
   _jumpLiteChart(cell.dataset.sym);
   openChart(cell.dataset.sym);
 });
-// Gửi mã sang cửa sổ CHART popout NGAY khi biết mã (không chờ chart cửa sổ chính tải
-// xong dữ liệu trước), để popout tự fetch song song luôn thay vì tuần tự sau — tránh mất
-// 2 lần đồng bộ nối tiếp làm chart trên popout nhảy chậm hơn hẳn so với chart mặc định.
+// Gửi mã sang cửa sổ CHART popout ngay khi biết mã, không chờ chart chính tải xong, để 2 chart fetch song song.
 function _syncChartPopoutSymbol(sym){
   const s=String(sym||'').toUpperCase().trim();
   if(s&&_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
@@ -6415,12 +6214,9 @@ DOM.signalHeader.addEventListener('click',e=>{
   if(e.target.closest('#journal-open-btn'))return;
   DOM.momentumBox.classList.toggle('on');
 });
-// ═══════════════════════════════════════════════════════
 // MARKET HEALTH RENDER
-// ═══════════════════════════════════════════════════════
 function healthEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-// Nhãn trục thời gian dưới chart HEALTH chỉ cần Tháng/Năm (ngày cụ thể đã có sẵn
-// qua crosshair khi hover/chạm) — đổi "YYYY-MM-DD" thành "MM/YYYY".
+// Nhãn trục thời gian dưới chart HEALTH chỉ cần Tháng/Năm (ngày cụ thể đã có sẵn qua crosshair khi hover/chạm) — đổi "YYYY-MM-DD" thành "MM/YYYY".
 function healthAxisDate(dateStr){
   const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr||''));
   return m?`${m[2]}/${m[1]}`:String(dateStr||'');
@@ -6433,10 +6229,7 @@ function healthBand(score){
   if(s>=20)return{label:'Bi quan',fill:'#dc2626'};
   return{label:'Sợ hãi',fill:'#0284c7'};
 }
-// ── State cửa sổ xem + zoom của biểu đồ HEALTH ──────────────────────────────
-// Backend trả về nhiều phiên hơn (xem compute_market_health_index limit=120)
-// so với số điểm hiển thị mặc định — phần dư dùng để kéo/vuốt xem quá khứ và
-// để zoom (thu hẹp/mở rộng số điểm hiển thị) mà không cần gọi thêm API.
+// State cửa sổ xem + zoom của biểu đồ HEALTH: backend trả nhiều phiên hơn hiển thị mặc định để hỗ trợ kéo xem quá khứ và zoom mà không cần gọi thêm API.
 const HEALTH_DEFAULT_WINDOW=30;
 const HEALTH_MIN_WINDOW=10;
 let _healthFullHistory=[];      // toàn bộ lịch sử tải về gần nhất từ /api/market_health
@@ -6445,9 +6238,7 @@ let _healthWindowLen=HEALTH_DEFAULT_WINDOW; // số điểm đang hiển thị (
 let _healthLayout=null;         // toạ độ của lần vẽ khung gần nhất, dùng để tính crosshair/zoom mà không phải vẽ lại toàn bộ SVG
 let _healthShowVni=false;       // có đang bật overlay VNINDEX để đối chiếu không
 function renderHealthChart(history){
-  // Mỗi lần có dữ liệu mới (poll định kỳ) thì quay lại xem đúng phiên mới nhất,
-  // tránh trường hợp đang xem lịch sử cũ thì bị dữ liệu mới "kéo" lệch cửa sổ.
-  // Mức zoom (_healthWindowLen) được giữ nguyên qua các lần refresh.
+  // Mỗi lần có dữ liệu mới, tự quay về phiên mới nhất; mức zoom (_healthWindowLen) giữ nguyên qua các lần refresh.
   _healthFullHistory=(history||[]).filter(p=>Number.isFinite(Number(p.score)));
   _healthOffset=0;
   _healthRenderWindow();
@@ -6469,19 +6260,12 @@ function _healthRenderWindow(){
   const end=total-_healthOffset;
   const start=Math.max(0,end-windowLen);
   const h=_healthFullHistory.slice(start,end);
-  // Khung chart giờ được CSS Grid kéo cao bằng khung phân tích bên phải (thay vì
-  // cố định 328px) → viewBox phải tính lại theo ĐÚNG tỉ lệ thật của khung (thay vì
-  // cố định 900x360) để scale ngang/dọc bằng nhau, tránh chữ bị kéo cao méo dạng;
-  // đồng thời mọi cỡ chữ/lề/nét vẽ cũng lớn lên tương ứng với tỉ lệ khung mới cho
-  // cân đối, thay vì giữ nguyên kích thước gốc trong một khung lớn hơn.
+  // viewBox tính theo tỉ lệ thật của khung (CSS Grid co giãn) thay vì cố định 900x360, để chữ/nét vẽ không bị méo khi khung đổi kích thước.
   const rectBox=DOM.healthSvg.getBoundingClientRect();
   const aspect=(rectBox.width>0&&rectBox.height>0)?rectBox.height/rectBox.width:(360/900);
   const W=900,H=Math.round(Math.min(720,Math.max(320,W*aspect)));
   const scale=H/360;
-  // L/R (lề trái/phải) giữ cố định — không co theo `scale` (vốn phản ánh tỉ lệ
-  // CAO/rộng của khung, không phải độ rộng thật) để khỏi ăn vào vùng dải màu
-  // làm khung trông "co ngang lại", đồng thời giữ đúng vị trí checkbox VNINDEX
-  // (đặt theo % cố định, tính sẵn khớp với R=112) thẳng cột với nhãn "Hưng phấn".
+  // Lề trái/phải (L/R) giữ cố định, không co theo scale (tỉ lệ cao/rộng) để tránh ăn vào dải màu và giữ đúng vị trí checkbox VNINDEX.
   const L=52,R=112,T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
   const fs=Math.max(9,Math.round(10*scale));
   // Chừa khoảng đệm 2 bên để đường line không chạm sát mép trái/phải của khung.
@@ -6499,18 +6283,14 @@ function _healthRenderWindow(){
   const defs=bands.map((b,i)=>`<linearGradient id="healthBand${i}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${b.c2}" stop-opacity=".30"/><stop offset="1" stop-color="${b.c1}" stop-opacity=".74"/></linearGradient>`).join('');
   const rects=bands.map((b,i)=>{
     const y0=y(b.to),y1=y(b.from),mid=(y0+y1)/2+4;
-    // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải),
-    // giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
+    // Nhãn dải màu đặt NGOÀI vùng tô (x=W-R+8, cùng lề với trục giá trị bên phải), giống cách nhãn thời gian (ngày) nằm ngoài, dưới trục dưới.
     return `<rect x="${L}" y="${y0}" width="${plotW}" height="${y1-y0}" fill="url(#healthBand${i})"/><text x="${W-R+8}" y="${mid}" text-anchor="start" fill="#334155" font-family="IBM Plex Sans, sans-serif" font-size="${fs}" font-weight="700">${b.label}</text>`;
   }).join('');
-  // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi
-  // ngưỡng phân vùng màu ở trên — hai việc khác nhau.
+  // Trục dọc: mốc cố định mỗi 20 điểm (0-20-40-60-80-100), tách riêng khỏi ngưỡng phân vùng màu ở trên — hai việc khác nhau.
   const grid=[0,20,40,60,80,100].map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#94a3b8" stroke-opacity=".35"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-family="IBM Plex Sans, sans-serif" font-size="${fs}">${v}</text>`).join('');
   const lineW=(1.75*scale).toFixed(2); // HEALTH và VNINDEX dùng chung độ dày nét
   const pts=h.map((p,i)=>`${x(i)},${y(Number(p.score))}`).join(' ');
-  // Overlay VNINDEX (nếu bật): chuẩn hoá về thang 0-100 theo min/max của đúng cửa
-  // sổ đang xem để dùng chung 1 trục dọc với điểm HEALTH — giá trị THẬT của VNINDEX
-  // vẫn hiển thị đúng số khi xem qua crosshair (xem _healthShowCrosshair).
+  // Overlay VNINDEX chuẩn hoá về thang 0-100 theo min/max cửa sổ đang xem để dùng chung trục dọc với HEALTH; giá trị thật vẫn hiện đúng qua crosshair.
   let vniPolyline='',vniMin=null,vniMax=null;
   if(_healthShowVni){
     const vals=h.map(p=>Number(p.vnindex)).filter(v=>Number.isFinite(v));
@@ -6537,19 +6317,11 @@ function _healthRenderWindow(){
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
 }
-// ── Crosshair khi di chuột/chạm: nhãn gắn vào trục dưới (thời gian) và trục
-// phải (giá trị) — giống hệt cách trục thời gian/giá của thẻ CHART hiển thị,
-// thay vì một khung nổi bên cạnh điểm như trước.
-// SVG dùng preserveAspectRatio="none" nên trục X/Y có thể co giãn khác tỉ lệ —
-// phải quy đổi toạ độ con trỏ (pixel thật) về hệ toạ độ viewBox (kích thước lấy
-// từ _healthLayout.W/H — viewBox co giãn theo khung thật, không còn cố định) theo
-// đúng tỉ lệ co giãn thực tế của từng trục trước khi tính điểm gần nhất.
+// Crosshair gắn nhãn vào trục dưới/phải (giống thẻ CHART); do SVG dùng preserveAspectRatio="none" nên phải quy đổi toạ độ pixel về hệ viewBox theo đúng tỉ lệ co giãn thực tế trước khi tính điểm gần nhất.
 function _healthClientX(evt){
   return evt.touches&&evt.touches.length?evt.touches[0].clientX:evt.clientX;
 }
-// Quy đổi toạ độ con trỏ (pixel thật) sang hệ toạ độ viewBox hiện tại của chart —
-// dùng chung cho cả việc tìm điểm gần nhất (hover) và kiểm tra chuột có đang ở
-// trong vùng dải màu hay không (chỉ zoom trong vùng đó).
+// Quy đổi toạ độ con trỏ (pixel thật) sang hệ viewBox — dùng chung cho tìm điểm gần nhất (hover) và kiểm tra vùng zoom.
 function _healthEventToSvgPoint(evt){
   if(!_healthLayout)return null;
   const cx=_healthClientX(evt);
@@ -6577,8 +6349,7 @@ function _healthShowCrosshair(idx){
   const{h,x,y,T,H,B,L,W,R,vniMin,vniMax,scale=1}=_healthLayout,p=h[idx];
   if(!p)return;
   const px=x(idx),py=y(Number(p.score)),band=healthBand(p.score),bottomY=H-B;
-  // Nhãn hover (thời gian/giá trị) dùng cỡ chữ + khung riêng, nhỏ hơn nhãn trục,
-  // để không bị to quá khổ khi khung chart giãn cao.
+  // Nhãn hover (thời gian/giá trị) dùng cỡ chữ + khung riêng, nhỏ hơn nhãn trục, để không bị to quá khổ khi khung chart giãn cao.
   const crossFs=Math.max(8,Math.round(8*scale));
   let svg=`<line x1="${px}" x2="${px}" y1="${T}" y2="${bottomY}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".55"/>`;
   svg+=`<line x1="${L}" x2="${W-R}" y1="${py}" y2="${py}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3,3" opacity=".35"/>`;
@@ -6671,10 +6442,7 @@ function _healthOnMove(evt){
       const rect=DOM.healthSvg.getBoundingClientRect();
       if(rect.width&&_healthWindowLen>1){
         const scaleX=_healthLayout.W/rect.width;
-        // plotW đang ở đơn vị viewBox (900) — quy đổi về pixel thật đang hiển thị
-        // bằng cách CHIA cho scaleX (không phải nhân), rồi mới suy ra pxPerPoint.
-        // Trừ 2*padX vì các điểm dữ liệu chỉ trải trong khoảng đã thu vào theo padX,
-        // không phải toàn bộ plotW (xem padX ở _healthRenderWindow).
+        // plotW ở đơn vị viewBox — chia cho scaleX để ra pixel thật rồi suy pxPerPoint; trừ 2*padX vì điểm dữ liệu chỉ trải trong khoảng đã thu vào theo padX.
         const pxPerPointReal=((_healthLayout.plotW-2*_healthLayout.padX)/scaleX)/(_healthWindowLen-1);
         // Kéo/vuốt sang trái (dx<0) → xem lịch sử (tăng offset); sang phải → tiến về hiện tại/gần đây.
         let newOffset=Math.round(_healthDrag.startOffset+dx/pxPerPointReal);
@@ -6689,13 +6457,7 @@ function _healthOnMove(evt){
   if(idx!=null)_healthShowCrosshair(idx);
 }
 function _healthOnUp(){_healthDrag=null;_healthPinch=null;}
-// ── Nút camera copy ảnh khung Mrk Health — tái dùng _liteCopyFeedback / _litePngBlobFromDataUrl ──
-// LƯU Ý: bản đầu dùng kỹ thuật SVG<foreignObject> để chụp cả khối HTML — kỹ thuật này nổi tiếng
-// không ổn định (nhiều trình duyệt, đặc biệt Chrome, coi canvas vẽ từ ảnh SVG có foreignObject là
-// "tainted" và chặn xuất ảnh bằng lỗi bảo mật). Cách làm dưới đây tránh hẳn foreignObject:
-// (1) rasterize thẳng SVG biểu đồ (health-svg) — SVG thuần, không phụ thuộc CSS ngoài nên an toàn;
-// (2) phần điểm số/nhãn/thẻ/nhận định được VẼ TAY bằng fillText, theo đúng cách đã dùng cho
-// tiêu đề/badge bên Chart (_liteDrawTitleSegments/_liteDrawSignalBadge) — không đụng canvas "bẩn".
+// Copy ảnh Mrk Health tránh SVG<foreignObject> (Chrome coi canvas là "tainted", chặn xuất ảnh) — rasterize SVG thuần rồi vẽ tay phần điểm số/nhãn bằng fillText.
 function _healthWrapText(ctx,text,maxWidth){
   const words=String(text||'').split(/\s+/).filter(Boolean);
   const lines=[];let line='';
@@ -6711,10 +6473,7 @@ async function copyHealthImage(btn){
   const svgEl=DOM.healthSvg;
   if(!svgEl)return;
   try{
-    // Đo trực tiếp vị trí + kích thước THẬT của 2 khung (chart trái / score-card+nhận
-    // định phải) ngay trên DOM đang hiển thị, rồi vẽ lại đúng như vậy trên canvas —
-    // thay vì tự suy ra tỉ lệ cột. Nhờ vậy ảnh xuất ra luôn khớp 1:1 với layout thật
-    // của .health-layout (kể cả khi co về 1 cột trên màn hẹp, do @media ở dòng ~2021).
+    // Đo trực tiếp vị trí/kích thước thật của 2 khung trên DOM rồi vẽ lại y hệt trên canvas, để ảnh xuất khớp 1:1 với layout thật kể cả khi responsive.
     const layoutEl=svgEl.closest('.health-layout');
     const chartBoxEl=svgEl.closest('.health-chartbox');
     const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
@@ -6744,16 +6503,12 @@ async function copyHealthImage(btn){
       chartImg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
     });
 
-    // Màu lấy từ đúng CSS variable đang dùng thật (--accent/--border/--muted), tránh
-    // hardcode lệch nếu theme đổi.
+    // Màu lấy từ đúng CSS variable đang dùng thật (--accent/--border/--muted), tránh hardcode lệch nếu theme đổi.
     const cs=getComputedStyle(document.documentElement);
     const cAccent=cs.getPropertyValue('--accent').trim()||'#1a56db';
     const cBorder=cs.getPropertyValue('--border').trim()||'#dde3ee';
     const cMuted=cs.getPropertyValue('--muted').trim()||'#6b7280';
-    // Điểm số (health-score) được tô màu ĐỘNG theo band (xanh/vàng/đỏ/tím/xanh dương —
-    // xem renderHealth: DOM.healthScore.style.color=localBand.fill), KHÁC với nhãn
-    // (health-label) vốn luôn dùng màu accent cố định. Lấy đúng màu đang hiển thị
-    // thật trên DOM thay vì hardcode cAccent để ảnh copy khớp 100% với dashboard.
+    // health-score tô màu động theo band (đọc từ DOM.healthScore.style.color) khác với health-label dùng màu accent cố định — lấy đúng màu DOM để ảnh copy khớp 100%.
     const cScore=DOM.healthScore?getComputedStyle(DOM.healthScore).color:cAccent;
 
     // Lấy nội dung khung phân tích trực tiếp từ DOM đang hiển thị (giá trị mới nhất đã render sẵn)
@@ -6767,8 +6522,7 @@ async function copyHealthImage(btn){
 
     const measCanvas=document.createElement('canvas'),mctx=measCanvas.getContext('2d');
 
-    // Đo trước nội dung "Nhận định" theo đúng bề rộng thật của khung phải (anaW) —
-    // .health-analysis{padding:18px 20px} nên trừ đúng 20px mỗi bên.
+    // Đo trước nội dung "Nhận định" theo đúng bề rộng thật của khung phải (anaW) — .health-analysis{padding:18px 20px} nên trừ đúng 20px mỗi bên.
     const anaPadX=20,anaContentW=anaW-2*anaPadX;
     mctx.font='400 15px "IBM Plex Sans",sans-serif';
     const bodyBlocks=[];
@@ -6782,8 +6536,7 @@ async function copyHealthImage(btn){
     const analysisLines=bodyBlocks.reduce((n,b)=>n+b.length,0);
     const contentH=bodyBlocks.length?(titleH+analysisLines*lineH+(bodyBlocks.length-1)*blockGap):0;
 
-    // Đo trước layout tag theo đúng bề rộng thật của score-card (cardW) —
-    // .health-score-card{padding:16px} nên trừ đúng 16px mỗi bên.
+    // Đo trước layout tag theo đúng bề rộng thật của score-card (cardW) — .health-score-card{padding:16px} nên trừ đúng 16px mỗi bên.
     const cardPadX=16,cardContentW=cardW-2*cardPadX;
     const pillH=24,pillGap=6,pillRowGap=8;
     mctx.font='800 11px "IBM Plex Sans",sans-serif';
@@ -6798,8 +6551,7 @@ async function copyHealthImage(btn){
       });
     }
 
-    // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài
-    // khớp .health-body{padding:12px 14px}.
+    // Kích thước canvas = đúng kích thước thật của .health-layout, cộng lề ngoài khớp .health-body{padding:12px 14px}.
     const outerPadX=14,outerPadY=12;
     const W=Math.round(layoutRect.width),H=Math.round(layoutRect.height);
     const canvasW=W+2*outerPadX,canvasH=H+2*outerPadY;
@@ -6820,10 +6572,7 @@ async function copyHealthImage(btn){
     ctx.drawImage(chartImg,ox+chartX,oy+chartY,chartW,chartH);
     roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
 
-    // ── Checkbox "VNINDEX" (label.health-vni-toggle, position:absolute top:6px
-    // left:88.4% trong .health-chartbox — xem CSS) — đây là overlay HTML nằm NGOÀI
-    // SVG nên rasterize chartImg ở trên không có nó; phải vẽ tay để ảnh copy khớp
-    // 100% với hiển thị thật, kể cả trạng thái tick/disable hiện tại.
+    // Checkbox VNINDEX là overlay HTML ngoài SVG nên rasterize không chụp được — phải vẽ tay để ảnh copy khớp trạng thái tick/disable thật.
     const vniChecked=!!DOM.healthVniCheckbox?.checked;
     const vniDisabled=!!DOM.healthVniCheckbox?.disabled;
     const vx=ox+chartX+chartW*0.884,vy=oy+chartY+6,boxSize=13;
@@ -6869,9 +6618,7 @@ async function copyHealthImage(btn){
       });
     }
 
-    // ── Cột phải, khối dưới: Nhận định — .health-analysis căn GIỮA theo chiều dọc
-    // (display:flex;flex-direction:column;justify-content:center), nên phải canh giữa
-    // nội dung trong anaH thay vì ghim lên đầu, để giống hệt cách hiển thị thật.
+    // Khối Nhận định căn giữa theo chiều dọc (flex column, justify-content:center) nên canh giữa nội dung trong anaH thay vì ghim đầu.
     roundBox(ox+anaX,oy+anaY,anaW,anaH,8,'#ffffff',cBorder);
     if(bodyBlocks.length){
       let ly=oy+anaY+Math.max(anaPadX,(anaH-contentH)/2)+titleH-12;
@@ -6882,8 +6629,7 @@ async function copyHealthImage(btn){
       bodyBlocks.forEach((block,bi)=>{
         const isFactor=summary&&bi>=1&&bi<=factors.length&&factors.length>0;
         ctx.font=isFactor?'400 14.5px "IBM Plex Sans",sans-serif':'400 15px "IBM Plex Sans",sans-serif';
-        // .health-analysis p{color:#1f2937} vs .health-analysis ul{color:#374151} — dùng đúng
-        // màu tương ứng cho từng loại dòng thay vì gộp chung 1 màu như trước.
+        // .health-analysis p{color:#1f2937} vs .health-analysis ul{color:#374151} — dùng đúng màu tương ứng cho từng loại dòng thay vì gộp chung 1 màu như trước.
         ctx.fillStyle=isFactor?'#374151':'#1f2937';
         block.forEach(line=>{ly+=lineH;ctx.fillText(line,ox+anaX+anaPadX,ly);});
         ly+=blockGap;
@@ -6926,9 +6672,7 @@ if(DOM.healthVniCheckbox){
     _healthRenderWindow();
   });
 }
-// viewBox được tính theo kích thước khung thật (xem _healthRenderWindow) nên khi
-// khung đổi kích thước (resize cửa sổ, thu/mở panel...) cần vẽ lại để không bị
-// lệch tỉ lệ; debounce nhẹ để không vẽ lại liên tục trong lúc đang kéo resize.
+// viewBox tính theo kích thước khung thật nên cần vẽ lại khi resize; debounce nhẹ để không vẽ liên tục lúc đang kéo.
 let _healthResizeTimer=null;
 window.addEventListener('resize',()=>{
   if(!_healthFullHistory.length)return;
@@ -6963,14 +6707,7 @@ function renderHealth(data){
   DOM.healthAnalysis.innerHTML=`<div class="health-analysis-title">Nhận định</div><p>${healthEsc(a.summary||'')}</p><ul>${(a.factors||[]).map(x=>`<li>${healthEsc(x)}</li>`).join('')}</ul><p>${healthEsc(a.conclusion||'')}</p>`;
   renderHealthChart(d.history||[]);
 }
-// Trong lúc hệ thống đang build lại history_cache lúc khởi động (hoặc đầu
-// phiên mới), /api/market_health trả ok:false (chưa từng có dữ liệu) HOẶC
-// pending_refresh:true (đang hiển thị tạm số CŨ trong lúc chờ tính lại — xem
-// _refresh_market_health() ở Python) vì chưa đủ dữ liệu. Thay vì bắt người
-// dùng F5 cả trang để thấy số mới khi cache build xong, tự động thử lại
-// nhanh hơn nhiều so với chu kỳ HEALTH_TTL (30 phút) cho tới khi có dữ liệu
-// mới thực sự — một khi đã ok:true VÀ không còn pending_refresh thì mới dừng
-// vòng thử nhanh này, cơ chế làm mới định kỳ theo HEALTH_TTL vẫn chạy như cũ.
+// Khi /api/market_health trả ok:false hoặc pending_refresh:true (đang build cache), tự thử lại nhanh hơn HEALTH_TTL cho tới khi có dữ liệu mới, tránh phải F5 trang.
 const HEALTH_RETRY_MS=20000;
 let _healthRetryTimer=null;
 async function fetchHealth(){
@@ -6992,9 +6729,7 @@ async function fetchHealth(){
     _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
   }
 }
-// ═══════════════════════════════════════════════════════
 // SANKEY RENDER
-// ═══════════════════════════════════════════════════════
 const SANKEY_SECTORS=[];
 HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=='VN30')SANKEY_SECTORS.push(g);}));
 const SANKEY_SVG_NS='http://www.w3.org/2000/svg';
@@ -7129,8 +6864,7 @@ DOM.sankeySvg.addEventListener('dblclick',e=>{
   _syncHoverPreview(sym);
   openChart(sym);
 });
-// ── Nút camera copy ảnh Sankey — cùng cơ chế với Treemap (SVG thuần, rasterize
-// thẳng theo đúng kích thước hiển thị thật của sankey-wrap) ──
+// ── Nút camera copy ảnh Sankey — cùng cơ chế với Treemap (SVG thuần, rasterize thẳng theo đúng kích thước hiển thị thật của sankey-wrap) ──
 async function copySankeyImage(btn){
   const svgEl=DOM.sankeySvg;
   if(!svgEl)return;
@@ -7174,11 +6908,7 @@ DOM.sankeyCopyBtn?.addEventListener('click',e=>{
   e.stopPropagation();
   copySankeyImage(e.currentTarget);
 });
-// ═══════════════════════════════════════════════════════
-// TREEMAP RENDER — dùng lại đúng nguồn dữ liệu của Sankey/Heatmap
-// (SANKEY_SECTORS, sankeyWeight, SANKEY_MIN_WEIGHT) và màu ô đúng bảng màu
-// của Heatmap (cellStyle) để 3 view luôn đồng nhất khi user đối chiếu qua lại.
-// ═══════════════════════════════════════════════════════
+// TREEMAP RENDER — dùng lại nguồn dữ liệu Sankey/Heatmap (SANKEY_SECTORS, sankeyWeight, cellStyle) để 3 view luôn đồng nhất.
 function treemapDataset(data){
   return SANKEY_SECTORS.map(g=>{
     const stocks=g.syms.map(sym=>{
@@ -7224,8 +6954,7 @@ function tmSquarify(items,x,y,w,h,out){
   if(vertical)tmSquarify(rest,x+rowThick,y,w-rowThick,h,out);
   else tmSquarify(rest,x,y+rowThick,w,h-rowThick,out);
 }
-// Định dạng tên ngành dùng CHUNG cho cả Sankey và Treemap — sửa 1 chỗ này,
-// cả 2 view tự động đồng bộ theo (chỉ viết hoa chữ cái đầu, VD "NGÂN HÀNG" -> "Ngân hàng").
+// Định dạng tên ngành dùng CHUNG cho cả Sankey và Treemap — sửa 1 chỗ này, cả 2 view tự động đồng bộ theo (chỉ viết hoa chữ cái đầu, VD "NGÂN HÀNG" -> "Ngân hàng").
 function sectorLabel(name){
   return name?name.charAt(0)+name.slice(1).toLowerCase():name;
 }
@@ -7243,20 +6972,13 @@ function renderTreemap(data){
   const secLayout=[];tmSquarify(sectors,0,0,W,H,secLayout);
   secLayout.forEach(sec=>{
     const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
-    // Nền chung cho CẢ khung ngành (header + vùng ô mã cổ phiếu) — cùng 1 màu
-    // xám-xanh rất nhạt (#f4f6f9), tránh lộ nền trắng của SVG ở khe hở giữa các
-    // ô mã cổ phiếu (đặc biệt ở đáy khung, nơi các ô không lấp kín hết chiều cao).
-    // Gộp chung 1 rect vừa tô nền vừa vẽ viền (fill + stroke) thay vì 2 rect
-    // trùng hình học, giảm số node SVG phải dựng mỗi lần render.
+    // Nền chung (header+vùng ô mã) 1 màu xám-xanh nhạt, gộp 1 rect vừa tô nền vừa vẽ viền để giảm số node SVG.
     svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'#f4f6f9',stroke:'#d8d6cc','stroke-width':1}));
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
-      // Đường kẻ phân cách (#e4e8ec) giữa header (tên ngành) và vùng ô mã cổ
-      // phiếu bên dưới — nền 2 vùng giờ đã đồng màu nên chỉ cần đường kẻ để
-      // tách biệt trực quan, không cần rect nền riêng cho header nữa.
+      // Đường kẻ phân cách header/vùng ô mã thay cho rect nền riêng (2 vùng đã đồng màu).
       svg.appendChild(sankeyEl('line',{x1:sx,y1:sy+headerH,x2:sx+sw,y2:sy+headerH,stroke:'#e4e8ec','stroke-width':1}));
-      // Cắt bớt tên ngành + thêm dấu "…" nếu không đủ chỗ trong khung, tránh tràn ra ngoài
-      // (đặc biệt các ô ngành nhỏ ở góc dưới cùng bên phải). ~7.3px/ký tự với font-size 12 monospace.
+      // Cắt bớt tên ngành + thêm dấu "…" nếu không đủ chỗ trong khung, tránh tràn ra ngoài (đặc biệt các ô ngành nhỏ ở góc dưới cùng bên phải). ~7.3px/ký tự với font-size 12 monospace.
       const label=sectorLabel(sec.item.name);
       const maxChars=Math.max(3,Math.floor((sw-12)/7.3));
       const shown=label.length>maxChars?label.slice(0,Math.max(1,maxChars-1))+'…':label;
@@ -7297,9 +7019,7 @@ DOM.treemapSvg.addEventListener('dblclick',e=>{
   _syncHoverPreview(sym);
   openChart(sym);
 });
-// ── Nút camera copy ảnh Treemap — Treemap là SVG thuần (không lai HTML overlay như
-// Mrk Health) nên chỉ cần rasterize thẳng #treemap-svg theo đúng kích thước hiển thị
-// thật (treemap-wrap), không cần vẽ tay thêm phần nào khác.
+// Copy ảnh Treemap chỉ cần rasterize thẳng #treemap-svg (SVG thuần), không cần vẽ tay thêm phần nào.
 async function copyTreemapImage(btn){
   const svgEl=DOM.treemapSvg;
   if(!svgEl)return;
@@ -7343,10 +7063,7 @@ DOM.treemapCopyBtn?.addEventListener('click',e=>{
   e.stopPropagation();
   copyTreemapImage(e.currentTarget);
 });
-// ── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
-// Vẽ NGAY trong khung Mrk Health — tải lười (lazy) lần đầu tab "health" được mở
-// (đỡ gọi VNDIRECT khi người dùng không xem tới), sau đó tự làm mới định kỳ.
-// Cách lấy dữ liệu (API VNDIRECT) và vẽ SVG 2 trục dựa đúng theo vndirect_valuation_chart.py.
+// VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ (MA50/MA200) tải lười khi mở tab Mrk Health lần đầu, tự làm mới định kỳ theo vndirect_valuation_chart.py.
 const VND_AUTO_REFRESH_MS=5*60*1000;
 const vndValuationState={metric:'pe',period:365,rows:[]};
 const vndAllocationState={period:365,rows:[]};
@@ -7411,9 +7128,7 @@ async function loadVndAllocation(){
   }catch(e){vndShowError('vnd-allocation-status','vnd-allocation-error',e);}
 }
 
-// ── Khối ngoại & Tự doanh: 2 khung bar chart gộp theo phiên, nằm dưới HEALTH,
-// trên khung Định giá. Không có tab/kỳ thời gian chọn — luôn hiện đủ dữ liệu
-// gần nhất trả về từ API (khối ngoại ~100 phiên, tự doanh 45 ngày gần nhất).
+// Khối ngoại & Tự doanh: 2 bar chart theo phiên, luôn hiện đủ dữ liệu gần nhất trả về (không có bộ lọc kỳ thời gian).
 const vndForeignState={rows:[]};
 const vndProprietaryState={rows:[]};
 
@@ -7459,9 +7174,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
   const rawMin=Math.min(0,...vals),rawMax=Math.max(0,...vals);
   const pad=(rawMax-rawMin)*0.14||1;
   const yMin=rawMin-pad,yMax=rawMax+pad;
-  // Khoảng trắng bên phải 5% — đồng bộ với renderVndChart (khung Định giá/Phân bổ dùng
-  // xMaxPadded = xMax + xRange*0.05) để bar cuối cùng thẳng hàng theo chiều dọc với điểm
-  // giá trị cuối cùng bên khung Định giá/Phân bổ.
+  // Khoảng trắng phải 5% đồng bộ renderVndChart để bar cuối thẳng hàng với điểm giá trị cuối khung Định giá/Phân bổ.
   const rightPadRatio=0.05;
   const barAreaW=innerW/(1+rightPadRatio);
   const step=barAreaW/rows.length;
@@ -7475,9 +7188,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     svg.appendChild(el);
     return el;
   }
-  // Tick grid luôn đi qua đúng 0 và cách đều 2 phía trên/dưới — tránh trường hợp
-  // vndNiceTicks() (chia đều yMin..yMax, không neo vào 0) lỡ sinh ra 1 tick nằm rất
-  // sát 0 khiến nhìn như có 2 đường kề nhau cạnh đường 0.
+  // Tick grid luôn qua đúng 0 và cách đều 2 phía, tránh vndNiceTicks() sinh tick sát 0 gây nhìn nhầm 2 đường trùng.
   const flowStepUnit=Math.max(Math.abs(yMax),Math.abs(yMin),1e-9)/3;
   const flowGridTicks=[0];
   for(let t=flowStepUnit;t<=yMax+1e-9;t+=flowStepUnit)flowGridTicks.push(t);
@@ -7598,11 +7309,7 @@ function renderVndChart(config){
   }
   const last=rows[rows.length-1];
   config.onLast?.(last);
-  // ── Badges giá trị cuối bên phải chart ──────────────────────────────────────
-  // Vẽ nhãn màu (badge) sát mép phải tại vị trí Y của giá trị cuối cùng, giúp đọc
-  // nhanh VNINDEX hiện tại và chỉ số P/E, P/B hoặc % MA50/MA200 mà không cần hover.
-  // (Trước đây badge VNINDEX nằm bên trái — đã chuyển sang phải cùng các badge khác
-  // ngày 2026-08-06, nên hàm dưới đây không còn cần tham số căn trái/phải nữa.)
+  // Badge giá trị cuối bên phải chart để đọc nhanh không cần hover (đã chuyển badge VNINDEX từ trái sang phải ngày 2026-08-06).
   const _vBadge=(y,text,color)=>{
     const H=15,FONT=10,PAD=5,approxW=Math.max(text.length*6.3+PAD*2,28);
     add('rect',{x:width-margin.right,y:y-H/2,width:approxW,height:H,rx:2.5,fill:color});
@@ -7699,13 +7406,10 @@ function triActivateTab(tab){
     const el=document.getElementById('tri-content-'+t);
     if(el)el.classList.toggle('on',t===tab);
   });
-  // Tab HEALTH vẽ chart theo kích thước khung THẬT (getBoundingClientRect) — lúc tab đang ẩn
-  // (display:none) kích thước đó = 0 nên phải vẽ lại ngay khi tab vừa được hiện ra, giống cách
-  // panel CHART xử lý resize khi mở lại (xem liteChartToggle).
+  // Tab HEALTH vẽ theo kích thước khung thật — cần vẽ lại ngay khi tab vừa hiện (lúc ẩn kích thước=0), giống panel CHART.
   if(tab==='health'){
     if(_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
-    // Khung PE/PB + Phân bổ thị trường: nạp lần đầu (lazy), các lần mở lại sau chỉ
-    // cần vẽ lại theo đúng kích thước khung hiện tại (dữ liệu đã có sẵn trong state).
+    // Khung PE/PB + Phân bổ thị trường: nạp lần đầu (lazy), các lần mở lại sau chỉ cần vẽ lại theo đúng kích thước khung hiện tại (dữ liệu đã có sẵn trong state).
     vndInitOnce();
     requestAnimationFrame(vndRerenderVisible);
   }
@@ -7726,32 +7430,20 @@ DOM.triHdr.addEventListener('click',e=>{
     }
   }
 });
-// Mặc định mở thẻ MARKET ở tab Mrk Health (không phải Fireant). Bắt buộc phải GỌI HÀM
-// triActivateTab() ở đây (không chỉ set sẵn class "on" trong HTML) vì đây là nơi duy nhất
-// kích hoạt vndInitOnce()/vndRerenderVisible() để nạp dữ liệu 4 khung Định giá/Phân bổ/
-// Khối ngoại/Tự doanh — nếu bỏ qua, tab trông như đang active nhưng dữ liệu bên trong sẽ
-// không bao giờ được nạp (kẹt ở "Đang tải...").
+// Mặc định mở tab Mrk Health — phải gọi triActivateTab() (không chỉ set class "on") để kích hoạt vndInitOnce()/vndRerenderVisible() nạp dữ liệu 4 khung, nếu không sẽ kẹt "Đang tải...".
 triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
-  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...)
-  // vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
+  // Giống CHART: các control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, nút popout...) vẫn phải bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng các control đó.
   if(e.target.closest('button,input,.hmap-search-wrap'))return;
   DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
-  // Khi thẻ đang mở, các control bên trong thanh công cụ (tìm mã, D/W, chỉ báo, vẽ...)
-  // vẫn phải bấm được bình thường — chỉ coi là "bấm vào thẻ để thu/mở" khi không bấm
-  // trúng các vùng control đó. Khi thẻ đang thu gọn thì các vùng đó đã ẩn (display:none)
-  // nên toàn bộ header luôn hoạt động như nút mở ra, giống hệt SANKEY.
+  // Control trong thanh công cụ vẫn bấm được bình thường khi thẻ mở; chỉ coi là bấm để thu/mở khi không trúng control, giống SANKEY.
   if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
-    // Panel vừa được mở lại sau khi bị ẩn (display:none) — canvas của lightweight-charts
-    // có thể đang mang kích thước 0 nên cần ép resize lại đúng như handler window 'resize',
-    // đồng thời set lại visible logical range (số bar hiển thị + khoảng trống lề phải) như
-    // mặc định ban đầu, tránh trường hợp nến bị dồn cụm vào một góc do resize sau khi range
-    // đã được tính với width=0 lúc panel còn ẩn.
+    // Panel vừa mở lại sau khi ẩn cần ép resize canvas (có thể đang mang kích thước 0) và reset visible range, tránh nến bị dồn cụm.
     requestAnimationFrame(()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
       if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
@@ -7761,9 +7453,7 @@ DOM.liteChartToggle.addEventListener('click',e=>{
     });
   }
 });
-// ═══════════════════════════════════════════════════════
 // CLOCK & CONFIG
-// ═══════════════════════════════════════════════════════
 function tick(){
   const n=new Date();
   DOM.clock.textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+' '+n.toLocaleDateString('vi-VN');
@@ -7773,17 +7463,14 @@ async function loadConfig(){
   try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;HEALTH_TTL=j.market_health_ttl_sec||1800;}catch(e){}
   DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • Mrk Health ${Math.round(HEALTH_TTL/60)} phút`;
 }
-// ═══════════════════════════════════════════════════════
 // FETCH
-// ═══════════════════════════════════════════════════════
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`
       :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
-    // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung
-    // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
+    // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
     redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
@@ -7823,9 +7510,7 @@ function startBar(elOrId,sec){
   el.style.transition='none';el.style.width='0%';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
 }
-// ═══════════════════════════════════════════════════════
 // PRICE ALERTS
-// ═══════════════════════════════════════════════════════
 function _esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function alertReq(path,opts={}){
   const headers={...(opts.headers||{}),'X-Alert-Client-Id':getAlertClientId()};
@@ -7871,13 +7556,9 @@ function renderAlertRules(){
   }
   DOM.liteAlertList.innerHTML=rows.join('');
 }
-// Cửa sổ CHART mở riêng (openChartPopout) nạp lại đúng trang này với ?chartPopout=1 nên cũng
-// chạy init()/pollAlertFeed() y hệt cửa sổ chính. Cờ này dùng để cửa sổ riêng KHÔNG bắn thông
-// báo cảnh báo giá nữa, tránh báo trùng 2 lần (1 lần ở cửa sổ chính, 1 lần ở cửa sổ CHART popout).
+// Cửa sổ CHART popout (?chartPopout=1) cũng chạy init()/pollAlertFeed() — cờ này để nó không bắn thông báo giá trùng với cửa sổ chính.
 const _isChartPopoutWindow=new URLSearchParams(window.location.search).get('chartPopout')==='1';
-// Trình duyệt KHÔNG cho JS tự thu hồi quyền Notification đã granted (chỉ người dùng tắt được qua
-// cài đặt trình duyệt) — nên cần 1 cờ riêng ở tầng ứng dụng để biết có ĐANG MUỐN dùng desktop
-// notification hay không, độc lập với quyền của trình duyệt. Bấm nút 🖥 chỉ đổi cờ này.
+// Cờ ứng dụng riêng để biết có ĐANG MUỐN dùng desktop notification hay không, độc lập với quyền Notification của trình duyệt (JS không thể tự thu hồi quyền đã granted).
 const DESKTOP_NOTIFY_KEY='dashboard_desktop_notify_on';
 function desktopNotifyEnabled(){
   return 'Notification' in window&&Notification.permission==='granted'&&_liteLSGet(DESKTOP_NOTIFY_KEY,'0')==='1';
@@ -7949,8 +7630,7 @@ function showAlertToast(ev){
       return;
     }catch(e){console.error('Notification error:',e);}
   }
-  // Dự phòng: trình duyệt không hỗ trợ/chưa cấp/đã từ chối quyền, hoặc người dùng đã tắt qua nút 🖥
-  // -> vẫn hiện toast trên dashboard như trước để không mất cảnh báo.
+  // Dự phòng: trình duyệt không hỗ trợ/chưa cấp/đã từ chối quyền, hoặc người dùng đã tắt qua nút 🖥 -> vẫn hiện toast trên dashboard như trước để không mất cảnh báo.
   if(!DOM.alertToastWrap)return;
   const el=document.createElement('div');
   el.className='alert-toast';
@@ -8078,9 +7758,7 @@ function bindAlertControls(){
   });
   updateAlertFormVisibility();
 }
-// ═══════════════════════════════════════════════════════
 // SEARCH helper
-// ═══════════════════════════════════════════════════════
 function _bindSearch(el,onEnter){
   if(!el)return;
   el.addEventListener('keydown',function(e){
@@ -8119,9 +7797,7 @@ function closeJournal(){
   if(!DOM.overlay.classList.contains('on'))document.body.style.overflow='';
 }
 DOM.journalOverlay.addEventListener('click',e=>{if(e.target===DOM.journalOverlay)closeJournal();});
-// ═══════════════════════════════════════════════════════
 // POPUP — tab activation (dùng chung cho cả 3 header)
-// ═══════════════════════════════════════════════════════
 function _activateTab(tab){
   _tab=tab;
   // Desktop tabs
@@ -8151,9 +7827,7 @@ DOM.popupCtabs.addEventListener('click',e=>{const btn=e.target.closest('.ctab');
 DOM.mobTabRow.addEventListener('click',e=>{const btn=e.target.closest('.mob-tab-btn');if(btn)_activateTab(btn.dataset.tab);});
 // Event delegation — mobile landscape tabs
 DOM.mobLandTabs.addEventListener('click',e=>{const btn=e.target.closest('.mob-land-tab');if(btn)_activateTab(btn.dataset.tab);});
-// ═══════════════════════════════════════════════════════
 // POPUP OPEN / CLOSE
-// ═══════════════════════════════════════════════════════
 function _updateSymDisplay(sym){
   DOM.ptitle.textContent=sym;
   DOM.mobPtitle.textContent=sym;
@@ -8234,20 +7908,14 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){if(DOM.overlay.classList.contains('on')){closePopup();return;}}
   if(e.key==='Escape'&&DOM.journalOverlay.classList.contains('on')){closeJournal();return;}
 });
-// ═══════════════════════════════════════════════════════
 // HOVER PREVIEW
-// ═══════════════════════════════════════════════════════
 const _hvGroups=[];
 (function(){
   _hvGroups.push({name:'TRADING',syms:TS_POOL});
   _hvGroups.push({name:'VN30',syms:HMAP_COLS[0].groups[0].syms});
   HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')_hvGroups.push({name:g.name,syms:g.syms});}));
 })();
-// ═══════════════════════════════════════════════════════
-// Helper dùng chung giữa cột NHÓM NGÀNH (CHART) và HOVER PREVIEW (HEATMAP) —
-// cả hai đều đọc từ window._lastHmapData nên gộp vào 1 chỗ, tránh phải sửa
-// nhiều nơi khi đổi công thức định dạng %/màu hoặc thứ tự sort.
-// ═══════════════════════════════════════════════════════
+// Helper dùng chung giữa NHÓM NGÀNH (CHART) và HOVER PREVIEW (HEATMAP), cả 2 đọc window._lastHmapData.
 function _symDisplayFields(sym,data){
   const entry=(data||window._lastHmapData||{})[sym];
   const pct=entry&&typeof entry.pct==='number'?entry.pct:null;
@@ -8261,9 +7929,7 @@ function _sortSymsByMode(syms,alpha){
   const d=window._lastHmapData||{};
   return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
 }
-// ═══════════════════════════════════════════════════════
 // CHART — SIDEBAR NHÓM NGÀNH / FAVORITE (overlay, không đụng logic vẽ chart)
-// ═══════════════════════════════════════════════════════
 const LG_FAVORITE_KEY='dashboard_favorite_symbols';
 let LG_FAVORITES=_lgLoadFavorites();
 function _lgLoadFavorites(){
@@ -8276,9 +7942,7 @@ function _lgFollowFirstOrder(syms){
   const rest=syms.filter(s=>!FOLLOW.includes(s));
   return [...inFollow,...rest];
 }
-// Chèn 1 mã mới vào LG_FAVORITES đúng vị trí: mã thuộc FOLLOW → chèn vào cuối khối Follow
-// (khối này luôn nằm ở đầu danh sách); mã không thuộc FOLLOW → thêm xuống cuối danh sách.
-// Dùng chung cho: đồng bộ Follow, bấm sao (★), và nhập nhanh nhiều mã.
+// Chèn mã mới vào LG_FAVORITES: mã FOLLOW chèn cuối khối Follow (đầu danh sách), mã khác thêm cuối danh sách. Dùng chung cho sync Follow, bấm sao, nhập nhanh.
 function _lgInsertFavorite(sym){
   if(FOLLOW.includes(sym)){
     let pos=0;while(pos<LG_FAVORITES.length&&FOLLOW.includes(LG_FAVORITES[pos]))pos++;
@@ -8287,8 +7951,7 @@ function _lgInsertFavorite(sym){
     LG_FAVORITES.push(sym);
   }
 }
-// Danh sách FOLLOW tự động được gắn ⭐ (thêm vào FAVORITE), xếp thành khối ở đầu danh sách.
-// Không tự bỏ sao nếu người dùng gỡ mã khỏi FOLLOW hoặc tự tay bỏ sao trong FAVORITE.
+// Danh sách FOLLOW tự động được gắn ⭐ (thêm vào FAVORITE), xếp thành khối ở đầu danh sách. Không tự bỏ sao nếu người dùng gỡ mã khỏi FOLLOW hoặc tự tay bỏ sao trong FAVORITE.
 function _lgSyncFollowIntoFavorites(){
   let changed=false;
   FOLLOW.forEach(sym=>{
@@ -8312,8 +7975,7 @@ function _broadcastFavorites(){
   if(_hoverPreviewOn){_hvBuildTabs();if(_hvActiveGroup!==-1)_hvRenderSymList();}
 }
 function _lgReorderFavorite(dragSym,targetSym){
-  // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường —
-  // hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
+  // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường — hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
   if(FOLLOW.includes(dragSym)!==FOLLOW.includes(targetSym))return;
   const from=LG_FAVORITES.indexOf(dragSym);if(from===-1)return;
   LG_FAVORITES.splice(from,1);
@@ -8386,8 +8048,7 @@ DOM.lgToggleBtn?.addEventListener('click',e=>{
     _lgRenderList();
   }
 });
-// Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để
-// luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
+// Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
 function _updateVietstockIframeIfActive(sym){
   if(!DOM.liteChartFrame.classList.contains('vietstock-mode'))return;
   DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(sym||_liteSymbol||'VNINDEX').toLowerCase();
@@ -8457,7 +8118,7 @@ DOM.lgList?.addEventListener('drop',e=>{
   const targetSym=item.dataset.sym;
   if(targetSym!==_lgDragSym)_lgReorderFavorite(_lgDragSym,targetSym);
 });
-// Điều hướng phím lên/xuống trong nhóm đang mở — giống hệt hành vi ở POP-OUT
+// Điều hướng phím lên/xuống trong nhóm đang mở
 let _lgKeyThrottle=false,_lgKeyLoadTimer=null;
 document.addEventListener('keydown',e=>{
   if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on')||!_lgActiveGroupName)return;
@@ -8477,20 +8138,17 @@ document.addEventListener('keydown',e=>{
   const el=items[next],relTop=el.offsetTop-DOM.lgList.offsetTop,h=el.offsetHeight;
   if(relTop-h<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h);
   else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
-  // Debounce load giống POP-OUT (_kd, 300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại,
-  // không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
+  // Debounce load (300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại, không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
   clearTimeout(_lgKeyLoadTimer);
   _lgKeyLoadTimer=setTimeout(()=>loadLiteChart(_lgActiveSym),300);
 });
-// Click ra ngoài khu vực sidebar (ví dụ vào khung chart) sau khi đã lướt mã bằng phím lên/xuống:
-// bỏ nền xanh (bỏ focus) khỏi ô mã cuối cùng đang được tô trong cột danh sách.
+// Click ra ngoài khu vực sidebar (ví dụ vào khung chart) sau khi đã lướt mã bằng phím lên/xuống: bỏ nền xanh (bỏ focus) khỏi ô mã cuối cùng đang được tô trong cột danh sách.
 document.addEventListener('click',e=>{
   if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
   if(DOM.lgSidebar.contains(e.target))return;
   DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
 });
-// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, ATTENT, BREAKVOL, TRADING, VN30, nhóm ngành...)
-// để Hover Preview (Pop-up) và POP-OUT luôn đồng bộ với thẻ CHART.
+// Danh sách nhóm dùng chung với sidebar CHART (FAVORITE, SIGNAL, MOMENTUM, ATTENT, BREAKVOL, TRADING, VN30, nhóm ngành...) để Hover Preview (Pop-up) luôn đồng bộ với thẻ CHART.
 function _hvBuildTabs(){
   const groups=_lgGetGroups();
   DOM.hpGrouptabs.innerHTML=groups.map((g,i)=>`<button class="hv-gtab${i===_hvActiveGroup?' on':''}" data-idx="${i}">${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</button>`).join('');
@@ -8503,9 +8161,7 @@ function _hvSelectGroup(idx){
   DOM.hpSymlist.style.display='';_hvRenderSymList();
 }
 DOM.hpSortBtn.addEventListener('click',()=>{_hvSortAlpha=!_hvSortAlpha;DOM.hpSortBtn.textContent=_hvSortAlpha?'%↕':'A↕Z';_hvRenderSymList();});
-// Vẽ lại danh sách mã của nhóm đang mở, đồng thời tự ẩn/hiện nút sort (FAVORITE giữ thứ tự
-// thủ công nên không cho sort) — gộp về đây để mọi nơi gọi hàm này (mở nhóm, đổi sort,
-// quay lại từ POP-OUT, đổi Favorite...) đều nhận đúng trạng thái mà không cần lặp lại logic.
+// Vẽ lại danh sách mã của nhóm đang mở, tự ẩn/hiện nút sort (FAVORITE không cho sort); dùng chung mọi nơi cần refresh trạng thái.
 function _hvRenderSymList(){
   if(_hvActiveGroup===-1)return;
   const g=_lgGetGroups()[_hvActiveGroup];if(!g)return;
@@ -8600,22 +8256,11 @@ window.addEventListener('message',e=>{
   }
 });
 
-// ═══════════════════════════════════════════════════════
 // CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
-// ═══════════════════════════════════════════════════════
 let _chartPopoutWin=null,_lastChartSyncSymbol=null;
-// Chiều cao nội dung panel CHART khi mở popout, tính sẵn từ các trị CSS cố định — để mở cửa
-// sổ đúng kích thước ngay từ đầu, KHÔNG mở full màn hình rồi co lại (tránh giật hình):
-//   720   = chiều cao khung chart (.lite-chart-frame{height:720px})
-//   80    = phần toolbar/header phía trên (dự trù tối đa 2 dòng khi màn hình hẹp hơn)
-//   18    = padding trên/dưới #main-wrap ở chart-popout-mode (8px * 2) + viền panel
-//   34    = dòng footer "Scanner Bot Dashboard • ..." (footer nằm ngoài #main-wrap nên vẫn
-//           hiện trong popout, cần cộng thêm để không bị hụt/mất chữ)
-// Nếu ước tính hụt vài px trên màn hình quá hẹp, cửa sổ đã có scrollbars=yes làm phương án
-// dự phòng an toàn (hiện thanh cuộn thay vì bị cắt nội dung), thay vì phải đo rồi co giật cục.
+// CHART_POPOUT_CONTENT_H tính sẵn từ CSS cố định (720 chart + 80 header + 18 padding + 34 footer) để mở cửa sổ đúng kích thước ngay từ đầu; scrollbars=yes là phương án dự phòng nếu hụt vài px.
 const CHART_POPOUT_CONTENT_H=720+80+18+34;
-// Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại
-// (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
+// Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
 const CHART_POPOUT_WIDTH_RATIO=0.855;
 function openChartPopout(){
   if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
@@ -8627,32 +8272,24 @@ function openChartPopout(){
   if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
 }
 document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openChartPopout);
-// Đồng bộ 2 chiều: dùng chung 1 listener cho cả cửa sổ chính (nhận từ popout con) lẫn
-// cửa sổ popout (nhận từ cửa sổ chính, qua window.opener). _lastChartSyncSymbol đánh dấu
-// mã vừa nhận từ phía kia để loadLiteChart() không gửi ngược lại, tránh lặp vô hạn.
+// Đồng bộ 2 chiều dùng chung 1 listener; _lastChartSyncSymbol tránh gửi ngược lại gây lặp vô hạn.
 window.addEventListener('message',e=>{
   if(e.data&&e.data.type==='CHART_POPOUT_SYNC'&&e.data.symbol){
     _lastChartSyncSymbol=String(e.data.symbol).toUpperCase().trim();
     loadLiteChart(_lastChartSyncSymbol,0);
   }
 });
-// Nếu chính trang này được mở lại bởi openChartPopout() ở trên (?chartPopout=1) thì tự mở
-// sẵn panel CHART, ẩn phần còn lại của dashboard, và nạp đúng mã đã chọn từ cửa sổ chính
-// (đánh dấu sẵn _lastChartSyncSymbol để lần nạp đầu tiên này không gửi ngược lại cửa sổ chính).
+// Trang mở lại với ?chartPopout=1 tự mở panel CHART, ẩn phần còn lại, nạp đúng mã từ cửa sổ chính (đánh dấu _lastChartSyncSymbol để không gửi ngược).
 (function(){
   if(!_isChartPopoutWindow)return;
-  // class chart-popout-mode đã được gắn vào <html> ngay từ đầu <head> (script inline) để
-  // ẩn toàn bộ dashboard từ lần vẽ đầu tiên — dòng dưới chỉ để phòng hờ/tương thích ngược,
-  // không còn là nơi ẩn giao diện chính nữa.
+  // class chart-popout-mode đã gắn vào <html> từ đầu <head> (script inline); dòng dưới chỉ để tương thích ngược.
   document.documentElement.classList.add('chart-popout-mode');
   DOM.liteChartPanel.classList.remove('collapsed');
   const qsym=(new URLSearchParams(window.location.search).get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
 })();
 
-// ═══════════════════════════════════════════════════════
 // INIT
-// ═══════════════════════════════════════════════════════
 async function init(){
   initDesktopNotifyBtn();
   _refreshChartModeUI();
@@ -8663,11 +8300,7 @@ async function init(){
     _isChartPanelOpen=true;
   }
   startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
-  // Bắn tải CHART NGAY LẬP TỨC — không await, không chờ config/tín hiệu/heatmap/health xong
-  // trước. Trước đây 4 API này chạy TUẦN TỰ (await Promise.all(...) rồi mới loadLiteChart())
-  // nên dù cache chart đã sẵn sàng, panel CHART vẫn phải đợi hết round-trip của 4 API không
-  // liên quan mới bắt đầu tải — giờ chạy song song, chart tự vẽ ngay khi request riêng của
-  // nó xong, không phụ thuộc các API kia.
+  // Tải CHART ngay lập tức, không chờ config/tín hiệu/heatmap/health (chạy song song thay vì tuần tự) để chart không phụ thuộc API khác.
   loadLiteChart(_liteSymbol);
   await Promise.all([loadConfig(),fetchSigs(),fetchHmap(),fetchHealth()]);
   await Promise.all([loadAlerts(),pollAlertFeed(false)]);
