@@ -6,14 +6,12 @@ from flask import Flask, jsonify, Response, request, session, send_from_director
 from functools import wraps
 from io import BytesIO
 from pathlib import Path
-import base64
 import gzip
 import hmac
 import json
 import math
 import os
 import requests
-import urllib.request
 import sqlite3
 import threading
 import time
@@ -93,8 +91,6 @@ _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
 _fetch_market_health_fn = None
-_ensure_chart_symbol_fn = None
-_chart_symbol_status_fn = None
 _vol_forecast_fn = None
 # Hàm tính vpa_flag (calc_vpa_flag bên scanner_full.py) — inject qua
 # start_dashboard(calc_vpa_flag_fn=...) để panel CHART tô màu Volume-Signal
@@ -1672,15 +1668,13 @@ def dashboard_main_js():
 # =============================================================================
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
-                    ensure_chart_symbol_fn=None,
-                    chart_symbol_status_fn=None,
                     vol_forecast_fn=None,
                     calc_vpa_flag_fn=None,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _ensure_chart_symbol_fn, _chart_symbol_status_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -1690,8 +1684,6 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_market_health_fn = fetch_market_health_fn
-    _ensure_chart_symbol_fn = ensure_chart_symbol_fn
-    _chart_symbol_status_fn = chart_symbol_status_fn
     _vol_forecast_fn   = vol_forecast_fn
     _calc_vpa_flag_fn  = calc_vpa_flag_fn
     _signal_emoji      = signal_emoji_ref
