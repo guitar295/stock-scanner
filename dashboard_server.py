@@ -6074,27 +6074,25 @@ function resizeLiteSearchInput(){
   const n=Math.max(1,DOM.liteChartSearch.value.length);
   DOM.liteChartSearch.style.width=`${Math.min(120,Math.max(42,26+n*16))}px`;
 }
-function openLiteSearchWithChar(ch){
-  const cur=DOM.liteChartSearch.classList.contains('on')?DOM.liteChartSearch.value:'';
-  DOM.liteChartSearch.value=(cur+String(ch||'').toUpperCase()).slice(0,10);
-  resizeLiteSearchInput();
+// Mở ô tìm mã và focus — KHÔNG pre-fill ký tự: để IME/trình duyệt tự gõ vào ô sau khi
+// focus (giống click vào ô rồi gõ). Pre-fill tại keydown gây nhân đôi ký tự tiếng Việt
+// vì e.key là Latin thô chưa compose và event có thể bubble qua 2 listener trước khi
+// focus chuyển kịp. resizeLiteSearchInput() không cần gọi ở đây — đã gắn vào 'input'
+// event của ô search, tự resize sau mỗi ký tự thực sự được gõ vào.
+function openLiteSearch(){
+  if(!DOM.liteChartSearch.classList.contains('on'))DOM.liteChartSearch.value='';
   DOM.liteChartSearch.classList.add('on');
   DOM.liteChartSearch.focus();
 }
-// Phím đơn (không kèm Ctrl/Alt/Meta) là chữ/số thường — dùng chung cho 2 nơi bắt phím gõ nhanh mã cổ phiếu.
-function _liteIsPlainAlnumKey(e){
-  return !(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key));
-}
-// Đuôi dùng chung cho 2 nơi bắt phím gõ nhanh mở ô tìm mã (#lite-chart-frame và document):
-// chỉ xử lý phím chữ/số đơn, bỏ qua khi đang gõ chú thích Text hoặc đang focus sẵn 1 input/textarea/select
-// khác (để input đó tự nhận phím, tránh lặp chữ khi gõ tiếng Việt qua IME). Trả về true nếu đã mở ô tìm mã.
+// Phím đơn chữ/số (không kèm Ctrl/Alt/Meta) gõ ngoài mọi input/textarea/select → mở ô tìm mã.
+// Không gọi preventDefault() — cần để IME gửi ký tự vào ô search sau khi focus() chuyển sang.
+// Trả về true nếu đã mở ô (để caller gọi stopPropagation() chặn bubble lên document listener).
 function _liteTryOpenSearchOnKey(e){
-  if(!_liteIsPlainAlnumKey(e))return false;
+  if(e.metaKey||e.ctrlKey||e.altKey||e.key.length!==1||!/^[a-zA-Z0-9]$/.test(e.key))return false;
   if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
   const tag=(document.activeElement?.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea'||tag==='select')return false;
-  e.preventDefault();
-  openLiteSearchWithChar(e.key);
+  openLiteSearch();
   return true;
 }
 // _liteUpdateIndicatorData: phiên bản NHẾ của renderLiteIndicators() — dùng khi dữ liệu đã prepend (lazy-load).
@@ -6539,15 +6537,9 @@ function bindLiteChartControls(){
       }
       return;
     }
-    // #lite-chart-search nằm lồng bên trong #lite-chart-frame nên keydown của nó vẫn nổi bọt lên tới đây;
-    // _liteTryOpenSearchOnKey tự bỏ qua khi đang focus sẵn 1 input/textarea/select để input đó tự nhận phím
-    // (tránh lặp chữ khi gõ tiếng Việt qua IME).
-    // stopPropagation() ở đây là bắt buộc: nếu không, event vẫn nổi bọt tiếp lên listener trên document bên
-    // dưới và event đó CŨNG cố mở ô tìm mã lần nữa cho cùng 1 lần bấm phím. Bình thường .focus() đã chuyển
-    // focus đồng bộ nên listener document tự bỏ qua (activeElement đã là input) — nhưng việc dựa vào đúng
-    // thời điểm đó không chắc chắn 100% khi gõ rất nhanh hoặc qua bộ gõ tiếng Việt, khiến ký tự ĐẦU TIÊN
-    // (lúc ô tìm mã còn chưa tồn tại/focus) có thể bị 2 nơi cùng xử lý → chữ bị lặp. stopPropagation() chặn
-    // triệt để, không phụ thuộc timing của trình duyệt nữa.
+    // stopPropagation() chặn event bubble lên document listener bên dưới — nếu không, cả 2 listener
+    // cùng gọi openLiteSearch() cho 1 lần bấm phím. Không dựa vào timing của .focus() vì không đảm
+    // bảo 100% khi gõ nhanh hoặc qua IME tiếng Việt.
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
