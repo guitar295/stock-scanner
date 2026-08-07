@@ -5518,9 +5518,16 @@ function _liteStartShapeDrag(hit,ev){
   const d=hit.shape;
   _liteSelectShape(d.id);
   const startPt=_litePtFromEvent(ev);if(!startPt)return;
+  // Quy đổi l của origPoints về đúng khung thời gian hiện tại TRƯỚC KHI kéo,
+  // tránh dùng l cũ của khung thời gian trước làm hình vẽ bị nhảy sang mốc khác.
+  const normalizedPoints=(d.points||[]).map(pt=>{
+    if(!pt)return pt;
+    const curL=_litePtLogical(pt);
+    return{...pt,l:curL};
+  });
   _liteDragInfo={
     part:hit.part,
-    origPoints:JSON.parse(JSON.stringify(d.points||[])),
+    origPoints:JSON.parse(JSON.stringify(normalizedPoints)),
     origStopP:d.stopP,
     origTarget2P:d.target2P,
     origOffsetPrice:d.points&&d.points[2]&&d.points[2].offsetPrice,
