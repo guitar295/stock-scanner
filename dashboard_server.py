@@ -2133,8 +2133,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tri-tab.on{color:var(--accent);font-weight:800}
 .tri-toggle{font-size:12px;color:var(--muted);transition:transform .15s;margin-left:auto}
 .tri-panel:not(.collapsed) .tri-toggle{transform:rotate(90deg);color:var(--accent)}
+/* CƠ CHẾ THU/MỞ THẺ DÙNG CHUNG cho tri-panel / hmap-panel / lite-chart-panel (xem thêm 2 khối
+   ".hmap-panel.collapsed" và ".lite-chart-panel.collapsed" bên dưới): khi thẻ có class .collapsed,
+   ẩn toàn bộ nội dung phụ trong header + phần thân, LUÔN dùng !important để mobile media query
+   (@media max-width:768px) không thể ghi đè ngược lại (bug cũ: hmap-ts-wrap vẫn hiện trên mobile
+   dù thẻ đã thu gọn, vì rule ẩn thiếu !important còn rule mobile lại có !important). */
 .tri-panel.collapsed .tri-tabs,
-.tri-panel.collapsed>.tri-body{display:none}
+.tri-panel.collapsed>.tri-body{display:none!important}
 .tri-content{display:none}
 .tri-content.on{display:block}
 .health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
@@ -2194,7 +2199,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
-.lite-chart-panel.collapsed .lite-chart-frame{display:none}
+.lite-chart-panel.collapsed .lite-chart-frame{display:none!important}
 /* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard.
    Dùng selector html.chart-popout-mode (thay vì body.chart-popout-mode) vì class này giờ
    được gắn vào <html> ngay từ đầu <head> — xem script inline phía trên — để có hiệu lực
@@ -2230,11 +2235,14 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
+/* Đồng bộ với .tri-panel.collapsed / .lite-chart-panel.collapsed ở trên & dưới: mọi rule ẩn khi
+   thu gọn đều dùng !important để không bị @media max-width:768px ghi đè (xem giải thích ở khối
+   .tri-panel.collapsed). Thu gọn hmap-panel chỉ còn lại đúng "Heatmap" + icon mũi tên. */
 .hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none!important}
-.hmap-panel.collapsed .hmap-ts-wrap{display:none}
+.hmap-panel.collapsed .hmap-ts-wrap{display:none!important}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.pbar-wrap,
-.hmap-panel.collapsed>.panel-body{display:none}
+.hmap-panel.collapsed>.panel-body{display:none!important}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .frame-shrink{width:100%;height:720px;overflow:hidden;position:relative;background:#fff}
 .frame-shrink iframe{position:absolute;top:0;left:0;width:125%;height:125%;border:none;background:#fff;transform:scale(.8);transform-origin:0 0}
@@ -2877,7 +2885,7 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
               <label><input type="checkbox" value="ma30"><span class="lite-ind-label" data-ind="ma30" title="Bấm để đổi màu">MA30</span><input type="color" class="lite-ind-color" data-ind="ma30" value="#1a56db"></label>
               <label><input type="checkbox" value="ma50"><span class="lite-ind-label" data-ind="ma50" title="Bấm để đổi màu">MA50</span><input type="color" class="lite-ind-color" data-ind="ma50" value="#800080"></label>
               <label><input type="checkbox" value="ma100"><span class="lite-ind-label" data-ind="ma100" title="Bấm để đổi màu">MA100</span><input type="color" class="lite-ind-color" data-ind="ma100" value="#d97706"></label>
-              <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
+              <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#9b6af1"></label>
               <div class="lite-ind-dropdown-sub-title">EMA</div>
               <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#ff0000"></label>
               <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#16a34a"></label>
@@ -3508,7 +3516,7 @@ function _liteLSSet(key,val){
 }
 const LITE_MA_PERIODS=[10,20,30,50,100,200];
 const LITE_EMA_PERIODS=[10,20,30,50,100,200];
-const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
+const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#9b6af1'];
 const LITE_EMA_DEFAULT_COLORS=['#ff0000','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
 const LITE_RSI_PERIOD=14;
 const LITE_RSI_DEFAULT_COLOR='#7c6ee6';
