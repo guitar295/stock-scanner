@@ -2217,8 +2217,12 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   }
   /* Thu nhỏ ô Tìm mã bằng scale — giữ font-size:16px để iOS không auto-zoom khi focus.
      transform-origin neo về phía container để ô không bị lệch ra ngoài;
-     margin bù lại khoảng trắng dư do element vẫn chiếm layout space gốc sau khi scale. */
-  .hmap-search-wrap{
+     margin bù lại khoảng trắng dư do element vẫn chiếm layout space gốc sau khi scale.
+     Áp dụng ĐỒNG BỘ cho cả ô Tìm mã của HEATMAP (.hmap-search-wrap) và CHART
+     (.lite-chart-search-wrap) — cùng tỉ lệ scale, cùng công thức margin bù, để 2 ô luôn
+     hiển thị cùng kích thước trên mobile. */
+  .hmap-search-wrap,
+  .lite-chart-search-wrap{
     transform:scale(0.72);
     transform-origin:left center;
     margin-right:calc((0.72 - 1) * 90px);
@@ -2494,6 +2498,12 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   #signal-header .panel-title{white-space:nowrap;flex-shrink:0}
   #signal-header #sig-meta{display:block;width:100%;white-space:nowrap;overflow:visible;line-height:1.35}
   .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
+  /* Khi thẻ đã THU GỌN thì chỉ còn "Heatmap" + mũi tên (row1/ts-wrap đã ẩn ở rule
+     .hmap-panel.collapsed phía trên) nên không cần xếp dọc nữa — trả lại 1 hàng ngang, cùng
+     padding với .panel-hdr (dùng chung bởi tri-hdr và lite-chart-toggle) để chiều cao & khoảng
+     cách mũi tên tới lề phải luôn khớp giữa 3 thẻ HEATMAP / MARKET / CHART. Chỉ áp dụng trong
+     @media mobile này — không đụng tới desktop, nơi hmap-panel-hdr vốn đã là hàng ngang. */
+  .hmap-panel.collapsed .hmap-panel-hdr{flex-direction:row;align-items:center;gap:6px;padding:9px 16px}
   .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
@@ -2561,9 +2571,9 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   .lite-chart-toolbar>*{flex-shrink:0}
   .lite-indicators{flex-wrap:nowrap}
   .lite-draw-toolbar{flex-wrap:nowrap}
-  .lite-chart-input{width:90px;font-size:16px !important}
-  .lite-chart-input:focus{width:110px}
-  .mob-search-input, .mob-land-search, .popup-search-input, .hmap-search-input {
+  .lite-chart-input{width:90px !important}
+  .lite-chart-input:focus{width:90px !important}
+  .mob-search-input, .mob-land-search, .popup-search-input, .hmap-search-input, .lite-chart-input {
     font-size: 16px !important;
   }
   button, input, select, .ctab, .mob-tab-btn, .mob-land-tab, .lite-draw-btn, .lite-tf-btn, .lite-ind-group-btn {
