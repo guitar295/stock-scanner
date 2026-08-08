@@ -2497,19 +2497,28 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   #signal-header .panel-hdr-left{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%}
   #signal-header .panel-title{white-space:nowrap;flex-shrink:0}
   #signal-header #sig-meta{display:block;width:100%;white-space:nowrap;overflow:visible;line-height:1.35}
-  .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
-  /* Khi thẻ đã THU GỌN thì chỉ còn "Heatmap" + mũi tên (row1/ts-wrap đã ẩn ở rule
-     .hmap-panel.collapsed phía trên) nên không cần xếp dọc nữa — trả lại 1 hàng ngang, cùng
-     padding với .panel-hdr (dùng chung bởi tri-hdr và lite-chart-toggle) để chiều cao & khoảng
-     cách mũi tên tới lề phải luôn khớp giữa 3 thẻ HEATMAP / MARKET / CHART. Chỉ áp dụng trong
-     @media mobile này — không đụng tới desktop, nơi hmap-panel-hdr vốn đã là hàng ngang. */
-  .hmap-panel.collapsed .hmap-panel-hdr{flex-direction:row;align-items:center;gap:6px;padding:9px 16px}
-  .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
+  /* Header HEATMAP trên mobile dùng CSS Grid (không phải flex-column như trước) để mũi tên
+     thu/mở LUÔN nằm cùng hàng với tiêu đề "Heatmap" (cột phải, căn giữa dọc theo hàng 1) —
+     dù đang mở (row1 + hmap-ts-wrap đều hiển thị) hay đã thu gọn (row1 chỉ còn tiêu đề,
+     hmap-ts-wrap bị ẩn). Nhờ vậy mũi tên không còn tự chiếm riêng 1 hàng lúc mở, và padding
+     phải luôn cố định 16px giống hệt .panel-hdr (tri-hdr / lite-chart-toggle) ở MỌI trạng thái
+     — không cần thêm rule riêng cho .collapsed nữa vì hàng 2 (hmap-ts-wrap) tự co về 0 khi ẩn. */
+  .hmap-panel-hdr{
+    display:grid;
+    grid-template-columns:1fr auto;
+    align-items:center;
+    gap:4px 6px;
+    padding:9px 16px;
+  }
+  .hmap-hdr-row1{grid-column:1;grid-row:1;min-width:0;width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
+  .hmap-toggle-icon{grid-column:2;grid-row:1;justify-self:end;margin-left:0}
   .hmap-search-input{width:90px !important}
   .hmap-search-input:focus{width:90px !important}
   .hmap-ts-wrap{
+    grid-column:1/-1;
+    grid-row:2;
     white-space:nowrap !important;
     overflow-x:auto !important;
     overflow-y:hidden !important;
