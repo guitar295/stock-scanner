@@ -2210,6 +2210,22 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
     max-height:none!important;
     min-height:0!important;
   }
+  /* Thu nhỏ ô Tìm mã bằng scale — giữ font-size:16px để iOS không auto-zoom khi focus.
+     transform-origin neo về phía container để ô không bị lệch ra ngoài;
+     margin bù lại khoảng trắng dư do element vẫn chiếm layout space gốc sau khi scale. */
+  .hmap-search-wrap{
+    transform:scale(0.72);
+    transform-origin:left center;
+    margin-right:calc((0.72 - 1) * 90px);
+  }
+  .mob-search-wrap{
+    transform:scale(0.72);
+    transform-origin:right center;
+    margin-left:calc((0.72 - 1) * 72px);
+  }
+  /* Title chart portrait: ẩn H và L để vừa 1 dòng (còn O, C và %).
+     Wrap H/L bằng <span class="lct-hl"> trong _liteTitleSegments rồi ẩn qua CSS. */
+  .lite-chart-title .lct-hl{display:none}
 }
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
@@ -3768,13 +3784,13 @@ function _liteTitleSegments(bar){
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
+  // H và L được wrap bằng <span class="lct-hl"> để CSS portrait ẩn bớt cho vừa 1 dòng.
+  // _high/_low lưu riêng để _liteDrawTitleSegments vẫn vẽ đủ trên canvas screenshot.
+  const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
   return [
     {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:`,color:'#111827'},
     {text:fmtLiteNum(bar.open),color:col},
-    {text:' H:',color:'#111827'},
-    {text:fmtLiteNum(bar.high),color:col},
-    {text:' L:',color:'#111827'},
-    {text:fmtLiteNum(bar.low),color:col},
+    {text:hlHtml,color:'__html',_high:fmtLiteNum(bar.high),_low:fmtLiteNum(bar.low)},
     {text:' C:',color:'#111827'},
     {text:fmtLiteNum(bar.close),color:col},
     {text:' (',color:'#111827'},
@@ -3871,6 +3887,7 @@ function liteTimeKey(t){
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
   DOM.liteChartTitle.innerHTML=_liteTitleSegments(bar).map(seg=>
+    seg.color==='__html'?seg.text:
     seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
   ).join('');
 }
@@ -5110,9 +5127,24 @@ function _liteStartShapeDrag(hit,ev){
 }
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
-    ctx.fillStyle=seg.color;
-    ctx.fillText(seg.text,x,y);
-    x+=ctx.measureText(seg.text).width;
+    if(seg.color==='__html'){
+      // Segment H/L được wrap HTML cho DOM — trên canvas vẫn vẽ text thuần
+      // (strip tags, tách màu theo pattern " H:" / giá / " L:" / giá)
+      const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
+      const parts=[
+        {t:' H:',c:'#111827'},{t:seg._high||'',c:col},
+        {t:' L:',c:'#111827'},{t:seg._low||'',c:col}
+      ];
+      for(const p of parts){
+        ctx.fillStyle=p.c;
+        ctx.fillText(p.t,x,y);
+        x+=ctx.measureText(p.t).width;
+      }
+    }else{
+      ctx.fillStyle=seg.color;
+      ctx.fillText(seg.text,x,y);
+      x+=ctx.measureText(seg.text).width;
+    }
   }
 }
 // Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi, takeScreenshot() không chụp được.
