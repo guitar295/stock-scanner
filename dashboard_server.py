@@ -2232,9 +2232,16 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
     transform-origin:right center;
     margin-left:calc((0.72 - 1) * 72px);
   }
-  /* Title chart portrait: ẩn H và L để vừa 1 dòng (còn O, C và %).
-     Wrap H/L bằng <span class="lct-hl"> trong _liteTitleSegments rồi ẩn qua CSS. */
-  .lite-chart-title .lct-hl{display:none}
+  /* Title chart portrait: ẩn O, H, L để vừa 1 dòng (chỉ còn C và %).
+     Wrap bằng <span class="lct-open"> / <span class="lct-hl"> rồi ẩn qua CSS. */
+  .lite-chart-title .lct-open,.lite-chart-title .lct-hl{display:none}
+  /* Portrait mobile: để lite-chart-frame tự giãn chiều cao theo nội dung
+     khi thêm RSI/MACD panel — thay vì cố định height rồi co các pane lại. */
+  .lite-chart-frame{
+    height:auto!important;
+    max-height:none!important;
+    min-height:300px!important;
+  }
 }
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
@@ -3814,9 +3821,11 @@ function _liteTitleSegments(bar){
   // H và L được wrap bằng <span class="lct-hl"> để CSS portrait ẩn bớt cho vừa 1 dòng.
   // _high/_low lưu riêng để _liteDrawTitleSegments vẫn vẽ đủ trên canvas screenshot.
   const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
+  // O: và giá open được wrap bằng <span class="lct-open"> để CSS portrait ẩn bớt cho vừa 1 dòng.
+  const openHtml=`<span class="lct-open"><span style="color:#111827"> O:</span><span style="color:${col}">${fmtLiteNum(bar.open)}</span></span>`;
   return [
-    {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:`,color:'#111827'},
-    {text:fmtLiteNum(bar.open),color:col},
+    {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} |`,color:'#111827'},
+    {text:openHtml,color:'__html',_open:fmtLiteNum(bar.open)},
     {text:hlHtml,color:'__html',_high:fmtLiteNum(bar.high),_low:fmtLiteNum(bar.low)},
     {text:' C:',color:'#111827'},
     {text:fmtLiteNum(bar.close),color:col},
@@ -4108,12 +4117,12 @@ function alignLiteSeries(points){
 function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  // Đọc chiều cao thực tế khung (.lite-chart-frame) thay vì cố định 720, để khớp cả CSS mobile.
-  // Mobile popout portrait: frame vừa được CSS set height=100dvh-44px nên clientHeight
-  // đã đúng — nhưng nếu JS chạy trước khi browser reflow xong thì vẫn trả 720.
-  // Dùng window.innerHeight - 44 (toolbar) làm fallback an toàn trong trường hợp đó.
-  const _mobilePopoutPortrait=_isChartPopoutWindow&&IS_MOBILE()&&window.innerHeight>window.innerWidth;
-  const totalH=_mobilePopoutPortrait
+  // Portrait mobile: IS_MOBILE() && portrait orientation.
+  // - Popout portrait: frame CSS = 100dvh-44px; dùng innerHeight-44 làm totalH (fallback nếu reflow chưa xong).
+  // - Non-popout portrait: frame CSS = height:auto (tự giãn); mainH cố định 56vh, frame giãn xuống theo indicator.
+  // - Desktop/landscape: đọc clientHeight thực tế của frame (hoặc fallback 720).
+  const isPortraitMobile=IS_MOBILE()&&window.innerHeight>window.innerWidth;
+  const totalH=isPortraitMobile&&_isChartPopoutWindow
     ?Math.max(300,window.innerHeight-44)
     :(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
   const bothPanes=showRsi&&showMacd;
@@ -4122,7 +4131,12 @@ function applyLitePaneLayout(){
   const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
-  const mainH=showRsi||showMacd?Math.max(300,totalH-lowerH):totalH;
+  // Portrait non-popout: mainH = 56vh cố định (chart chính chiếm chủ đạo), frame tự giãn xuống theo RSI/MACD.
+  // Desktop/landscape/popout: mainH = totalH trừ phần indicator bên dưới.
+  const mobilePortrait=isPortraitMobile&&!_isChartPopoutWindow;
+  const mainH=mobilePortrait
+    ?Math.max(300,Math.round(window.innerHeight*0.56))
+    :(showRsi||showMacd?Math.max(300,totalH-lowerH):totalH);
   const showMainTimeScale=!showRsi&&!showMacd;
   const showRsiTimeScale=showRsi&&!showMacd;
   const showMacdTimeScale=showMacd;
@@ -4135,6 +4149,10 @@ function applyLitePaneLayout(){
     DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
     DOM.liteRsiChart.classList.toggle('hide-tv-logo',showRsi&&showMacd);
     DOM.liteMacdChart.classList.remove('hide-tv-logo');
+    // Portrait non-popout: set height tường minh cho frame (height:auto cần con có size rõ ràng).
+    if(mobilePortrait&&DOM.liteChartFrame){
+      DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
+    }
     DOM.liteChart.style.height=`${mainH}px`;
     if(showRsi)DOM.liteRsiChart.style.height=`${rsiH}px`;
     if(showMacd)DOM.liteMacdChart.style.height=`${macdH}px`;
@@ -5155,13 +5173,11 @@ function _liteStartShapeDrag(hit,ev){
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
     if(seg.color==='__html'){
-      // Segment H/L được wrap HTML cho DOM — trên canvas vẫn vẽ text thuần
-      // (strip tags, tách màu theo pattern " H:" / giá / " L:" / giá)
+      // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần, luôn hiện đủ O/H/L
       const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
-      const parts=[
-        {t:' H:',c:'#111827'},{t:seg._high||'',c:col},
-        {t:' L:',c:'#111827'},{t:seg._low||'',c:col}
-      ];
+      const parts=seg._open!=null
+        ?[{t:' O:',c:'#111827'},{t:seg._open||'',c:col}]
+        :[{t:' H:',c:'#111827'},{t:seg._high||'',c:col},{t:' L:',c:'#111827'},{t:seg._low||'',c:col}];
       for(const p of parts){
         ctx.fillStyle=p.c;
         ctx.fillText(p.t,x,y);
