@@ -4150,9 +4150,10 @@ function applyLitePaneLayout(){
     DOM.liteRsiChart.classList.toggle('hide-tv-logo',showRsi&&showMacd);
     DOM.liteMacdChart.classList.remove('hide-tv-logo');
     // Portrait non-popout: set height tường minh cho frame (height:auto cần con có size rõ ràng).
-    if(mobilePortrait&&DOM.liteChartFrame){
-      DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
-    }
+    // Else: clear inline style để CSS landscape/desktop tự quản — tránh giá trị portrait còn sót
+    // khi xoay sang landscape override CSS height:72vh.
+    if(mobilePortrait&&DOM.liteChartFrame)DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
+    else if(DOM.liteChartFrame)DOM.liteChartFrame.style.height='';
     DOM.liteChart.style.height=`${mainH}px`;
     if(showRsi)DOM.liteRsiChart.style.height=`${rsiH}px`;
     if(showMacd)DOM.liteMacdChart.style.height=`${macdH}px`;
