@@ -1967,6 +1967,21 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Scanner Dashboard</title>
+<!-- Icon/avatar dashboard: favicon tab trình duyệt + icon khi "Thêm vào MH chính" trên mobile.
+     iOS Safari đọc riêng apple-touch-icon (không dùng favicon), Android Chrome đọc icons khai
+     báo trong manifest.json. Cả 3 file ảnh + manifest.json nằm trong /static, không qua route
+     riêng — dùng lại route /static mặc định của Flask (đã có cache-control 7 ngày ở
+     _static_cache_headers phía trên). -->
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#9c27b0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scanner">
+<!-- default: thanh trạng thái (giờ/wifi/pin) nằm TÁCH RIÊNG phía trên trang, không đè lên
+     nội dung — tránh che mất tiêu đề header khi mở app từ icon màn hình chính. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!-- Cửa sổ CHART popout (?chartPopout=1, xem openChartPopout()) chỉ cần hiện panel CHART,
      ẩn hết phần còn lại của dashboard — class chart-popout-mode trước đây chỉ được JS ở
      cuối trang gắn vào <body> SAU KHI toàn bộ dashboard-main.js tải/parse xong, nên người
