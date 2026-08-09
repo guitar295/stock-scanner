@@ -34,10 +34,37 @@ def _static_cache_headers(response):
     """File tĩnh trong /static (vd lightweight-charts.min.js) gần như không đổi
     giữa các lần deploy — cho trình duyệt cache thẳng 7 ngày, khỏi tốn round-trip
     revalidate (If-None-Match/ETag) mỗi lần load trang. Nếu sau này đổi version
-    lib, đổi luôn tên file để trình duyệt tự tải bản mới thay vì dính cache cũ."""
+    lib, đổi luôn tên file để trình duyệt tự tải bản mới thay vì dính cache cũ.
+    RIÊNG các file icon/avatar (favicon, apple-touch-icon, icon-*, manifest.json)
+    NGƯỢC LẠI — đây là những file người dùng chủ động đổi thường xuyên (đổi logo/
+    avatar), nên loại khỏi cache 7 ngày, đặt no-cache: trình duyệt vẫn được lưu file
+    nhưng BẮT BUỘC hỏi lại server (If-None-Match/ETag) trước mỗi lần dùng — server trả
+    304 nếu file chưa đổi (rất nhẹ, không tải lại toàn bộ ảnh) hoặc trả bản mới ngay
+    nếu đã đổi. Nhờ vậy đổi icon xong là thấy ngay, không cần tăng tay ?v=N nữa."""
     if request.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        _ICON_STATIC_FILES = (
+            "favicon-32.png", "favicon-16.png", "favicon.ico",
+            "apple-touch-icon.png", "icon-192.png", "icon-512.png",
+            "manifest.json",
+        )
+        if request.path.rsplit("/", 1)[-1] in _ICON_STATIC_FILES:
+            response.headers["Cache-Control"] = "no-cache"
+        else:
+            response.headers["Cache-Control"] = "public, max-age=604800, immutable"
     return response
+
+@app.route("/favicon.ico")
+def _serve_root_favicon():
+    """Safari (và một số trình duyệt/bot khác) tự động dò GET /favicon.ico ở GỐC domain,
+    độc lập với thẻ <link rel="icon"> khai báo trong <head> — hành vi mặc định lâu đời,
+    không cần khai báo gì thêm để kích hoạt. Trước đây route này không tồn tại -> 404 ->
+    Safari rơi về icon quả cầu mặc định, dù Chrome vẫn hiển thị đúng vì Chrome chỉ dựa
+    vào thẻ <link>. Trỏ thẳng sang file đã có sẵn trong /static, không cần thêm file mới.
+    Path /favicon.ico (khác /static/favicon.ico) nên KHÔNG được hook _static_cache_headers
+    ở trên tự áp dụng — set no-cache thủ công tại đây, đồng bộ chính sách với icon khác."""
+    resp = send_from_directory(app.static_folder, "favicon.ico")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 _LWC_JS_CACHE = None
 
@@ -1970,17 +1997,14 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <!-- Icon/avatar dashboard: favicon tab trình duyệt + icon khi "Thêm vào MH chính" trên mobile.
      iOS Safari đọc riêng apple-touch-icon (không dùng favicon), Android Chrome đọc icons khai
      báo trong manifest.json. Cả 3 file ảnh + manifest.json nằm trong /static, không qua route
-     riêng — dùng lại route /static mặc định của Flask (đã có cache-control 7 ngày immutable ở
-     _static_cache_headers phía trên).
-     Hậu tố ?v=2 ở cuối mỗi URL: cache-control 7 ngày immutable khiến trình duyệt/CDN không tự
-     hỏi lại server dù file gốc đã đổi — gắn ?v=N biến mỗi URL icon thành "file khác" trong mắt
-     cache, buộc tải bản mới ngay lập tức thay vì đợi hết 7 ngày. MỖI LẦN thay ảnh icon trong
-     static/, phải tăng số N ở đây (v=2 -> v=3...) rồi deploy lại — quên tăng thì cache cũ vẫn
-     áp dụng như trước. -->
-<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=2">
-<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=2">
-<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=2">
-<link rel="manifest" href="/static/manifest.json?v=2">
+     riêng — dùng lại route /static mặc định của Flask. Các file này được _static_cache_headers
+     phía trên đặt Cache-Control: no-cache (khác các file static khác đang cache 7 ngày) — mỗi
+     lần đổi icon trong static/ trên VPS, trình duyệt tự hỏi lại server và thấy bản mới ngay,
+     không cần đổi tên file hay thêm hậu tố ?v=N. -->
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#9c27b0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Scanner">
