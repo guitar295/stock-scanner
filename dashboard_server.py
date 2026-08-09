@@ -1998,6 +1998,7 @@ try{
   --accent:#1a56db;--green:#0e9f6e;--red:#e02424;
   --text:#111827;--muted:#6b7280;--shadow:rgba(0,0,0,.07);
   --font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif;
+  --sab:env(safe-area-inset-bottom,0px);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
@@ -2208,10 +2209,21 @@ html.chart-popout-mode>body>header,
 html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
 html.chart-popout-mode #lite-chart-popout-btn{display:none}
-/* Mobile portrait + popout: frame chiếm toàn bộ chiều cao còn lại sau toolbar */
+/* Mobile portrait + popout: thay vì đoán cứng chiều cao toolbar (44px — dễ lệch thực tế
+   tuỳ máy, khiến panel MACD bị cắt và góc bo dưới bị đẩy khỏi màn hình), cho #lite-chart-panel
+   cao đúng bằng phần màn hình còn lại (trừ padding #main-wrap + safe-area đáy iPhone) rồi
+   dùng flexbox để .lite-chart-frame tự giãn lấp phần còn lại sau toolbar — luôn khớp chính
+   xác bất kể toolbar cao bao nhiêu, không còn cắt panel MACD hay che góc bo dưới. */
 @media screen and (max-width:768px) and (orientation:portrait){
+  html.chart-popout-mode #main-wrap{padding:8px 8px calc(8px + var(--sab)) 8px}
+  html.chart-popout-mode #lite-chart-panel{
+    display:flex;
+    flex-direction:column;
+    height:calc(100dvh - 16px - var(--sab));
+  }
   html.chart-popout-mode .lite-chart-frame{
-    height:calc(100dvh - 44px)!important;
+    flex:1 1 auto;
+    height:auto!important;
     max-height:none!important;
     min-height:0!important;
   }
@@ -3769,11 +3781,18 @@ function initLiteChart(){
   _liteRsiChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteRsiChart,_liteRsiCrosshairSeries,false));
   if(!_liteResizeBound){
     _liteResizeBound=true;
+    // Debounce 150ms giống hệt 2 chỗ window resize khác trong file (health-chart, vnd-panel)
+    // — trước đây bắn liên tục mỗi pixel lúc kéo giãn cửa sổ/xoay máy, ép 3 chart.applyOptions()
+    // + redraw canvas hàng chục lần/giây, gây giật. Giờ chỉ tính lại 1 lần sau khi ngừng resize 150ms.
+    let _liteResizeTimer=null;
     window.addEventListener('resize',()=>{
-      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-      if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
-      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-      resizeLiteDrawCanvas();redrawLiteDrawings();
+      clearTimeout(_liteResizeTimer);
+      _liteResizeTimer=setTimeout(()=>{
+        if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+        if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
+        if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+        resizeLiteDrawCanvas();redrawLiteDrawings();
+      },150);
     });
     // Vẽ lại canvas liên tục để bắt thay đổi price-scale khi zoom trục Y; chỉ chạy khi panel Chart đang hiển thị để tránh tốn CPU.
     const _liteDrawLoop=()=>{
@@ -4118,13 +4137,13 @@ function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
   // Portrait mobile: IS_MOBILE() && portrait orientation.
-  // - Popout portrait: frame CSS = 100dvh-44px; dùng innerHeight-44 làm totalH (fallback nếu reflow chưa xong).
+  // - Popout portrait: #lite-chart-panel cao = 100dvh trừ padding/safe-area (CSS), .lite-chart-frame
+  //   flex:1 tự giãn lấp phần còn lại sau toolbar — nên clientHeight thực tế của frame đã CHÍNH XÁC
+  //   khớp phần còn lại, đọc thẳng luôn (không cần đoán số px cố định như trước).
   // - Non-popout portrait: frame CSS = height:auto (tự giãn); mainH cố định 56vh, frame giãn xuống theo indicator.
   // - Desktop/landscape: đọc clientHeight thực tế của frame (hoặc fallback 720).
   const isPortraitMobile=IS_MOBILE()&&window.innerHeight>window.innerWidth;
-  const totalH=isPortraitMobile&&_isChartPopoutWindow
-    ?Math.max(300,window.innerHeight-44)
-    :(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
+  const totalH=Math.max(300,(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720);
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
@@ -6254,7 +6273,8 @@ function renderHeatmap(d){
 DOM.hmapGrid.addEventListener('click',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell)return;
   const sym=cell.dataset.sym;
-  if(IS_MOBILE()){openChart(sym);return;}
+  // Mobile giờ dùng chung cơ chế với desktop: nếu thẻ CHART đang mở thì nhảy chart tại chỗ,
+  // chỉ mở cửa sổ popup (Vietstock/Chart/...) khi thẻ CHART đang đóng — xem _hmapDesktopClick().
   _hmapDesktopClick(sym);
 });
 DOM.hmapGrid.addEventListener('dblclick',e=>{
@@ -6288,7 +6308,7 @@ function _hmapDesktopClick(sym){
 // Event delegation sig-list
 DOM.sigList.addEventListener('click',e=>{
   const row=e.target.closest('.sig-row');if(!row)return;
-  const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
+  _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.sigList.addEventListener('dblclick',e=>{
   const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
@@ -6299,7 +6319,7 @@ DOM.sigList.addEventListener('dblclick',e=>{
 });
 DOM.momentumList.addEventListener('click',e=>{
   const row=e.target.closest('.momentum-row');if(!row)return;
-  const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
+  _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.signalHeader.addEventListener('click',e=>{
   if(e.target.closest('#journal-open-btn'))return;
@@ -6944,9 +6964,7 @@ function renderSankey(data){
 }
 DOM.sankeySvg.addEventListener('click',e=>{
   const node=e.target.closest('[data-sym]');if(!node)return;
-  const sym=node.dataset.sym;
-  if(IS_MOBILE()){openChart(sym);return;}
-  _hmapDesktopClick(sym);
+  _hmapDesktopClick(node.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.sankeySvg.addEventListener('dblclick',e=>{
   const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
@@ -7099,9 +7117,7 @@ function renderTreemap(data){
 }
 DOM.treemapSvg.addEventListener('click',e=>{
   const node=e.target.closest('[data-sym]');if(!node)return;
-  const sym=node.dataset.sym;
-  if(IS_MOBILE()){openChart(sym);return;}
-  _hmapDesktopClick(sym);
+  _hmapDesktopClick(node.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.treemapSvg.addEventListener('dblclick',e=>{
   const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
@@ -7620,7 +7636,7 @@ function _alertRuleText(r){
 }
 function _alertJumpSymbol(sym){
   sym=String(sym||'').toUpperCase().trim();if(!sym)return;
-  if(IS_MOBILE())openChart(sym);else _hmapDesktopClick(sym);
+  _hmapDesktopClick(sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 }
 function updateAlertFormVisibility(){
   const leftType=DOM.liteAlertLeftType.value;
