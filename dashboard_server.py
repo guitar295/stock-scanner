@@ -3648,8 +3648,31 @@ function updateLiteIndGroupCounts(){
 }
 function closeAllLiteIndDropdowns(except){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group.open').forEach(g=>{
-    if(g!==except)g.classList.remove('open');
+    if(g!==except){
+      g.classList.remove('open');
+      syncLiteIndDropdownPortal(g,false);
+    }
   });
+}
+function syncLiteIndDropdownPortal(grp,open){
+  /* Portrait mobile: .lite-ind-dropdown dùng position:fixed để hiện nổi kiểu bottom-sheet
+     (xem CSS @media(max-width:768px)), nhưng nó là con của .lite-chart-toolbar — toolbar này
+     có -webkit-overflow-scrolling:touch để cuộn ngang mượt trên iOS. Đây là quirk đã biết của
+     WebKit/Safari: container cuộn có thuộc tính này tự trở thành "khung chứa" MỚI cho mọi phần
+     tử fixed bên trong nó, khiến dropdown bị kẹt trong vùng cuộn hẹp thay vì hiện nổi theo toàn
+     màn hình như CSS đã định — hậu quả là bấm Signal/MA/EMA ở portrait không thấy gì hiện ra.
+     Cách xử lý: khi MỞ dropdown trên mobile, chuyển thẳng nó ra làm con trực tiếp của <body> —
+     thoát khỏi khung chứa bị kẹt, position:fixed hoạt động đúng theo viewport. Khi ĐÓNG, trả nó
+     về đúng vị trí cũ trong .lite-ind-group. Desktop/landscape rộng (>768px) không đụng tới vì
+     dropdown ở đó vẫn dùng position:absolute thường, không cần portal. */
+  const dd=grp.querySelector('.lite-ind-dropdown');
+  if(!dd)return;
+  if(!window.matchMedia('(max-width:768px)').matches)return;
+  if(open){
+    if(dd.parentElement!==document.body)document.body.appendChild(dd);
+  }else if(dd.parentElement===document.body){
+    grp.appendChild(dd);
+  }
 }
 function bindLiteIndGroupDropdowns(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group-btn').forEach(btn=>{
@@ -3660,12 +3683,14 @@ function bindLiteIndGroupDropdowns(){
       const willOpen=!grp.classList.contains('open');
       closeAllLiteIndDropdowns();
       grp.classList.toggle('open',willOpen);
+      syncLiteIndDropdownPortal(grp,willOpen);
     });
   });
   DOM.liteIndicators?.querySelectorAll('.lite-ind-dropdown').forEach(dd=>{
     dd.addEventListener('click',e=>e.stopPropagation());
   });
   document.addEventListener('click',()=>closeAllLiteIndDropdowns());
+  window.addEventListener('orientationchange',()=>closeAllLiteIndDropdowns());
   updateLiteIndGroupCounts();
 }
 function _liteHexToRgba(hex,alpha,fallbackRgb='147,51,234'){
@@ -3867,9 +3892,14 @@ function _liteChecked(name){
 function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
+  /* Danh sách chỉ báo mặc định BẬT khi người dùng mở dashboard lần đầu trên trình duyệt/thiết bị
+     đó (chưa có gì lưu trong localStorage). Panel chart nến luôn hiện sẵn (không qua checkbox
+     nào ở đây). Cờ tổng 2 nhóm Signal/MA-EMA (signalgrp_on, maema_on) CỐ Ý để mặc định TẮT —
+     nhưng các chỉ báo con bên trong vẫn được đánh dấu sẵn BẬT, để khi người dùng tự bật cờ tổng
+     lên thì đúng các thông số này đã có sẵn, không phải chọn lại từ đầu. */
+  const DEFAULT_ON_INDICATORS=new Set(['macd','signal','volcolor','ma10','ma200','ema20','ema50']);
   DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-    // maema_on/signalgrp_on/volcolor mặc định BẬT (giữ hành vi cũ) cho user chưa có key trong localStorage; các checkbox khác mặc định TẮT.
-    cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor'||cb.value==='bigprice')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
+    cb.checked=DEFAULT_ON_INDICATORS.has(cb.value)?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
 }
