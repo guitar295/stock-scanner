@@ -2232,11 +2232,8 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
     transform-origin:right center;
     margin-left:calc((0.72 - 1) * 72px);
   }
-  /* Title chart portrait: chỉ hiện C (giá đóng cửa) và %, ẩn O/H/L để vừa 1 dòng.
-     Wrap O bằng <span class="lct-o">, H/L bằng <span class="lct-hl"> trong
-     _liteTitleSegments rồi ẩn qua CSS — chỉ áp dụng mobile portrait, desktop/landscape
-     vẫn hiện đủ O/H/L/C như cũ. */
-  .lite-chart-title .lct-o{display:none}
+  /* Title chart portrait: ẩn H và L để vừa 1 dòng (còn O, C và %).
+     Wrap H/L bằng <span class="lct-hl"> trong _liteTitleSegments rồi ẩn qua CSS. */
   .lite-chart-title .lct-hl{display:none}
 }
 .hmap-panel-hdr{cursor:pointer;user-select:none}
@@ -3587,23 +3584,6 @@ function closeAllLiteIndDropdowns(except){
     if(g!==except)g.classList.remove('open');
   });
 }
-function _positionLiteIndDropdownMobile(grp){
-  // Chỉ áp dụng mobile portrait — desktop/landscape dùng CSS gốc (position:absolute neo theo nút),
-  // không đụng gì ở đây.
-  if(!(IS_MOBILE()&&!IS_LANDSCAPE()))return;
-  const dd=grp.querySelector('.lite-ind-dropdown');
-  if(!dd)return;
-  // CSS mobile neo dropdown bằng "bottom:20px !important" theo layout viewport (window.innerHeight).
-  // Một số trình duyệt di động (nhất là khi popup dùng height:100dvh) có layout viewport dùng để
-  // định vị position:fixed KHÁC với vùng đang thực sự nhìn thấy (visualViewport) khi thanh địa chỉ/
-  // bàn phím ẩn/hiện — khiến dropdown bị tính lệch ra ngoài vùng nhìn thấy và trông như "không hiện
-  // ra gì" khi bấm. Tính lại bottom theo window.visualViewport rồi ép bằng inline !important (thắng
-  // rule !important trong stylesheet vì inline style luôn có độ ưu tiên cao nhất trong cùng origin).
-  const vv=window.visualViewport;
-  const bottomPx=vv?Math.max(8,window.innerHeight-(vv.offsetTop+vv.height)+20):20;
-  dd.style.setProperty('bottom',`${bottomPx}px`,'important');
-  dd.style.setProperty('top','auto','important');
-}
 function bindLiteIndGroupDropdowns(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group-btn').forEach(btn=>{
     btn.addEventListener('click',e=>{
@@ -3613,7 +3593,6 @@ function bindLiteIndGroupDropdowns(){
       const willOpen=!grp.classList.contains('open');
       closeAllLiteIndDropdowns();
       grp.classList.toggle('open',willOpen);
-      if(willOpen)_positionLiteIndDropdownMobile(grp);
     });
   });
   DOM.liteIndicators?.querySelectorAll('.lite-ind-dropdown').forEach(dd=>{
@@ -3835,12 +3814,9 @@ function _liteTitleSegments(bar){
   // H và L được wrap bằng <span class="lct-hl"> để CSS portrait ẩn bớt cho vừa 1 dòng.
   // _high/_low lưu riêng để _liteDrawTitleSegments vẫn vẽ đủ trên canvas screenshot.
   const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
-  // O (Open) cũng wrap bằng <span class="lct-o"> để CSS portrait ẩn tương tự H/L — trên mobile
-  // portrait title chỉ còn lại C (giá đóng cửa) cho vừa 1 dòng; desktop/landscape vẫn hiện đủ O/H/L/C.
-  const oHtml=`<span class="lct-o"><span style="color:#111827"> O:</span><span style="color:${col}">${fmtLiteNum(bar.open)}</span></span>`;
   return [
-    {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)}`,color:'#111827'},
-    {text:oHtml,color:'__html_o',_open:fmtLiteNum(bar.open)},
+    {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:`,color:'#111827'},
+    {text:fmtLiteNum(bar.open),color:col},
     {text:hlHtml,color:'__html',_high:fmtLiteNum(bar.high),_low:fmtLiteNum(bar.low)},
     {text:' C:',color:'#111827'},
     {text:fmtLiteNum(bar.close),color:col},
@@ -3938,7 +3914,7 @@ function liteTimeKey(t){
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
   DOM.liteChartTitle.innerHTML=_liteTitleSegments(bar).map(seg=>
-    (seg.color==='__html'||seg.color==='__html_o')?seg.text:
+    seg.color==='__html'?seg.text:
     seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
   ).join('');
 }
@@ -4141,39 +4117,12 @@ function applyLitePaneLayout(){
     ?Math.max(300,window.innerHeight-44)
     :(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
   const bothPanes=showRsi&&showMacd;
+  const compactPaneH=132;
+  const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
+  const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
   const splitterH=showMacd?4:0;
-  // Mobile portrait: totalH (chiều cao khung chart) nhỏ hơn NHIỀU so với desktop, nên nếu vẫn
-  // dùng compactPaneH cố định (132) + mainH tối thiểu 300 như desktop thì tổng chiều cao lower
-  // panel + main vượt quá totalH thực tế của khung → panel MACD (thêm sau) bị đẩy tràn ra ngoài
-  // và hiển thị co lại nhỏ xíu, không cân đối. Ở đây tính lại theo tỉ lệ của totalH thực tế để
-  // main + RSI + MACD luôn vừa khít trong khung, không đụng gì tới nhánh desktop/landscape phía dưới.
-  const _mobilePortraitPane=IS_MOBILE()&&!IS_LANDSCAPE();
-  let rsiH,macdH,mainH;
-  if(_mobilePortraitPane){
-    const mobileMainMinH=160,mobilePaneMinH=70;
-    if(bothPanes){
-      const avail=totalH-splitterH;
-      const paneH=Math.max(mobilePaneMinH,Math.floor((avail-mobileMainMinH)/2));
-      rsiH=paneH;macdH=paneH;
-      mainH=Math.max(mobileMainMinH,avail-paneH*2);
-    }else if(showRsi){
-      rsiH=Math.max(mobilePaneMinH,Math.min(176,totalH-mobileMainMinH));
-      macdH=0;
-      mainH=Math.max(mobileMainMinH,totalH-rsiH);
-    }else if(showMacd){
-      macdH=Math.max(mobilePaneMinH,Math.min(_liteMacdSoloHeight,totalH-splitterH-mobileMainMinH));
-      rsiH=0;
-      mainH=Math.max(mobileMainMinH,totalH-macdH-splitterH);
-    }else{
-      rsiH=0;macdH=0;mainH=totalH;
-    }
-  }else{
-    const compactPaneH=132;
-    rsiH=showRsi?(bothPanes?compactPaneH:176):0;
-    macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
-    const lowerH=rsiH+macdH+splitterH;
-    mainH=showRsi||showMacd?Math.max(300,totalH-lowerH):totalH;
-  }
+  const lowerH=rsiH+macdH+splitterH;
+  const mainH=showRsi||showMacd?Math.max(300,totalH-lowerH):totalH;
   const showMainTimeScale=!showRsi&&!showMacd;
   const showRsiTimeScale=showRsi&&!showMacd;
   const showMacdTimeScale=showMacd;
@@ -5205,20 +5154,6 @@ function _liteStartShapeDrag(hit,ev){
 }
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
-    if(seg.color==='__html_o'){
-      // Segment O được wrap HTML cho DOM (ẩn trên mobile portrait bằng CSS) — trên canvas
-      // screenshot vẫn vẽ đủ " O:" + giá trị như cũ, không phụ thuộc kích thước màn hình.
-      const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
-      const parts=[
-        {t:' O:',c:'#111827'},{t:seg._open||'',c:col}
-      ];
-      for(const p of parts){
-        ctx.fillStyle=p.c;
-        ctx.fillText(p.t,x,y);
-        x+=ctx.measureText(p.t).width;
-      }
-      continue;
-    }
     if(seg.color==='__html'){
       // Segment H/L được wrap HTML cho DOM — trên canvas vẫn vẽ text thuần
       // (strip tags, tách màu theo pattern " H:" / giá / " L:" / giá)
