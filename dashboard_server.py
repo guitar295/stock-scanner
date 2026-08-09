@@ -1970,12 +1970,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <!-- Icon/avatar dashboard: favicon tab trình duyệt + icon khi "Thêm vào MH chính" trên mobile.
      iOS Safari đọc riêng apple-touch-icon (không dùng favicon), Android Chrome đọc icons khai
      báo trong manifest.json. Cả 3 file ảnh + manifest.json nằm trong /static, không qua route
-     riêng — dùng lại route /static mặc định của Flask (đã có cache-control 7 ngày ở
-     _static_cache_headers phía trên). -->
-<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
-<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-<link rel="manifest" href="/static/manifest.json">
+     riêng — dùng lại route /static mặc định của Flask (đã có cache-control 7 ngày immutable ở
+     _static_cache_headers phía trên).
+     Hậu tố ?v=2 ở cuối mỗi URL: cache-control 7 ngày immutable khiến trình duyệt/CDN không tự
+     hỏi lại server dù file gốc đã đổi — gắn ?v=N biến mỗi URL icon thành "file khác" trong mắt
+     cache, buộc tải bản mới ngay lập tức thay vì đợi hết 7 ngày. MỖI LẦN thay ảnh icon trong
+     static/, phải tăng số N ở đây (v=2 -> v=3...) rồi deploy lại — quên tăng thì cache cũ vẫn
+     áp dụng như trước. -->
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=2">
+<link rel="manifest" href="/static/manifest.json?v=2">
 <meta name="theme-color" content="#9c27b0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Scanner">
