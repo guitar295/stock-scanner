@@ -3676,6 +3676,14 @@ let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-M
 let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
 // Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
 const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
+// Resize khung 3 chart (main/RSI/MACD) theo đúng clientWidth/clientHeight hiện tại — dùng chung cho
+// cả resize listener (desktop + mobile) lẫn _liteRelayoutViewport() (mobile orientationchange),
+// tránh lặp lại cùng 3 dòng applyOptions() ở 2 nơi.
+function _liteApplyChartSizes(){
+  if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+  if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
+  if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+}
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   // Crosshair gốc của thư viện tắt hẳn; dùng overlay DOM riêng (_liteMoveXhair/_liteHideXhair) để mượt, tránh giật/nháy khi applyOptions() chạy liên tục theo mousemove.
@@ -3790,9 +3798,7 @@ function initLiteChart(){
     window.addEventListener('resize',()=>{
       clearTimeout(_liteResizeTimer);
       _liteResizeTimer=setTimeout(()=>{
-        if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-        if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
-        if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+        _liteApplyChartSizes();
         resizeLiteDrawCanvas();redrawLiteDrawings();
       },150);
     });
@@ -8431,9 +8437,7 @@ async function init(){
 // nếu chỉ đo 1 lần duy nhất, panel dễ bị đo trúng lúc dvh còn sai, kẹt luôn kích thước cũ khiến
 // khung chart trông như bị "kéo lên trên"/lệch vị trí cho tới khi có thao tác khác kích resize lại.
 function _liteRelayoutViewport(){
-  if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-  if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
-  if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+  _liteApplyChartSizes();
   // Tính lại pane layout (totalH thay đổi) và số nến hiển thị (portrait↔landscape)
   if(_liteData.length){applyLitePaneLayout();setLiteRightOffset();}
 }
