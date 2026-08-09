@@ -2215,11 +2215,13 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
    dùng flexbox để .lite-chart-frame tự giãn lấp phần còn lại sau toolbar — luôn khớp chính
    xác bất kể toolbar cao bao nhiêu, không còn cắt panel MACD hay che góc bo dưới. */
 @media screen and (max-width:768px) and (orientation:portrait){
-  html.chart-popout-mode #main-wrap{padding:8px 8px calc(8px + var(--sab)) 8px}
+  /* Padding đáy chỉ còn 2px + safe-area (thay vì 8px + safe-area) để cạnh dưới thẻ CHART
+     sát cạnh điện thoại hơn, tận dụng hết khoảng trống còn lại; height tính lại tương ứng. */
+  html.chart-popout-mode #main-wrap{padding:8px 8px calc(2px + var(--sab)) 8px}
   html.chart-popout-mode #lite-chart-panel{
     display:flex;
     flex-direction:column;
-    height:calc(100dvh - 16px - var(--sab));
+    height:calc(100dvh - 10px - var(--sab));
   }
   html.chart-popout-mode .lite-chart-frame{
     flex:1 1 auto;
@@ -6278,7 +6280,9 @@ DOM.hmapGrid.addEventListener('click',e=>{
   _hmapDesktopClick(sym);
 });
 DOM.hmapGrid.addEventListener('dblclick',e=>{
-  const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
+  // Mobile giờ dùng chung cơ chế dblclick với desktop (double-tap luôn mở openChart(sym)
+  // kể cả khi thẻ CHART đang mở) — trước đây bị chặn hẳn bằng IS_MOBILE().
+  const cell=e.target.closest('.hmap-cell');if(!cell)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(cell.dataset.sym);
   _jumpLiteChart(cell.dataset.sym);
@@ -6311,7 +6315,8 @@ DOM.sigList.addEventListener('click',e=>{
   _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.sigList.addEventListener('dblclick',e=>{
-  const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
+  // Đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên.
+  const row=e.target.closest('.sig-row');if(!row)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(row.dataset.sym);
   _jumpLiteChart(row.dataset.sym);
@@ -6967,7 +6972,8 @@ DOM.sankeySvg.addEventListener('click',e=>{
   _hmapDesktopClick(node.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.sankeySvg.addEventListener('dblclick',e=>{
-  const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
+  // Đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên.
+  const node=e.target.closest('[data-sym]');if(!node)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
@@ -7120,7 +7126,8 @@ DOM.treemapSvg.addEventListener('click',e=>{
   _hmapDesktopClick(node.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.treemapSvg.addEventListener('dblclick',e=>{
-  const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
+  // Đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên.
+  const node=e.target.closest('[data-sym]');if(!node)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
@@ -8417,16 +8424,24 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
+// Tính lại toàn bộ layout thẻ CHART (chart chính + RSI + MACD + pane layout + right offset).
+// Tách hàm riêng để orientationchange có thể gọi lại NHIỀU LẦN (xem bên dưới) — trên iOS Safari
+// đặc biệt là cửa sổ popout thẻ CHART (100dvh), sau khi xoay landscape→portrait, chiều cao dvh
+// thường CHƯA ổn định ngay ở lần đo đầu tiên (còn đang co giãn do thanh địa chỉ/toolbar ẩn-hiện);
+// nếu chỉ đo 1 lần duy nhất, panel dễ bị đo trúng lúc dvh còn sai, kẹt luôn kích thước cũ khiến
+// khung chart trông như bị "kéo lên trên"/lệch vị trí cho tới khi có thao tác khác kích resize lại.
+function _liteRelayoutViewport(){
+  if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+  if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
+  if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+  // Tính lại pane layout (totalH thay đổi) và số nến hiển thị (portrait↔landscape)
+  if(_liteData.length){applyLitePaneLayout();setLiteRightOffset();}
+}
 window.addEventListener('orientationchange',()=>{
-  // Đợi browser hoàn tất reflow sau khi xoay (200ms thường đủ trên iOS Safari)
-  // rồi mới tính lại layout — totalH/visibleCount đều phụ thuộc chiều cao/chiều rộng mới.
-  setTimeout(()=>{
-    if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-    if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
-    if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-    // Tính lại pane layout (totalH thay đổi) và số nến hiển thị (portrait↔landscape)
-    if(_liteData.length){applyLitePaneLayout();setLiteRightOffset();}
-  },200);
+  // Đo lại nhiều lần ở các mốc thời gian khác nhau (150/350/600/900ms) thay vì chỉ 1 lần ở 200ms —
+  // lần đo cuối cùng luôn "thắng" và ghi đè lần đo sai trước đó, đảm bảo khi dvh/viewport ổn định
+  // hẳn thì layout luôn khớp đúng, không còn kẹt ở trạng thái lệch/lag sau khi xoay về portrait.
+  [150,350,600,900].forEach(delay=>setTimeout(_liteRelayoutViewport,delay));
 });
 init();
 """
