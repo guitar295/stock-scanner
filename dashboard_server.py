@@ -2215,13 +2215,15 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
    dùng flexbox để .lite-chart-frame tự giãn lấp phần còn lại sau toolbar — luôn khớp chính
    xác bất kể toolbar cao bao nhiêu, không còn cắt panel MACD hay che góc bo dưới. */
 @media screen and (max-width:768px) and (orientation:portrait){
-  /* Padding đáy chỉ còn 2px + safe-area (thay vì 8px + safe-area) để cạnh dưới thẻ CHART
-     sát cạnh điện thoại hơn, tận dụng hết khoảng trống còn lại; height tính lại tương ứng. */
-  html.chart-popout-mode #main-wrap{padding:8px 8px calc(2px + var(--sab)) 8px}
+  /* Bỏ hẳn phần đệm cố định ở cạnh dưới (trước là 8px, rồi 2px) — chỉ giữ đúng safe-area-inset-bottom
+     cần thiết để không đè lên thanh cử chỉ/home-indicator của iPhone. Phần safe-area (không phải số
+     8px/2px) mới là phần chiếm phần lớn khoảng trắng đáy trên các máy có safe-area lớn, nên chỉ giảm
+     nhẹ số cố định trước đó gần như không thấy khác biệt; bỏ hẳn số cố định mới thực sự sát viền hơn. */
+  html.chart-popout-mode #main-wrap{padding:8px 8px var(--sab) 8px}
   html.chart-popout-mode #lite-chart-panel{
     display:flex;
     flex-direction:column;
-    height:calc(100dvh - 10px - var(--sab));
+    height:calc(100dvh - 8px - var(--sab));
   }
   html.chart-popout-mode .lite-chart-frame{
     flex:1 1 auto;
@@ -3798,7 +3800,12 @@ function initLiteChart(){
     window.addEventListener('resize',()=>{
       clearTimeout(_liteResizeTimer);
       _liteResizeTimer=setTimeout(()=>{
-        _liteApplyChartSizes();
+        // Popout thẻ CHART trên mobile: một số trình duyệt (đặc biệt Android Chrome) không bắn
+        // 'orientationchange' đáng tin cậy bằng 'resize' khi xoay máy — dùng chung listener resize
+        // này làm lưới an toàn dự phòng thay vì tạo thêm 1 listener/timer riêng (tránh trùng lặp).
+        // _liteRelayoutViewport() đã tự gọi _liteApplyChartSizes() bên trong nên không gọi lại lần nữa.
+        if(_isChartPopoutWindow&&IS_MOBILE())_liteRelayoutViewport();
+        else _liteApplyChartSizes();
         resizeLiteDrawCanvas();redrawLiteDrawings();
       },150);
     });
@@ -8437,15 +8444,23 @@ async function init(){
 // nếu chỉ đo 1 lần duy nhất, panel dễ bị đo trúng lúc dvh còn sai, kẹt luôn kích thước cũ khiến
 // khung chart trông như bị "kéo lên trên"/lệch vị trí cho tới khi có thao tác khác kích resize lại.
 function _liteRelayoutViewport(){
+  // Popout thẻ CHART trên MOBILE: reset scroll về 0 sau mỗi lần đo lại — trên iOS Safari, trang
+  // giữ nguyên scrollTop cũ trong lúc 100dvh đang co giãn lại sau khi xoay, khiến khung panel (dù
+  // đã đúng kích thước) vẫn bị đẩy lệch lên trên ngoài vùng nhìn thấy, phải tự kéo tay xuống mới
+  // thấy lại. Chỉ áp dụng khi IS_MOBILE() — cửa sổ popout cũng mở được trên desktop (kéo giãn tay),
+  // không được tự ý cuộn/resize lại pane layout của người dùng desktop.
+  if(_isChartPopoutWindow&&IS_MOBILE()){window.scrollTo(0,0);document.documentElement.scrollTop=0;document.body.scrollTop=0;}
   _liteApplyChartSizes();
   // Tính lại pane layout (totalH thay đổi) và số nến hiển thị (portrait↔landscape)
   if(_liteData.length){applyLitePaneLayout();setLiteRightOffset();}
 }
 window.addEventListener('orientationchange',()=>{
-  // Đo lại nhiều lần ở các mốc thời gian khác nhau (150/350/600/900ms) thay vì chỉ 1 lần ở 200ms —
-  // lần đo cuối cùng luôn "thắng" và ghi đè lần đo sai trước đó, đảm bảo khi dvh/viewport ổn định
-  // hẳn thì layout luôn khớp đúng, không còn kẹt ở trạng thái lệch/lag sau khi xoay về portrait.
-  [150,350,600,900].forEach(delay=>setTimeout(_liteRelayoutViewport,delay));
+  // Reset scroll ngay lập tức (0ms) trước, rồi đo lại nhiều lần ở các mốc thời gian khác nhau
+  // (150/350/600/900ms) thay vì chỉ 1 lần ở 200ms — lần đo cuối cùng luôn "thắng" và ghi đè lần
+  // đo sai trước đó, đảm bảo khi dvh/viewport ổn định hẳn thì layout luôn khớp đúng, không còn
+  // kẹt ở trạng thái lệch/lag sau khi xoay về portrait. orientationchange chỉ bắn trên thiết bị
+  // di động nên không cần tự kiểm tra IS_MOBILE() ở đây.
+  [0,150,350,600,900].forEach(delay=>setTimeout(_liteRelayoutViewport,delay));
 });
 init();
 """
