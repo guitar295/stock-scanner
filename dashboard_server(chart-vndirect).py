@@ -1998,6 +1998,7 @@ try{
   --accent:#1a56db;--green:#0e9f6e;--red:#e02424;
   --text:#111827;--muted:#6b7280;--shadow:rgba(0,0,0,.07);
   --font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif;
+  --sab:env(safe-area-inset-bottom,0px);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
@@ -2133,8 +2134,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tri-tab.on{color:var(--accent);font-weight:800}
 .tri-toggle{font-size:12px;color:var(--muted);transition:transform .15s;margin-left:auto}
 .tri-panel:not(.collapsed) .tri-toggle{transform:rotate(90deg);color:var(--accent)}
+/* CƠ CHẾ THU/MỞ THẺ DÙNG CHUNG cho tri-panel / hmap-panel / lite-chart-panel (xem thêm 2 khối
+   ".hmap-panel.collapsed" và ".lite-chart-panel.collapsed" bên dưới): khi thẻ có class .collapsed,
+   ẩn toàn bộ nội dung phụ trong header + phần thân, LUÔN dùng !important để mobile media query
+   (@media max-width:768px) không thể ghi đè ngược lại (bug cũ: hmap-ts-wrap vẫn hiện trên mobile
+   dù thẻ đã thu gọn, vì rule ẩn thiếu !important còn rule mobile lại có !important). */
 .tri-panel.collapsed .tri-tabs,
-.tri-panel.collapsed>.tri-body{display:none}
+.tri-panel.collapsed>.tri-body{display:none!important}
 .tri-content{display:none}
 .tri-content.on{display:block}
 .health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
@@ -2194,7 +2200,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
-.lite-chart-panel.collapsed .lite-chart-frame{display:none}
+.lite-chart-panel.collapsed .lite-chart-frame{display:none!important}
 /* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard.
    Dùng selector html.chart-popout-mode (thay vì body.chart-popout-mode) vì class này giờ
    được gắn vào <html> ngay từ đầu <head> — xem script inline phía trên — để có hiệu lực
@@ -2203,14 +2209,67 @@ html.chart-popout-mode>body>header,
 html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
 html.chart-popout-mode #lite-chart-popout-btn{display:none}
+/* Mobile portrait + popout: thay vì đoán cứng chiều cao toolbar (44px — dễ lệch thực tế
+   tuỳ máy, khiến panel MACD bị cắt và góc bo dưới bị đẩy khỏi màn hình), cho #lite-chart-panel
+   cao đúng bằng phần màn hình còn lại (trừ padding #main-wrap + safe-area đáy iPhone) rồi
+   dùng flexbox để .lite-chart-frame tự giãn lấp phần còn lại sau toolbar — luôn khớp chính
+   xác bất kể toolbar cao bao nhiêu, không còn cắt panel MACD hay che góc bo dưới. */
+@media screen and (max-width:768px) and (orientation:portrait){
+  /* Bỏ hẳn phần đệm cố định ở cạnh dưới (trước là 8px, rồi 2px) — chỉ giữ đúng safe-area-inset-bottom
+     cần thiết để không đè lên thanh cử chỉ/home-indicator của iPhone. Phần safe-area (không phải số
+     8px/2px) mới là phần chiếm phần lớn khoảng trắng đáy trên các máy có safe-area lớn, nên chỉ giảm
+     nhẹ số cố định trước đó gần như không thấy khác biệt; bỏ hẳn số cố định mới thực sự sát viền hơn. */
+  html.chart-popout-mode #main-wrap{padding:8px 8px var(--sab) 8px}
+  html.chart-popout-mode #lite-chart-panel{
+    display:flex;
+    flex-direction:column;
+    height:calc(100dvh - 8px - var(--sab));
+  }
+  html.chart-popout-mode .lite-chart-frame{
+    flex:1 1 auto;
+    height:auto!important;
+    max-height:none!important;
+    min-height:0!important;
+  }
+  /* Thu nhỏ ô Tìm mã bằng scale — giữ font-size:16px để iOS không auto-zoom khi focus.
+     transform-origin neo về phía container để ô không bị lệch ra ngoài;
+     margin bù lại khoảng trắng dư do element vẫn chiếm layout space gốc sau khi scale.
+     Áp dụng ĐỒNG BỘ cho cả ô Tìm mã của HEATMAP (.hmap-search-wrap) và CHART
+     (.lite-chart-search-wrap) — cùng tỉ lệ scale, cùng công thức margin bù, để 2 ô luôn
+     hiển thị cùng kích thước trên mobile. */
+  .hmap-search-wrap,
+  .lite-chart-search-wrap{
+    transform:scale(0.72);
+    transform-origin:left center;
+    margin-right:calc((0.72 - 1) * 90px);
+  }
+  .mob-search-wrap{
+    transform:scale(0.72);
+    transform-origin:right center;
+    margin-left:calc((0.72 - 1) * 72px);
+  }
+  /* Title chart portrait: ẩn O, H, L để vừa 1 dòng (chỉ còn C và %).
+     Wrap bằng <span class="lct-open"> / <span class="lct-hl"> rồi ẩn qua CSS. */
+  .lite-chart-title .lct-open,.lite-chart-title .lct-hl{display:none}
+  /* Portrait mobile: để lite-chart-frame tự giãn chiều cao theo nội dung
+     khi thêm RSI/MACD panel — thay vì cố định height rồi co các pane lại. */
+  .lite-chart-frame{
+    height:auto!important;
+    max-height:none!important;
+    min-height:300px!important;
+  }
+}
 .hmap-panel-hdr{cursor:pointer;user-select:none}
 .hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
+/* Đồng bộ với .tri-panel.collapsed / .lite-chart-panel.collapsed ở trên & dưới: mọi rule ẩn khi
+   thu gọn đều dùng !important để không bị @media max-width:768px ghi đè (xem giải thích ở khối
+   .tri-panel.collapsed). Thu gọn hmap-panel chỉ còn lại đúng "Heatmap" + icon mũi tên. */
 .hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none!important}
-.hmap-panel.collapsed .hmap-ts-wrap{display:none}
+.hmap-panel.collapsed .hmap-ts-wrap{display:none!important}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.pbar-wrap,
-.hmap-panel.collapsed>.panel-body{display:none}
+.hmap-panel.collapsed>.panel-body{display:none!important}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .frame-shrink{width:100%;height:720px;overflow:hidden;position:relative;background:#fff}
 .frame-shrink iframe{position:absolute;top:0;left:0;width:125%;height:125%;border:none;background:#fff;transform:scale(.8);transform-origin:0 0}
@@ -2461,13 +2520,28 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   #signal-header .panel-hdr-left{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%}
   #signal-header .panel-title{white-space:nowrap;flex-shrink:0}
   #signal-header #sig-meta{display:block;width:100%;white-space:nowrap;overflow:visible;line-height:1.35}
-  .hmap-panel-hdr{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
-  .hmap-hdr-row1{width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
+  /* Header HEATMAP trên mobile dùng CSS Grid (không phải flex-column như trước) để mũi tên
+     thu/mở LUÔN nằm cùng hàng với tiêu đề "Heatmap" (cột phải, căn giữa dọc theo hàng 1) —
+     dù đang mở (row1 + hmap-ts-wrap đều hiển thị) hay đã thu gọn (row1 chỉ còn tiêu đề,
+     hmap-ts-wrap bị ẩn). Nhờ vậy mũi tên không còn tự chiếm riêng 1 hàng lúc mở, và padding
+     phải luôn cố định 16px giống hệt .panel-hdr (tri-hdr / lite-chart-toggle) ở MỌI trạng thái
+     — không cần thêm rule riêng cho .collapsed nữa vì hàng 2 (hmap-ts-wrap) tự co về 0 khi ẩn. */
+  .hmap-panel-hdr{
+    display:grid;
+    grid-template-columns:1fr auto;
+    align-items:center;
+    gap:4px 6px;
+    padding:9px 16px;
+  }
+  .hmap-hdr-row1{grid-column:1;grid-row:1;min-width:0;width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
+  .hmap-toggle-icon{grid-column:2;grid-row:1;justify-self:end;margin-left:0}
   .hmap-search-input{width:90px !important}
   .hmap-search-input:focus{width:90px !important}
   .hmap-ts-wrap{
+    grid-column:1/-1;
+    grid-row:2;
     white-space:nowrap !important;
     overflow-x:auto !important;
     overflow-y:hidden !important;
@@ -2529,9 +2603,9 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   .lite-chart-toolbar>*{flex-shrink:0}
   .lite-indicators{flex-wrap:nowrap}
   .lite-draw-toolbar{flex-wrap:nowrap}
-  .lite-chart-input{width:90px;font-size:16px !important}
-  .lite-chart-input:focus{width:110px}
-  .mob-search-input, .mob-land-search, .popup-search-input, .hmap-search-input {
+  .lite-chart-input{width:90px !important}
+  .lite-chart-input:focus{width:90px !important}
+  .mob-search-input, .mob-land-search, .popup-search-input, .hmap-search-input, .lite-chart-input {
     font-size: 16px !important;
   }
   button, input, select, .ctab, .mob-tab-btn, .mob-land-tab, .lite-draw-btn, .lite-tf-btn, .lite-ind-group-btn {
@@ -2853,7 +2927,7 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
               <label><input type="checkbox" value="ma30"><span class="lite-ind-label" data-ind="ma30" title="Bấm để đổi màu">MA30</span><input type="color" class="lite-ind-color" data-ind="ma30" value="#1a56db"></label>
               <label><input type="checkbox" value="ma50"><span class="lite-ind-label" data-ind="ma50" title="Bấm để đổi màu">MA50</span><input type="color" class="lite-ind-color" data-ind="ma50" value="#800080"></label>
               <label><input type="checkbox" value="ma100"><span class="lite-ind-label" data-ind="ma100" title="Bấm để đổi màu">MA100</span><input type="color" class="lite-ind-color" data-ind="ma100" value="#d97706"></label>
-              <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#8b4513"></label>
+              <label><input type="checkbox" value="ma200"><span class="lite-ind-label" data-ind="ma200" title="Bấm để đổi màu">MA200</span><input type="color" class="lite-ind-color" data-ind="ma200" value="#9b6af1"></label>
               <div class="lite-ind-dropdown-sub-title">EMA</div>
               <label><input type="checkbox" value="ema10"><span class="lite-ind-label" data-ind="ema10" title="Bấm để đổi màu">EMA10</span><input type="color" class="lite-ind-color" data-ind="ema10" value="#ff0000"></label>
               <label><input type="checkbox" value="ema20"><span class="lite-ind-label" data-ind="ema20" title="Bấm để đổi màu">EMA20</span><input type="color" class="lite-ind-color" data-ind="ema20" value="#16a34a"></label>
@@ -3484,7 +3558,7 @@ function _liteLSSet(key,val){
 }
 const LITE_MA_PERIODS=[10,20,30,50,100,200];
 const LITE_EMA_PERIODS=[10,20,30,50,100,200];
-const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#8b4513'];
+const LITE_MA_DEFAULT_COLORS=['#ff0000','#008000','#1a56db','#800080','#d97706','#9b6af1'];
 const LITE_EMA_DEFAULT_COLORS=['#ff0000','#16a34a','#0ea5e9','#c026d3','#eab308','#78350f'];
 const LITE_RSI_PERIOD=14;
 const LITE_RSI_DEFAULT_COLOR='#7c6ee6';
@@ -3604,6 +3678,14 @@ let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-M
 let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
 // Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
 const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
+// Resize khung 3 chart (main/RSI/MACD) theo đúng clientWidth/clientHeight hiện tại — dùng chung cho
+// cả resize listener (desktop + mobile) lẫn _liteRelayoutViewport() (mobile orientationchange),
+// tránh lặp lại cùng 3 dòng applyOptions() ở 2 nơi.
+function _liteApplyChartSizes(){
+  if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
+  if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
+  if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
+}
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
   // Crosshair gốc của thư viện tắt hẳn; dùng overlay DOM riêng (_liteMoveXhair/_liteHideXhair) để mượt, tránh giật/nháy khi applyOptions() chạy liên tục theo mousemove.
@@ -3711,11 +3793,21 @@ function initLiteChart(){
   _liteRsiChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteRsiChart,_liteRsiCrosshairSeries,false));
   if(!_liteResizeBound){
     _liteResizeBound=true;
+    // Debounce 150ms giống hệt 2 chỗ window resize khác trong file (health-chart, vnd-panel)
+    // — trước đây bắn liên tục mỗi pixel lúc kéo giãn cửa sổ/xoay máy, ép 3 chart.applyOptions()
+    // + redraw canvas hàng chục lần/giây, gây giật. Giờ chỉ tính lại 1 lần sau khi ngừng resize 150ms.
+    let _liteResizeTimer=null;
     window.addEventListener('resize',()=>{
-      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-      if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
-      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-      resizeLiteDrawCanvas();redrawLiteDrawings();
+      clearTimeout(_liteResizeTimer);
+      _liteResizeTimer=setTimeout(()=>{
+        // Popout thẻ CHART trên mobile: một số trình duyệt (đặc biệt Android Chrome) không bắn
+        // 'orientationchange' đáng tin cậy bằng 'resize' khi xoay máy — dùng chung listener resize
+        // này làm lưới an toàn dự phòng thay vì tạo thêm 1 listener/timer riêng (tránh trùng lặp).
+        // _liteRelayoutViewport() đã tự gọi _liteApplyChartSizes() bên trong nên không gọi lại lần nữa.
+        if(_isChartPopoutWindow&&IS_MOBILE())_liteRelayoutViewport();
+        else _liteApplyChartSizes();
+        resizeLiteDrawCanvas();redrawLiteDrawings();
+      },150);
     });
     // Vẽ lại canvas liên tục để bắt thay đổi price-scale khi zoom trục Y; chỉ chạy khi panel Chart đang hiển thị để tránh tốn CPU.
     const _liteDrawLoop=()=>{
@@ -3760,13 +3852,15 @@ function _liteTitleSegments(bar){
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
+  // H và L được wrap bằng <span class="lct-hl"> để CSS portrait ẩn bớt cho vừa 1 dòng.
+  // _high/_low lưu riêng để _liteDrawTitleSegments vẫn vẽ đủ trên canvas screenshot.
+  const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
+  // O: và giá open được wrap bằng <span class="lct-open"> để CSS portrait ẩn bớt cho vừa 1 dòng.
+  const openHtml=`<span class="lct-open"><span style="color:#111827"> O:</span><span style="color:${col}">${fmtLiteNum(bar.open)}</span></span>`;
   return [
-    {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} | O:`,color:'#111827'},
-    {text:fmtLiteNum(bar.open),color:col},
-    {text:' H:',color:'#111827'},
-    {text:fmtLiteNum(bar.high),color:col},
-    {text:' L:',color:'#111827'},
-    {text:fmtLiteNum(bar.low),color:col},
+    {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} |`,color:'#111827'},
+    {text:openHtml,color:'__html',_open:fmtLiteNum(bar.open)},
+    {text:hlHtml,color:'__html',_high:fmtLiteNum(bar.high),_low:fmtLiteNum(bar.low)},
     {text:' C:',color:'#111827'},
     {text:fmtLiteNum(bar.close),color:col},
     {text:' (',color:'#111827'},
@@ -3863,6 +3957,7 @@ function liteTimeKey(t){
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
   DOM.liteChartTitle.innerHTML=_liteTitleSegments(bar).map(seg=>
+    seg.color==='__html'?seg.text:
     seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
   ).join('');
 }
@@ -3892,7 +3987,8 @@ function setLiteRightOffset(){
   const last=_liteData.length-1;
   const rightOffset=22; // Lề phải ~8% chiều rộng màn hình
   const to=last+rightOffset;
-  const visibleCount=250; // Hiển thị chuẩn 250 nến gần nhất trên màn hình
+  // Mobile portrait (~390px): 80 nến đủ rõ từng cây nến; landscape/desktop: 250 như cũ
+  const visibleCount=IS_MOBILE()&&window.innerHeight>window.innerWidth?80:250;
   const from=Math.max(0,last-visibleCount+1);
   _liteApplyVisibleLogicalRange({from,to});
 }
@@ -4055,15 +4151,26 @@ function alignLiteSeries(points){
 function applyLitePaneLayout(){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  // Đọc chiều cao thực tế khung (.lite-chart-frame) thay vì cố định 720, để khớp cả CSS mobile.
-  const totalH=(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720;
+  // Portrait mobile: IS_MOBILE() && portrait orientation.
+  // - Popout portrait: #lite-chart-panel cao = 100dvh trừ padding/safe-area (CSS), .lite-chart-frame
+  //   flex:1 tự giãn lấp phần còn lại sau toolbar — nên clientHeight thực tế của frame đã CHÍNH XÁC
+  //   khớp phần còn lại, đọc thẳng luôn (không cần đoán số px cố định như trước).
+  // - Non-popout portrait: frame CSS = height:auto (tự giãn); mainH cố định 56vh, frame giãn xuống theo indicator.
+  // - Desktop/landscape: đọc clientHeight thực tế của frame (hoặc fallback 720).
+  const isPortraitMobile=IS_MOBILE()&&window.innerHeight>window.innerWidth;
+  const totalH=Math.max(300,(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720);
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
   const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
-  const mainH=showRsi||showMacd?Math.max(300,totalH-lowerH):totalH;
+  // Portrait non-popout: mainH = 56vh cố định (chart chính chiếm chủ đạo), frame tự giãn xuống theo RSI/MACD.
+  // Desktop/landscape/popout: mainH = totalH trừ phần indicator bên dưới.
+  const mobilePortrait=isPortraitMobile&&!_isChartPopoutWindow;
+  const mainH=mobilePortrait
+    ?Math.max(300,Math.round(window.innerHeight*0.56))
+    :(showRsi||showMacd?Math.max(300,totalH-lowerH):totalH);
   const showMainTimeScale=!showRsi&&!showMacd;
   const showRsiTimeScale=showRsi&&!showMacd;
   const showMacdTimeScale=showMacd;
@@ -4076,6 +4183,11 @@ function applyLitePaneLayout(){
     DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
     DOM.liteRsiChart.classList.toggle('hide-tv-logo',showRsi&&showMacd);
     DOM.liteMacdChart.classList.remove('hide-tv-logo');
+    // Portrait non-popout: set height tường minh cho frame (height:auto cần con có size rõ ràng).
+    // Else: clear inline style để CSS landscape/desktop tự quản — tránh giá trị portrait còn sót
+    // khi xoay sang landscape override CSS height:72vh.
+    if(mobilePortrait&&DOM.liteChartFrame)DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
+    else if(DOM.liteChartFrame)DOM.liteChartFrame.style.height='';
     DOM.liteChart.style.height=`${mainH}px`;
     if(showRsi)DOM.liteRsiChart.style.height=`${rsiH}px`;
     if(showMacd)DOM.liteMacdChart.style.height=`${macdH}px`;
@@ -5095,9 +5207,22 @@ function _liteStartShapeDrag(hit,ev){
 }
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
-    ctx.fillStyle=seg.color;
-    ctx.fillText(seg.text,x,y);
-    x+=ctx.measureText(seg.text).width;
+    if(seg.color==='__html'){
+      // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần, luôn hiện đủ O/H/L
+      const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
+      const parts=seg._open!=null
+        ?[{t:' O:',c:'#111827'},{t:seg._open||'',c:col}]
+        :[{t:' H:',c:'#111827'},{t:seg._high||'',c:col},{t:' L:',c:'#111827'},{t:seg._low||'',c:col}];
+      for(const p of parts){
+        ctx.fillStyle=p.c;
+        ctx.fillText(p.t,x,y);
+        x+=ctx.measureText(p.t).width;
+      }
+    }else{
+      ctx.fillStyle=seg.color;
+      ctx.fillText(seg.text,x,y);
+      x+=ctx.measureText(seg.text).width;
+    }
   }
 }
 // Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi, takeScreenshot() không chụp được.
@@ -6163,11 +6288,14 @@ function renderHeatmap(d){
 DOM.hmapGrid.addEventListener('click',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell)return;
   const sym=cell.dataset.sym;
-  if(IS_MOBILE()){openChart(sym);return;}
+  // Mobile giờ dùng chung cơ chế với desktop: nếu thẻ CHART đang mở thì nhảy chart tại chỗ,
+  // chỉ mở cửa sổ popup (Vietstock/Chart/...) khi thẻ CHART đang đóng — xem _hmapDesktopClick().
   _hmapDesktopClick(sym);
 });
 DOM.hmapGrid.addEventListener('dblclick',e=>{
-  const cell=e.target.closest('.hmap-cell');if(!cell||IS_MOBILE())return;
+  // Mobile giờ dùng chung cơ chế dblclick với desktop (double-tap luôn mở openChart(sym)
+  // kể cả khi thẻ CHART đang mở) — trước đây bị chặn hẳn bằng IS_MOBILE().
+  const cell=e.target.closest('.hmap-cell');if(!cell)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(cell.dataset.sym);
   _jumpLiteChart(cell.dataset.sym);
@@ -6197,10 +6325,11 @@ function _hmapDesktopClick(sym){
 // Event delegation sig-list
 DOM.sigList.addEventListener('click',e=>{
   const row=e.target.closest('.sig-row');if(!row)return;
-  const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
+  _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.sigList.addEventListener('dblclick',e=>{
-  const row=e.target.closest('.sig-row');if(!row||IS_MOBILE())return;
+  // Đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên.
+  const row=e.target.closest('.sig-row');if(!row)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _syncHoverPreview(row.dataset.sym);
   _jumpLiteChart(row.dataset.sym);
@@ -6208,7 +6337,7 @@ DOM.sigList.addEventListener('dblclick',e=>{
 });
 DOM.momentumList.addEventListener('click',e=>{
   const row=e.target.closest('.momentum-row');if(!row)return;
-  const s=row.dataset.sym;if(IS_MOBILE())openChart(s);else _hmapDesktopClick(s);
+  _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.signalHeader.addEventListener('click',e=>{
   if(e.target.closest('#journal-open-btn'))return;
@@ -6853,12 +6982,11 @@ function renderSankey(data){
 }
 DOM.sankeySvg.addEventListener('click',e=>{
   const node=e.target.closest('[data-sym]');if(!node)return;
-  const sym=node.dataset.sym;
-  if(IS_MOBILE()){openChart(sym);return;}
-  _hmapDesktopClick(sym);
+  _hmapDesktopClick(node.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.sankeySvg.addEventListener('dblclick',e=>{
-  const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
+  // Đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên.
+  const node=e.target.closest('[data-sym]');if(!node)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
@@ -7008,12 +7136,11 @@ function renderTreemap(data){
 }
 DOM.treemapSvg.addEventListener('click',e=>{
   const node=e.target.closest('[data-sym]');if(!node)return;
-  const sym=node.dataset.sym;
-  if(IS_MOBILE()){openChart(sym);return;}
-  _hmapDesktopClick(sym);
+  _hmapDesktopClick(node.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
 DOM.treemapSvg.addEventListener('dblclick',e=>{
-  const node=e.target.closest('[data-sym]');if(!node||IS_MOBILE())return;
+  // Đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên.
+  const node=e.target.closest('[data-sym]');if(!node)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   const sym=node.dataset.sym;
   _syncHoverPreview(sym);
@@ -7529,7 +7656,7 @@ function _alertRuleText(r){
 }
 function _alertJumpSymbol(sym){
   sym=String(sym||'').toUpperCase().trim();if(!sym)return;
-  if(IS_MOBILE())openChart(sym);else _hmapDesktopClick(sym);
+  _hmapDesktopClick(sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 }
 function updateAlertFormVisibility(){
   const leftType=DOM.liteAlertLeftType.value;
@@ -8310,12 +8437,30 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
+// Tính lại toàn bộ layout thẻ CHART (chart chính + RSI + MACD + pane layout + right offset).
+// Tách hàm riêng để orientationchange có thể gọi lại NHIỀU LẦN (xem bên dưới) — trên iOS Safari
+// đặc biệt là cửa sổ popout thẻ CHART (100dvh), sau khi xoay landscape→portrait, chiều cao dvh
+// thường CHƯA ổn định ngay ở lần đo đầu tiên (còn đang co giãn do thanh địa chỉ/toolbar ẩn-hiện);
+// nếu chỉ đo 1 lần duy nhất, panel dễ bị đo trúng lúc dvh còn sai, kẹt luôn kích thước cũ khiến
+// khung chart trông như bị "kéo lên trên"/lệch vị trí cho tới khi có thao tác khác kích resize lại.
+function _liteRelayoutViewport(){
+  // Popout thẻ CHART trên MOBILE: reset scroll về 0 sau mỗi lần đo lại — trên iOS Safari, trang
+  // giữ nguyên scrollTop cũ trong lúc 100dvh đang co giãn lại sau khi xoay, khiến khung panel (dù
+  // đã đúng kích thước) vẫn bị đẩy lệch lên trên ngoài vùng nhìn thấy, phải tự kéo tay xuống mới
+  // thấy lại. Chỉ áp dụng khi IS_MOBILE() — cửa sổ popout cũng mở được trên desktop (kéo giãn tay),
+  // không được tự ý cuộn/resize lại pane layout của người dùng desktop.
+  if(_isChartPopoutWindow&&IS_MOBILE()){window.scrollTo(0,0);document.documentElement.scrollTop=0;document.body.scrollTop=0;}
+  _liteApplyChartSizes();
+  // Tính lại pane layout (totalH thay đổi) và số nến hiển thị (portrait↔landscape)
+  if(_liteData.length){applyLitePaneLayout();setLiteRightOffset();}
+}
 window.addEventListener('orientationchange',()=>{
-  setTimeout(()=>{
-    if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-    if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
-    if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-  },200);
+  // Reset scroll ngay lập tức (0ms) trước, rồi đo lại nhiều lần ở các mốc thời gian khác nhau
+  // (150/350/600/900ms) thay vì chỉ 1 lần ở 200ms — lần đo cuối cùng luôn "thắng" và ghi đè lần
+  // đo sai trước đó, đảm bảo khi dvh/viewport ổn định hẳn thì layout luôn khớp đúng, không còn
+  // kẹt ở trạng thái lệch/lag sau khi xoay về portrait. orientationchange chỉ bắn trên thiết bị
+  // di động nên không cần tự kiểm tra IS_MOBILE() ở đây.
+  [0,150,350,600,900].forEach(delay=>setTimeout(_liteRelayoutViewport,delay));
 });
 init();
 """
