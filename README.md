@@ -149,7 +149,7 @@ chmod -R 750 ~/scanner/data
 ```
 
 
-## 2.3 — Tải 3 file từ GitHub về VPS
+## 2.3 — Tải file từ GitHub về VPS
 
 Thay TEN_BAN bằng username GitHub của bạn:
 Trong thư mục ~/scanner
@@ -168,7 +168,19 @@ curl -L "https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.stan
      -o static/lightweight-charts.min.js
 ```
 
-Kiểm tra đã có đủ 3 file:
+
+Tạo file Logo:
+```
+mkdir -p ~/scanner/static && cd ~/scanner && \
+BASE="https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/static" && \
+for f in icon-512.png icon-192.png apple-touch-icon.png favicon-32.png favicon-16.png favicon.ico manifest.json; do
+  curl -sO --output-dir static "$BASE/$f" && echo "✅ Đã tải $f"
+done && \
+echo "--- Kiểm tra ---" && ls -la static/
+```
+
+
+Kiểm tra đã có đủ file:
 bash
 ```
 ls ~/scanner
