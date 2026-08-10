@@ -4199,6 +4199,13 @@ function setLiteTf(tf){
   _liteTf=tf || '1D';
   DOM.liteChartTf?.querySelectorAll('.lite-tf-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.tf===_liteTf));
 }
+function applyLiteTf(tf,force=false){
+  if(!tf)return false;
+  if(!force&&_liteTf===tf)return true;
+  setLiteTf(tf);
+  loadLiteChart(_liteSymbol,0);
+  return true;
+}
 function _clearLiteIndicators(){
   for(const s of _liteIndicatorSeries){
     try{s.chart.removeSeries(s.series);}catch(e){}
@@ -5918,6 +5925,21 @@ function _liteTryOpenSearchOnKey(e){
   openLiteSearch();
   return true;
 }
+function _liteTryDesktopTfShortcut(e){
+  if(!window.matchMedia('(min-width:769px)').matches)return false;
+  if(!e.shiftKey||e.metaKey||e.ctrlKey||e.altKey)return false;
+  if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
+  const tag=(document.activeElement?.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select')return false;
+  const tfMap={d:'1D',w:'1W',m:'1M'};
+  const tf=tfMap[String(e.key||'').toLowerCase()];
+  if(!tf)return false;
+  e.preventDefault();
+  e.stopPropagation();
+  applyLiteTf(tf);
+  DOM.liteChartFrame?.focus();
+  return true;
+}
 // _liteUpdateIndicatorData: bản nhẹ của renderLiteIndicators() cho lazy-load — chỉ update dữ liệu series có sẵn, không destroy/recreate, tránh giật.
 function _liteUpdateIndicatorData(){
   if(!_liteChart)return;
@@ -6259,7 +6281,7 @@ function bindLiteChartControls(){
   });
   DOM.liteChartTf?.addEventListener('click',e=>{
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
-    setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
+    applyLiteTf(btn.dataset.tf,true);
   });
   // document (không phải DOM.liteIndicators) + lọc bằng closest — vì dropdown chỉ báo có thể
   // đang bị portal ra <body> khi mở trên mobile portrait (xem syncLiteIndDropdownPortal), lúc
@@ -6320,11 +6342,13 @@ function bindLiteChartControls(){
       }
       return;
     }
+    if(_liteTryDesktopTfShortcut(e))return;
     // stopPropagation() chặn bubble để tránh gọi openLiteSearch() 2 lần cho 1 phím bấm.
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
     if(!_litePointerInside)return;
+    if(_liteTryDesktopTfShortcut(e))return;
     _liteTryOpenSearchOnKey(e);
   });
   const _liteApplyChartSearch=_liteBindSymInput(DOM.liteChartSearch);
