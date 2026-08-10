@@ -2017,11 +2017,31 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
      dùng thấy cả trang dashboard load nháy lên rồi mới thu về đúng mỗi chart. Gắn class này
      vào <html> NGAY TỪ ĐẦU <head> (chạy đồng bộ, trước khi <body> được parse/paint) để CSS
      bên dưới ẩn mọi thứ trừ panel CHART ngay từ lần vẽ đầu tiên — bỏ qua hẳn cảnh load full
-     dashboard rồi mới nhảy vào chart. -->
+     dashboard rồi mới nhảy vào chart.
+     TRANH THỦ GỌI LUÔN API dữ liệu chart ở đây — đây là nơi chạy SỚM NHẤT có thể (ngay khi
+     trình duyệt vừa đọc tới đầu <head>, trước cả khi tải thư viện chart hay dashboard-main.js).
+     Trước đây phải đợi: parse hết HTML → dashboard-main.js (đã defer) chạy xong → init() →
+     loadLiteChart() → lúc đó mới bắn request /api/lightweight_chart/... — tức là cái API
+     tốn thời gian nhất (chờ server truy vấn + trả về nến) lại là thứ được gọi TRỄ nhất.
+     Bắn request này chạy song song ngay từ đầu, gói kết quả (Promise) vào
+     window.__liteChartPrefetch; loadLiteChart() ở dưới sẽ tự nhận ra và dùng lại kết quả
+     này thay vì gọi API lần 2 — cắt hẳn thời gian chờ mạng ra khỏi đường găng tải trang.
+     Chỉ áp dụng cho lần tải ĐẦU TIÊN của popout (tf mặc định luôn là '1D', limit=450 — khớp
+     đúng tham số loadLiteChart dùng ở lần gọi đầu, xem let _liteTf='1D' và loadLiteChart()).
+     Đổi mã/khung giờ sau đó vẫn gọi API bình thường qua loadLiteChart(), không liên quan. -->
 <script>
 try{
-  if(new URLSearchParams(window.location.search).get('chartPopout')==='1')
+  const _qp=new URLSearchParams(window.location.search);
+  if(_qp.get('chartPopout')==='1'){
     document.documentElement.classList.add('chart-popout-mode');
+    const _pfSym=(_qp.get('sym')||'').trim().toUpperCase();
+    if(_pfSym){
+      window.__liteChartPrefetch={
+        sym:_pfSym,tf:'1D',
+        promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=450')
+      };
+    }
+  }
 }catch(e){}
 </script>
 <!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
@@ -6151,7 +6171,14 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
+    // Dùng lại request đã bắn sẵn từ đầu <head> (xem script inline "TRANH THỦ GỌI LUÔN API..."
+    // ở phần <head>) nếu đúng mã + đúng khung giờ của lần tải đầu tiên — bỏ qua việc gọi fetch
+    // lần 2. Chỉ dùng ĐÚNG 1 LẦN (xoá ngay sau khi lấy ra) để các lần đổi mã/khung giờ sau đó
+    // luôn gọi API tươi mới như bình thường, không bao giờ nhầm phải data cũ.
+    const _pf=window.__liteChartPrefetch;
+    const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
+      ?(window.__liteChartPrefetch=null,await _pf.promise)
+      :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
     if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
