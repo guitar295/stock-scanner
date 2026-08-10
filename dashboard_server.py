@@ -4412,7 +4412,11 @@ function alignLiteSeries(points){
   const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
-function applyLitePaneLayout(){
+// skipWidthSync=true khi hàm gọi sẽ tự đồng bộ trục giá lại SAU ĐÓ (xem renderLiteIndicators()) —
+// tránh lãng phí 1 lượt requestAnimationFrame đo width lúc dữ liệu 3 trục CHƯA kịp cập nhật
+// (applyLitePaneLayout() luôn chạy TRƯỚC khi series indicator mới được setData trong
+// renderLiteIndicators, nên đo ngay tại đây sẽ ra width cũ/rỗng — vô nghĩa, chỉ tổ tốn 1 frame).
+function applyLitePaneLayout(skipWidthSync){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
   // Portrait mobile: IS_MOBILE() && portrait orientation.
@@ -4474,6 +4478,37 @@ function applyLitePaneLayout(){
     _liteSyncing=prevSyncing;
   }
   resizeLiteDrawCanvas();redrawLiteDrawings();
+  if(!skipWidthSync)_liteSyncPriceScaleWidths();
+}
+// Đồng bộ chiều rộng trục giá (bên phải) của cả 3 chart main/RSI/MACD luôn bằng nhau, để 3 trục
+// luôn thẳng hàng dọc từ trên xuống. LÝ DO LỆCH: minimumWidth trong LITE_PRICE_SCALE_BASE (64px)
+// chỉ là mức SÀN tối thiểu — khi nội dung label rộng hơn sàn đó, trục tự nới rộng ra thêm, còn
+// khi nội dung hẹp hơn thì trục giữ nguyên đúng sàn. Với VNINDEX/VN30 (giá trị ~1000-1300, nhiều
+// chữ số hơn giá cổ phiếu thường ~10-100), label trục main dài hơn nên trục main tự nới rộng hơn
+// mức sàn, trong khi RSI (0-100) và MACD (vài chục) vẫn giữ nguyên sàn 64 — 2 trục không nới nên
+// bị lệch so với trục main. Cách sửa: đo width thực tế đã render của cả 3 trục (chờ đúng 1 khung
+// hình bằng requestAnimationFrame để thư viện kịp tính lại label sau khi setData/applyOptions —
+// đọc ngay lập tức có thể vẫn là width cũ), lấy giá trị lớn nhất trong 3, rồi ép cả 3 trục cùng
+// dùng chung đúng minimumWidth đó — trục nào đang hẹp hơn sẽ tự nới theo, luôn thẳng hàng với
+// nhau bất kể đang xem mã nào. Gọi ở cuối applyLitePaneLayout() (resize/xoay màn hình/pointermove
+// — layout đổi nhưng dữ liệu 3 trục KHÔNG đổi) và cuối renderLiteIndicators() (đổi mã/khung giờ/
+// bật-tắt chỉ báo — dữ liệu 3 trục vừa đổi). renderLiteIndicators() tự gọi applyLitePaneLayout(true)
+// ở đầu hàm (đối số true = skipWidthSync) để KHÔNG đồng bộ non tại đó — lúc đó series indicator mới
+// chưa kịp setData nên đo width sẽ ra kết quả cũ/rỗng, vô nghĩa; renderLiteIndicators() tự đồng bộ
+// lại đúng 1 lần ở cuối, sau khi mọi series đã có data mới.
+function _liteSyncPriceScaleWidths(){
+  if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
+  requestAnimationFrame(()=>{
+    try{
+      const w1=_liteChart.priceScale('right').width();
+      const w2=_liteRsiChart.priceScale('right').width();
+      const w3=_liteMacdChart.priceScale('right').width();
+      const maxW=Math.max(LITE_PRICE_SCALE_BASE.minimumWidth,w1||0,w2||0,w3||0);
+      _liteChart.priceScale('right').applyOptions({minimumWidth:maxW});
+      _liteRsiChart.priceScale('right').applyOptions({minimumWidth:maxW});
+      _liteMacdChart.priceScale('right').applyOptions({minimumWidth:maxW});
+    }catch(e){}
+  });
 }
 // ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══ Thao tác kiểu TradingView: hình vẽ xong chọn/kéo/đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định).
 const LITE_DRAW_KEY='dashboard_lite_drawings';
@@ -6054,7 +6089,8 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
   // skipPaneLayout bỏ qua applyLitePaneLayout() khi layout không đổi — set rightOffset dù cùng giá trị vẫn khiến thư viện tự canh lại view, gây "nhảy chart" mỗi 10s.
-  if(!skipPaneLayout)applyLitePaneLayout();
+  // Truyền true (skipWidthSync) — hàm này tự đồng bộ trục giá lại ở cuối (sau khi data mới đã setData xong), khỏi cần applyLitePaneLayout() làm trước 1 lượt vô nghĩa.
+  if(!skipPaneLayout)applyLitePaneLayout(true);
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
   maOn.forEach(p=>{
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ma',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ma'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
@@ -6150,6 +6186,10 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   _liteRefreshVolumeTop(showVpaVol);
   if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
   redrawLiteDrawings();
+  // Dữ liệu 3 trục vừa đổi (mã mới/khung giờ mới/bật-tắt chỉ báo) — applyLitePaneLayout() gọi ở
+  // đầu hàm này đã reset minimumWidth về sàn mặc định, nên phải đo+đồng bộ lại SAU KHI data mới
+  // đã setData xong (xem giải thích đầy đủ tại định nghĩa hàm _liteSyncPriceScaleWidths()).
+  _liteSyncPriceScaleWidths();
 }
 function _liteVolColorFor(volBar,showVpa){
   // Checkbox volcolor BẬT dùng màu VPA server tính; TẮT dùng màu xanh/đỏ mặc định theo close/open. showVpa đọc DOM 1 lần/lượt vẽ để tránh querySelector lặp lại theo từng bar.
