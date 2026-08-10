@@ -352,6 +352,38 @@ def fetch_heatmap_data() -> tuple:
     return result, ts_str
 
 
+def fetch_extra_quotes(syms: list) -> dict:
+    """Bù giá on-demand cho MÃ LẺ không nằm trong _HEATMAP_NEED_SYMBOLS (ví dụ mã người dùng
+    tự thêm vào FAVORITE trên sidebar CHART, ngoài mọi danh sách quét chung). Dùng lại đúng
+    engine + công thức tính pct với fetch_heatmap_data() để 2 nguồn giá luôn khớp nhau, nhưng
+    CHỈ tải đúng danh sách mã được truyền vào (không đụng _HEATMAP_NEED_SYMBOLS/HEATMAP_TTL,
+    không ảnh hưởng cache heatmap chính) — được gọi từ dashboard_server.api_quote_extra()
+    qua start_dashboard(extra_quote_fn=fetch_extra_quotes)."""
+    syms = [s for s in dict.fromkeys(s.strip().upper() for s in syms) if s]
+    if not syms:
+        return {}
+    engine = Trading(source=DATA_SOURCE)
+    result = {}
+    try:
+        df = engine.price_board(syms)
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                sym = str(row.get("symbol", "")).strip()
+                if not sym:
+                    continue
+                close = _finite_num(row.get("close_price", 0)) / 1000
+                ref_p = _finite_num(row.get("reference_price", 0)) / 1000
+                if close <= 0 and ref_p > 0:
+                    close = ref_p
+                pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                if not math.isfinite(pct):
+                    pct = 0.0
+                result[sym] = {"price": close, "pct": pct}
+    except Exception as e:
+        print(f"  ❌ fetch_extra_quotes lỗi: {e}")
+    return result
+
+
 def build_heatmap_image(data: dict, timestamp: str) -> str:
     f_title, f_hdr, f_sym, f_data, f_sector = _hmap_load_fonts()
 
@@ -524,6 +556,15 @@ heatmap_symbols = {
     for s in group["symbols"]
 }
 cache_symbol_set = set(vn30_symbols) | set(TRADING_STOCKS_POOL) | heatmap_symbols
+# Đồng bộ với _HEATMAP_NEED_SYMBOLS (định nghĩa ở đầu file, trước khi vn30_symbols tồn tại):
+# vn30_symbols là danh sách được quét tín hiệu (SIGNAL/MOMENTUM/ATTENT/BREAKVOL, xem
+# symbols_to_scan ngay dưới đây) nên bất kỳ mã nào trong đó lên tín hiệu đều có thể xuất
+# hiện trên sidebar CHART. Nếu mã đó không nằm trong _HEATMAP_NEED_SYMBOLS gốc (vốn chỉ
+# gồm HEATMAP_COLUMNS + TRADING_STOCKS_POOL) thì price_board() sẽ không tải giá cho nó,
+# khiến window._lastHmapData thiếu entry -> sidebar hiện "--" dù mã đã có tín hiệu thật
+# (ví dụ G36/VGC: có trong vn30_symbols nhưng thiếu ở 2 danh sách kia). Gộp thêm ở đây,
+# trước dòng gán symbols_to_scan, để lần fetch_heatmap_data() nào cũng tải đủ giá.
+_HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
 symbols_to_cache = [s for s in all_symbols if s in cache_symbol_set]
 # VNINDEX/VN30 (chỉ số) không nằm trong all_symbols (danh sách mã niêm yết) nên không
@@ -2930,6 +2971,7 @@ start_dashboard(
     fetch_market_health_fn = compute_market_health_index,
     signal_session_date_ref = lambda: signal_session_date,
     port              = 8888,
+    extra_quote_fn    = fetch_extra_quotes,
 )
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
