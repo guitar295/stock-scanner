@@ -2633,7 +2633,11 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
      - Khung toolbar cuộn ngang 1 hàng mượt mà bằng tay trên iPhone (-webkit-overflow-scrolling: touch).
      - Loại bỏ hiện tượng tự động phóng to (zoom) của iOS Safari khi chạm vào ô input (font-size 16px).
      - Hỗ trợ safe area insets cho iPhone có notch / Dynamic Island và thanh Home bar.
-     - Hiển thị bảng chỉ báo (Indicators) dạng bottom sheet nổi tiện chạm trên màn hình nhỏ. */
+     - Dropdown chỉ báo (Signal/MA-EMA/Trend) được portal ra <body> + neo ĐỘNG ngay dưới nút
+       vừa bấm bằng JS (xem _litePositionIndDropdown/syncLiteIndDropdownPortal), giống hệt
+       cách absolute mặc định hoạt động ở landscape/desktop — CSS bên dưới chỉ còn giữ phần
+       khung (bo góc/đổ bóng/giới hạn kích thước/cuộn nội dung), KHÔNG định vị cứng kiểu
+       bottom-sheet nữa. */
   #lite-chart-panel{display:block}
   .lite-chart-toolbar{
     flex-wrap:nowrap;
@@ -2659,19 +2663,20 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   #lite-chart {
     touch-action: pan-x pan-y;
   }
+  /* top/left = 0 chỉ là giá trị khởi tạo trước khi JS đo và neo dropdown ngay dưới
+     nút vừa bấm (xem _litePositionIndDropdown) — CSS ở đây chỉ lo phần khung. */
   .lite-ind-dropdown {
     position: fixed !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    top: auto !important;
-    bottom: 20px !important;
-    width: min(340px, 92vw) !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: max-content !important;
+    max-width: min(260px, 92vw) !important;
     max-height: 55vh !important;
     overflow-y: auto !important;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
-    border-radius: 12px !important;
+    box-shadow: 0 8px 24px rgba(17,24,39,.22) !important;
+    border-radius: 10px !important;
     z-index: 99999 !important;
-    padding: 12px 16px !important;
+    padding: 8px 10px !important;
     -webkit-overflow-scrolling: touch;
   }
   .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
@@ -3665,25 +3670,64 @@ function closeAllLiteIndDropdowns(except){
     }
   });
 }
+function _litePositionIndDropdown(btn,dd){
+  /* Neo dropdown ngay dưới nút vừa bấm — cùng nguyên tắc với position:absolute mặc định ở
+     landscape/desktop, chỉ khác là phải tự tính top/left tuyệt đối theo viewport (thay vì để
+     CSS lo) vì dd đã bị portal ra <body> (lý do xem syncLiteIndDropdownPortal).
+     Dùng window.visualViewport khi có (Safari/Chrome mobile) thay vì window.innerWidth/Height
+     để lấy đúng vùng nhìn thấy thực tế khi bàn phím ảo đang che một phần màn hình. */
+  const margin=8; // khoảng cách tối thiểu giữ tới mép vùng nhìn thấy
+  const vv=window.visualViewport;
+  const voX=vv?vv.offsetLeft:0, voY=vv?vv.offsetTop:0;
+  const vw=vv?vv.width:window.innerWidth, vh=vv?vv.height:window.innerHeight;
+  const r=btn.getBoundingClientRect();
+  const dw=dd.offsetWidth, dh=dd.offsetHeight;
+  // Canh trái theo mép trái của nút, kẹp lại để dropdown không tràn ra ngoài 2 mép màn hình.
+  let left=Math.min(Math.max(r.left,voX+margin),voX+vw-dw-margin);
+  // Mặc định bung XUỐNG dưới nút (giống landscape); nếu không đủ chỗ phía dưới thì bung LÊN
+  // trên nút; nếu cả 2 phía đều không đủ (dropdown quá cao) thì kẹp trong vùng nhìn thấy —
+  // max-height + overflow-y:auto ở CSS đã lo phần cuộn nội dung bên trong.
+  let top;
+  if(r.bottom+dh+margin<=voY+vh)top=r.bottom+4;
+  else if(r.top-dh-4>=voY+margin)top=r.top-dh-4;
+  else top=Math.max(voY+margin,voY+vh-dh-margin);
+  dd.style.left=left+'px';
+  dd.style.top=top+'px';
+}
+function _liteRepositionOpenDropdown(){
+  // Gọi lại khi toolbar cuộn ngang / resize / bàn phím ảo đóng-mở trong lúc dropdown đang mở
+  // trên mobile — dropdown đã portal ra <body> (fixed theo viewport) nên KHÔNG tự trôi theo
+  // nút; phải chủ động tính lại top/left, nếu không sẽ lệch khỏi nút.
+  const grp=DOM.liteIndicators?.querySelector('.lite-ind-group.open');
+  if(!grp)return;
+  const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${grp.dataset.group}"]`);
+  const btn=grp.querySelector('.lite-ind-group-btn');
+  if(dd&&btn&&dd.parentElement===document.body)_litePositionIndDropdown(btn,dd);
+}
 function syncLiteIndDropdownPortal(grp,open){
-  /* Portrait mobile: .lite-ind-dropdown dùng position:fixed để hiện nổi kiểu bottom-sheet
-     (xem CSS @media(max-width:768px)), nhưng nó là con của .lite-chart-toolbar — toolbar này
+  /* Portrait mobile: .lite-ind-dropdown dùng position:fixed và được neo động ngay dưới nút vừa
+     bấm (xem _litePositionIndDropdown), nhưng nó là con của .lite-chart-toolbar — toolbar này
      có -webkit-overflow-scrolling:touch để cuộn ngang mượt trên iOS. Đây là quirk đã biết của
      WebKit/Safari: container cuộn có thuộc tính này tự trở thành "khung chứa" MỚI cho mọi phần
      tử fixed bên trong nó, khiến dropdown bị kẹt trong vùng cuộn hẹp thay vì hiện nổi theo toàn
      màn hình như CSS đã định — hậu quả là bấm Signal/MA/EMA ở portrait không thấy gì hiện ra.
      Cách xử lý: khi MỞ dropdown trên mobile, chuyển thẳng nó ra làm con trực tiếp của <body> —
-     thoát khỏi khung chứa bị kẹt, position:fixed hoạt động đúng theo viewport. Khi ĐÓNG, trả nó
-     về đúng vị trí cũ trong .lite-ind-group. Desktop/landscape rộng (>768px) không đụng tới vì
-     dropdown ở đó vẫn dùng position:absolute thường, không cần portal.
-     2 điểm cần lưu ý (đã từng gây lỗi ở bản trước):
+     thoát khỏi khung chứa bị kẹt, position:fixed hoạt động đúng theo viewport — rồi đo vị trí
+     nút để đặt dropdown dính sát ngay dưới nút đó. Khi ĐÓNG, trả nó về đúng vị trí cũ trong
+     .lite-ind-group và xóa top/left inline để không sót giá trị portrait cũ. Desktop/landscape
+     rộng (>768px) không đụng tới vì dropdown ở đó vẫn dùng position:absolute thường, không cần
+     portal.
+     3 điểm cần lưu ý (đã từng gây lỗi ở bản trước):
      1) Dùng document.querySelector theo data-dropdown thay vì grp.querySelector — vì sau khi
         dropdown đã bị chuyển ra <body>, nó KHÔNG còn là con của grp nữa, grp.querySelector sẽ
         luôn trả về rỗng ở những lần gọi đóng sau đó, khiến không bao giờ trả lại được vị trí cũ.
      2) CSS ẩn/hiện dropdown dựa vào ".lite-ind-group.open .lite-ind-dropdown{display:flex}" —
         một khi bị chuyển ra ngoài <body>, dropdown không còn là con của .lite-ind-group.open
         nữa nên rule CSS này không áp dụng được, phải set display:flex thủ công qua inline style
-        khi đang portal; lúc trả về đúng chỗ thì xóa inline style để CSS gốc tự quyết định lại. */
+        khi đang portal; lúc trả về đúng chỗ thì xóa inline style để CSS gốc tự quyết định lại.
+     3) Phải set display:flex TRƯỚC rồi mới đo offsetWidth/offsetHeight trong
+        _litePositionIndDropdown — phần tử display:none luôn trả về kích thước 0, tính top/left
+        theo đó sẽ sai (dropdown sẽ dính cứng ở góc trên-trái màn hình). */
   const key=grp.dataset.group;
   const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
   if(!dd)return;
@@ -3691,8 +3735,12 @@ function syncLiteIndDropdownPortal(grp,open){
   if(open){
     if(dd.parentElement!==document.body)document.body.appendChild(dd);
     dd.style.display='flex';
+    const btn=grp.querySelector('.lite-ind-group-btn');
+    if(btn)_litePositionIndDropdown(btn,dd);
   }else if(dd.parentElement===document.body){
     dd.style.display='';
+    dd.style.left='';
+    dd.style.top='';
     grp.appendChild(dd);
   }
 }
@@ -3713,6 +3761,12 @@ function bindLiteIndGroupDropdowns(){
   });
   document.addEventListener('click',()=>closeAllLiteIndDropdowns());
   window.addEventListener('orientationchange',()=>closeAllLiteIndDropdowns());
+  // Đăng ký lắng nghe cuộn/resize DUY NHẤT 1 lần ở đây (không phải mỗi lần mở dropdown) —
+  // _liteRepositionOpenDropdown tự kiểm tra bên trong có dropdown nào đang mở hay không nên
+  // không cần add/remove listener liên tục mỗi lần mở/đóng, tránh rò rỉ listener.
+  document.querySelector('.lite-chart-toolbar')?.addEventListener('scroll',_liteRepositionOpenDropdown,{passive:true});
+  window.addEventListener('resize',_liteRepositionOpenDropdown);
+  window.visualViewport?.addEventListener('resize',_liteRepositionOpenDropdown);
   updateLiteIndGroupCounts();
 }
 function _liteHexToRgba(hex,alpha,fallbackRgb='147,51,234'){
