@@ -2697,6 +2697,18 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   /* Xoay ngang: rộng hơn portrait nên khung chart có thể cao hơn 1 chút mà
      vẫn còn chỗ cho toolbar + phần dashboard phía trên. */
   .lite-chart-frame{height:72vh;max-height:640px}
+  /* Landscape giữ dropdown theo cơ chế absolute trong .lite-ind-group như desktop.
+     Rule mobile chung phía trên dùng fixed cho portrait portal; override này tránh
+     các thiết bị landscape hẹp bị rơi về góc viewport. */
+  .lite-ind-dropdown{
+    position:absolute !important;
+    top:calc(100% + 4px) !important;
+    left:0 !important;
+    width:max-content !important;
+    max-width:min(260px, 92vw) !important;
+    max-height:55vh !important;
+    z-index:20 !important;
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -3675,6 +3687,9 @@ function closeAllLiteIndDropdowns(except){
     }
   });
 }
+function _liteUseIndDropdownPortal(){
+  return window.matchMedia('(max-width:768px) and (orientation:portrait)').matches;
+}
 function _litePositionIndDropdown(btn,dd){
   /* Neo dropdown ngay dưới nút vừa bấm — cùng nguyên tắc với position:absolute mặc định ở
      landscape/desktop, chỉ khác là phải tự tính top/left tuyệt đối theo viewport (thay vì để
@@ -3736,14 +3751,33 @@ function syncLiteIndDropdownPortal(grp,open){
   const key=grp.dataset.group;
   const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
   if(!dd)return;
-  if(!window.matchMedia('(max-width:768px)').matches)return;
+  if(!_liteUseIndDropdownPortal()){
+    if(dd.parentElement===document.body){
+      dd.style.display='';
+      dd.style.visibility='';
+      dd.style.left='';
+      dd.style.top='';
+      grp.appendChild(dd);
+    }
+    return;
+  }
   if(open){
     if(dd.parentElement!==document.body)document.body.appendChild(dd);
+    dd.style.visibility='hidden';
     dd.style.display='flex';
     const btn=grp.querySelector('.lite-ind-group-btn');
-    if(btn)_litePositionIndDropdown(btn,dd);
+    if(btn){
+      _litePositionIndDropdown(btn,dd);
+      requestAnimationFrame(()=>{
+        if(grp.classList.contains('open')&&dd.parentElement===document.body){
+          _litePositionIndDropdown(btn,dd);
+        }
+      });
+    }
+    dd.style.visibility='';
   }else if(dd.parentElement===document.body){
     dd.style.display='';
+    dd.style.visibility='';
     dd.style.left='';
     dd.style.top='';
     grp.appendChild(dd);
