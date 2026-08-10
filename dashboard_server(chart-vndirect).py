@@ -34,10 +34,37 @@ def _static_cache_headers(response):
     """File tĩnh trong /static (vd lightweight-charts.min.js) gần như không đổi
     giữa các lần deploy — cho trình duyệt cache thẳng 7 ngày, khỏi tốn round-trip
     revalidate (If-None-Match/ETag) mỗi lần load trang. Nếu sau này đổi version
-    lib, đổi luôn tên file để trình duyệt tự tải bản mới thay vì dính cache cũ."""
+    lib, đổi luôn tên file để trình duyệt tự tải bản mới thay vì dính cache cũ.
+    RIÊNG các file icon/avatar (favicon, apple-touch-icon, icon-*, manifest.json)
+    NGƯỢC LẠI — đây là những file người dùng chủ động đổi thường xuyên (đổi logo/
+    avatar), nên loại khỏi cache 7 ngày, đặt no-cache: trình duyệt vẫn được lưu file
+    nhưng BẮT BUỘC hỏi lại server (If-None-Match/ETag) trước mỗi lần dùng — server trả
+    304 nếu file chưa đổi (rất nhẹ, không tải lại toàn bộ ảnh) hoặc trả bản mới ngay
+    nếu đã đổi. Nhờ vậy đổi icon xong là thấy ngay, không cần tăng tay ?v=N nữa."""
     if request.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        _ICON_STATIC_FILES = (
+            "favicon-32.png", "favicon-16.png", "favicon.ico",
+            "apple-touch-icon.png", "icon-192.png", "icon-512.png",
+            "manifest.json",
+        )
+        if request.path.rsplit("/", 1)[-1] in _ICON_STATIC_FILES:
+            response.headers["Cache-Control"] = "no-cache"
+        else:
+            response.headers["Cache-Control"] = "public, max-age=604800, immutable"
     return response
+
+@app.route("/favicon.ico")
+def _serve_root_favicon():
+    """Safari (và một số trình duyệt/bot khác) tự động dò GET /favicon.ico ở GỐC domain,
+    độc lập với thẻ <link rel="icon"> khai báo trong <head> — hành vi mặc định lâu đời,
+    không cần khai báo gì thêm để kích hoạt. Trước đây route này không tồn tại -> 404 ->
+    Safari rơi về icon quả cầu mặc định, dù Chrome vẫn hiển thị đúng vì Chrome chỉ dựa
+    vào thẻ <link>. Trỏ thẳng sang file đã có sẵn trong /static, không cần thêm file mới.
+    Path /favicon.ico (khác /static/favicon.ico) nên KHÔNG được hook _static_cache_headers
+    ở trên tự áp dụng — set no-cache thủ công tại đây, đồng bộ chính sách với icon khác."""
+    resp = send_from_directory(app.static_folder, "favicon.ico")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 _LWC_JS_CACHE = None
 
@@ -1967,17 +1994,60 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Scanner Dashboard</title>
+<!-- Icon/avatar dashboard: favicon tab trình duyệt + icon khi "Thêm vào MH chính" trên mobile.
+     iOS Safari đọc riêng apple-touch-icon (không dùng favicon), Android Chrome đọc icons khai
+     báo trong manifest.json. Cả 3 file ảnh + manifest.json nằm trong /static, không qua route
+     riêng — dùng lại route /static mặc định của Flask. Các file này được _static_cache_headers
+     phía trên đặt Cache-Control: no-cache (khác các file static khác đang cache 7 ngày) — mỗi
+     lần đổi icon trong static/ trên VPS, trình duyệt tự hỏi lại server và thấy bản mới ngay,
+     không cần đổi tên file hay thêm hậu tố ?v=N. -->
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#9c27b0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scanner">
+<!-- default: thanh trạng thái (giờ/wifi/pin) nằm TÁCH RIÊNG phía trên trang, không đè lên
+     nội dung — tránh che mất tiêu đề header khi mở app từ icon màn hình chính. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!-- Cửa sổ CHART popout (?chartPopout=1, xem openChartPopout()) chỉ cần hiện panel CHART,
      ẩn hết phần còn lại của dashboard — class chart-popout-mode trước đây chỉ được JS ở
      cuối trang gắn vào <body> SAU KHI toàn bộ dashboard-main.js tải/parse xong, nên người
      dùng thấy cả trang dashboard load nháy lên rồi mới thu về đúng mỗi chart. Gắn class này
      vào <html> NGAY TỪ ĐẦU <head> (chạy đồng bộ, trước khi <body> được parse/paint) để CSS
      bên dưới ẩn mọi thứ trừ panel CHART ngay từ lần vẽ đầu tiên — bỏ qua hẳn cảnh load full
-     dashboard rồi mới nhảy vào chart. -->
+     dashboard rồi mới nhảy vào chart.
+     TRANH THỦ GỌI LUÔN API dữ liệu chart ở đây — đây là nơi chạy SỚM NHẤT có thể (ngay khi
+     trình duyệt vừa đọc tới đầu <head>, trước cả khi tải thư viện chart hay dashboard-main.js).
+     Trước đây phải đợi: parse hết HTML → dashboard-main.js (đã defer) chạy xong → init() →
+     loadLiteChart() → lúc đó mới bắn request /api/lightweight_chart/... — tức là cái API
+     tốn thời gian nhất (chờ server truy vấn + trả về nến) lại là thứ được gọi TRỄ nhất.
+     Bắn request này chạy song song ngay từ đầu, gói kết quả (Promise) vào
+     window.__liteChartPrefetch; loadLiteChart() ở dưới sẽ tự nhận ra và dùng lại kết quả
+     này thay vì gọi API lần 2 — cắt hẳn thời gian chờ mạng ra khỏi đường găng tải trang.
+     ÁP DỤNG CHO CẢ 2 TRƯỜNG HỢP — không riêng gì popout:
+       - popout (?chartPopout=1&sym=...): mã lấy từ query string ?sym=.
+       - trang dashboard chính: mã lấy từ localStorage (key 'dashboard_lite_last_symbol' —
+         PHẢI khớp với hằng số LITE_LAST_SYMBOL_KEY khai báo trong dashboard-main.js, đọc được
+         ngay lập tức vì localStorage truy cập đồng bộ, không cần đợi gì).
+     Cả 2 trường hợp đều dùng tf mặc định '1D' + limit=450 — khớp đúng tham số loadLiteChart()
+     dùng ở LẦN GỌI ĐẦU TIÊN (xem let _liteTf='1D' và loadLiteChart()). loadLiteChart() vốn đã
+     luôn tự chạy nền ngay khi trang mở (init(), bất kể panel đang thu gọn hay mở), nên tối ưu
+     này chỉ đổi THỜI ĐIỂM bắn request sớm hơn, không đổi hành vi tải. Đổi mã/khung giờ sau đó
+     vẫn gọi API bình thường qua loadLiteChart(), không liên quan. -->
 <script>
 try{
-  if(new URLSearchParams(window.location.search).get('chartPopout')==='1')
-    document.documentElement.classList.add('chart-popout-mode');
+  const _qp=new URLSearchParams(window.location.search);
+  const _isPopout=_qp.get('chartPopout')==='1';
+  if(_isPopout)document.documentElement.classList.add('chart-popout-mode');
+  const _pfSym=(_isPopout?(_qp.get('sym')||''):(localStorage.getItem('dashboard_lite_last_symbol')||'VNINDEX')).trim().toUpperCase();
+  if(_pfSym){
+    window.__liteChartPrefetch={
+      sym:_pfSym,tf:'1D',
+      promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=450')
+    };
+  }
 }catch(e){}
 </script>
 <!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
@@ -2209,6 +2279,22 @@ html.chart-popout-mode>body>header,
 html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
 html.chart-popout-mode #lite-chart-popout-btn{display:none}
+/* Panel CHART trong cửa sổ popout: HTML gốc luôn có sẵn class .collapsed (mặc định thu gọn
+   cho trang dashboard chính) — JS ở cuối trang mới gỡ class này ra để mở panel, xem IIFE
+   "Trang mở lại với ?chartPopout=1..." bên dưới. Nếu JS chạy chậm (mạng chậm, máy yếu, thư
+   viện chart to), người dùng thấy đúng cảnh panel hiện thu gọn (chỉ còn chữ CHART) rồi mới
+   bung toolbar+chart ra — đây chính là hiện tượng "thu vào trước, xong mới mở ra". Vô hiệu
+   hoá 2 rule ẩn của .collapsed ngay khi html.chart-popout-mode có mặt (gắn synchronous từ
+   đầu <head>, tức là có hiệu lực NGAY LẦN VẼ ĐẦU TIÊN, không cần đợi JS) để panel luôn hiện
+   sẵn ở trạng thái mở — hết hẳn khoảng nháy thu/mở, bất kể JS/mạng chậm hay nhanh.
+   Dùng display:flex (không dùng revert) vì MỌI phần tử con trực tiếp của .lite-chart-toolbar
+   (.lite-chart-search-wrap, .lite-tf-tabs, .lite-indicators, .lite-draw-toolbar, .lite-alert-wrap...)
+   đều tự dùng display:flex cho layout bên trong chính nó — revert!important sẽ bỏ qua các rule
+   display:flex đó (revert quay thẳng về mặc định UA, không phải cascade tiếp theo), làm vỡ layout
+   ngay trong khoảnh khắc transitional này; flex!important vừa đúng cho từng phần tử con, vừa để
+   chúng làm flex-item hợp lệ trong .lite-chart-toolbar (cha ngoài). */
+html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:flex!important}
+html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:block!important}
 /* Mobile portrait + popout: thay vì đoán cứng chiều cao toolbar (44px — dễ lệch thực tế
    tuỳ máy, khiến panel MACD bị cắt và góc bo dưới bị đẩy khỏi màn hình), cho #lite-chart-panel
    cao đúng bằng phần màn hình còn lại (trừ padding #main-wrap + safe-area đáy iPhone) rồi
@@ -2364,6 +2450,9 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lg-sym-item.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
 .lg-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
 .lg-star.on{color:#f59e0b}
+/* Nút ⭐ FAVORITE trên toolbar chart (cạnh ô Tìm mã) — dùng chung style .lite-draw-btn, chỉ đổi màu khi mã đang xem đã có trong Favorite */
+.lite-fav-btn{color:#d1d5db}
+.lite-fav-btn.on{color:#f59e0b}
 .lg-sym-name{width:36px;flex-shrink:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lg-sym-pct{width:40px;flex-shrink:0;text-align:right}
 .lg-sym-price{width:48px;flex-shrink:0;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2589,7 +2678,11 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
      - Khung toolbar cuộn ngang 1 hàng mượt mà bằng tay trên iPhone (-webkit-overflow-scrolling: touch).
      - Loại bỏ hiện tượng tự động phóng to (zoom) của iOS Safari khi chạm vào ô input (font-size 16px).
      - Hỗ trợ safe area insets cho iPhone có notch / Dynamic Island và thanh Home bar.
-     - Hiển thị bảng chỉ báo (Indicators) dạng bottom sheet nổi tiện chạm trên màn hình nhỏ. */
+     - Dropdown chỉ báo (Signal/MA-EMA/Trend) được portal ra <body> + neo ĐỘNG ngay dưới nút
+       vừa bấm bằng JS (xem _litePositionIndDropdown/syncLiteIndDropdownPortal), giống hệt
+       cách absolute mặc định hoạt động ở landscape/desktop — CSS bên dưới chỉ còn giữ phần
+       khung (bo góc/đổ bóng/giới hạn kích thước/cuộn nội dung), KHÔNG định vị cứng kiểu
+       bottom-sheet nữa. */
   #lite-chart-panel{display:block}
   .lite-chart-toolbar{
     flex-wrap:nowrap;
@@ -2615,19 +2708,25 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   #lite-chart {
     touch-action: pan-x pan-y;
   }
+  /* QUAN TRỌNG: top/left ở đây KHÔNG được đánh dấu !important — theo cascade CSS, một khai báo
+     !important trong stylesheet luôn thắng inline style set bằng JS (dd.style.left/top ở
+     _litePositionIndDropdown), dù inline style vốn dĩ có độ ưu tiên cao hơn CSS thường. Nếu để
+     !important ở đây, dropdown sẽ bị "dính cứng" tại góc trên-trái (0,0) — tức sát mép trái màn
+     hình — bất kể JS tính toán ra vị trí nào, đây chính là lỗi đã gặp phải. 0,0 chỉ đóng vai trò
+     giá trị KHỞI TẠO trước khi JS chạy lần đầu; ngay khi _litePositionIndDropdown gán
+     dd.style.left/top (inline, không !important), nó sẽ ghi đè đúng theo cascade và có hiệu lực. */
   .lite-ind-dropdown {
     position: fixed !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    top: auto !important;
-    bottom: 20px !important;
-    width: min(340px, 92vw) !important;
+    top: 0;
+    left: 0;
+    width: max-content !important;
+    max-width: min(260px, 92vw) !important;
     max-height: 55vh !important;
     overflow-y: auto !important;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
-    border-radius: 12px !important;
+    box-shadow: 0 8px 24px rgba(17,24,39,.22) !important;
+    border-radius: 10px !important;
     z-index: 99999 !important;
-    padding: 12px 16px !important;
+    padding: 8px 10px !important;
     -webkit-overflow-scrolling: touch;
   }
   .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
@@ -2643,6 +2742,18 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   /* Xoay ngang: rộng hơn portrait nên khung chart có thể cao hơn 1 chút mà
      vẫn còn chỗ cho toolbar + phần dashboard phía trên. */
   .lite-chart-frame{height:72vh;max-height:640px}
+  /* Landscape giữ dropdown theo cơ chế absolute trong .lite-ind-group như desktop.
+     Rule mobile chung phía trên dùng fixed cho portrait portal; override này tránh
+     các thiết bị landscape hẹp bị rơi về góc viewport. */
+  .lite-ind-dropdown{
+    position:absolute !important;
+    top:calc(100% + 4px) !important;
+    left:0 !important;
+    width:max-content !important;
+    max-width:min(260px, 92vw) !important;
+    max-height:55vh !important;
+    z-index:20 !important;
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -2900,6 +3011,7 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
           <span class="s-icon">🔍</span>
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
         </div>
+        <button class="lite-draw-btn lite-fav-btn" id="lite-fav-btn" title="Thêm/bỏ mã đang xem khỏi Favorite" aria-label="Thêm/bỏ mã đang xem khỏi Favorite">☆</button>
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
         <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
@@ -3363,7 +3475,14 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
 
 <div id="edge-swipe-zone"></div>
 
-<script src="/static/lightweight-charts.min.js"></script>
+<!-- defer: file đã được preload ở <head> (link rel="preload") nên tải sẵn song song rồi;
+     thêm defer để trình duyệt không phải DỪNG parse HTML tại đúng dòng này chờ tải+chạy xong
+     thư viện (~vài trăm KB) mới đi tiếp — nhất là ảnh hưởng tới cửa sổ CHART popout, nơi hầu
+     như toàn bộ nội dung trang chỉ còn đúng panel CHART, nên mọi mili-giây parse HTML bị chặn
+     ở đây đều lộ ra thành cảm giác "load chậm". defer vẫn đảm bảo chạy TRƯỚC dashboard-main.js
+     (thứ tự các script defer luôn giữ đúng thứ tự khai báo trong tài liệu), nên window.LightweightCharts
+     vẫn sẵn sàng đúng lúc dashboard-main.js cần dùng — hành vi logic không đổi, chỉ bớt chặn parse. -->
+<script defer src="/static/lightweight-charts.min.js"></script>
 <script defer src="/dashboard-main.js"></script>
 </body>
 </html>
@@ -3402,6 +3521,7 @@ const DOM={
   treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),treemapCopyBtn:$('treemap-copy-btn'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   liteChartTitleLabel:$('lite-chart-title-label'),
+  liteFavBtn:$('lite-fav-btn'),
   liteVietstockToggleBtn:$('lite-vietstock-toggle-btn'),liteVietstockIframe:$('lite-vietstock-iframe'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
@@ -3539,14 +3659,18 @@ const LITE_LAST_SYMBOL_KEY='dashboard_lite_last_symbol';
 function loadLiteTrendMode(){
   let mode='regular';
   try{mode=localStorage.getItem(LITE_TREND_MODE_KEY)||'regular';}catch(e){}
-  DOM.liteIndicators?.querySelectorAll('input[name="trend-mode"]').forEach(r=>{r.checked=(r.value===mode);});
+  document.querySelectorAll('input[name="trend-mode"]').forEach(r=>{r.checked=(r.value===mode);});
 }
 function saveLiteTrendMode(){
   const mode=_liteTrendMode();
   try{localStorage.setItem(LITE_TREND_MODE_KEY,mode);}catch(e){}
 }
 function _liteTrendMode(){
-  const el=DOM.liteIndicators?.querySelector('input[name="trend-mode"]:checked');
+  // document (không phải DOM.liteIndicators) — vì dropdown "trend" có thể đang bị portal ra
+  // <body> (xem syncLiteIndDropdownPortal ở dưới), lúc đó input này không còn nằm trong
+  // DOM.liteIndicators nữa. name="trend-mode" là duy nhất trên toàn trang nên tra cứu qua
+  // document vẫn đúng, không lo trùng với input nào khác.
+  const el=document.querySelector('input[name="trend-mode"]:checked');
   return el?el.value:'regular';
 }
 // Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
@@ -3582,7 +3706,10 @@ function bindLiteIndColorPickers(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-label').forEach(span=>{
     span.addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
-      const inp=DOM.liteIndicators.querySelector(`.lite-ind-color[data-ind="${span.dataset.ind}"]`);
+      // Tra theo đúng <label> cha trực tiếp (span và input color luôn là 2 con cùng 1 label)
+      // thay vì DOM.liteIndicators.querySelector — vì dropdown chứa cặp này có thể đang bị
+      // portal ra <body> (mobile portrait), lúc đó không còn nằm trong DOM.liteIndicators nữa.
+      const inp=span.closest('label')?.querySelector(`.lite-ind-color[data-ind="${span.dataset.ind}"]`);
       if(inp)inp.click();
     });
   });
@@ -3597,15 +3724,118 @@ function bindLiteIndColorPickers(){
 function updateLiteIndGroupCounts(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group').forEach(grp=>{
     const key=grp.dataset.group;
-    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked').length;
+    // document (không phải grp.querySelectorAll) — vì dropdown của group này có thể đang bị
+    // portal ra <body>, lúc đó nó không còn là con của grp nữa, grp.querySelectorAll sẽ luôn
+    // ra 0 dù thực tế đang có chỉ báo được tick.
+    const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
+    const n=dd?dd.querySelectorAll('input[type="checkbox"]:checked').length:0;
     const badge=grp.querySelector(`.lite-ind-count[data-count="${key}"]`);
     if(badge){badge.textContent=n||'';badge.classList.toggle('on',n>0);}
   });
 }
 function closeAllLiteIndDropdowns(except){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group.open').forEach(g=>{
-    if(g!==except)g.classList.remove('open');
+    if(g!==except){
+      g.classList.remove('open');
+      syncLiteIndDropdownPortal(g,false);
+    }
   });
+}
+function _liteUseIndDropdownPortal(){
+  return window.matchMedia('(max-width:768px) and (orientation:portrait)').matches;
+}
+function _litePositionIndDropdown(btn,dd){
+  /* Neo dropdown ngay dưới nút vừa bấm — cùng nguyên tắc với position:absolute mặc định ở
+     landscape/desktop, chỉ khác là phải tự tính top/left tuyệt đối theo viewport (thay vì để
+     CSS lo) vì dd đã bị portal ra <body> (lý do xem syncLiteIndDropdownPortal).
+     Dùng window.visualViewport khi có (Safari/Chrome mobile) thay vì window.innerWidth/Height
+     để lấy đúng vùng nhìn thấy thực tế khi bàn phím ảo đang che một phần màn hình. */
+  const margin=8; // khoảng cách tối thiểu giữ tới mép vùng nhìn thấy
+  const vv=window.visualViewport;
+  const voX=vv?vv.offsetLeft:0, voY=vv?vv.offsetTop:0;
+  const vw=vv?vv.width:window.innerWidth, vh=vv?vv.height:window.innerHeight;
+  const r=btn.getBoundingClientRect();
+  const dw=dd.offsetWidth, dh=dd.offsetHeight;
+  // Canh trái theo mép trái của nút, kẹp lại để dropdown không tràn ra ngoài 2 mép màn hình.
+  let left=Math.min(Math.max(r.left,voX+margin),voX+vw-dw-margin);
+  // Mặc định bung XUỐNG dưới nút (giống landscape); nếu không đủ chỗ phía dưới thì bung LÊN
+  // trên nút; nếu cả 2 phía đều không đủ (dropdown quá cao) thì kẹp trong vùng nhìn thấy —
+  // max-height + overflow-y:auto ở CSS đã lo phần cuộn nội dung bên trong.
+  let top;
+  if(r.bottom+dh+margin<=voY+vh)top=r.bottom+4;
+  else if(r.top-dh-4>=voY+margin)top=r.top-dh-4;
+  else top=Math.max(voY+margin,voY+vh-dh-margin);
+  dd.style.left=left+'px';
+  dd.style.top=top+'px';
+}
+function _liteRepositionOpenDropdown(){
+  // Gọi lại khi toolbar cuộn ngang / resize / bàn phím ảo đóng-mở trong lúc dropdown đang mở
+  // trên mobile — dropdown đã portal ra <body> (fixed theo viewport) nên KHÔNG tự trôi theo
+  // nút; phải chủ động tính lại top/left, nếu không sẽ lệch khỏi nút.
+  const grp=DOM.liteIndicators?.querySelector('.lite-ind-group.open');
+  if(!grp)return;
+  const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${grp.dataset.group}"]`);
+  const btn=grp.querySelector('.lite-ind-group-btn');
+  if(dd&&btn&&dd.parentElement===document.body)_litePositionIndDropdown(btn,dd);
+}
+function syncLiteIndDropdownPortal(grp,open){
+  /* Portrait mobile: .lite-ind-dropdown dùng position:fixed và được neo động ngay dưới nút vừa
+     bấm (xem _litePositionIndDropdown), nhưng nó là con của .lite-chart-toolbar — toolbar này
+     có -webkit-overflow-scrolling:touch để cuộn ngang mượt trên iOS. Đây là quirk đã biết của
+     WebKit/Safari: container cuộn có thuộc tính này tự trở thành "khung chứa" MỚI cho mọi phần
+     tử fixed bên trong nó, khiến dropdown bị kẹt trong vùng cuộn hẹp thay vì hiện nổi theo toàn
+     màn hình như CSS đã định — hậu quả là bấm Signal/MA/EMA ở portrait không thấy gì hiện ra.
+     Cách xử lý: khi MỞ dropdown trên mobile, chuyển thẳng nó ra làm con trực tiếp của <body> —
+     thoát khỏi khung chứa bị kẹt, position:fixed hoạt động đúng theo viewport — rồi đo vị trí
+     nút để đặt dropdown dính sát ngay dưới nút đó. Khi ĐÓNG, trả nó về đúng vị trí cũ trong
+     .lite-ind-group và xóa top/left inline để không sót giá trị portrait cũ. Desktop/landscape
+     rộng (>768px) không đụng tới vì dropdown ở đó vẫn dùng position:absolute thường, không cần
+     portal.
+     3 điểm cần lưu ý (đã từng gây lỗi ở bản trước):
+     1) Dùng document.querySelector theo data-dropdown thay vì grp.querySelector — vì sau khi
+        dropdown đã bị chuyển ra <body>, nó KHÔNG còn là con của grp nữa, grp.querySelector sẽ
+        luôn trả về rỗng ở những lần gọi đóng sau đó, khiến không bao giờ trả lại được vị trí cũ.
+     2) CSS ẩn/hiện dropdown dựa vào ".lite-ind-group.open .lite-ind-dropdown{display:flex}" —
+        một khi bị chuyển ra ngoài <body>, dropdown không còn là con của .lite-ind-group.open
+        nữa nên rule CSS này không áp dụng được, phải set display:flex thủ công qua inline style
+        khi đang portal; lúc trả về đúng chỗ thì xóa inline style để CSS gốc tự quyết định lại.
+     3) Phải set display:flex TRƯỚC rồi mới đo offsetWidth/offsetHeight trong
+        _litePositionIndDropdown — phần tử display:none luôn trả về kích thước 0, tính top/left
+        theo đó sẽ sai (dropdown sẽ dính cứng ở góc trên-trái màn hình). */
+  const key=grp.dataset.group;
+  const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
+  if(!dd)return;
+  if(!_liteUseIndDropdownPortal()){
+    if(dd.parentElement===document.body){
+      dd.style.display='';
+      dd.style.visibility='';
+      dd.style.left='';
+      dd.style.top='';
+      grp.appendChild(dd);
+    }
+    return;
+  }
+  if(open){
+    if(dd.parentElement!==document.body)document.body.appendChild(dd);
+    dd.style.visibility='hidden';
+    dd.style.display='flex';
+    const btn=grp.querySelector('.lite-ind-group-btn');
+    if(btn){
+      _litePositionIndDropdown(btn,dd);
+      requestAnimationFrame(()=>{
+        if(grp.classList.contains('open')&&dd.parentElement===document.body){
+          _litePositionIndDropdown(btn,dd);
+        }
+      });
+    }
+    dd.style.visibility='';
+  }else if(dd.parentElement===document.body){
+    dd.style.display='';
+    dd.style.visibility='';
+    dd.style.left='';
+    dd.style.top='';
+    grp.appendChild(dd);
+  }
 }
 function bindLiteIndGroupDropdowns(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group-btn').forEach(btn=>{
@@ -3616,12 +3846,20 @@ function bindLiteIndGroupDropdowns(){
       const willOpen=!grp.classList.contains('open');
       closeAllLiteIndDropdowns();
       grp.classList.toggle('open',willOpen);
+      syncLiteIndDropdownPortal(grp,willOpen);
     });
   });
   DOM.liteIndicators?.querySelectorAll('.lite-ind-dropdown').forEach(dd=>{
     dd.addEventListener('click',e=>e.stopPropagation());
   });
   document.addEventListener('click',()=>closeAllLiteIndDropdowns());
+  window.addEventListener('orientationchange',()=>closeAllLiteIndDropdowns());
+  // Đăng ký lắng nghe cuộn/resize DUY NHẤT 1 lần ở đây (không phải mỗi lần mở dropdown) —
+  // _liteRepositionOpenDropdown tự kiểm tra bên trong có dropdown nào đang mở hay không nên
+  // không cần add/remove listener liên tục mỗi lần mở/đóng, tránh rò rỉ listener.
+  document.querySelector('.lite-chart-toolbar')?.addEventListener('scroll',_liteRepositionOpenDropdown,{passive:true});
+  window.addEventListener('resize',_liteRepositionOpenDropdown);
+  window.visualViewport?.addEventListener('resize',_liteRepositionOpenDropdown);
   updateLiteIndGroupCounts();
 }
 function _liteHexToRgba(hex,alpha,fallbackRgb='147,51,234'){
@@ -3818,20 +4056,39 @@ function initLiteChart(){
   }
 }
 function _liteChecked(name){
-  return !!DOM.liteIndicators?.querySelector(`input[value="${name}"]:checked`);
+  // document (không phải DOM.liteIndicators) — hàm này chạy liên tục trong lúc vẽ chart, kể cả
+  // khi dropdown đang mở/portal ra <body> trên mobile portrait; các value đều là định danh duy
+  // nhất trong toàn trang (đã kiểm tra không trùng ở đâu khác) nên tra cứu qua document vẫn
+  // đúng dù checkbox đang nằm ở đâu trong DOM.
+  return !!document.querySelector(`input[value="${name}"]:checked`);
+}
+function _liteAllIndCheckboxes(){
+  // Gộp checkbox còn nằm trong #lite-indicators (đường lite-ind-dropdown BÌNH THƯỜNG,
+  // + master toggle, + bb/rsi/macd đứng lẻ) VỚI checkbox bên trong dropdown ĐANG BỊ PORTAL
+  // ra <body> (mobile portrait) — nếu chỉ query trong #lite-indicators sẽ bỏ sót toàn bộ
+  // checkbox của đúng dropdown đang mở, gây mất dữ liệu khi lưu (saveLiteIndicatorPrefs ghi
+  // đè localStorage bằng object mới, thiếu key nào là mất luôn giá trị đã lưu trước đó của
+  // key đó). querySelectorAll với nhiều selector tự loại trùng, nên checkbox ở trạng thái
+  // bình thường (khớp cả 2 vế) vẫn chỉ xuất hiện đúng 1 lần trong kết quả.
+  return document.querySelectorAll('#lite-indicators input[type="checkbox"], .lite-ind-dropdown input[type="checkbox"]');
 }
 function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
-  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-    // maema_on/signalgrp_on/volcolor mặc định BẬT (giữ hành vi cũ) cho user chưa có key trong localStorage; các checkbox khác mặc định TẮT.
-    cb.checked=(cb.value==='maema_on'||cb.value==='signalgrp_on'||cb.value==='volcolor'||cb.value==='bigprice')?(prefs[cb.value]!==false):(prefs[cb.value]===true);
+  /* Danh sách chỉ báo mặc định BẬT khi người dùng mở dashboard lần đầu trên trình duyệt/thiết bị
+     đó (chưa có gì lưu trong localStorage). Panel chart nến luôn hiện sẵn (không qua checkbox
+     nào ở đây). Cờ tổng 2 nhóm Signal/MA-EMA (signalgrp_on, maema_on) CỐ Ý để mặc định TẮT —
+     nhưng các chỉ báo con bên trong vẫn được đánh dấu sẵn BẬT, để khi người dùng tự bật cờ tổng
+     lên thì đúng các thông số này đã có sẵn, không phải chọn lại từ đầu. */
+  const DEFAULT_ON_INDICATORS=new Set(['macd','signal','volcolor','ma10','ma200','ema20','ema50']);
+  _liteAllIndCheckboxes().forEach(cb=>{
+    cb.checked=DEFAULT_ON_INDICATORS.has(cb.value)?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
 }
 function saveLiteIndicatorPrefs(){
   const prefs={};
-  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{prefs[cb.value]=cb.checked;});
+  _liteAllIndCheckboxes().forEach(cb=>{prefs[cb.value]=cb.checked;});
   localStorage.setItem(LITE_IND_KEY,JSON.stringify(prefs));
 }
 function fmtLiteNum(v){
@@ -3996,6 +4253,13 @@ function setLiteTf(tf){
   _liteTf=tf || '1D';
   DOM.liteChartTf?.querySelectorAll('.lite-tf-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.tf===_liteTf));
 }
+function applyLiteTf(tf,force=false){
+  if(!tf)return false;
+  if(!force&&_liteTf===tf)return true;
+  setLiteTf(tf);
+  loadLiteChart(_liteSymbol,0);
+  return true;
+}
 function _clearLiteIndicators(){
   for(const s of _liteIndicatorSeries){
     try{s.chart.removeSeries(s.series);}catch(e){}
@@ -4148,7 +4412,11 @@ function alignLiteSeries(points){
   const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
-function applyLitePaneLayout(){
+// skipWidthSync=true khi hàm gọi sẽ tự đồng bộ trục giá lại SAU ĐÓ (xem renderLiteIndicators()) —
+// tránh lãng phí 1 lượt requestAnimationFrame đo width lúc dữ liệu 3 trục CHƯA kịp cập nhật
+// (applyLitePaneLayout() luôn chạy TRƯỚC khi series indicator mới được setData trong
+// renderLiteIndicators, nên đo ngay tại đây sẽ ra width cũ/rỗng — vô nghĩa, chỉ tổ tốn 1 frame).
+function applyLitePaneLayout(skipWidthSync){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
   // Portrait mobile: IS_MOBILE() && portrait orientation.
@@ -4210,6 +4478,37 @@ function applyLitePaneLayout(){
     _liteSyncing=prevSyncing;
   }
   resizeLiteDrawCanvas();redrawLiteDrawings();
+  if(!skipWidthSync)_liteSyncPriceScaleWidths();
+}
+// Đồng bộ chiều rộng trục giá (bên phải) của cả 3 chart main/RSI/MACD luôn bằng nhau, để 3 trục
+// luôn thẳng hàng dọc từ trên xuống. LÝ DO LỆCH: minimumWidth trong LITE_PRICE_SCALE_BASE (64px)
+// chỉ là mức SÀN tối thiểu — khi nội dung label rộng hơn sàn đó, trục tự nới rộng ra thêm, còn
+// khi nội dung hẹp hơn thì trục giữ nguyên đúng sàn. Với VNINDEX/VN30 (giá trị ~1000-1300, nhiều
+// chữ số hơn giá cổ phiếu thường ~10-100), label trục main dài hơn nên trục main tự nới rộng hơn
+// mức sàn, trong khi RSI (0-100) và MACD (vài chục) vẫn giữ nguyên sàn 64 — 2 trục không nới nên
+// bị lệch so với trục main. Cách sửa: đo width thực tế đã render của cả 3 trục (chờ đúng 1 khung
+// hình bằng requestAnimationFrame để thư viện kịp tính lại label sau khi setData/applyOptions —
+// đọc ngay lập tức có thể vẫn là width cũ), lấy giá trị lớn nhất trong 3, rồi ép cả 3 trục cùng
+// dùng chung đúng minimumWidth đó — trục nào đang hẹp hơn sẽ tự nới theo, luôn thẳng hàng với
+// nhau bất kể đang xem mã nào. Gọi ở cuối applyLitePaneLayout() (resize/xoay màn hình/pointermove
+// — layout đổi nhưng dữ liệu 3 trục KHÔNG đổi) và cuối renderLiteIndicators() (đổi mã/khung giờ/
+// bật-tắt chỉ báo — dữ liệu 3 trục vừa đổi). renderLiteIndicators() tự gọi applyLitePaneLayout(true)
+// ở đầu hàm (đối số true = skipWidthSync) để KHÔNG đồng bộ non tại đó — lúc đó series indicator mới
+// chưa kịp setData nên đo width sẽ ra kết quả cũ/rỗng, vô nghĩa; renderLiteIndicators() tự đồng bộ
+// lại đúng 1 lần ở cuối, sau khi mọi series đã có data mới.
+function _liteSyncPriceScaleWidths(){
+  if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
+  requestAnimationFrame(()=>{
+    try{
+      const w1=_liteChart.priceScale('right').width();
+      const w2=_liteRsiChart.priceScale('right').width();
+      const w3=_liteMacdChart.priceScale('right').width();
+      const maxW=Math.max(LITE_PRICE_SCALE_BASE.minimumWidth,w1||0,w2||0,w3||0);
+      _liteChart.priceScale('right').applyOptions({minimumWidth:maxW});
+      _liteRsiChart.priceScale('right').applyOptions({minimumWidth:maxW});
+      _liteMacdChart.priceScale('right').applyOptions({minimumWidth:maxW});
+    }catch(e){}
+  });
 }
 // ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop, text) ═══ Thao tác kiểu TradingView: hình vẽ xong chọn/kéo/đổi màu được (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định).
 const LITE_DRAW_KEY='dashboard_lite_drawings';
@@ -5715,6 +6014,21 @@ function _liteTryOpenSearchOnKey(e){
   openLiteSearch();
   return true;
 }
+function _liteTryDesktopTfShortcut(e){
+  if(!window.matchMedia('(min-width:769px)').matches)return false;
+  if(!e.shiftKey||e.metaKey||e.ctrlKey||e.altKey)return false;
+  if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
+  const tag=(document.activeElement?.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select')return false;
+  const tfMap={d:'1D',w:'1W',e:'1M'};
+  const tf=tfMap[String(e.key||'').toLowerCase()];
+  if(!tf)return false;
+  e.preventDefault();
+  e.stopPropagation();
+  applyLiteTf(tf);
+  DOM.liteChartFrame?.focus();
+  return true;
+}
 // _liteUpdateIndicatorData: bản nhẹ của renderLiteIndicators() cho lazy-load — chỉ update dữ liệu series có sẵn, không destroy/recreate, tránh giật.
 function _liteUpdateIndicatorData(){
   if(!_liteChart)return;
@@ -5775,7 +6089,8 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
   // skipPaneLayout bỏ qua applyLitePaneLayout() khi layout không đổi — set rightOffset dù cùng giá trị vẫn khiến thư viện tự canh lại view, gây "nhảy chart" mỗi 10s.
-  if(!skipPaneLayout)applyLitePaneLayout();
+  // Truyền true (skipWidthSync) — hàm này tự đồng bộ trục giá lại ở cuối (sau khi data mới đã setData xong), khỏi cần applyLitePaneLayout() làm trước 1 lượt vô nghĩa.
+  if(!skipPaneLayout)applyLitePaneLayout(true);
   // (không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() phía dưới sẽ tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay nên chỉ tốn công.)
   maOn.forEach(p=>{
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ma',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ma'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
@@ -5871,6 +6186,10 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   _liteRefreshVolumeTop(showVpaVol);
   if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
   redrawLiteDrawings();
+  // Dữ liệu 3 trục vừa đổi (mã mới/khung giờ mới/bật-tắt chỉ báo) — applyLitePaneLayout() gọi ở
+  // đầu hàm này đã reset minimumWidth về sàn mặc định, nên phải đo+đồng bộ lại SAU KHI data mới
+  // đã setData xong (xem giải thích đầy đủ tại định nghĩa hàm _liteSyncPriceScaleWidths()).
+  _liteSyncPriceScaleWidths();
 }
 function _liteVolColorFor(volBar,showVpa){
   // Checkbox volcolor BẬT dùng màu VPA server tính; TẮT dùng màu xanh/đỏ mặc định theo close/open. showVpa đọc DOM 1 lần/lượt vẽ để tránh querySelector lặp lại theo từng bar.
@@ -5898,11 +6217,19 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
+    // Dùng lại request đã bắn sẵn từ đầu <head> (xem script inline "TRANH THỦ GỌI LUÔN API..."
+    // ở phần <head>) nếu đúng mã + đúng khung giờ của lần tải đầu tiên — bỏ qua việc gọi fetch
+    // lần 2. Chỉ dùng ĐÚNG 1 LẦN (xoá ngay sau khi lấy ra) để các lần đổi mã/khung giờ sau đó
+    // luôn gọi API tươi mới như bình thường, không bao giờ nhầm phải data cũ.
+    const _pf=window.__liteChartPrefetch;
+    const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
+      ?(window.__liteChartPrefetch=null,await _pf.promise)
+      :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
     if(!r.ok)throw new Error('vndirect_unavailable');
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
+    _lgUpdateChartFavBtn();
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
     }else if(!skipPopoutSync){
@@ -6056,9 +6383,18 @@ function bindLiteChartControls(){
   });
   DOM.liteChartTf?.addEventListener('click',e=>{
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
-    setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
+    applyLiteTf(btn.dataset.tf,true);
   });
-  DOM.liteIndicators?.addEventListener('change',(e)=>{
+  // document (không phải DOM.liteIndicators) + lọc bằng closest — vì dropdown chỉ báo có thể
+  // đang bị portal ra <body> khi mở trên mobile portrait (xem syncLiteIndDropdownPortal), lúc
+  // đó sự kiện 'change' từ checkbox bên trong sẽ KHÔNG bao giờ nổi bọt (bubble) lên tới
+  // DOM.liteIndicators được nữa vì nó không còn là tổ tiên (ancestor) của checkbox đó — toàn bộ
+  // logic lưu/tick/vẽ lại chart bên dưới sẽ im lặng không chạy dù người dùng đã tick đúng. Gắn
+  // thẳng lên document (luôn là tổ tiên của mọi phần tử bất kể đang portal hay không) rồi tự lọc
+  // bằng closest('#lite-indicators') HOẶC closest('.lite-ind-dropdown') để không bắt nhầm các
+  // input/checkbox khác không liên quan ở những panel khác trên trang.
+  document.addEventListener('change',(e)=>{
+    if(!(e.target.closest('#lite-indicators')||e.target.closest('.lite-ind-dropdown')))return;
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
     // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge, màu volume, khối giá phóng to — không đụng MA/EMA/BB/RSI/MACD nên không gọi renderLiteIndicators() đầy đủ (tránh chart nhảy/co giãn vô ích).
     const val=e.target?.value;
@@ -6108,11 +6444,13 @@ function bindLiteChartControls(){
       }
       return;
     }
+    if(_liteTryDesktopTfShortcut(e))return;
     // stopPropagation() chặn bubble để tránh gọi openLiteSearch() 2 lần cho 1 phím bấm.
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
     if(!_litePointerInside)return;
+    if(_liteTryDesktopTfShortcut(e))return;
     _liteTryOpenSearchOnKey(e);
   });
   const _liteApplyChartSearch=_liteBindSymInput(DOM.liteChartSearch);
@@ -7566,7 +7904,8 @@ DOM.hmapToggle.addEventListener('click',e=>{
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
   // Control trong thanh công cụ vẫn bấm được bình thường khi thẻ mở; chỉ coi là bấm để thu/mở khi không trúng control, giống SANKEY.
-  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
+  // #lite-fav-btn (nút ⭐ thêm/bỏ Favorite mã đang xem) phải nằm trong danh sách loại trừ này — thiếu nó khiến bấm sao bị hiểu nhầm thành bấm vào header, làm thẻ CHART tự thu gọn lại mỗi lần bấm sao.
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-fav-btn,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
@@ -8096,11 +8435,35 @@ function _lgToggleFavorite(sym){
   else LG_FAVORITES.splice(i,1);
   _lgSaveFavorites();_lgRenderList();
   _broadcastFavorites();
+  _lgUpdateChartFavBtn();
 }
 // Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ.
 function _broadcastFavorites(){
   if(_hoverPreviewOn){_hvBuildTabs();if(_hvActiveGroup!==-1)_hvRenderSymList();}
 }
+// Nút ⭐ đặt ngay trên toolbar chart (cạnh ô Tìm mã): cho phép thêm/bỏ FAVORITE cho đúng mã đang xem trên chart,
+// không cần mở sidebar nhóm ngành. Dùng chung LG_FAVORITES/_lgToggleFavorite để mọi nơi luôn đồng bộ.
+function _lgUpdateChartFavBtn(){
+  if(!DOM.liteFavBtn)return;
+  const on=LG_FAVORITES.includes((_liteSymbol||'').toUpperCase());
+  DOM.liteFavBtn.classList.toggle('on',on);
+  DOM.liteFavBtn.textContent=on?'★':'☆';
+}
+DOM.liteFavBtn?.addEventListener('click',()=>{
+  if(!_liteSymbol)return;
+  _lgToggleFavorite(_liteSymbol); // hàm này tự cập nhật lại nút ⭐ (xem _lgUpdateChartFavBtn ở trên)
+});
+// Đồng bộ FAVORITE giữa cửa sổ CHART chính và popout (openchartsym) qua sự kiện 'storage' có sẵn của trình duyệt:
+// mỗi khi 1 trong 2 cửa sổ ghi lại localStorage[LG_FAVORITE_KEY] (bấm sao / nhập nhanh / kéo-thả), cửa sổ còn lại
+// nhận sự kiện này ngay lập tức, nạp lại LG_FAVORITES rồi vẽ lại sidebar + Hover Preview + nút sao trên toolbar chart
+// — không cần refresh cả dashboard.
+window.addEventListener('storage',e=>{
+  if(e.key!==LG_FAVORITE_KEY)return;
+  LG_FAVORITES=_lgLoadFavorites();
+  _lgRenderList();
+  _broadcastFavorites();
+  _lgUpdateChartFavBtn();
+});
 function _lgReorderFavorite(dragSym,targetSym){
   // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường — hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
   if(FOLLOW.includes(dragSym)!==FOLLOW.includes(targetSym))return;
