@@ -594,15 +594,11 @@ def compute_indicators(df):
 # nến (cả bullish lẫn bearish) trong AFL gốc vẫn KHÔNG port, theo đúng thống
 # nhất từ đầu.
 #
-# LƯU Ý QUAN TRỌNG: AFL gốc gọi RWIHi(min,max)/RWILo(min,max)/RWI(min,max) với
-# 2 tham số — không phải cú pháp RWIHi/RWILo/RWI chuẩn 1 tham số của AmiBroker.
-# Đây nhiều khả năng là hàm mở rộng theo đúng định nghĩa gốc của Random Walk
-# Index (Michael Poulos, TASC 1993): quét p từ min→max, lấy giá trị LỚN NHẤT
-# của (High - Low lùi p phiên)/(ATR(p)*sqrt(p)) — đây là cách chúng tôi triển
-# khai dưới đây. Không có định nghĩa hàm gốc trong file AFL để đối chiếu 100%,
-# nên đây là suy luận theo chuẩn kỹ thuật phổ biến nhất, không phải chắc chắn
-# tuyệt đối khớp bản gốc — nếu vpa_flag ra tần suất bất thường, đây là nơi đầu
-# tiên cần rà lại.
+# AFL gốc gọi thẳng AmiBroker built-in RWIHi(min,max)/RWILo(min,max)/RWI(min,max).
+# AmiBroker tính RWI bằng ATR(p) ở mẫu số; ATR() của AmiBroker dùng Wilder
+# smoothing, không phải MA đơn giản của True Range. Vì vậy phần port dưới đây tự
+# tính Wilder ATR trước khi quét p từ min→max để giảm lệch phân loại blue/cyan
+# quanh ngưỡng upmajor/upminor.
 # =============================================================================
 def _true_range(df):
     prev_close = df['close'].shift(1)
@@ -612,16 +608,30 @@ def _true_range(df):
         (df['low']  - prev_close).abs(),
     ], axis=1).max(axis=1)
 
+def _wilder_atr(tr, period):
+    """ATR(period) theo Wilder/AmiBroker: seed bằng SMA(period), sau đó recursive."""
+    period = int(period)
+    if period <= 0:
+        raise ValueError("period must be positive")
+    arr = pd.to_numeric(tr, errors='coerce').to_numpy(dtype=float)
+    out = np.full(len(arr), np.nan, dtype=float)
+    valid = np.isfinite(arr)
+    if len(arr) < period or not valid[:period].all():
+        return pd.Series(out, index=tr.index)
+    out[period - 1] = arr[:period].mean()
+    for i in range(period, len(arr)):
+        if np.isfinite(arr[i]) and np.isfinite(out[i - 1]):
+            out[i] = (out[i - 1] * (period - 1) + arr[i]) / period
+    return pd.Series(out, index=tr.index)
+
 def _rwi_hi_lo(df, pmin, pmax, tr=None):
-    """RWIHi/RWILo (Random Walk Index) theo định nghĩa gốc Poulos: với mỗi p
-    trong [pmin, pmax], tính (H - L lùi p phiên)/(ATR(p)*sqrt(p)) rồi lùi p
-    phiên tương tự cho chiều ngược lại, lấy giá trị LỚN NHẤT trên toàn dải p."""
+    """RWIHi/RWILo: với mỗi p trong [pmin, pmax], dùng ATR(p) Wilder giống AmiBroker."""
     if tr is None:
         tr = _true_range(df)
     hi_max = pd.Series(0.0, index=df.index)
     lo_max = pd.Series(0.0, index=df.index)
     for p in range(pmin, pmax + 1):
-        denom = tr.rolling(p).mean() * math.sqrt(p)
+        denom = _wilder_atr(tr, p) * math.sqrt(p)
         hi = ((df['high'] - df['low'].shift(p)) / denom).fillna(0)
         lo = ((df['high'].shift(p) - df['low']) / denom).fillna(0)
         hi_max = np.maximum(hi_max, hi)
