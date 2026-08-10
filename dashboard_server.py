@@ -7831,7 +7831,8 @@ DOM.hmapToggle.addEventListener('click',e=>{
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
   // Control trong thanh công cụ vẫn bấm được bình thường khi thẻ mở; chỉ coi là bấm để thu/mở khi không trúng control, giống SANKEY.
-  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
+  // #lite-fav-btn (nút ⭐ thêm/bỏ Favorite mã đang xem) phải nằm trong danh sách loại trừ này — thiếu nó khiến bấm sao bị hiểu nhầm thành bấm vào header, làm thẻ CHART tự thu gọn lại mỗi lần bấm sao.
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-fav-btn,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
