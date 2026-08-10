@@ -117,6 +117,11 @@ _get_signal_session_date = None
 _get_history_cache = None
 _cache_lock = None
 _fetch_heatmap_fn = None
+# Hàm tải giá on-demand cho MÃ LẺ không nằm trong _HEATMAP_NEED_SYMBOLS (ví dụ mã người
+# dùng tự thêm vào FAVORITE trên sidebar CHART) — inject qua start_dashboard(extra_quote_fn=...).
+# Khác _fetch_heatmap_fn ở chỗ: nhận vào 1 list mã tuỳ ý (không cố định), chỉ tải đúng những
+# mã được yêu cầu, không đụng tới cache/TTL của heatmap chính.
+_extra_quote_fn = None
 _fetch_market_health_fn = None
 _vol_forecast_fn = None
 # Hàm tính vpa_flag (calc_vpa_flag bên scanner_full.py) — inject qua
@@ -129,6 +134,15 @@ _signal_rank = {}
 _heatmap_cache = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock = threading.Lock()
 HEATMAP_TTL_SEC = 120
+
+# Cache cho /api/quote_extra (bù giá on-demand cho mã lẻ, ví dụ FAVORITE ngoài danh sách
+# quét chung) — key = mã, value = {"price","pct","ts"}. TTL ngắn hơn heatmap chính vì mục
+# đích khác nhau (vài mã lẻ, ít người dùng cùng lúc) nhưng vẫn cần cache để nhiều lần gọi
+# liên tiếp (nhiều client, hoặc cùng 1 sidebar render lại) không dội API liên tục.
+_extra_quote_cache = {}
+_extra_quote_lock = threading.Lock()
+EXTRA_QUOTE_TTL_SEC = 20
+EXTRA_QUOTE_MAX_SYMS = 15  # giới hạn số mã/lần gọi, tránh 1 request kéo quá nhiều mã lạ cùng lúc
 MARKET_HEALTH_TTL_SEC = 1800
 SIGNAL_TTL_SEC = 10
 
@@ -978,6 +992,47 @@ def api_heatmap():
         "cached_age": int(now - snap_time),
     })
 
+@app.route("/api/quote_extra")
+def api_quote_extra():
+    """Bù giá on-demand cho MÃ LẺ không nằm trong danh sách quét chung (_HEATMAP_NEED_SYMBOLS
+    bên scanner_full.py) — ví dụ mã người dùng tự thêm vào FAVORITE trên sidebar CHART. Khác
+    /api/heatmap ở chỗ: nhận list mã tuỳ ý qua query ?syms=A,B,C thay vì trả cố định 1 bộ mã,
+    và dùng cache/TTL riêng (EXTRA_QUOTE_TTL_SEC) để không đụng tới cache heatmap chính."""
+    raw = request.args.get("syms", "")
+    syms = []
+    for s in raw.split(","):
+        s = s.strip().upper()
+        # Chỉ nhận mã dạng chữ/số thuần, độ dài hợp lý — chặn input rác/độc trước khi đưa vào
+        # hàm fetch giá thật (engine.price_board bên scanner_full.py).
+        if s and s.isalnum() and 1 <= len(s) <= 10 and s not in syms:
+            syms.append(s)
+    syms = syms[:EXTRA_QUOTE_MAX_SYMS]
+    if not syms or not _extra_quote_fn:
+        return jsonify({"data": {}})
+
+    now = time.time()
+    with _extra_quote_lock:
+        need_fetch = [
+            s for s in syms
+            if s not in _extra_quote_cache or now - _extra_quote_cache[s]["ts"] > EXTRA_QUOTE_TTL_SEC
+        ]
+    if need_fetch:
+        try:
+            fresh = _extra_quote_fn(need_fetch) or {}
+            with _extra_quote_lock:
+                for s, v in fresh.items():
+                    if isinstance(v, dict) and "price" in v and "pct" in v:
+                        _extra_quote_cache[s] = {"price": v["price"], "pct": v["pct"], "ts": now}
+        except Exception as e:
+            print(f"  [Dashboard] ❌ Fetch quote_extra lỗi: {e}")
+
+    with _extra_quote_lock:
+        data = {
+            s: {"price": _extra_quote_cache[s]["price"], "pct": _extra_quote_cache[s]["pct"]}
+            for s in syms if s in _extra_quote_cache
+        }
+    return jsonify({"data": _json_safe(data)})
+
 @app.route("/api/market_health")
 def api_market_health():
     data = _refresh_market_health()
@@ -1699,9 +1754,10 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     calc_vpa_flag_fn=None,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
-                    attent_today_ref=None, breakvol_today_ref=None):
+                    attent_today_ref=None, breakvol_today_ref=None,
+                    extra_quote_fn=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank, _extra_quote_fn
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -1715,6 +1771,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _calc_vpa_flag_fn  = calc_vpa_flag_fn
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
+    _extra_quote_fn    = extra_quote_fn
 
     def _run():
         import logging
@@ -8390,6 +8447,34 @@ function _symDisplayFields(sym,data){
   const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
   return{pct,price,pctStr,color};
 }
+// Bù giá on-demand cho MÃ LẺ đang hiển thị trên sidebar (NHÓM NGÀNH/FAVORITE...) nhưng
+// KHÔNG có trong window._lastHmapData (ví dụ mã người dùng tự thêm vào FAVORITE, nằm ngoài
+// danh sách quét chung TS_POOL_CONFIG/HMAP_COLS_CONFIG) — trước đây các mã này luôn hiện "--".
+// _extraQuoteAsked: nhớ lần gọi gần nhất theo từng mã để không dội API liên tục mỗi lần
+// sidebar render lại (khớp TTL cache phía server EXTRA_QUOTE_TTL_SEC=20s).
+const _extraQuoteAsked=new Map();
+const _EXTRA_QUOTE_MIN_INTERVAL=15000;
+async function _lgFillMissingQuotes(){
+  if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
+  const now=Date.now(),missing=[],seen=new Set();
+  _lgGetGroups().forEach(g=>g.syms.forEach(sym=>{
+    if(!sym||seen.has(sym))return;
+    seen.add(sym);
+    if(window._lastHmapData&&window._lastHmapData[sym])return; // đã có giá, không cần bù
+    if(now-(_extraQuoteAsked.get(sym)||0)<_EXTRA_QUOTE_MIN_INTERVAL)return; // vừa hỏi gần đây, chờ thêm
+    missing.push(sym);
+  }));
+  if(!missing.length)return;
+  missing.forEach(sym=>_extraQuoteAsked.set(sym,now));
+  try{
+    const j=await fetch('/api/quote_extra?syms='+encodeURIComponent(missing.join(','))).then(r=>r.json());
+    const data=j.data||{};
+    if(Object.keys(data).length){
+      window._lastHmapData=Object.assign({},window._lastHmapData,data);
+      _lgRenderList(); // vẽ lại đúng 1 lần để hiện giá/% vừa lấy được (mã đã có data nên lần gọi kế _lgFillMissingQuotes sẽ tự bỏ qua, không lặp vô hạn)
+    }
+  }catch(e){console.error('_lgFillMissingQuotes:',e);}
+}
 function _sortSymsByMode(syms,alpha){
   if(alpha)return[...syms].sort((a,b)=>a.localeCompare(b));
   const d=window._lastHmapData||{};
@@ -8515,6 +8600,7 @@ function _lgRenderList(){
       +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
   }).join('');
+  _lgFillMissingQuotes();
 }
 function _lgQuickAddFavorites(){
   const raw=prompt('Nhập các mã muốn thêm vào FAVORITE, cách nhau bằng dấu phẩy hoặc khoảng trắng:','');
