@@ -2026,21 +2026,27 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
      Bắn request này chạy song song ngay từ đầu, gói kết quả (Promise) vào
      window.__liteChartPrefetch; loadLiteChart() ở dưới sẽ tự nhận ra và dùng lại kết quả
      này thay vì gọi API lần 2 — cắt hẳn thời gian chờ mạng ra khỏi đường găng tải trang.
-     Chỉ áp dụng cho lần tải ĐẦU TIÊN của popout (tf mặc định luôn là '1D', limit=450 — khớp
-     đúng tham số loadLiteChart dùng ở lần gọi đầu, xem let _liteTf='1D' và loadLiteChart()).
-     Đổi mã/khung giờ sau đó vẫn gọi API bình thường qua loadLiteChart(), không liên quan. -->
+     ÁP DỤNG CHO CẢ 2 TRƯỜNG HỢP — không riêng gì popout:
+       - popout (?chartPopout=1&sym=...): mã lấy từ query string ?sym=.
+       - trang dashboard chính: mã lấy từ localStorage (key 'dashboard_lite_last_symbol' —
+         PHẢI khớp với hằng số LITE_LAST_SYMBOL_KEY khai báo trong dashboard-main.js, đọc được
+         ngay lập tức vì localStorage truy cập đồng bộ, không cần đợi gì).
+     Cả 2 trường hợp đều dùng tf mặc định '1D' + limit=450 — khớp đúng tham số loadLiteChart()
+     dùng ở LẦN GỌI ĐẦU TIÊN (xem let _liteTf='1D' và loadLiteChart()). loadLiteChart() vốn đã
+     luôn tự chạy nền ngay khi trang mở (init(), bất kể panel đang thu gọn hay mở), nên tối ưu
+     này chỉ đổi THỜI ĐIỂM bắn request sớm hơn, không đổi hành vi tải. Đổi mã/khung giờ sau đó
+     vẫn gọi API bình thường qua loadLiteChart(), không liên quan. -->
 <script>
 try{
   const _qp=new URLSearchParams(window.location.search);
-  if(_qp.get('chartPopout')==='1'){
-    document.documentElement.classList.add('chart-popout-mode');
-    const _pfSym=(_qp.get('sym')||'').trim().toUpperCase();
-    if(_pfSym){
-      window.__liteChartPrefetch={
-        sym:_pfSym,tf:'1D',
-        promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=450')
-      };
-    }
+  const _isPopout=_qp.get('chartPopout')==='1';
+  if(_isPopout)document.documentElement.classList.add('chart-popout-mode');
+  const _pfSym=(_isPopout?(_qp.get('sym')||''):(localStorage.getItem('dashboard_lite_last_symbol')||'VNINDEX')).trim().toUpperCase();
+  if(_pfSym){
+    window.__liteChartPrefetch={
+      sym:_pfSym,tf:'1D',
+      promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=450')
+    };
   }
 }catch(e){}
 </script>
