@@ -5931,7 +5931,7 @@ function _liteTryDesktopTfShortcut(e){
   if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
   const tag=(document.activeElement?.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea'||tag==='select')return false;
-  const tfMap={d:'1D',w:'1W',m:'1M'};
+  const tfMap={d:'1D',w:'1W',e:'1M'};
   const tf=tfMap[String(e.key||'').toLowerCase()];
   if(!tf)return false;
   e.preventDefault();
