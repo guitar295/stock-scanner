@@ -3583,14 +3583,18 @@ const LITE_LAST_SYMBOL_KEY='dashboard_lite_last_symbol';
 function loadLiteTrendMode(){
   let mode='regular';
   try{mode=localStorage.getItem(LITE_TREND_MODE_KEY)||'regular';}catch(e){}
-  DOM.liteIndicators?.querySelectorAll('input[name="trend-mode"]').forEach(r=>{r.checked=(r.value===mode);});
+  document.querySelectorAll('input[name="trend-mode"]').forEach(r=>{r.checked=(r.value===mode);});
 }
 function saveLiteTrendMode(){
   const mode=_liteTrendMode();
   try{localStorage.setItem(LITE_TREND_MODE_KEY,mode);}catch(e){}
 }
 function _liteTrendMode(){
-  const el=DOM.liteIndicators?.querySelector('input[name="trend-mode"]:checked');
+  // document (không phải DOM.liteIndicators) — vì dropdown "trend" có thể đang bị portal ra
+  // <body> (xem syncLiteIndDropdownPortal ở dưới), lúc đó input này không còn nằm trong
+  // DOM.liteIndicators nữa. name="trend-mode" là duy nhất trên toàn trang nên tra cứu qua
+  // document vẫn đúng, không lo trùng với input nào khác.
+  const el=document.querySelector('input[name="trend-mode"]:checked');
   return el?el.value:'regular';
 }
 // Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
@@ -3626,7 +3630,10 @@ function bindLiteIndColorPickers(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-label').forEach(span=>{
     span.addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
-      const inp=DOM.liteIndicators.querySelector(`.lite-ind-color[data-ind="${span.dataset.ind}"]`);
+      // Tra theo đúng <label> cha trực tiếp (span và input color luôn là 2 con cùng 1 label)
+      // thay vì DOM.liteIndicators.querySelector — vì dropdown chứa cặp này có thể đang bị
+      // portal ra <body> (mobile portrait), lúc đó không còn nằm trong DOM.liteIndicators nữa.
+      const inp=span.closest('label')?.querySelector(`.lite-ind-color[data-ind="${span.dataset.ind}"]`);
       if(inp)inp.click();
     });
   });
@@ -3641,7 +3648,11 @@ function bindLiteIndColorPickers(){
 function updateLiteIndGroupCounts(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group').forEach(grp=>{
     const key=grp.dataset.group;
-    const n=grp.querySelectorAll('.lite-ind-dropdown input[type="checkbox"]:checked').length;
+    // document (không phải grp.querySelectorAll) — vì dropdown của group này có thể đang bị
+    // portal ra <body>, lúc đó nó không còn là con của grp nữa, grp.querySelectorAll sẽ luôn
+    // ra 0 dù thực tế đang có chỉ báo được tick.
+    const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
+    const n=dd?dd.querySelectorAll('input[type="checkbox"]:checked').length:0;
     const badge=grp.querySelector(`.lite-ind-count[data-count="${key}"]`);
     if(badge){badge.textContent=n||'';badge.classList.toggle('on',n>0);}
   });
@@ -3664,13 +3675,24 @@ function syncLiteIndDropdownPortal(grp,open){
      Cách xử lý: khi MỞ dropdown trên mobile, chuyển thẳng nó ra làm con trực tiếp của <body> —
      thoát khỏi khung chứa bị kẹt, position:fixed hoạt động đúng theo viewport. Khi ĐÓNG, trả nó
      về đúng vị trí cũ trong .lite-ind-group. Desktop/landscape rộng (>768px) không đụng tới vì
-     dropdown ở đó vẫn dùng position:absolute thường, không cần portal. */
-  const dd=grp.querySelector('.lite-ind-dropdown');
+     dropdown ở đó vẫn dùng position:absolute thường, không cần portal.
+     2 điểm cần lưu ý (đã từng gây lỗi ở bản trước):
+     1) Dùng document.querySelector theo data-dropdown thay vì grp.querySelector — vì sau khi
+        dropdown đã bị chuyển ra <body>, nó KHÔNG còn là con của grp nữa, grp.querySelector sẽ
+        luôn trả về rỗng ở những lần gọi đóng sau đó, khiến không bao giờ trả lại được vị trí cũ.
+     2) CSS ẩn/hiện dropdown dựa vào ".lite-ind-group.open .lite-ind-dropdown{display:flex}" —
+        một khi bị chuyển ra ngoài <body>, dropdown không còn là con của .lite-ind-group.open
+        nữa nên rule CSS này không áp dụng được, phải set display:flex thủ công qua inline style
+        khi đang portal; lúc trả về đúng chỗ thì xóa inline style để CSS gốc tự quyết định lại. */
+  const key=grp.dataset.group;
+  const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
   if(!dd)return;
   if(!window.matchMedia('(max-width:768px)').matches)return;
   if(open){
     if(dd.parentElement!==document.body)document.body.appendChild(dd);
+    dd.style.display='flex';
   }else if(dd.parentElement===document.body){
+    dd.style.display='';
     grp.appendChild(dd);
   }
 }
@@ -3887,7 +3909,21 @@ function initLiteChart(){
   }
 }
 function _liteChecked(name){
-  return !!DOM.liteIndicators?.querySelector(`input[value="${name}"]:checked`);
+  // document (không phải DOM.liteIndicators) — hàm này chạy liên tục trong lúc vẽ chart, kể cả
+  // khi dropdown đang mở/portal ra <body> trên mobile portrait; các value đều là định danh duy
+  // nhất trong toàn trang (đã kiểm tra không trùng ở đâu khác) nên tra cứu qua document vẫn
+  // đúng dù checkbox đang nằm ở đâu trong DOM.
+  return !!document.querySelector(`input[value="${name}"]:checked`);
+}
+function _liteAllIndCheckboxes(){
+  // Gộp checkbox còn nằm trong #lite-indicators (đường lite-ind-dropdown BÌNH THƯỜNG,
+  // + master toggle, + bb/rsi/macd đứng lẻ) VỚI checkbox bên trong dropdown ĐANG BỊ PORTAL
+  // ra <body> (mobile portrait) — nếu chỉ query trong #lite-indicators sẽ bỏ sót toàn bộ
+  // checkbox của đúng dropdown đang mở, gây mất dữ liệu khi lưu (saveLiteIndicatorPrefs ghi
+  // đè localStorage bằng object mới, thiếu key nào là mất luôn giá trị đã lưu trước đó của
+  // key đó). querySelectorAll với nhiều selector tự loại trùng, nên checkbox ở trạng thái
+  // bình thường (khớp cả 2 vế) vẫn chỉ xuất hiện đúng 1 lần trong kết quả.
+  return document.querySelectorAll('#lite-indicators input[type="checkbox"], .lite-ind-dropdown input[type="checkbox"]');
 }
 function loadLiteIndicatorPrefs(){
   let prefs={};
@@ -3898,14 +3934,14 @@ function loadLiteIndicatorPrefs(){
      nhưng các chỉ báo con bên trong vẫn được đánh dấu sẵn BẬT, để khi người dùng tự bật cờ tổng
      lên thì đúng các thông số này đã có sẵn, không phải chọn lại từ đầu. */
   const DEFAULT_ON_INDICATORS=new Set(['macd','signal','volcolor','ma10','ma200','ema20','ema50']);
-  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+  _liteAllIndCheckboxes().forEach(cb=>{
     cb.checked=DEFAULT_ON_INDICATORS.has(cb.value)?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
   loadLiteIndColors();
 }
 function saveLiteIndicatorPrefs(){
   const prefs={};
-  DOM.liteIndicators?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{prefs[cb.value]=cb.checked;});
+  _liteAllIndCheckboxes().forEach(cb=>{prefs[cb.value]=cb.checked;});
   localStorage.setItem(LITE_IND_KEY,JSON.stringify(prefs));
 }
 function fmtLiteNum(v){
@@ -6132,7 +6168,16 @@ function bindLiteChartControls(){
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     setLiteTf(btn.dataset.tf);loadLiteChart(_liteSymbol,0);
   });
-  DOM.liteIndicators?.addEventListener('change',(e)=>{
+  // document (không phải DOM.liteIndicators) + lọc bằng closest — vì dropdown chỉ báo có thể
+  // đang bị portal ra <body> khi mở trên mobile portrait (xem syncLiteIndDropdownPortal), lúc
+  // đó sự kiện 'change' từ checkbox bên trong sẽ KHÔNG bao giờ nổi bọt (bubble) lên tới
+  // DOM.liteIndicators được nữa vì nó không còn là tổ tiên (ancestor) của checkbox đó — toàn bộ
+  // logic lưu/tick/vẽ lại chart bên dưới sẽ im lặng không chạy dù người dùng đã tick đúng. Gắn
+  // thẳng lên document (luôn là tổ tiên của mọi phần tử bất kể đang portal hay không) rồi tự lọc
+  // bằng closest('#lite-indicators') HOẶC closest('.lite-ind-dropdown') để không bắt nhầm các
+  // input/checkbox khác không liên quan ở những panel khác trên trang.
+  document.addEventListener('change',(e)=>{
+    if(!(e.target.closest('#lite-indicators')||e.target.closest('.lite-ind-dropdown')))return;
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
     // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge, màu volume, khối giá phóng to — không đụng MA/EMA/BB/RSI/MACD nên không gọi renderLiteIndicators() đầy đủ (tránh chart nhảy/co giãn vô ích).
     const val=e.target?.value;
