@@ -2663,12 +2663,17 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
   #lite-chart {
     touch-action: pan-x pan-y;
   }
-  /* top/left = 0 chỉ là giá trị khởi tạo trước khi JS đo và neo dropdown ngay dưới
-     nút vừa bấm (xem _litePositionIndDropdown) — CSS ở đây chỉ lo phần khung. */
+  /* QUAN TRỌNG: top/left ở đây KHÔNG được đánh dấu !important — theo cascade CSS, một khai báo
+     !important trong stylesheet luôn thắng inline style set bằng JS (dd.style.left/top ở
+     _litePositionIndDropdown), dù inline style vốn dĩ có độ ưu tiên cao hơn CSS thường. Nếu để
+     !important ở đây, dropdown sẽ bị "dính cứng" tại góc trên-trái (0,0) — tức sát mép trái màn
+     hình — bất kể JS tính toán ra vị trí nào, đây chính là lỗi đã gặp phải. 0,0 chỉ đóng vai trò
+     giá trị KHỞI TẠO trước khi JS chạy lần đầu; ngay khi _litePositionIndDropdown gán
+     dd.style.left/top (inline, không !important), nó sẽ ghi đè đúng theo cascade và có hiệu lực. */
   .lite-ind-dropdown {
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
+    top: 0;
+    left: 0;
     width: max-content !important;
     max-width: min(260px, 92vw) !important;
     max-height: 55vh !important;
