@@ -2253,6 +2253,22 @@ html.chart-popout-mode>body>header,
 html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
 html.chart-popout-mode #lite-chart-popout-btn{display:none}
+/* Panel CHART trong cửa sổ popout: HTML gốc luôn có sẵn class .collapsed (mặc định thu gọn
+   cho trang dashboard chính) — JS ở cuối trang mới gỡ class này ra để mở panel, xem IIFE
+   "Trang mở lại với ?chartPopout=1..." bên dưới. Nếu JS chạy chậm (mạng chậm, máy yếu, thư
+   viện chart to), người dùng thấy đúng cảnh panel hiện thu gọn (chỉ còn chữ CHART) rồi mới
+   bung toolbar+chart ra — đây chính là hiện tượng "thu vào trước, xong mới mở ra". Vô hiệu
+   hoá 2 rule ẩn của .collapsed ngay khi html.chart-popout-mode có mặt (gắn synchronous từ
+   đầu <head>, tức là có hiệu lực NGAY LẦN VẼ ĐẦU TIÊN, không cần đợi JS) để panel luôn hiện
+   sẵn ở trạng thái mở — hết hẳn khoảng nháy thu/mở, bất kể JS/mạng chậm hay nhanh.
+   Dùng display:flex (không dùng revert) vì MỌI phần tử con trực tiếp của .lite-chart-toolbar
+   (.lite-chart-search-wrap, .lite-tf-tabs, .lite-indicators, .lite-draw-toolbar, .lite-alert-wrap...)
+   đều tự dùng display:flex cho layout bên trong chính nó — revert!important sẽ bỏ qua các rule
+   display:flex đó (revert quay thẳng về mặc định UA, không phải cascade tiếp theo), làm vỡ layout
+   ngay trong khoảnh khắc transitional này; flex!important vừa đúng cho từng phần tử con, vừa để
+   chúng làm flex-item hợp lệ trong .lite-chart-toolbar (cha ngoài). */
+html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:flex!important}
+html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:block!important}
 /* Mobile portrait + popout: thay vì đoán cứng chiều cao toolbar (44px — dễ lệch thực tế
    tuỳ máy, khiến panel MACD bị cắt và góc bo dưới bị đẩy khỏi màn hình), cho #lite-chart-panel
    cao đúng bằng phần màn hình còn lại (trừ padding #main-wrap + safe-area đáy iPhone) rồi
@@ -2408,6 +2424,9 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
 .lg-sym-item.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
 .lg-star{flex-shrink:0;width:14px;text-align:center;cursor:pointer;color:#d1d5db;font-size:13px;line-height:1}
 .lg-star.on{color:#f59e0b}
+/* Nút ⭐ FAVORITE trên toolbar chart (cạnh ô Tìm mã) — dùng chung style .lite-draw-btn, chỉ đổi màu khi mã đang xem đã có trong Favorite */
+.lite-fav-btn{color:#d1d5db}
+.lite-fav-btn.on{color:#f59e0b}
 .lg-sym-name{width:36px;flex-shrink:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lg-sym-pct{width:40px;flex-shrink:0;text-align:right}
 .lg-sym-price{width:48px;flex-shrink:0;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2966,6 +2985,7 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
           <span class="s-icon">🔍</span>
           <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
         </div>
+        <button class="lite-draw-btn lite-fav-btn" id="lite-fav-btn" title="Thêm/bỏ mã đang xem khỏi Favorite" aria-label="Thêm/bỏ mã đang xem khỏi Favorite">☆</button>
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
         <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
@@ -3429,7 +3449,14 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
 
 <div id="edge-swipe-zone"></div>
 
-<script src="/static/lightweight-charts.min.js"></script>
+<!-- defer: file đã được preload ở <head> (link rel="preload") nên tải sẵn song song rồi;
+     thêm defer để trình duyệt không phải DỪNG parse HTML tại đúng dòng này chờ tải+chạy xong
+     thư viện (~vài trăm KB) mới đi tiếp — nhất là ảnh hưởng tới cửa sổ CHART popout, nơi hầu
+     như toàn bộ nội dung trang chỉ còn đúng panel CHART, nên mọi mili-giây parse HTML bị chặn
+     ở đây đều lộ ra thành cảm giác "load chậm". defer vẫn đảm bảo chạy TRƯỚC dashboard-main.js
+     (thứ tự các script defer luôn giữ đúng thứ tự khai báo trong tài liệu), nên window.LightweightCharts
+     vẫn sẵn sàng đúng lúc dashboard-main.js cần dùng — hành vi logic không đổi, chỉ bớt chặn parse. -->
+<script defer src="/static/lightweight-charts.min.js"></script>
 <script defer src="/dashboard-main.js"></script>
 </body>
 </html>
@@ -3468,6 +3495,7 @@ const DOM={
   treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),treemapCopyBtn:$('treemap-copy-btn'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   liteChartTitleLabel:$('lite-chart-title-label'),
+  liteFavBtn:$('lite-fav-btn'),
   liteVietstockToggleBtn:$('lite-vietstock-toggle-btn'),liteVietstockIframe:$('lite-vietstock-iframe'),
   sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
@@ -6128,6 +6156,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     const j=await r.json();
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
+    _lgUpdateChartFavBtn();
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
     }else if(!skipPopoutSync){
@@ -8332,11 +8361,35 @@ function _lgToggleFavorite(sym){
   else LG_FAVORITES.splice(i,1);
   _lgSaveFavorites();_lgRenderList();
   _broadcastFavorites();
+  _lgUpdateChartFavBtn();
 }
 // Đồng bộ FAVORITE sang Hover Preview (Pop-up) đang mở tại chỗ.
 function _broadcastFavorites(){
   if(_hoverPreviewOn){_hvBuildTabs();if(_hvActiveGroup!==-1)_hvRenderSymList();}
 }
+// Nút ⭐ đặt ngay trên toolbar chart (cạnh ô Tìm mã): cho phép thêm/bỏ FAVORITE cho đúng mã đang xem trên chart,
+// không cần mở sidebar nhóm ngành. Dùng chung LG_FAVORITES/_lgToggleFavorite để mọi nơi luôn đồng bộ.
+function _lgUpdateChartFavBtn(){
+  if(!DOM.liteFavBtn)return;
+  const on=LG_FAVORITES.includes((_liteSymbol||'').toUpperCase());
+  DOM.liteFavBtn.classList.toggle('on',on);
+  DOM.liteFavBtn.textContent=on?'★':'☆';
+}
+DOM.liteFavBtn?.addEventListener('click',()=>{
+  if(!_liteSymbol)return;
+  _lgToggleFavorite(_liteSymbol); // hàm này tự cập nhật lại nút ⭐ (xem _lgUpdateChartFavBtn ở trên)
+});
+// Đồng bộ FAVORITE giữa cửa sổ CHART chính và popout (openchartsym) qua sự kiện 'storage' có sẵn của trình duyệt:
+// mỗi khi 1 trong 2 cửa sổ ghi lại localStorage[LG_FAVORITE_KEY] (bấm sao / nhập nhanh / kéo-thả), cửa sổ còn lại
+// nhận sự kiện này ngay lập tức, nạp lại LG_FAVORITES rồi vẽ lại sidebar + Hover Preview + nút sao trên toolbar chart
+// — không cần refresh cả dashboard.
+window.addEventListener('storage',e=>{
+  if(e.key!==LG_FAVORITE_KEY)return;
+  LG_FAVORITES=_lgLoadFavorites();
+  _lgRenderList();
+  _broadcastFavorites();
+  _lgUpdateChartFavBtn();
+});
 function _lgReorderFavorite(dragSym,targetSym){
   // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường — hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
   if(FOLLOW.includes(dragSym)!==FOLLOW.includes(targetSym))return;
