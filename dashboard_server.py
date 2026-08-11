@@ -2830,7 +2830,7 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
 .mob-search-wrap{position:relative;flex-shrink:0}
 .mob-search-wrap .s-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none}
 .mob-search-input{
-  width:72px;padding:5px 6px 5px 24px;
+  width:60px;padding:4px 6px 4px 22px;
   border-radius:20px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
   font-family:var(--font-mono);font-size:11px;outline:none;
@@ -6295,6 +6295,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     _lgUpdateChartFavBtn();
+    if(DOM.overlay&&DOM.overlay.classList.contains('on'))_updateSymDisplay(s);
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
     }else if(!skipPopoutSync){
