@@ -43,6 +43,8 @@ from dashboard_server import (
     get_active_price_alert_rules,
     record_price_alert_event,
     warm_market_health_cache,
+    invalidate_rs_cache,
+    warm_rs_cache,
     TS_POOL_CONFIG,
     HMAP_COLS_CONFIG,
 )
@@ -352,6 +354,38 @@ def fetch_heatmap_data() -> tuple:
     return result, ts_str
 
 
+def fetch_extra_quotes(syms: list) -> dict:
+    """Bù giá on-demand cho MÃ LẺ không nằm trong _HEATMAP_NEED_SYMBOLS (ví dụ mã người dùng
+    tự thêm vào FAVORITE trên sidebar CHART, ngoài mọi danh sách quét chung). Dùng lại đúng
+    engine + công thức tính pct với fetch_heatmap_data() để 2 nguồn giá luôn khớp nhau, nhưng
+    CHỈ tải đúng danh sách mã được truyền vào (không đụng _HEATMAP_NEED_SYMBOLS/HEATMAP_TTL,
+    không ảnh hưởng cache heatmap chính) — được gọi từ dashboard_server.api_quote_extra()
+    qua start_dashboard(extra_quote_fn=fetch_extra_quotes)."""
+    syms = [s for s in dict.fromkeys(s.strip().upper() for s in syms) if s]
+    if not syms:
+        return {}
+    engine = Trading(source=DATA_SOURCE)
+    result = {}
+    try:
+        df = engine.price_board(syms)
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                sym = str(row.get("symbol", "")).strip()
+                if not sym:
+                    continue
+                close = _finite_num(row.get("close_price", 0)) / 1000
+                ref_p = _finite_num(row.get("reference_price", 0)) / 1000
+                if close <= 0 and ref_p > 0:
+                    close = ref_p
+                pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                if not math.isfinite(pct):
+                    pct = 0.0
+                result[sym] = {"price": close, "pct": pct}
+    except Exception as e:
+        print(f"  ❌ fetch_extra_quotes lỗi: {e}")
+    return result
+
+
 def build_heatmap_image(data: dict, timestamp: str) -> str:
     f_title, f_hdr, f_sym, f_data, f_sector = _hmap_load_fonts()
 
@@ -524,8 +558,17 @@ heatmap_symbols = {
     for s in group["symbols"]
 }
 cache_symbol_set = set(vn30_symbols) | set(TRADING_STOCKS_POOL) | heatmap_symbols
+# Đồng bộ với _HEATMAP_NEED_SYMBOLS (định nghĩa ở đầu file, trước khi vn30_symbols tồn tại):
+# vn30_symbols là danh sách được quét tín hiệu (SIGNAL/MOMENTUM/ATTENT/BREAKVOL, xem
+# symbols_to_scan ngay dưới đây) nên bất kỳ mã nào trong đó lên tín hiệu đều có thể xuất
+# hiện trên sidebar CHART. Nếu mã đó không nằm trong _HEATMAP_NEED_SYMBOLS gốc (vốn chỉ
+# gồm HEATMAP_COLUMNS + TRADING_STOCKS_POOL) thì price_board() sẽ không tải giá cho nó,
+# khiến window._lastHmapData thiếu entry -> sidebar hiện "--" dù mã đã có tín hiệu thật
+# (ví dụ G36/VGC: có trong vn30_symbols nhưng thiếu ở 2 danh sách kia). Gộp thêm ở đây,
+# trước dòng gán symbols_to_scan, để lần fetch_heatmap_data() nào cũng tải đủ giá.
+_HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
-symbols_to_cache = [s for s in all_symbols if s in cache_symbol_set]
+symbols_to_rs = [s for s in all_symbols if s in cache_symbol_set]
 # VNINDEX/VN30 (chỉ số) không nằm trong all_symbols (danh sách mã niêm yết) nên không
 # lọt qua filter phía trên — trước đây 2 mã này chỉ được nạp on-demand lúc user mở
 # chart (ensure_symbol_live_in_cache), khiến lần xem đầu tiên phải chờ gọi mạng vnstock
@@ -533,7 +576,7 @@ symbols_to_cache = [s for s in all_symbols if s in cache_symbol_set]
 # chờ/retry phía frontend (loadLiteChart) và làm chart (kể cả khung MACD) không hiển thị.
 # Thêm thủ công vào đây để được build_history_cache() nạp sẵn cùng lúc server khởi động,
 # và được check_and_rebuild_cache_if_stale()/vòng lặp định kỳ giữ luôn ở trạng thái "ấm".
-symbols_to_cache = symbols_to_cache + ["VNINDEX", "VN30"]
+symbols_to_cache = list(dict.fromkeys(symbols_to_rs + ["VNINDEX", "VN30"]))
 print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to_scan)}")
 print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã (gồm cả VNINDEX, VN30)")
 
@@ -594,15 +637,11 @@ def compute_indicators(df):
 # nến (cả bullish lẫn bearish) trong AFL gốc vẫn KHÔNG port, theo đúng thống
 # nhất từ đầu.
 #
-# LƯU Ý QUAN TRỌNG: AFL gốc gọi RWIHi(min,max)/RWILo(min,max)/RWI(min,max) với
-# 2 tham số — không phải cú pháp RWIHi/RWILo/RWI chuẩn 1 tham số của AmiBroker.
-# Đây nhiều khả năng là hàm mở rộng theo đúng định nghĩa gốc của Random Walk
-# Index (Michael Poulos, TASC 1993): quét p từ min→max, lấy giá trị LỚN NHẤT
-# của (High - Low lùi p phiên)/(ATR(p)*sqrt(p)) — đây là cách chúng tôi triển
-# khai dưới đây. Không có định nghĩa hàm gốc trong file AFL để đối chiếu 100%,
-# nên đây là suy luận theo chuẩn kỹ thuật phổ biến nhất, không phải chắc chắn
-# tuyệt đối khớp bản gốc — nếu vpa_flag ra tần suất bất thường, đây là nơi đầu
-# tiên cần rà lại.
+# AFL gốc gọi thẳng AmiBroker built-in RWIHi(min,max)/RWILo(min,max)/RWI(min,max).
+# AmiBroker tính RWI bằng ATR(p) ở mẫu số; ATR() của AmiBroker dùng Wilder
+# smoothing, không phải MA đơn giản của True Range. Vì vậy phần port dưới đây tự
+# tính Wilder ATR trước khi quét p từ min→max để giảm lệch phân loại blue/cyan
+# quanh ngưỡng upmajor/upminor.
 # =============================================================================
 def _true_range(df):
     prev_close = df['close'].shift(1)
@@ -612,16 +651,30 @@ def _true_range(df):
         (df['low']  - prev_close).abs(),
     ], axis=1).max(axis=1)
 
+def _wilder_atr(tr, period):
+    """ATR(period) theo Wilder/AmiBroker: seed bằng SMA(period), sau đó recursive."""
+    period = int(period)
+    if period <= 0:
+        raise ValueError("period must be positive")
+    arr = pd.to_numeric(tr, errors='coerce').to_numpy(dtype=float)
+    out = np.full(len(arr), np.nan, dtype=float)
+    valid = np.isfinite(arr)
+    if len(arr) < period or not valid[:period].all():
+        return pd.Series(out, index=tr.index)
+    out[period - 1] = arr[:period].mean()
+    for i in range(period, len(arr)):
+        if np.isfinite(arr[i]) and np.isfinite(out[i - 1]):
+            out[i] = (out[i - 1] * (period - 1) + arr[i]) / period
+    return pd.Series(out, index=tr.index)
+
 def _rwi_hi_lo(df, pmin, pmax, tr=None):
-    """RWIHi/RWILo (Random Walk Index) theo định nghĩa gốc Poulos: với mỗi p
-    trong [pmin, pmax], tính (H - L lùi p phiên)/(ATR(p)*sqrt(p)) rồi lùi p
-    phiên tương tự cho chiều ngược lại, lấy giá trị LỚN NHẤT trên toàn dải p."""
+    """RWIHi/RWILo: với mỗi p trong [pmin, pmax], dùng ATR(p) Wilder giống AmiBroker."""
     if tr is None:
         tr = _true_range(df)
     hi_max = pd.Series(0.0, index=df.index)
     lo_max = pd.Series(0.0, index=df.index)
     for p in range(pmin, pmax + 1):
-        denom = tr.rolling(p).mean() * math.sqrt(p)
+        denom = _wilder_atr(tr, p) * math.sqrt(p)
         hi = ((df['high'] - df['low'].shift(p)) / denom).fillna(0)
         lo = ((df['high'].shift(p) - df['low']) / denom).fillna(0)
         hi_max = np.maximum(hi_max, hi)
@@ -1180,6 +1233,8 @@ def build_history_cache(symbols: list, current_date: date):
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
+    invalidate_rs_cache()
+    warm_rs_cache()
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
 
@@ -2920,6 +2975,8 @@ start_dashboard(
     fetch_market_health_fn = compute_market_health_index,
     signal_session_date_ref = lambda: signal_session_date,
     port              = 8888,
+    extra_quote_fn    = fetch_extra_quotes,
+    rs_universe_ref   = lambda: symbols_to_rs,
 )
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
