@@ -43,6 +43,7 @@ from dashboard_server import (
     get_active_price_alert_rules,
     record_price_alert_event,
     warm_market_health_cache,
+    invalidate_rs_cache,
     TS_POOL_CONFIG,
     HMAP_COLS_CONFIG,
 )
@@ -1231,6 +1232,7 @@ def build_history_cache(symbols: list, current_date: date):
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
+    invalidate_rs_cache()
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
 
