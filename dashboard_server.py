@@ -2841,12 +2841,13 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
      left:% để không phụ thuộc bề rộng box. */
   .health-vni-toggle{left:auto;right:8px}
   /* Trục dọc health-svg có L=52,R=112,W=900 CỐ ĐỊNH (không co theo scale — xem comment tại nơi
-     tính L/R trong hàm vẽ chart), nên vị trí ngang của nhãn "100" luôn ~4.7% bề rộng khung
-     (khoảng 15-20px trên các máy mobile phổ biến), không đổi theo kích thước màn hình.
+     tính L/R trong hàm vẽ chart). Nhãn "100" (text-anchor="end" tại x=L-10=42) luôn nằm trong
+     khoảng ~1.3%-4.7% bề rộng khung; dải màu (rect tô nền) bắt đầu ngay tại x=L=52, tức ~5.78%.
      .health-period-tabs mặc định neo left:8px nên đè lên đúng chỗ nhãn "100" khi khung health-svg
-     giãn hết bề ngang màn hình ở mobile. Dịch sang phải qua khỏi vùng nhãn (đủ khoảng đệm) để
-     tránh đè mà không cần biết chính xác bề rộng khung từng máy. */
-  .health-period-tabs{left:44px}
+     giãn hết bề ngang màn hình ở mobile. Dùng % (không phải px cố định) để nhóm nút luôn bắt đầu
+     đúng ngay mép dải màu trên mọi bề rộng máy — vừa đủ để không che nhãn "100", không lệch quá
+     xa sang phải. */
+  .health-period-tabs{left:5.8%}
   .health-score{font-size:36px}
   .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
   .vnd-panel:last-child{margin-bottom:12px}
