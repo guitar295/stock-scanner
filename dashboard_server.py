@@ -154,6 +154,10 @@ _market_health_lock = threading.Lock()
 _rs_score_cache = {"scores": {}, "asof": None}
 _rs_score_lock = threading.Lock()
 _RS_EXCLUDE_SYMBOLS = {"VNINDEX", "VN30"}
+_RS_LOOKBACK_WEIGHTS = ((10, 0.5), (20, 0.3), (50, 0.2))
+_RS_REQUIRED_BARS = max(days for days, _ in _RS_LOOKBACK_WEIGHTS) + 1
+_RS_SMOOTH_DAYS = 5
+_RS_RAW_TAIL_DAYS = 10
 _RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
 _RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
 
@@ -263,9 +267,38 @@ def warm_market_health_cache():
     return data
 
 # ─── Lưu RS snapshot xuống đĩa để dashboard có điểm ngay sau restart ─────────
+def _rs_universe_set():
+    if not _get_rs_universe_symbols:
+        return None
+    try:
+        return {str(sym).upper() for sym in (_get_rs_universe_symbols() or [])}
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Lấy danh sách RS universe lỗi (bỏ qua): {e}")
+        return None
+
+
+def _filter_rs_scores(scores: dict, rs_universe: set | None = None) -> dict:
+    if not isinstance(scores, dict):
+        return {}
+    if rs_universe is None:
+        rs_universe = _rs_universe_set()
+    filtered = {}
+    for sym, val in scores.items():
+        sym_key = str(sym).upper()
+        if sym_key in _RS_EXCLUDE_SYMBOLS or (rs_universe is not None and sym_key not in rs_universe):
+            continue
+        try:
+            filtered[sym_key] = int(round(float(val)))
+        except (TypeError, ValueError):
+            continue
+    return filtered
+
+
 def _save_rs_scores_to_disk():
     try:
-        os.makedirs(os.path.dirname(_RS_SCORE_CACHE_FILE), exist_ok=True)
+        cache_dir = os.path.dirname(_RS_SCORE_CACHE_FILE)
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
         tmp_path = _RS_SCORE_CACHE_FILE + ".tmp"
         with _rs_score_lock:
             payload = {
@@ -286,15 +319,7 @@ def _load_rs_scores_from_disk():
             saved = json.load(f)
         scores = saved.get("scores", {}) if isinstance(saved, dict) else {}
         if isinstance(scores, dict) and scores:
-            clean_scores = {}
-            for sym, val in scores.items():
-                sym_key = str(sym).upper()
-                if sym_key in _RS_EXCLUDE_SYMBOLS:
-                    continue
-                try:
-                    clean_scores[sym_key] = int(round(float(val)))
-                except (TypeError, ValueError):
-                    continue
+            clean_scores = _filter_rs_scores(scores)
             if clean_scores:
                 with _rs_score_lock:
                     _rs_score_cache["scores"] = clean_scores
@@ -988,16 +1013,11 @@ def invalidate_rs_cache():
 
 def _compute_rs_scores(force: bool = False) -> dict:
     """Tính RS percentile từ close của phiên đã hoàn chỉnh gần nhất."""
-    rs_universe = None
-    if _get_rs_universe_symbols:
-        rs_universe = {str(sym).upper() for sym in (_get_rs_universe_symbols() or [])}
+    rs_universe = _rs_universe_set()
 
     with _rs_score_lock:
         if not force and _rs_score_cache["scores"]:
-            scores = dict(_rs_score_cache["scores"])
-            if rs_universe is not None:
-                scores = {sym: val for sym, val in scores.items() if sym in rs_universe and sym not in _RS_EXCLUDE_SYMBOLS}
-            return scores
+            return _filter_rs_scores(_rs_score_cache["scores"], rs_universe)
 
     cache = _get_history_cache() if _get_history_cache else {}
     if not cache:
@@ -1011,51 +1031,60 @@ def _compute_rs_scores(force: bool = False) -> dict:
         lock.acquire()
     try:
         items = list(cache.items())
-        for sym, df in items:
-            sym_key = str(sym).upper()
-            if sym_key in _RS_EXCLUDE_SYMBOLS or (rs_universe is not None and sym_key not in rs_universe):
-                continue
-            if df is None or len(df) < 51 or "close" not in df.columns:
-                continue
-            work = df[["close"]].copy()
-            if not isinstance(work.index, pd.DatetimeIndex):
-                work.index = pd.to_datetime(work.index, errors="coerce")
-            work = work[work.index.notna()]
-            work = work[work.index.date < today_vn]
-            if len(work) < 51:
-                continue
-            close = pd.to_numeric(work["close"].copy(), errors="coerce")
-            raw = 0.5 * (close / close.shift(10)) + 0.3 * (close / close.shift(20)) + 0.2 * (close / close.shift(50))
-            raw_valid = raw.dropna()
-            snapshot_dates.extend(raw_valid.index.date[-10:])
-            raw_by_sym[sym_key] = raw
     finally:
         if lock:
             lock.release()
 
-    universe_qty = len(raw_by_sym)
-    if not universe_qty:
+    for sym, df in items:
+        sym_key = str(sym).upper()
+        if sym_key in _RS_EXCLUDE_SYMBOLS or (rs_universe is not None and sym_key not in rs_universe):
+            continue
+        if df is None or len(df) < _RS_REQUIRED_BARS or "close" not in df.columns:
+            continue
+        close = pd.to_numeric(df["close"], errors="coerce")
+        if not isinstance(close.index, pd.DatetimeIndex):
+            close.index = pd.to_datetime(close.index, errors="coerce")
+        close = close[close.index.notna()]
+        close = close[close.index.date < today_vn]
+        if len(close) < _RS_REQUIRED_BARS:
+            continue
+        raw = sum(weight * (close / close.shift(days)) for days, weight in _RS_LOOKBACK_WEIGHTS)
+        raw_valid = raw.dropna()
+        if raw_valid.empty:
+            continue
+        daily_raw = {}
+        for idx, val in raw_valid.tail(_RS_RAW_TAIL_DAYS).items():
+            v = float(val)
+            if math.isfinite(v) and v > 0:
+                daily_raw[idx.date()] = v
+        if not daily_raw:
+            continue
+        snapshot_dates.extend(daily_raw.keys())
+        raw_by_sym[sym_key] = daily_raw
+
+    if not raw_by_sym:
         return {}
 
-    last_dates = sorted(set(snapshot_dates))[-5:]
+    last_dates = sorted(set(snapshot_dates))[-_RS_SMOOTH_DAYS:]
     pct_history = {sym: [] for sym in raw_by_sym}
     for dt in last_dates:
         date_scores = {}
-        for sym, raw in raw_by_sym.items():
-            vals = raw[raw.index.date == dt]
-            if vals.empty:
-                continue
-            v = vals.iloc[-1]
-            if math.isfinite(float(v)) and float(v) > 0:
-                date_scores[sym] = float(v)
+        for sym, daily_raw in raw_by_sym.items():
+            v = daily_raw.get(dt)
+            if v is not None:
+                date_scores[sym] = v
+        day_count = len(date_scores)
+        if not day_count:
+            continue
         for rank, (sym, _) in enumerate(sorted(date_scores.items(), key=lambda item: item[1], reverse=True), start=1):
-            pct_history[sym].append(100 - 100 * rank / universe_qty)
+            pct_history[sym].append(100 - 100 * rank / day_count)
 
     scores = {
         sym: round(sum(vals) / len(vals))
         for sym, vals in pct_history.items()
         if vals
     }
+    scores = _filter_rs_scores(scores, rs_universe)
     if not scores:
         return {}
 
@@ -1067,8 +1096,10 @@ def _compute_rs_scores(force: bool = False) -> dict:
 
 
 def _rs_cache_meta() -> dict:
+    rs_universe = _rs_universe_set()
     with _rs_score_lock:
-        return {"count": len(_rs_score_cache["scores"]), "asof": _rs_score_cache["asof"]}
+        scores = _filter_rs_scores(_rs_score_cache["scores"], rs_universe)
+        return {"count": len(scores), "asof": _rs_score_cache["asof"]}
 
 
 def warm_rs_cache():
@@ -2401,7 +2432,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .momentum-box.on{display:block}
 .momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
 .momentum-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
-.strength-list{grid-template-columns:repeat(5,minmax(0,1fr))}
+.strength-list{grid-template-columns:repeat(6,minmax(0,1fr))}
 .momentum-section+.momentum-section{margin-top:10px}
 .momentum-row{display:grid;grid-template-columns:max-content max-content max-content 64px;align-items:center;justify-content:space-between;column-gap:8px;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
 .strength-row{grid-template-columns:max-content max-content max-content}
@@ -3825,6 +3856,7 @@ let _momentumTodayMap=new Map();
 let _strengthTodayMap=new Map();
 let _attentTodayMap=new Map();
 let _breakvolTodayMap=new Map();
+let _lastStrengthRows=[];
 let _liteRsScore=null;
 let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
@@ -6899,9 +6931,21 @@ DOM.momentumList.addEventListener('click',e=>{
   const row=e.target.closest('.momentum-row');if(!row)return;
   _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
 });
+DOM.momentumList.addEventListener('dblclick',e=>{
+  const row=e.target.closest('.momentum-row');if(!row)return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  _jumpLiteChart(row.dataset.sym);
+  openChart(row.dataset.sym);
+});
 DOM.strengthList.addEventListener('click',e=>{
   const row=e.target.closest('.momentum-row');if(!row)return;
   _hmapDesktopClick(row.dataset.sym);
+});
+DOM.strengthList.addEventListener('dblclick',e=>{
+  const row=e.target.closest('.momentum-row');if(!row)return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  _jumpLiteChart(row.dataset.sym);
+  openChart(row.dataset.sym);
 });
 DOM.signalHeader.addEventListener('click',e=>{
   if(e.target.closest('#journal-open-btn'))return;
@@ -8154,6 +8198,17 @@ async function loadConfig(){
   DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • Mrk Health ${Math.round(HEALTH_TTL/60)} phút`;
 }
 // FETCH
+function renderStrengthList(strength){
+  if(!DOM.strengthList)return;
+  if(!strength.length){
+    DOM.strengthList.innerHTML='';
+    return;
+  }
+  DOM.strengthList.innerHTML=strength.map(s=>{
+    const p=pctCellForSym(s.symbol);
+    return `<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${p.color}">${p.txt}</span>${rsBadge(s.rs)}</div>`;
+  }).join('');
+}
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
@@ -8167,6 +8222,7 @@ async function fetchSigs(){
     redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
     const momentum=j.momentum||[];
     const strength=j.strength||[];
+    _lastStrengthRows=strength;
     _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
     _strengthTodayMap=new Map(strength.map(s=>[s.symbol,s]));
     _attentTodayMap=new Map((j.attent||[]).map(s=>[s.symbol,s]));
@@ -8180,14 +8236,7 @@ async function fetchSigs(){
         return `<div class="momentum-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${pctColor}">${pct}</span>${rsBadge(s.rs)}<span class="s-badge-slot"><span class="s-badge b-${s.signal}">${s.signal}</span></span></div>`;
       }).join('');
     }
-    if(!strength.length){
-      DOM.strengthList.innerHTML='';
-    }else{
-      DOM.strengthList.innerHTML=strength.map(s=>{
-        const p=pctCellForSym(s.symbol);
-        return `<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${p.color}">${p.txt}</span>${rsBadge(s.rs)}</div>`;
-      }).join('');
-    }
+    renderStrengthList(strength);
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>${rsBadge(s.rs)}<span class="s-badge-slot"><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></span></div>`).join('');
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
@@ -8203,7 +8252,7 @@ async function fetchHmap(){
     renderSankey(j.data||{});
     renderTreemap(j.data||{});
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
-    if(DOM.strengthList&&DOM.strengthList.children.length)fetchSigs();
+    if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
   }catch(e){console.error('fetchHmap:',e);}
 }
 function startBar(elOrId,sec){
@@ -8683,7 +8732,11 @@ function _sortSymsByMode(syms,mode='pct'){
   if(mode==='alpha')return[...syms].sort((a,b)=>a.localeCompare(b));
   if(mode==='rs')return[...syms].sort((a,b)=>(_strengthTodayMap.get(b)?.rs??-1)-(_strengthTodayMap.get(a)?.rs??-1)||a.localeCompare(b));
   const d=window._lastHmapData||{};
-  return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+  return[...syms].sort((a,b)=>{
+    const ea=d[String(a||'').toUpperCase()],eb=d[String(b||'').toUpperCase()];
+    const pa=Number(ea?.pct),pb=Number(eb?.pct);
+    return (Number.isFinite(pb)?pb:-999)-(Number.isFinite(pa)?pa:-999)||a.localeCompare(b);
+  });
 }
 // CHART — SIDEBAR NHÓM NGÀNH / FAVORITE (overlay, không đụng logic vẽ chart)
 const LG_FAVORITE_KEY='dashboard_favorite_symbols';
@@ -8757,7 +8810,7 @@ function _lgReorderFavorite(dragSym,targetSym){
   LG_FAVORITES.splice(to,0,dragSym);
   _lgSaveFavorites();_lgRenderList();
 }
-let _lgSortMode='pct',_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
+let _lgSortModes=new Map(),_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
 function _lgGetGroups(){
   return [
     {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
@@ -8769,11 +8822,15 @@ function _lgGetGroups(){
     ..._hvGroups
   ];
 }
-function _lgSortLabel(){return _lgSortMode==='alpha'?'A↕Z':_lgSortMode==='rs'?'RS↕':'%↕';}
-function _lgNextSortMode(){_lgSortMode=_lgSortMode==='pct'?'alpha':_lgSortMode==='alpha'?'rs':'pct';}
+function _lgDefaultSortMode(g){return g&&g.isStrength?'rs':'pct';}
+function _lgSortModeFor(g){return _lgSortModes.get(g.name)||_lgDefaultSortMode(g);}
+function _lgSortLabel(g){const m=_lgSortModeFor(g);return m==='alpha'?'A↕Z':m==='rs'?'RS↕':'%↕';}
+function _lgNextSortMode(g){
+  const m=_lgSortModeFor(g);
+  _lgSortModes.set(g.name,m==='pct'?'alpha':m==='alpha'?'rs':'pct');
+}
 function _lgSortSyms(syms,g){
-  const mode=g&&g.isStrength&&_lgSortMode==='pct'?'rs':_lgSortMode;
-  return _sortSymsByMode(syms,mode);
+  return _sortSymsByMode(syms,_lgSortModeFor(g));
 }
 function _lgSymRow(sym,draggable,g=null){
   const{price,pctStr,color}=_symDisplayFields(sym);
@@ -8801,7 +8858,7 @@ function _lgRenderList(){
     }
     const addBtn=(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':'';
     // Nút sắp xếp đặt ngay sau tên nhóm khi nhóm đó đang mở (trừ FAVORITE, vốn giữ thứ tự thủ công)
-    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle title="Đổi kiểu sắp xếp">${_lgSortLabel()}</button>`:'';
+    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle="${g.name}" title="Đổi kiểu sắp xếp">${_lgSortLabel(g)}</button>`:'';
     return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
       +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
@@ -8855,7 +8912,13 @@ DOM.lgList?.addEventListener('click',e=>{
   const addBtn=e.target.closest('[data-add-fav]');
   if(addBtn){e.stopPropagation();_lgQuickAddFavorites();return;}
   const sortBtn=e.target.closest('[data-sort-toggle]');
-  if(sortBtn){e.stopPropagation();_lgNextSortMode();_lgRenderList();return;}
+  if(sortBtn){
+    e.stopPropagation();
+    const g=_lgGetGroups().find(x=>x.name===sortBtn.dataset.sortToggle);
+    if(g)_lgNextSortMode(g);
+    _lgRenderList();
+    return;
+  }
   const hdr=e.target.closest('.lg-ghdr');
   if(hdr){_lgActiveGroupName=(_lgActiveGroupName===hdr.dataset.ghdr)?null:hdr.dataset.ghdr;_lgRenderList();return;}
   const item=e.target.closest('.lg-sym-item');
