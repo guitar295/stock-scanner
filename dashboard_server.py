@@ -539,6 +539,13 @@ _LITE_CHART_CACHE_TTL = 60          # giây
 _lite_chart_cache: dict = {}        # (symbol, tf) -> {"payload": dict, "ts": float}
 _lite_chart_cache_lock = threading.Lock()
 
+# Relative Strength theo công thức RSTOMRK: raw = 0.5*C/Ref(C,-10) +
+# 0.3*C/Ref(C,-20) + 0.2*C/Ref(C,-50), sau đó xếp hạng percentile trong rổ
+# mã đang có trong history_cache (dashboard + quét tín hiệu). RS dùng snapshot
+# close của phiên đã hoàn chỉnh gần nhất, không trộn giá vá intraday trong phiên.
+_rs_score_cache = {"scores": {}, "asof": None}
+_rs_score_lock = threading.Lock()
+
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
@@ -919,6 +926,77 @@ def _uploaded_ext(filename):
         return ""
     return name.rsplit(".", 1)[1].lower()
 
+
+def invalidate_rs_cache():
+    """Xoá snapshot RS, dùng sau khi rebuild history_cache sang phiên mới."""
+    with _rs_score_lock:
+        _rs_score_cache["scores"] = {}
+        _rs_score_cache["asof"] = None
+
+
+def _compute_rs_scores(force: bool = False) -> dict:
+    """Tính RS percentile từ close của phiên đã hoàn chỉnh gần nhất."""
+    with _rs_score_lock:
+        if not force and _rs_score_cache["scores"]:
+            return dict(_rs_score_cache["scores"])
+
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not cache:
+        return {}
+
+    close_by_sym = {}
+    today_vn = datetime.now(TZ_VN).date()
+    lock = _cache_lock
+    if lock:
+        lock.acquire()
+    try:
+        items = list(cache.items())
+        for sym, df in items:
+            if df is None or len(df) < 51 or "close" not in df.columns:
+                continue
+            work = df[["close"]].copy()
+            if not isinstance(work.index, pd.DatetimeIndex):
+                work.index = pd.to_datetime(work.index, errors="coerce")
+            work = work[work.index.notna()]
+            work = work[work.index.date < today_vn]
+            if len(work) < 51:
+                continue
+            close_by_sym[str(sym).upper()] = pd.to_numeric(work["close"].copy(), errors="coerce")
+    finally:
+        if lock:
+            lock.release()
+
+    raw_scores = {}
+    for sym, close in close_by_sym.items():
+        c0 = close.iloc[-1]
+        c10 = close.iloc[-11] if len(close) >= 11 else math.nan
+        c20 = close.iloc[-21] if len(close) >= 21 else math.nan
+        c50 = close.iloc[-51] if len(close) >= 51 else math.nan
+        vals = (c0, c10, c20, c50)
+        if any(not math.isfinite(float(v)) or float(v) <= 0 for v in vals):
+            continue
+        raw_scores[sym] = 0.5 * (c0 / c10) + 0.3 * (c0 / c20) + 0.2 * (c0 / c50)
+
+    qty = len(raw_scores)
+    if not qty:
+        return {}
+
+    scores = {}
+    for rank, (sym, _) in enumerate(sorted(raw_scores.items(), key=lambda item: item[1], reverse=True), start=1):
+        scores[sym] = round(100 - 100 * rank / qty)
+
+    with _rs_score_lock:
+        _rs_score_cache["scores"] = scores
+        _rs_score_cache["asof"] = today_vn.isoformat()
+    return dict(scores)
+
+
+def _attach_rs(row: dict, rs_scores: dict) -> dict:
+    rs = rs_scores.get(str(row.get("symbol", "")).upper())
+    if rs is not None:
+        row["rs"] = rs
+    return row
+
 # =============================================================================
 # API
 # =============================================================================
@@ -931,14 +1009,15 @@ def api_signals():
     session_date = _get_signal_session_date() if _get_signal_session_date else None
     today_vn = datetime.now(TZ_VN).date()
     session_stale = bool(session_date) and session_date != today_vn
+    rs_scores = _compute_rs_scores()
     result = []
     for sym, entry in alerted.items():
         sig = entry["signal"] if isinstance(entry, dict) else entry
         pct = entry.get("pct") if isinstance(entry, dict) else None
         emoji = _signal_emoji.get(sig, "📌")
         rank  = _signal_rank.get(sig, 0)
-        result.append({"symbol": sym, "signal": sig, "emoji": emoji,
-                        "rank": rank, "pct": pct})
+        result.append(_attach_rs({"symbol": sym, "signal": sig, "emoji": emoji,
+                                  "rank": rank, "pct": pct}, rs_scores))
     result.sort(key=lambda x: x["rank"], reverse=True)
     momentum_result = []
     for sig in ("MACD_W", "MACD_M", "RTM"):
@@ -949,7 +1028,7 @@ def api_signals():
             if sig not in sigs:
                 continue
             pct = entry.get("pct") if isinstance(entry, dict) else None
-            rows.append({"symbol": sym, "signal": sig, "pct": pct})
+            rows.append(_attach_rs({"symbol": sym, "signal": sig, "pct": pct}, rs_scores))
         momentum_result.extend(rows)
     attent_result = [
         {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
@@ -959,11 +1038,18 @@ def api_signals():
         {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
         for sym, entry in sorted(breakvol.items())
     ]
+    strength_result = [
+        {"symbol": sym, "rs": rs}
+        for sym, rs in sorted(rs_scores.items(), key=lambda item: item[1], reverse=True)
+        if rs > 80
+    ]
     return jsonify({
         "signals": result,
         "count":   len(result),
         "momentum": momentum_result,
         "momentum_count": len(momentum_result),
+        "strength": strength_result,
+        "strength_count": len(strength_result),
         "attent": attent_result,
         "attent_count": len(attent_result),
         "breakvol": breakvol_result,
@@ -1263,6 +1349,9 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
         "last_date": str(candles[-1]["time"]),
         "has_more": has_more,
     }
+    rs = _compute_rs_scores().get(symbol)
+    if rs is not None:
+        payload["rs"] = rs
     return payload, None
 
 @app.route("/api/lightweight_chart/<symbol>")
@@ -2189,13 +2278,19 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
    SIGNALS
    ═══════════════════════════════════════════ */
 .sig-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
-.sig-row{display:grid;grid-template-columns:28px 68px 1fr 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
+.sig-row{display:grid;grid-template-columns:28px 68px 1fr 30px 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .sig-row:hover .s-sym{color:var(--accent)}
 .s-emoji{font-size:14px;text-align:center}
 .s-sym{font-weight:700;font-size:13px;transition:color .15s}
 .s-type{font-size:11px;font-weight:600}
 .s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui)}
+.rs-badge{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:0;border:1px solid #cbd5e1;background:#f1f5f9;color:#475569;justify-self:center}
+.rs-slot{width:22px;height:22px;display:block;justify-self:center}
+.rs-90{background:#f3e8ff;color:#7e22ce;border-color:#d8b4fe}
+.rs-80{background:#dcfce7;color:#15803d;border-color:#86efac}
+.rs-50{background:#fef9c3;color:#854d0e;border-color:#fde047}
+.rs-low{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
 .b-BREAKOUT{background:#dcfce7;color:#15803d;border:1px solid #86efac}
 .b-POCKET{background:#fef9c3;color:#854d0e;border:1px solid #fde047}
 .b-PREBREAK{background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
@@ -2207,7 +2302,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .momentum-box.on{display:block}
 .momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
 .momentum-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
-.momentum-row{display:grid;grid-template-columns:68px 1fr 72px;align-items:center;padding:6px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.momentum-section+.momentum-section{margin-top:10px}
+.momentum-row{display:grid;grid-template-columns:68px 1fr 30px 72px;align-items:center;padding:6px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.strength-row{grid-template-columns:68px 1fr 30px}
 .momentum-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .momentum-row:hover .s-sym{color:var(--accent)}
 .b-MACD_W{background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc}
@@ -2975,13 +3072,20 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
       <div class="sig-list" id="sig-list">
         <div class="empty"><div class="big">📡</div><div>Đang tải...</div></div>
       </div>
-    </div>
-    <div class="momentum-box" id="momentum-box">
-      <div class="momentum-title">Động lượng</div>
-      <div class="momentum-list" id="momentum-list">
-      </div>
-    </div>
-  </div>
+	    </div>
+	    <div class="momentum-box" id="momentum-box">
+	      <div class="momentum-section">
+	        <div class="momentum-title">Động lượng</div>
+	        <div class="momentum-list" id="momentum-list">
+	        </div>
+	      </div>
+	      <div class="momentum-section">
+	        <div class="momentum-title">Sức mạnh</div>
+	        <div class="momentum-list" id="strength-list">
+	        </div>
+	      </div>
+	    </div>
+	  </div>
 
   <!-- HEATMAP -->
   <div class="panel hmap-panel" id="hmap-panel">
@@ -3496,7 +3600,7 @@ DASHBOARD_MAIN_JS = r"""
 const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
-  signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
+  signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),strengthList:$('strength-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),triToggle:$('tri-toggle'),
@@ -3595,11 +3699,25 @@ const SIGNAL_LABEL_MAP={
   'POCKET PIVOT':'POCKET'
 };
 const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
+function rsClass(rs){
+  const v=Number(rs);
+  if(!Number.isFinite(v))return'';
+  if(v>90)return'rs-90';
+  if(v>80)return'rs-80';
+  if(v>50)return'rs-50';
+  return'rs-low';
+}
+function rsBadge(rs){
+  const v=Number(rs);
+  if(!Number.isFinite(v))return'<span class="rs-slot"></span>';
+  return `<span class="rs-badge ${rsClass(v)}">${Math.round(v)}</span>`;
+}
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
 let _attentTodayMap=new Map();
 let _breakvolTodayMap=new Map();
+let _liteRsScore=null;
 let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -4103,7 +4221,7 @@ function _liteTitleSegments(bar){
   const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
   // O: và giá open được wrap bằng <span class="lct-open"> để CSS portrait ẩn bớt cho vừa 1 dòng.
   const openHtml=`<span class="lct-open"><span style="color:#111827"> O:</span><span style="color:${col}">${fmtLiteNum(bar.open)}</span></span>`;
-  return [
+  const segments=[
     {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} |`,color:'#111827'},
     {text:openHtml,color:'__html',_open:fmtLiteNum(bar.open)},
     {text:hlHtml,color:'__html',_high:fmtLiteNum(bar.high),_low:fmtLiteNum(bar.low)},
@@ -4113,6 +4231,8 @@ function _liteTitleSegments(bar){
     {text:`${sign}${pct.toFixed(2)}%`,color:col},
     {text:')',color:'#111827'}
   ];
+  if(Number.isFinite(_liteRsScore))segments.push({text:' '+rsBadge(_liteRsScore),color:'__html',_rs:Math.round(_liteRsScore)});
+  return segments;
 }
 // GIÁ PHÓNG TO — lấy ratio_prev/ratio_ma50/progress nguyên từ /api/vol_forecast (dùng chung VMA50 + giờ server với tín hiệu ATTENT/BREAKVOL) để tránh 2 bản logic lệch nhau.
 let _liteVolForecast=null,_liteVolForecastReqId=0;
@@ -5496,6 +5616,13 @@ function _liteStartShapeDrag(hit,ev){
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
     if(seg.color==='__html'){
+      if(seg._rs!=null){
+        ctx.fillStyle='#111827';
+        const t=` RS:${seg._rs}`;
+        ctx.fillText(t,x,y);
+        x+=ctx.measureText(t).width;
+        continue;
+      }
       // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần, luôn hiện đủ O/H/L
       const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
       const parts=seg._open!=null
@@ -6229,8 +6356,9 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       // tab khác nếu đang mở (vs, vnd-cs...). window.parent !== window là cách phân biệt iframe/trang chính.
       if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
     }
-    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
-    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
+	    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
+	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
+	    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
       const prev=idx>0?arr[idx-1].close:null;
       const pct=prev?((bar.close-prev)/prev*100):0;
       return{...bar,pct};
@@ -6282,8 +6410,9 @@ async function _liteQuietRefreshChart(){
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
-    // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
-    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
+	    // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
+	    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
+	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
     const key=liteTimeKey(rawBar.time);
     const isNewBar=!_liteDataByTime.has(key); // true = sang phiên mới (thêm nến), false = vá nến hiện tại
@@ -6661,6 +6790,10 @@ DOM.sigList.addEventListener('dblclick',e=>{
 DOM.momentumList.addEventListener('click',e=>{
   const row=e.target.closest('.momentum-row');if(!row)return;
   _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
+});
+DOM.strengthList.addEventListener('click',e=>{
+  const row=e.target.closest('.momentum-row');if(!row)return;
+  _hmapDesktopClick(row.dataset.sym);
 });
 DOM.signalHeader.addEventListener('click',e=>{
   if(e.target.closest('#journal-open-btn'))return;
@@ -7917,13 +8050,14 @@ async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
-      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`
-      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
+      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh`
+      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh`;
     // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
     redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
     const momentum=j.momentum||[];
+    const strength=j.strength||[];
     _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
     _attentTodayMap=new Map((j.attent||[]).map(s=>[s.symbol,s]));
     _breakvolTodayMap=new Map((j.breakvol||[]).map(s=>[s.symbol,s]));
@@ -7933,11 +8067,16 @@ async function fetchSigs(){
       DOM.momentumList.innerHTML=momentum.map(s=>{
         const pct=s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—';
         const pctColor=s.pct==null?'#6b7280':s.pct>=0?'#0e9f6e':'#e02424';
-        return `<div class="momentum-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${pctColor}">${pct}</span><span class="s-badge b-${s.signal}">${s.signal}</span></div>`;
+        return `<div class="momentum-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${pctColor}">${pct}</span>${rsBadge(s.rs)}<span class="s-badge b-${s.signal}">${s.signal}</span></div>`;
       }).join('');
     }
+    if(!strength.length){
+      DOM.strengthList.innerHTML='';
+    }else{
+      DOM.strengthList.innerHTML=strength.map(s=>`<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type">RS</span>${rsBadge(s.rs)}</div>`).join('');
+    }
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
-    DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></div>`).join('');
+    DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>${rsBadge(s.rs)}<span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></div>`).join('');
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
   }catch(e){console.error('fetchSigs:',e);}
 }
