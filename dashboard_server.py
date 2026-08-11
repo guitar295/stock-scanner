@@ -3822,6 +3822,7 @@ function pctCellForSym(sym,fallbackPct=null){
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
+let _strengthTodayMap=new Map();
 let _attentTodayMap=new Map();
 let _breakvolTodayMap=new Map();
 let _liteRsScore=null;
@@ -8167,6 +8168,7 @@ async function fetchSigs(){
     const momentum=j.momentum||[];
     const strength=j.strength||[];
     _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
+    _strengthTodayMap=new Map(strength.map(s=>[s.symbol,s]));
     _attentTodayMap=new Map((j.attent||[]).map(s=>[s.symbol,s]));
     _breakvolTodayMap=new Map((j.breakvol||[]).map(s=>[s.symbol,s]));
     if(!momentum.length){
@@ -8677,8 +8679,9 @@ async function _lgFillMissingQuotes(){
     }
   }catch(e){console.error('_lgFillMissingQuotes:',e);}
 }
-function _sortSymsByMode(syms,alpha){
-  if(alpha)return[...syms].sort((a,b)=>a.localeCompare(b));
+function _sortSymsByMode(syms,mode='pct'){
+  if(mode==='alpha')return[...syms].sort((a,b)=>a.localeCompare(b));
+  if(mode==='rs')return[...syms].sort((a,b)=>(_strengthTodayMap.get(b)?.rs??-1)-(_strengthTodayMap.get(a)?.rs??-1)||a.localeCompare(b));
   const d=window._lastHmapData||{};
   return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
 }
@@ -8754,29 +8757,36 @@ function _lgReorderFavorite(dragSym,targetSym){
   LG_FAVORITES.splice(to,0,dragSym);
   _lgSaveFavorites();_lgRenderList();
 }
-let _lgSortAlpha=false,_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
+let _lgSortMode='pct',_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
 function _lgGetGroups(){
   return [
     {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
     {name:'SIGNAL',syms:[..._sigTodayMap.keys()]},
     {name:'MOMENTUM',syms:[..._momentumTodayMap.keys()]},
+    {name:'SỨC MẠNH',syms:[..._strengthTodayMap.keys()],isStrength:true},
     {name:'ATTENT',syms:[..._attentTodayMap.keys()]},
     {name:'BREAKVOL',syms:[..._breakvolTodayMap.keys()]},
     ..._hvGroups
   ];
 }
-function _lgSortSyms(syms){
-  return _sortSymsByMode(syms,_lgSortAlpha);
+function _lgSortLabel(){return _lgSortMode==='alpha'?'A↕Z':_lgSortMode==='rs'?'RS↕':'%↕';}
+function _lgNextSortMode(){_lgSortMode=_lgSortMode==='pct'?'alpha':_lgSortMode==='alpha'?'rs':'pct';}
+function _lgSortSyms(syms,g){
+  const mode=g&&g.isStrength&&_lgSortMode==='pct'?'rs':_lgSortMode;
+  return _sortSymsByMode(syms,mode);
 }
-function _lgSymRow(sym,draggable){
+function _lgSymRow(sym,draggable,g=null){
   const{price,pctStr,color}=_symDisplayFields(sym);
+  const isStrength=!!(g&&g.isStrength);
+  const rs=_strengthTodayMap.get(sym)?.rs;
+  const rightValue=isStrength&&Number.isFinite(Number(rs))?Math.round(Number(rs)):price;
   const starred=LG_FAVORITES.includes(sym);
   const isFollow=FOLLOW.includes(sym);
   return `<div class="lg-sym-item${sym===_lgActiveSym?' on':''}${isFollow?' lg-follow':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
     +`<span class="lg-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
     +`<span class="lg-sym-name">${sym}</span>`
     +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
-    +`<span class="lg-sym-price">${price}</span></div>`;
+    +`<span class="lg-sym-price">${rightValue}</span></div>`;
 }
 function _lgRenderList(){
   if(!DOM.lgList)return;
@@ -8787,11 +8797,11 @@ function _lgRenderList(){
     if(open){
       if(!g.syms.length)body='<div class="lg-empty-hint">Chưa có mã nào</div>';
       // FAVORITE: giữ nguyên thứ tự lưu (Follow đã ở đầu, mã mới thêm ở cuối, có thể kéo-thả) — không sort
-      else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms)).map(s=>_lgSymRow(s,!!g.isFavorite)).join('');
+      else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms,g)).map(s=>_lgSymRow(s,!!g.isFavorite,g)).join('');
     }
     const addBtn=(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':'';
     // Nút sắp xếp đặt ngay sau tên nhóm khi nhóm đó đang mở (trừ FAVORITE, vốn giữ thứ tự thủ công)
-    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle title="Đổi kiểu sắp xếp">${_lgSortAlpha?'A↕Z':'%↕'}</button>`:'';
+    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle title="Đổi kiểu sắp xếp">${_lgSortLabel()}</button>`:'';
     return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
       +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
@@ -8845,7 +8855,7 @@ DOM.lgList?.addEventListener('click',e=>{
   const addBtn=e.target.closest('[data-add-fav]');
   if(addBtn){e.stopPropagation();_lgQuickAddFavorites();return;}
   const sortBtn=e.target.closest('[data-sort-toggle]');
-  if(sortBtn){e.stopPropagation();_lgSortAlpha=!_lgSortAlpha;_lgRenderList();return;}
+  if(sortBtn){e.stopPropagation();_lgNextSortMode();_lgRenderList();return;}
   const hdr=e.target.closest('.lg-ghdr');
   if(hdr){_lgActiveGroupName=(_lgActiveGroupName===hdr.dataset.ghdr)?null:hdr.dataset.ghdr;_lgRenderList();return;}
   const item=e.target.closest('.lg-sym-item');
