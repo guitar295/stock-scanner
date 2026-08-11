@@ -2840,6 +2840,13 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
      .health-chartbox{overflow:hidden} cắt mất, chỉ còn thấy checkbox. Neo theo right thay vì
      left:% để không phụ thuộc bề rộng box. */
   .health-vni-toggle{left:auto;right:8px}
+  /* Trục dọc health-svg có L=52,R=112,W=900 CỐ ĐỊNH (không co theo scale — xem comment tại nơi
+     tính L/R trong hàm vẽ chart), nên vị trí ngang của nhãn "100" luôn ~4.7% bề rộng khung
+     (khoảng 15-20px trên các máy mobile phổ biến), không đổi theo kích thước màn hình.
+     .health-period-tabs mặc định neo left:8px nên đè lên đúng chỗ nhãn "100" khi khung health-svg
+     giãn hết bề ngang màn hình ở mobile. Dịch sang phải qua khỏi vùng nhãn (đủ khoảng đệm) để
+     tránh đè mà không cần biết chính xác bề rộng khung từng máy. */
+  .health-period-tabs{left:44px}
   .health-score{font-size:36px}
   .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
   .vnd-panel:last-child{margin-bottom:12px}
@@ -3672,7 +3679,7 @@ const DOM={
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),
-  healthVniCheckbox:$('health-vni-checkbox'),healthPeriodTabs:$('health-period-tabs'),
+  healthVniCheckbox:$('health-vni-checkbox'),healthVniToggle:$('health-vni-toggle'),healthPeriodTabs:$('health-period-tabs'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
@@ -7240,9 +7247,15 @@ async function copyHealthImage(btn){
     roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
 
     // Checkbox VNINDEX là overlay HTML ngoài SVG nên rasterize không chụp được — phải vẽ tay để ảnh copy khớp trạng thái tick/disable thật.
+    // Vị trí lấy trực tiếp từ getBoundingClientRect() của .health-vni-toggle (giống cách đo chartBoxEl/scoreCardEl ở trên) thay vì hard-code
+    // theo % cố định — trước đây hard-code đúng công thức left:88.4% của desktop nên trên mobile (CSS đổi qua right:8px) ảnh vẽ sai vị trí,
+    // khiến chữ VNINDEX bị lệch/cắt so với chart thật. Đo DOM trực tiếp thì đổi CSS breakpoint nào sau này ảnh vẫn tự khớp theo.
+    const vniToggleRect=DOM.healthVniToggle?DOM.healthVniToggle.getBoundingClientRect():null;
     const vniChecked=!!DOM.healthVniCheckbox?.checked;
     const vniDisabled=!!DOM.healthVniCheckbox?.disabled;
-    const vx=ox+chartX+chartW*0.884,vy=oy+chartY+6,boxSize=13;
+    const vx=vniToggleRect?ox+relX(vniToggleRect):ox+chartX+chartW*0.884;
+    const vy=vniToggleRect?oy+relY(vniToggleRect):oy+chartY+6;
+    const boxSize=13;
     ctx.fillStyle=vniDisabled?'#f1f5f9':'#ffffff';
     ctx.strokeStyle='#94a3b8';ctx.lineWidth=1;
     if(ctx.roundRect){ctx.beginPath();ctx.roundRect(vx,vy,boxSize,boxSize,3);ctx.fill();ctx.stroke();}
