@@ -3665,7 +3665,7 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),strengthList:$('strength-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
-  triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),triToggle:$('tri-toggle'),
+  triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),
   healthVniCheckbox:$('health-vni-checkbox'),healthPeriodTabs:$('health-period-tabs'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
@@ -4644,17 +4644,11 @@ function applyLitePaneLayout(skipWidthSync){
   resizeLiteDrawCanvas();redrawLiteDrawings();
   if(!skipWidthSync)_liteSyncPriceScaleWidths();
 }
-// Đồng bộ chiều rộng trục giá (phải) của cả 3 chart main/RSI/MACD để luôn thẳng
-// hàng. Lý do lệch: minimumWidth trong LITE_PRICE_SCALE_BASE (64px) chỉ là mức
-// sàn — label rộng hơn thì trục tự nới, hẹp hơn thì giữ sàn. VNINDEX/VN30 (giá
-// ~1000-1300, nhiều chữ số hơn cổ phiếu thường) khiến trục main tự nới rộng hơn
-// sàn, còn RSI/MACD vẫn giữ 64 → lệch nhau. Cách sửa: đo width thực tế đã render
-// của cả 3 trục (chờ 1 khung hình bằng requestAnimationFrame để thư viện kịp
-// tính lại label), lấy max, ép cả 3 dùng chung minimumWidth đó.
-// Gọi ở cuối applyLitePaneLayout() (layout đổi, dữ liệu không đổi) và cuối
-// renderLiteIndicators() (dữ liệu 3 trục vừa đổi). renderLiteIndicators() tự gọi
-// applyLitePaneLayout(true) ở đầu hàm (skipWidthSync) vì lúc đó series indicator
-// mới chưa setData nên đo width sẽ ra kết quả cũ; nó tự đồng bộ lại 1 lần ở cuối.
+// Đồng bộ chiều rộng trục giá (phải) của main/RSI/MACD cho thẳng hàng: minimumWidth
+// (64px) chỉ là mức sàn, mã giá nhiều chữ số (VNINDEX/VN30) khiến trục main tự nới
+// rộng hơn 2 trục kia. Đo width thực tế cả 3 (sau 1 khung hình, chờ thư viện tính lại
+// label) rồi ép dùng chung minimumWidth = max. Gọi cuối applyLitePaneLayout() và cuối
+// renderLiteIndicators() (renderLiteIndicators tự skip lần đầu vì series chưa setData).
 function _liteSyncPriceScaleWidths(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   requestAnimationFrame(()=>{
@@ -5677,14 +5671,35 @@ function _liteStartShapeDrag(hit,ev){
   window.addEventListener('pointermove',move);
   window.addEventListener('pointerup',up);
 }
+// Bảng màu khớp đúng CSS .rs-90/.rs-80/.rs-50/.rs-low (dùng chung cho badge tròn RS vẽ trên canvas screenshot).
+function _liteRsBadgeColors(v){
+  if(v>90)return{bg:'#f3e8ff',fg:'#7e22ce',bd:'#d8b4fe'};
+  if(v>80)return{bg:'#dcfce7',fg:'#15803d',bd:'#86efac'};
+  if(v>50)return{bg:'#fef9c3',fg:'#854d0e',bd:'#fde047'};
+  return{bg:'#fee2e2',fg:'#b91c1c',bd:'#fecaca'};
+}
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
     if(seg.color==='__html'){
       if(seg._rs!=null){
-        ctx.fillStyle='#111827';
-        const t=` RS:${seg._rs}`;
-        ctx.fillText(t,x,y);
-        x+=ctx.measureText(t).width;
+        // Vẽ badge tròn màu giống hệt .rs-badge trên DOM (không còn vẽ chữ "RS:xx" thuần).
+        const dpr=window.devicePixelRatio||1;
+        const c=_liteRsBadgeColors(seg._rs);
+        const d=Math.round(22*dpr),r=d/2;
+        const savedFont=ctx.font,savedAlign=ctx.textAlign;
+        x+=Math.round(5*dpr);
+        ctx.beginPath();
+        ctx.arc(x+r,y,r,0,Math.PI*2);
+        ctx.fillStyle=c.bg;ctx.fill();
+        ctx.lineWidth=Math.max(1,dpr);
+        ctx.strokeStyle=c.bd;ctx.stroke();
+        ctx.fillStyle=c.fg;
+        ctx.font=`800 ${Math.round(10*dpr)}px "IBM Plex Mono",monospace`;
+        ctx.textAlign='center';
+        ctx.fillText(String(seg._rs),x+r,y+dpr);
+        ctx.textAlign=savedAlign||'left';
+        ctx.font=savedFont;
+        x+=d;
         continue;
       }
       // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần, luôn hiện đủ O/H/L
@@ -5703,6 +5718,30 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
       x+=ctx.measureText(seg.text).width;
     }
   }
+}
+// Vẽ lại khối "Giá phóng to" (lớp DOM nổi, takeScreenshot() không chụp được) lên canvas copy.
+// mainCenterX/topY: tâm ngang và mép trên của pane main trên canvas tổng hợp.
+function _liteDrawBigPrice(ctx,mainCenterX,topY,dpr){
+  const el=DOM.liteChartBigPrice;
+  if(!el||!el.classList.contains('on'))return;
+  const priceEl=el.querySelector('.bp-price'),subEl=el.querySelector('.bp-sub');
+  if(!priceEl||!priceEl.textContent)return;
+  const priceCs=getComputedStyle(priceEl);
+  const savedAlign=ctx.textAlign,savedBaseline=ctx.textBaseline,savedFont=ctx.font,savedFill=ctx.fillStyle;
+  ctx.textAlign='center';
+  ctx.textBaseline='top';
+  let y=topY+Math.round(6*dpr);
+  ctx.font=`700 ${Math.round(20*dpr)}px "IBM Plex Mono",monospace`;
+  ctx.fillStyle=priceCs.color||'#111827';
+  ctx.fillText(priceEl.textContent,mainCenterX,y);
+  y+=Math.round(20*dpr*1.15);
+  if(subEl&&subEl.textContent){
+    const subCs=getComputedStyle(subEl);
+    ctx.font=`400 ${Math.round(11*dpr)}px "IBM Plex Mono",monospace`;
+    ctx.fillStyle=subCs.color||'#111827';
+    ctx.fillText(subEl.textContent,mainCenterX,y);
+  }
+  ctx.textAlign=savedAlign;ctx.textBaseline=savedBaseline;ctx.font=savedFont;ctx.fillStyle=savedFill;
 }
 // Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi, takeScreenshot() không chụp được.
 function _liteDrawSignalBadge(ctx,x,y,dpr){
@@ -5795,6 +5834,9 @@ async function copyLiteChartImage(btn){
       const mainCanvas=panes[0].canvas;
       ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH+badgeH,mainCanvas.width,mainCanvas.height);
     }
+    // "Giá phóng to" nằm đè trên pane main (giống badge tín hiệu) — phải vẽ SAU khi đã drawImage
+    // pane main, nếu không sẽ bị ảnh pane vẽ chồng lên mất.
+    _liteDrawBigPrice(ctx,panes[0].canvas.width/2,titleH+badgeH,dpr);
     // Mã hoá đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật,
     // không phải Promise — giữ user-gesture trên trình duyệt xử lý Promise<Blob> không ổn định.
     const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
