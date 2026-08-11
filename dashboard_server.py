@@ -2834,6 +2834,12 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
   .health-layout{grid-template-columns:1fr}
   .health-body{height:auto;display:block;overflow:visible}
   .health-chartbox{height:280px}
+  /* left:88.4% (desktop) tính theo bề rộng .health-chartbox lúc đó chỉ là cột trái của layout
+     2 cột nên còn đủ chỗ; trên mobile .health-layout đổi thành 1 cột khiến .health-chartbox
+     giãn gần hết màn hình, 88.4% rơi sát mép phải, không đủ chỗ cho chữ "VNINDEX" và bị
+     .health-chartbox{overflow:hidden} cắt mất, chỉ còn thấy checkbox. Neo theo right thay vì
+     left:% để không phụ thuộc bề rộng box. */
+  .health-vni-toggle{left:auto;right:8px}
   .health-score{font-size:36px}
   .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
   .vnd-panel:last-child{margin-bottom:12px}
@@ -5754,7 +5760,11 @@ function _liteDrawSignalBadge(ctx,x,y,dpr){
   const emojiR=emojiEl.getBoundingClientRect(),badgeR=badgeEl.getBoundingClientRect();
   const gap=Math.round(5*dpr);
   ctx.textBaseline='middle';
-  ctx.font=emojiCs.font||`${emojiCs.fontSize} sans-serif`;
+  // fontSize đọc từ getComputedStyle là CSS px (không tự nhân dpr) trong khi canvas chụp
+  // đã ở kích thước device-pixel, nên phải nhân dpr thủ công — nếu không icon/chữ trong badge
+  // sẽ bị vẽ nhỏ hơn hẳn so với khung badge (khung đã scale đúng qua getBoundingClientRect()*dpr).
+  const emojiSize=Math.round((parseFloat(emojiCs.fontSize)||16)*dpr);
+  ctx.font=`${emojiSize}px ${emojiCs.fontFamily||'sans-serif'}`;
   ctx.fillText(emojiEl.textContent,x,y+emojiR.height*dpr/2);
   const bx=x+emojiR.width*dpr+gap,bw=badgeR.width*dpr,bh=badgeR.height*dpr;
   const br=(parseFloat(badgeCs.borderRadius)||0)*dpr;
@@ -5764,7 +5774,8 @@ function _liteDrawSignalBadge(ctx,x,y,dpr){
   ctx.lineWidth=Math.max(1,(parseFloat(badgeCs.borderWidth)||1)*dpr);
   ctx.strokeStyle=badgeCs.borderColor;ctx.stroke();
   ctx.fillStyle=badgeCs.color;
-  ctx.font=badgeCs.font||`${badgeCs.fontWeight} ${badgeCs.fontSize} sans-serif`;
+  const badgeSize=Math.round((parseFloat(badgeCs.fontSize)||11)*dpr);
+  ctx.font=`${badgeCs.fontWeight} ${badgeSize}px ${badgeCs.fontFamily||'sans-serif'}`;
   ctx.textAlign='center';
   ctx.fillText(badgeEl.textContent,bx+bw/2,y+bh/2+dpr);
   ctx.textAlign='left';
