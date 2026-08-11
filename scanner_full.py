@@ -44,6 +44,7 @@ from dashboard_server import (
     record_price_alert_event,
     warm_market_health_cache,
     invalidate_rs_cache,
+    warm_rs_cache,
     TS_POOL_CONFIG,
     HMAP_COLS_CONFIG,
 )
@@ -567,7 +568,8 @@ cache_symbol_set = set(vn30_symbols) | set(TRADING_STOCKS_POOL) | heatmap_symbol
 # trước dòng gán symbols_to_scan, để lần fetch_heatmap_data() nào cũng tải đủ giá.
 _HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
-symbols_to_cache = [s for s in all_symbols if s in cache_symbol_set]
+symbols_to_rs = [s for s in all_symbols if s in cache_symbol_set]
+symbols_to_cache = list(symbols_to_rs)
 # VNINDEX/VN30 (chỉ số) không nằm trong all_symbols (danh sách mã niêm yết) nên không
 # lọt qua filter phía trên — trước đây 2 mã này chỉ được nạp on-demand lúc user mở
 # chart (ensure_symbol_live_in_cache), khiến lần xem đầu tiên phải chờ gọi mạng vnstock
@@ -1233,6 +1235,7 @@ def build_history_cache(symbols: list, current_date: date):
         history_cache.clear()
         history_cache.update(new_history)
     invalidate_rs_cache()
+    warm_rs_cache()
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
 
@@ -2974,6 +2977,7 @@ start_dashboard(
     signal_session_date_ref = lambda: signal_session_date,
     port              = 8888,
     extra_quote_fn    = fetch_extra_quotes,
+    rs_universe_ref   = lambda: symbols_to_rs,
 )
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
