@@ -5702,7 +5702,8 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
         x+=d;
         continue;
       }
-      // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần, luôn hiện đủ O/H/L
+      // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần thay vì HTML gốc.
+      // (Trên mobile portrait, 2 segment này đã bị lọc bỏ trước khi tới đây — xem copyLiteChartImage.)
       const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
       const parts=seg._open!=null
         ?[{t:' O:',c:'#111827'},{t:seg._open||'',c:col}]
@@ -5797,6 +5798,29 @@ function _liteDownloadChartImage(blob){
   document.body.appendChild(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+// Copy PNG vào clipboard, dùng chung cho Mrk Health/Sankey/Treemap — các ảnh này phải dựng
+// bất đồng bộ (rasterize SVG qua <img> trước khi vẽ canvas). Khác với thẻ CHART (canvas đồng bộ,
+// encode Blob xong luôn rồi mới gọi clipboard.write — xem copyLiteChartImage), ở đây phải gọi
+// clipboard.write() NGAY trong lượt chạm, truyền thẳng Promise<Blob> (buildBlob() chưa resolve)
+// làm giá trị: đây là cách duy nhất giữ được quyền ghi clipboard trên Safari/Chrome mobile khi
+// phần dựng ảnh cần chờ — nếu await xong Blob rồi mới gọi clipboard.write thì "user activation"
+// của lượt chạm đã hết hạn, trình duyệt từ chối và rơi về tải file (đúng lỗi đang gặp).
+async function _liteCopyOrDownloadPng(btn,buildBlob,filename,label){
+  if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
+    try{
+      await navigator.clipboard.write([new ClipboardItem({'image/png':buildBlob()})]);
+      _liteCopyFeedback(btn,'copied');
+      return;
+    }catch(e){console.warn(`Copy ảnh ${label} vào clipboard lỗi, chuyển sang tải PNG:`,e);}
+  }
+  const pngBlob=await buildBlob();
+  const dlUrl=URL.createObjectURL(pngBlob);
+  const link=document.createElement('a');
+  link.href=dlUrl;link.download=filename;
+  document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
+  _liteCopyFeedback(btn,'downloaded');
+}
 async function copyLiteChartImage(btn){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   try{
@@ -5808,19 +5832,24 @@ async function copyLiteChartImage(btn){
       panes.push({kind:'macd',canvas:_liteMacdChart.takeScreenshot()});
     }
     const titleSegments=_liteTitleSegments(_liteData[_liteData.length-1]);
+    // Portrait mobile: title thật đã ẩn O/H/L để vừa 1 dòng (CSS .lct-open/.lct-hl{display:none}).
+    // Bề ngang canvas chụp = đúng bề ngang màn hình (hẹp) nên phải bỏ luôn 2 đoạn này khi vẽ,
+    // nếu không title sẽ tràn/che khuất mất phần cuối (RS, %...).
+    const isMobilePortraitShot=window.innerWidth<=768&&window.innerHeight>window.innerWidth;
+    const finalTitleSegments=isMobilePortraitShot?titleSegments.filter(s=>s._open==null&&s._high==null&&s._low==null):titleSegments;
     const hasSigBadge=!!(DOM.liteChartSignal&&DOM.liteChartSignal.classList.contains('on'));
     const dpr=window.devicePixelRatio||1;
-    const titleH=titleSegments.length?Math.round(30*dpr):0;
+    const titleH=finalTitleSegments.length?Math.round(30*dpr):0;
     const badgeH=hasSigBadge?Math.round(24*dpr):0;
     const out=document.createElement('canvas');
     out.width=Math.max(...panes.map(p=>p.canvas.width));
     out.height=titleH+badgeH+panes.reduce((sum,p)=>sum+p.canvas.height,0);
     const ctx=out.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,out.width,out.height);
-    if(titleSegments.length){
+    if(finalTitleSegments.length){
       ctx.font=`400 ${Math.round(11*dpr)}px "IBM Plex Mono",monospace`;
       ctx.textBaseline='middle';
-      _liteDrawTitleSegments(ctx,titleSegments,10*dpr,titleH/2);
+      _liteDrawTitleSegments(ctx,finalTitleSegments,10*dpr,titleH/2);
     }
     if(hasSigBadge){
       _liteDrawSignalBadge(ctx,10*dpr,titleH+Math.round(3*dpr),dpr);
@@ -7098,12 +7127,13 @@ function _healthWrapText(ctx,text,maxWidth){
 async function copyHealthImage(btn){
   const svgEl=DOM.healthSvg;
   if(!svgEl)return;
+  // Đo trực tiếp vị trí/kích thước thật của 2 khung trên DOM rồi vẽ lại y hệt trên canvas, để ảnh xuất khớp 1:1 với layout thật kể cả khi responsive.
+  const layoutEl=svgEl.closest('.health-layout');
+  const chartBoxEl=svgEl.closest('.health-chartbox');
+  const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
+  if(!layoutEl||!chartBoxEl||!scoreCardEl)return;
   try{
-    // Đo trực tiếp vị trí/kích thước thật của 2 khung trên DOM rồi vẽ lại y hệt trên canvas, để ảnh xuất khớp 1:1 với layout thật kể cả khi responsive.
-    const layoutEl=svgEl.closest('.health-layout');
-    const chartBoxEl=svgEl.closest('.health-chartbox');
-    const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
-    if(!layoutEl||!chartBoxEl||!scoreCardEl)return;
+    const buildBlob=async()=>{
     const layoutRect=layoutEl.getBoundingClientRect();
     const chartRect=chartBoxEl.getBoundingClientRect();
     const cardRect=scoreCardEl.getBoundingClientRect();
@@ -7263,19 +7293,9 @@ async function copyHealthImage(btn){
     }
 
     const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,'copied');
-        return;
-      }catch(e){console.warn('Copy ảnh Mrk Health vào clipboard lỗi, chuyển sang tải PNG:',e);}
-    }
-    const dlUrl=URL.createObjectURL(pngBlob);
-    const link=document.createElement('a');
-    link.href=dlUrl;link.download=`mrk_health_${_sym||''}.png`;
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
-    _liteCopyFeedback(btn,'downloaded');
+    return pngBlob;
+    };
+    await _liteCopyOrDownloadPng(btn,buildBlob,`mrk_health_${_sym||''}.png`,'Mrk Health');
   }catch(e){console.error('copyHealthImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
 DOM.healthCopyBtn?.addEventListener('click',e=>{
@@ -7493,6 +7513,7 @@ async function copySankeyImage(btn){
   const svgEl=DOM.sankeySvg;
   if(!svgEl)return;
   try{
+    const buildBlob=async()=>{
     const wrapRect=DOM.sankeyWrap.getBoundingClientRect();
     const W=Math.max(1,Math.round(wrapRect.width)),H=Math.max(1,Math.round(wrapRect.height));
     const dpr=window.devicePixelRatio||1;
@@ -7511,20 +7532,9 @@ async function copySankeyImage(btn){
     const ctx=canvas.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,'copied');
-        return;
-      }catch(e){console.warn('Copy ảnh Sankey vào clipboard lỗi, chuyển sang tải PNG:',e);}
-    }
-    const dlUrl=URL.createObjectURL(pngBlob);
-    const link=document.createElement('a');
-    link.href=dlUrl;link.download='sankey.png';
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
-    _liteCopyFeedback(btn,'downloaded');
+    return _litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    };
+    await _liteCopyOrDownloadPng(btn,buildBlob,'sankey.png','Sankey');
   }catch(e){console.error('copySankeyImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
 DOM.sankeyCopyBtn?.addEventListener('click',e=>{
@@ -7647,6 +7657,7 @@ async function copyTreemapImage(btn){
   const svgEl=DOM.treemapSvg;
   if(!svgEl)return;
   try{
+    const buildBlob=async()=>{
     const wrapRect=DOM.treemapWrap.getBoundingClientRect();
     const W=Math.max(1,Math.round(wrapRect.width)),H=Math.max(1,Math.round(wrapRect.height));
     const dpr=window.devicePixelRatio||1;
@@ -7665,20 +7676,9 @@ async function copyTreemapImage(btn){
     const ctx=canvas.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,'copied');
-        return;
-      }catch(e){console.warn('Copy ảnh Treemap vào clipboard lỗi, chuyển sang tải PNG:',e);}
-    }
-    const dlUrl=URL.createObjectURL(pngBlob);
-    const link=document.createElement('a');
-    link.href=dlUrl;link.download='treemap.png';
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
-    _liteCopyFeedback(btn,'downloaded');
+    return _litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    };
+    await _liteCopyOrDownloadPng(btn,buildBlob,'treemap.png','Treemap');
   }catch(e){console.error('copyTreemapImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
 DOM.treemapCopyBtn?.addEventListener('click',e=>{
