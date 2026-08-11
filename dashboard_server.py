@@ -2429,10 +2429,13 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tri-panel.collapsed>.tri-body{display:none!important}
 .tri-content{display:none}
 .tri-content.on{display:block}
-.health-svg{cursor:crosshair;touch-action:none;display:block;width:100%;height:100%}
+.health-svg{cursor:crosshair;display:block;width:100%;height:100%}
 .health-vni-toggle{position:absolute;top:6px;left:88.4%;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
+.health-period-tabs{position:absolute;top:6px;left:8px;z-index:2;display:flex;gap:4px}
+.health-period-tab{font-size:11px;color:#334155;background:#fff;border:1px solid var(--border);border-radius:4px;padding:1px 7px;cursor:pointer;user-select:none}
+.health-period-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .health-body{padding:12px 14px;background:#fff;height:720px;display:flex;align-items:center;overflow:auto}
 #tri-content-health{position:relative}
 .health-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
@@ -3425,6 +3428,10 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
         <div class="health-body" id="health-body">
           <div class="health-layout">
             <div class="health-chartbox">
+              <div class="health-period-tabs" id="health-period-tabs">
+                <button type="button" class="health-period-tab on" data-days="60">60p</button>
+                <button type="button" class="health-period-tab" data-days="120">120p</button>
+              </div>
               <label class="health-vni-toggle" id="health-vni-toggle" title="Hiện/ẩn đường VNINDEX để đối chiếu">
                 <input type="checkbox" id="health-vni-checkbox">
                 <span class="health-vni-swatch"></span>VNINDEX
@@ -3659,7 +3666,7 @@ const DOM={
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),triToggle:$('tri-toggle'),
-  healthVniCheckbox:$('health-vni-checkbox'),
+  healthVniCheckbox:$('health-vni-checkbox'),healthPeriodTabs:$('health-period-tabs'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
@@ -6886,24 +6893,22 @@ function healthBand(score){
   if(s>=20)return{label:'Bi quan',fill:'#dc2626'};
   return{label:'Sợ hãi',fill:'#0284c7'};
 }
-// State cửa sổ xem + zoom của biểu đồ HEALTH: backend trả nhiều phiên hơn hiển thị mặc định để hỗ trợ kéo xem quá khứ và zoom mà không cần gọi thêm API.
-const HEALTH_DEFAULT_WINDOW=30;
-const HEALTH_MIN_WINDOW=10;
+// Chu kỳ hiển thị HEALTH — chọn cố định 60/120 phiên (không zoom/kéo lịch sử);
+// backend trả tối đa 120 phiên (compute_market_health_index limit=120).
+const HEALTH_PERIODS=[60,120];
 let _healthFullHistory=[];      // toàn bộ lịch sử tải về gần nhất từ /api/market_health
-let _healthOffset=0;            // số điểm lùi về quá khứ so với điểm mới nhất (0 = đang xem mới nhất)
-let _healthWindowLen=HEALTH_DEFAULT_WINDOW; // số điểm đang hiển thị (thay đổi khi zoom)
-let _healthLayout=null;         // toạ độ của lần vẽ khung gần nhất, dùng để tính crosshair/zoom mà không phải vẽ lại toàn bộ SVG
+let _healthWindowLen=HEALTH_PERIODS[0]; // số phiên đang hiển thị (đổi khi bấm tab chu kỳ)
+let _healthLayout=null;         // toạ độ của lần vẽ khung gần nhất, dùng để tính crosshair mà không phải vẽ lại toàn bộ SVG
 let _healthShowVni=false;       // có đang bật overlay VNINDEX để đối chiếu không
 function renderHealthChart(history){
-  // Mỗi lần có dữ liệu mới, tự quay về phiên mới nhất; mức zoom (_healthWindowLen) giữ nguyên qua các lần refresh.
   _healthFullHistory=(history||[]).filter(p=>Number.isFinite(Number(p.score)));
-  _healthOffset=0;
   _healthRenderWindow();
 }
-function _healthClampWindow(len){
-  const total=_healthFullHistory.length||1;
-  const lo=Math.min(HEALTH_MIN_WINDOW,total),hi=total;
-  return Math.min(hi,Math.max(lo,Math.round(len)));
+function setHealthPeriod(days){
+  if(_healthWindowLen===days)return;
+  _healthWindowLen=days;
+  DOM.healthPeriodTabs?.querySelectorAll('.health-period-tab').forEach(b=>b.classList.toggle('on',Number(b.dataset.days)===days));
+  _healthRenderWindow();
 }
 function _healthRenderWindow(){
   const total=_healthFullHistory.length;
@@ -6912,11 +6917,9 @@ function _healthRenderWindow(){
     _healthLayout=null;
     return;
   }
-  const windowLen=_healthClampWindow(_healthWindowLen);
-  _healthWindowLen=windowLen;
-  const end=total-_healthOffset;
-  const start=Math.max(0,end-windowLen);
-  const h=_healthFullHistory.slice(start,end);
+  const windowLen=Math.min(_healthWindowLen,total);
+  const start=Math.max(0,total-windowLen);
+  const h=_healthFullHistory.slice(start,total);
   // viewBox tính theo tỉ lệ thật của khung (CSS Grid co giãn) thay vì cố định 900x360, để chữ/nét vẽ không bị méo khi khung đổi kích thước.
   const rectBox=DOM.healthSvg.getBoundingClientRect();
   const aspect=(rectBox.width>0&&rectBox.height>0)?rectBox.height/rectBox.width:(360/900);
@@ -7033,88 +7036,11 @@ function _healthHideCrosshair(){
   const g=DOM.healthSvg&&DOM.healthSvg.querySelector('#health-crosshair');
   if(g)g.style.display='none';
 }
-// ── Zoom: lăn chuột (desktop) + chụm/mở 2 ngón (chạm), giống thao tác zoom trên chart CHART ──
-let _healthPinch=null;
-function _healthTouchDist(evt){
-  if(!evt.touches||evt.touches.length<2)return null;
-  const[a,b]=evt.touches;
-  return Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY);
-}
-function _healthHandlePinch(evt){
-  if(!_healthPinch){_healthPinch={dist:_healthTouchDist(evt),startWindow:_healthWindowLen};return;}
-  const d=_healthTouchDist(evt);
-  if(!d||!_healthPinch.dist)return;
-  // 2 ngón giãn ra (d lớn hơn lúc bắt đầu) → scale<1 → zoom in (hiện ít điểm hơn, chi tiết hơn)
-  const scale=_healthPinch.dist/d;
-  const newLen=_healthClampWindow(_healthPinch.startWindow*scale);
-  if(newLen!==_healthWindowLen){
-    _healthWindowLen=newLen;
-    const total=_healthFullHistory.length,maxOffset=Math.max(0,total-_healthWindowLen);
-    _healthOffset=Math.max(0,Math.min(maxOffset,_healthOffset));
-    _healthRenderWindow();
-  }
-}
-function _healthEventInBands(evt){
-  if(!_healthLayout)return false;
-  const pt=_healthEventToSvgPoint(evt);
-  if(!pt)return false;
-  const{L,R,T,B,W,H}=_healthLayout;
-  return pt.x>=L&&pt.x<=W-R&&pt.y>=T&&pt.y<=H-B;
-}
-function _healthOnWheel(evt){
-  if(!_healthLayout)return;
-  if(!_healthEventInBands(evt))return; // chỉ zoom khi chuột đang ở trong vùng dải màu, không tính trục/lề trắng
-  evt.preventDefault();
-  const factor=evt.deltaY<0?0.85:1/0.85; // lăn lên → zoom in; lăn xuống → zoom out
-  const newLen=_healthClampWindow(_healthWindowLen*factor);
-  if(newLen===_healthWindowLen)return;
-  _healthWindowLen=newLen;
-  const total=_healthFullHistory.length,maxOffset=Math.max(0,total-_healthWindowLen);
-  _healthOffset=Math.max(0,Math.min(maxOffset,_healthOffset));
-  _healthRenderWindow();
-}
-// ── Kéo ngang để xem lịch sử ─────────────────────────────────────────────
-let _healthDrag=null;
-function _healthOnDown(evt){
-  if(!_healthLayout)return;
-  if(evt.touches&&evt.touches.length===2){
-    _healthPinch={dist:_healthTouchDist(evt),startWindow:_healthWindowLen};
-    _healthDrag=null;
-    return;
-  }
-  _healthDrag={startX:_healthClientX(evt),startOffset:_healthOffset,moved:false};
-}
 function _healthOnMove(evt){
   if(!_healthLayout)return;
-  if(evt.touches&&evt.touches.length===2){
-    _healthHandlePinch(evt);
-    if(evt.cancelable)evt.preventDefault();
-    return;
-  }
-  if(_healthDrag){
-    const cx=_healthClientX(evt);
-    const dx=cx-_healthDrag.startX;
-    if(Math.abs(dx)>3)_healthDrag.moved=true;
-    if(_healthDrag.moved){
-      const total=_healthFullHistory.length,maxOffset=Math.max(0,total-_healthWindowLen);
-      const rect=DOM.healthSvg.getBoundingClientRect();
-      if(rect.width&&_healthWindowLen>1){
-        const scaleX=_healthLayout.W/rect.width;
-        // plotW ở đơn vị viewBox — chia cho scaleX để ra pixel thật rồi suy pxPerPoint; trừ 2*padX vì điểm dữ liệu chỉ trải trong khoảng đã thu vào theo padX.
-        const pxPerPointReal=((_healthLayout.plotW-2*_healthLayout.padX)/scaleX)/(_healthWindowLen-1);
-        // Kéo/vuốt sang trái (dx<0) → xem lịch sử (tăng offset); sang phải → tiến về hiện tại/gần đây.
-        let newOffset=Math.round(_healthDrag.startOffset+dx/pxPerPointReal);
-        newOffset=Math.max(0,Math.min(maxOffset,newOffset));
-        if(newOffset!==_healthOffset){_healthOffset=newOffset;_healthRenderWindow();}
-      }
-      if(evt.cancelable)evt.preventDefault();
-      return;
-    }
-  }
   const idx=_healthIdxFromEvent(evt);
   if(idx!=null)_healthShowCrosshair(idx);
 }
-function _healthOnUp(){_healthDrag=null;_healthPinch=null;}
 // Copy ảnh Mrk Health tránh SVG<foreignObject> (Chrome coi canvas là "tainted", chặn xuất ảnh) — rasterize SVG thuần rồi vẽ tay phần điểm số/nhãn bằng fillText.
 function _healthWrapText(ctx,text,maxWidth){
   const words=String(text||'').split(/\s+/).filter(Boolean);
@@ -7316,13 +7242,9 @@ DOM.healthCopyBtn?.addEventListener('click',e=>{
   copyHealthImage(e.currentTarget);
 });
 DOM.healthSvg.addEventListener('mousemove',_healthOnMove);
-DOM.healthSvg.addEventListener('mousedown',_healthOnDown);
-DOM.healthSvg.addEventListener('mouseleave',()=>{_healthHideCrosshair();_healthDrag=null;});
-DOM.healthSvg.addEventListener('wheel',_healthOnWheel,{passive:false});
-window.addEventListener('mouseup',_healthOnUp);
-DOM.healthSvg.addEventListener('touchstart',_healthOnDown,{passive:true});
-DOM.healthSvg.addEventListener('touchmove',_healthOnMove,{passive:false});
-DOM.healthSvg.addEventListener('touchend',()=>{_healthHideCrosshair();_healthOnUp();});
+DOM.healthSvg.addEventListener('mouseleave',_healthHideCrosshair);
+DOM.healthSvg.addEventListener('touchmove',_healthOnMove,{passive:true});
+DOM.healthSvg.addEventListener('touchend',_healthHideCrosshair);
 if(DOM.healthVniCheckbox){
   DOM.healthVniCheckbox.addEventListener('change',()=>{
     _healthShowVni=!!DOM.healthVniCheckbox.checked;
@@ -7330,6 +7252,10 @@ if(DOM.healthVniCheckbox){
     _healthRenderWindow();
   });
 }
+DOM.healthPeriodTabs?.addEventListener('click',e=>{
+  const btn=e.target.closest('.health-period-tab');
+  if(btn)setHealthPeriod(Number(btn.dataset.days));
+});
 // viewBox tính theo kích thước khung thật nên cần vẽ lại khi resize; debounce nhẹ để không vẽ liên tục lúc đang kéo.
 let _healthResizeTimer=null;
 window.addEventListener('resize',()=>{
