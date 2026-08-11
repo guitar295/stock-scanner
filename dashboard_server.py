@@ -6295,12 +6295,15 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     _lgUpdateChartFavBtn();
-    if(DOM.overlay&&DOM.overlay.classList.contains('on'))_updateSymDisplay(s);
     if(_lastChartSyncSymbol===s){
       _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
     }else if(!skipPopoutSync){
       if(_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
       if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+      // Khi đang chạy trong iframe embedded (tab Chart của cửa sổ openChart), báo lên trang cha để
+      // đồng bộ tên mã trên header popup (_sym, ptitle, mobPtitle, mobLandSym) và reload iframe các
+      // tab khác nếu đang mở (vs, vnd-cs...). window.parent !== window là cách phân biệt iframe/trang chính.
+      if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
     }
     if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
     _liteData=(j.candles||[]).map((bar,idx,arr)=>{
@@ -8889,6 +8892,20 @@ window.addEventListener('message',e=>{
   if(e.data&&e.data.type==='CHART_POPOUT_SYNC'&&e.data.symbol){
     _lastChartSyncSymbol=String(e.data.symbol).toUpperCase().trim();
     loadLiteChart(_lastChartSyncSymbol,0);
+  }
+  // Iframe tab Chart (embedded) báo đổi mã → cập nhật _sym + header popup + reload iframe tab đang active.
+  // _sym là biến của popup (openChart), cần đồng bộ để các tab lazy (vs, vnd-cs...) khi switch vẫn dùng mã mới.
+  if(e.data&&e.data.type==='CHART_EMBED_SYM_CHANGE'&&e.data.symbol){
+    const s=String(e.data.symbol).toUpperCase().trim();
+    if(!s)return;
+    _sym=s;
+    _updateSymDisplay(s);
+    // Reload iframe tab VS (Vietstock) nếu đang active — luôn cần cập nhật ngay vì đây là tab phổ biến nhất
+    if(_tab==='vs')DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+s.toLowerCase();
+    // Reload các iframe lazy đang active (vnd-cs, vnd-news, vnd-sum, 24h) nếu tab đó đang hiển thị
+    ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{
+      if(_tab===t&&IFRAME_LAZY[t]){const f=$('iframe-'+t);if(f)f.src=IFRAME_LAZY[t](s);}
+    });
   }
 });
 // Trang mở lại với ?chartPopout=1 tự mở panel CHART, ẩn phần còn lại, nạp đúng mã từ cửa sổ chính (đánh dấu _lastChartSyncSymbol để không gửi ngược).
