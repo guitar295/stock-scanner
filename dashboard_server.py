@@ -3643,6 +3643,14 @@ const DOM={
 // HELPERS
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
+// Phát hiện app đang chạy ở chế độ STANDALONE (mở từ icon "Thêm vào MH chính", không có khung
+// Safari/Chrome bao quanh) — window.navigator.standalone là cờ riêng của iOS Safari, còn
+// matchMedia('(display-mode: standalone)') là chuẩn chung (Android/desktop PWA). Dùng để né 1
+// lỗi WebKit: trang đang tắt zoom (user-scalable=no, xem thẻ viewport) — trong TAB Safari bình
+// thường, iOS vẫn tổng hợp được sự kiện 'dblclick' cho thao tác double-tap dù đã tắt zoom, nhưng
+// khi chạy STANDALONE (không còn lớp gesture của Safari bao ngoài), 'dblclick' có thể KHÔNG bắn
+// ra được nữa cho cùng thao tác đó — xem chỗ dùng IS_STANDALONE_PWA ở nút FOLLOW bên dưới.
+const IS_STANDALONE_PWA=()=>window.navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
 const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
   'chart':    s=>`/?chartPopout=1&embedded=1&sym=${encodeURIComponent(s)}`,
@@ -3965,7 +3973,7 @@ let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price c
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
-const LITE_BARS_VISIBLE=320,LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
+const LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
 // Lazy load lịch sử: khi user kéo trái đến đầu dữ liệu, tự động fetch thêm bar cũ hơn.
 let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load (server báo)
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
@@ -8292,23 +8300,50 @@ function _bindSearch(el,onEnter){
 }
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 saveFollowSymbols(FOLLOW);
-let _followClickTimer=null;
-$('hmap-follow-btn').addEventListener('click',function(){
-  clearTimeout(_followClickTimer);
-  _followClickTimer=setTimeout(()=>{
-    if(!FOLLOW.length){editFollowSymbols();this.blur();return;}
-    FOLLOW_ON=!FOLLOW_ON;
-    saveFollowSymbols(FOLLOW);
-    renderHeatmap(window._lastHmapData||{});
+if(IS_STANDALONE_PWA()){
+  // NHÁNH RIÊNG CHO APP CÀI VÀO MÀN HÌNH CHÍNH (xem giải thích đầy đủ ở khai báo
+  // IS_STANDALONE_PWA phía trên) — 'dblclick' có thể không bắn ra trong môi trường này nên
+  // tự phân biệt tap đơn/đúp bằng mốc thời gian của chính sự kiện 'click' (luôn bắn ổn định).
+  // Nhánh else bên dưới (trình duyệt bình thường) giữ NGUYÊN logic gốc, không đổi gì.
+  let _followLastTapTs=0,_followTapTimer=null;
+  $('hmap-follow-btn').addEventListener('click',function(){
+    const el=this,now=Date.now();
+    if(now-_followLastTapTs<400){
+      clearTimeout(_followTapTimer);
+      _followLastTapTs=0;
+      editFollowSymbols();
+      el.blur();
+      return;
+    }
+    _followLastTapTs=now;
+    clearTimeout(_followTapTimer);
+    _followTapTimer=setTimeout(()=>{
+      if(!FOLLOW.length){editFollowSymbols();el.blur();return;}
+      FOLLOW_ON=!FOLLOW_ON;
+      saveFollowSymbols(FOLLOW);
+      renderHeatmap(window._lastHmapData||{});
+      el.blur();
+    },400);
+  });
+}else{
+  let _followClickTimer=null;
+  $('hmap-follow-btn').addEventListener('click',function(){
+    clearTimeout(_followClickTimer);
+    _followClickTimer=setTimeout(()=>{
+      if(!FOLLOW.length){editFollowSymbols();this.blur();return;}
+      FOLLOW_ON=!FOLLOW_ON;
+      saveFollowSymbols(FOLLOW);
+      renderHeatmap(window._lastHmapData||{});
+      this.blur();
+    },180);
+  });
+  $('hmap-follow-btn').addEventListener('dblclick',function(e){
+    e.preventDefault();
+    clearTimeout(_followClickTimer);
+    editFollowSymbols();
     this.blur();
-  },180);
-});
-$('hmap-follow-btn').addEventListener('dblclick',function(e){
-  e.preventDefault();
-  clearTimeout(_followClickTimer);
-  editFollowSymbols();
-  this.blur();
-});
+  });
+}
 $('hover-preview-btn').addEventListener('click',()=>toggleHoverPreview());
 $('journal-open-btn').addEventListener('click',()=>{
   if(DOM.journalFrame.src==='about:blank')DOM.journalFrame.src='/journal';
