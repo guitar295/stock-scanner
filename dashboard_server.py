@@ -115,6 +115,7 @@ _get_attent_today = None
 _get_breakvol_today = None
 _get_signal_session_date = None
 _get_history_cache = None
+_get_rs_universe_symbols = None
 _cache_lock = None
 _fetch_heatmap_fn = None
 # Hàm tải giá on-demand cho MÃ LẺ không nằm trong _HEATMAP_NEED_SYMBOLS (ví dụ mã người
@@ -148,6 +149,13 @@ SIGNAL_TTL_SEC = 10
 
 _market_health_cache = {"data": {}, "updated_at": 0, "pending_refresh": False}
 _market_health_lock = threading.Lock()
+
+# RS snapshot persist chung volume với signal_state_cache/market_health.
+_rs_score_cache = {"scores": {}, "asof": None}
+_rs_score_lock = threading.Lock()
+_RS_EXCLUDE_SYMBOLS = {"VNINDEX", "VN30"}
+_RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
+_RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
 
 # ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
 # _market_health_cache vốn chỉ nằm trong RAM (biến Python), nên mỗi lần container
@@ -253,6 +261,53 @@ def warm_market_health_cache():
     print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
           f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
     return data
+
+# ─── Lưu RS snapshot xuống đĩa để dashboard có điểm ngay sau restart ─────────
+def _save_rs_scores_to_disk():
+    try:
+        os.makedirs(os.path.dirname(_RS_SCORE_CACHE_FILE), exist_ok=True)
+        tmp_path = _RS_SCORE_CACHE_FILE + ".tmp"
+        with _rs_score_lock:
+            payload = {
+                "scores": _rs_score_cache["scores"],
+                "asof": _rs_score_cache["asof"],
+                "saved_at": datetime.now(TZ_VN).isoformat(),
+            }
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp_path, _RS_SCORE_CACHE_FILE)
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Lưu RS cache xuống đĩa lỗi (bỏ qua): {e}")
+
+
+def _load_rs_scores_from_disk():
+    try:
+        with open(_RS_SCORE_CACHE_FILE, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        scores = saved.get("scores", {}) if isinstance(saved, dict) else {}
+        if isinstance(scores, dict) and scores:
+            clean_scores = {}
+            for sym, val in scores.items():
+                sym_key = str(sym).upper()
+                if sym_key in _RS_EXCLUDE_SYMBOLS:
+                    continue
+                try:
+                    clean_scores[sym_key] = int(round(float(val)))
+                except (TypeError, ValueError):
+                    continue
+            if clean_scores:
+                with _rs_score_lock:
+                    _rs_score_cache["scores"] = clean_scores
+                    _rs_score_cache["asof"] = saved.get("asof")
+                print(f"  [Dashboard] ✅ Nạp lại RS cache từ đĩa: {len(clean_scores)} mã"
+                      f"{' @ ' + str(saved.get('asof')) if saved.get('asof') else ''}.")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Nạp RS cache từ đĩa lỗi (bỏ qua): {e}")
+
+
+_load_rs_scores_from_disk()
 
 # ─── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
 # Lấy trực tiếp từ API công khai của VNDIRECT (giống trang dstock.vndirect.com.vn/
@@ -543,9 +598,6 @@ _lite_chart_cache_lock = threading.Lock()
 # 0.3*C/Ref(C,-20) + 0.2*C/Ref(C,-50), sau đó xếp hạng percentile trong rổ
 # mã đang có trong history_cache (dashboard + quét tín hiệu). RS dùng snapshot
 # close của phiên đã hoàn chỉnh gần nhất, không trộn giá vá intraday trong phiên.
-_rs_score_cache = {"scores": {}, "asof": None}
-_rs_score_lock = threading.Lock()
-
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
@@ -936,15 +988,23 @@ def invalidate_rs_cache():
 
 def _compute_rs_scores(force: bool = False) -> dict:
     """Tính RS percentile từ close của phiên đã hoàn chỉnh gần nhất."""
+    rs_universe = None
+    if _get_rs_universe_symbols:
+        rs_universe = {str(sym).upper() for sym in (_get_rs_universe_symbols() or [])}
+
     with _rs_score_lock:
         if not force and _rs_score_cache["scores"]:
-            return dict(_rs_score_cache["scores"])
+            scores = dict(_rs_score_cache["scores"])
+            if rs_universe is not None:
+                scores = {sym: val for sym, val in scores.items() if sym in rs_universe and sym not in _RS_EXCLUDE_SYMBOLS}
+            return scores
 
     cache = _get_history_cache() if _get_history_cache else {}
     if not cache:
         return {}
 
-    close_by_sym = {}
+    raw_by_sym = {}
+    snapshot_dates = []
     today_vn = datetime.now(TZ_VN).date()
     lock = _cache_lock
     if lock:
@@ -952,6 +1012,9 @@ def _compute_rs_scores(force: bool = False) -> dict:
     try:
         items = list(cache.items())
         for sym, df in items:
+            sym_key = str(sym).upper()
+            if sym_key in _RS_EXCLUDE_SYMBOLS or (rs_universe is not None and sym_key not in rs_universe):
+                continue
             if df is None or len(df) < 51 or "close" not in df.columns:
                 continue
             work = df[["close"]].copy()
@@ -961,34 +1024,59 @@ def _compute_rs_scores(force: bool = False) -> dict:
             work = work[work.index.date < today_vn]
             if len(work) < 51:
                 continue
-            close_by_sym[str(sym).upper()] = pd.to_numeric(work["close"].copy(), errors="coerce")
+            close = pd.to_numeric(work["close"].copy(), errors="coerce")
+            raw = 0.5 * (close / close.shift(10)) + 0.3 * (close / close.shift(20)) + 0.2 * (close / close.shift(50))
+            raw_valid = raw.dropna()
+            snapshot_dates.extend(raw_valid.index.date[-10:])
+            raw_by_sym[sym_key] = raw
     finally:
         if lock:
             lock.release()
 
-    raw_scores = {}
-    for sym, close in close_by_sym.items():
-        c0 = close.iloc[-1]
-        c10 = close.iloc[-11] if len(close) >= 11 else math.nan
-        c20 = close.iloc[-21] if len(close) >= 21 else math.nan
-        c50 = close.iloc[-51] if len(close) >= 51 else math.nan
-        vals = (c0, c10, c20, c50)
-        if any(not math.isfinite(float(v)) or float(v) <= 0 for v in vals):
-            continue
-        raw_scores[sym] = 0.5 * (c0 / c10) + 0.3 * (c0 / c20) + 0.2 * (c0 / c50)
-
-    qty = len(raw_scores)
-    if not qty:
+    universe_qty = len(raw_by_sym)
+    if not universe_qty:
         return {}
 
-    scores = {}
-    for rank, (sym, _) in enumerate(sorted(raw_scores.items(), key=lambda item: item[1], reverse=True), start=1):
-        scores[sym] = round(100 - 100 * rank / qty)
+    last_dates = sorted(set(snapshot_dates))[-5:]
+    pct_history = {sym: [] for sym in raw_by_sym}
+    for dt in last_dates:
+        date_scores = {}
+        for sym, raw in raw_by_sym.items():
+            vals = raw[raw.index.date == dt]
+            if vals.empty:
+                continue
+            v = vals.iloc[-1]
+            if math.isfinite(float(v)) and float(v) > 0:
+                date_scores[sym] = float(v)
+        for rank, (sym, _) in enumerate(sorted(date_scores.items(), key=lambda item: item[1], reverse=True), start=1):
+            pct_history[sym].append(100 - 100 * rank / universe_qty)
+
+    scores = {
+        sym: round(sum(vals) / len(vals))
+        for sym, vals in pct_history.items()
+        if vals
+    }
+    if not scores:
+        return {}
 
     with _rs_score_lock:
         _rs_score_cache["scores"] = scores
-        _rs_score_cache["asof"] = today_vn.isoformat()
+        _rs_score_cache["asof"] = max(snapshot_dates).isoformat() if snapshot_dates else None
+    _save_rs_scores_to_disk()
     return dict(scores)
+
+
+def _rs_cache_meta() -> dict:
+    with _rs_score_lock:
+        return {"count": len(_rs_score_cache["scores"]), "asof": _rs_score_cache["asof"]}
+
+
+def warm_rs_cache():
+    scores = _compute_rs_scores(force=True)
+    meta = _rs_cache_meta()
+    print(f"  [Dashboard] {'✅' if scores else '⚠️ '} Warm RS cache: {len(scores)} mã"
+          f"{' @ ' + str(meta.get('asof')) if meta.get('asof') else ''}.")
+    return scores
 
 
 def _attach_rs(row: dict, rs_scores: dict) -> dict:
@@ -996,6 +1084,15 @@ def _attach_rs(row: dict, rs_scores: dict) -> dict:
     if rs is not None:
         row["rs"] = rs
     return row
+
+
+def _attach_rs_payload(payload: dict, symbol: str) -> dict:
+    rs = _compute_rs_scores().get(str(symbol).upper())
+    if rs is not None:
+        payload["rs"] = rs
+    else:
+        payload.pop("rs", None)
+    return payload
 
 # =============================================================================
 # API
@@ -1010,6 +1107,7 @@ def api_signals():
     today_vn = datetime.now(TZ_VN).date()
     session_stale = bool(session_date) and session_date != today_vn
     rs_scores = _compute_rs_scores()
+    rs_meta = _rs_cache_meta()
     result = []
     for sym, entry in alerted.items():
         sig = entry["signal"] if isinstance(entry, dict) else entry
@@ -1050,6 +1148,8 @@ def api_signals():
         "momentum_count": len(momentum_result),
         "strength": strength_result,
         "strength_count": len(strength_result),
+        "rs_count": rs_meta["count"],
+        "rs_asof": rs_meta["asof"],
         "attent": attent_result,
         "attent_count": len(attent_result),
         "breakvol": breakvol_result,
@@ -1349,10 +1449,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
         "last_date": str(candles[-1]["time"]),
         "has_more": has_more,
     }
-    rs = _compute_rs_scores().get(symbol)
-    if rs is not None:
-        payload["rs"] = rs
-    return payload, None
+    return _attach_rs_payload(payload, symbol), None
 
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
@@ -1383,7 +1480,7 @@ def api_lightweight_chart(symbol):
 
     if not nocache and entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
         # Cache còn hạn → trả ngay ~0ms
-        return jsonify(entry["payload"])
+        return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
     # Cache miss hoặc stale → fetch từ VNDirect
     dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit)
@@ -1410,7 +1507,7 @@ def api_lightweight_chart(symbol):
 
     # Nếu fetch mới lỗi nhưng có cache cũ → trả cache cũ (stale-while-revalidate)
     if entry and entry.get("payload"):
-        return jsonify(entry["payload"])
+        return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
     return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
                     "detail": err or "no_data"}), 502
@@ -1844,8 +1941,8 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None,
-                    extra_quote_fn=None):
-    global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
+                    extra_quote_fn=None, rs_universe_ref=None):
+    global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _get_rs_universe_symbols, _cache_lock
     global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank, _extra_quote_fn
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
@@ -1853,6 +1950,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _get_breakvol_today = breakvol_today_ref
     _get_signal_session_date = signal_session_date_ref
     _get_history_cache = history_cache_ref
+    _get_rs_universe_symbols = rs_universe_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_market_health_fn = fetch_market_health_fn
@@ -2277,14 +2375,14 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 /* ═══════════════════════════════════════════
    SIGNALS
    ═══════════════════════════════════════════ */
-.sig-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
-.sig-row{display:grid;grid-template-columns:28px 68px 1fr 30px 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
+.sig-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.sig-row{display:grid;grid-template-columns:24px 54px 54px 28px minmax(82px,1fr);align-items:center;column-gap:6px;padding:7px 8px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .sig-row:hover .s-sym{color:var(--accent)}
 .s-emoji{font-size:14px;text-align:center}
-.s-sym{font-weight:700;font-size:13px;transition:color .15s}
-.s-type{font-size:11px;font-weight:600}
-.s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui)}
+.s-sym{font-weight:700;font-size:13px;transition:color .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s-type{font-size:11px;font-weight:600;text-align:right;white-space:nowrap}
+.s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;justify-self:stretch}
 .rs-badge{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:0;border:1px solid #cbd5e1;background:#f1f5f9;color:#475569;justify-self:center}
 .rs-slot{width:22px;height:22px;display:block;justify-self:center}
 .rs-90{background:#f3e8ff;color:#7e22ce;border-color:#d8b4fe}
@@ -2301,10 +2399,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .momentum-box{display:none;border-top:1px solid var(--border);background:#fbfcff;padding:8px 16px}
 .momentum-box.on{display:block}
 .momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
-.momentum-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.momentum-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.strength-list{grid-template-columns:repeat(5,minmax(0,1fr))}
 .momentum-section+.momentum-section{margin-top:10px}
-.momentum-row{display:grid;grid-template-columns:68px 1fr 30px 72px;align-items:center;padding:6px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
-.strength-row{grid-template-columns:68px 1fr 30px}
+.momentum-row{display:grid;grid-template-columns:54px 54px 28px minmax(64px,1fr);align-items:center;column-gap:6px;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.strength-row{grid-template-columns:54px 54px 28px}
 .momentum-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .momentum-row:hover .s-sym{color:var(--accent)}
 .b-MACD_W{background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc}
@@ -3081,7 +3180,7 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
 	      </div>
 	      <div class="momentum-section">
 	        <div class="momentum-title">Sức mạnh</div>
-	        <div class="momentum-list" id="strength-list">
+	        <div class="momentum-list strength-list" id="strength-list">
 	        </div>
 	      </div>
 	    </div>
@@ -3711,6 +3810,13 @@ function rsBadge(rs){
   const v=Number(rs);
   if(!Number.isFinite(v))return'<span class="rs-slot"></span>';
   return `<span class="rs-badge ${rsClass(v)}">${Math.round(v)}</span>`;
+}
+function pctCellForSym(sym,fallbackPct=null){
+  const entry=(window._lastHmapData||{})[String(sym||'').toUpperCase()];
+  const raw=entry&&typeof entry.pct==='number'?entry.pct:fallbackPct;
+  const v=Number(raw);
+  if(!Number.isFinite(v))return{txt:'—',color:'#6b7280'};
+  return{txt:(v>=0?'+':'')+v.toFixed(1)+'%',color:v>=0?'#0e9f6e':'#e02424'};
 }
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
@@ -8049,9 +8155,10 @@ async function loadConfig(){
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
+    const rsMeta=`RS ${j.rs_count||0}${j.rs_asof?' @ '+j.rs_asof:''}`;
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
-      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh`
-      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh`;
+      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
+      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`;
     // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
@@ -8073,7 +8180,10 @@ async function fetchSigs(){
     if(!strength.length){
       DOM.strengthList.innerHTML='';
     }else{
-      DOM.strengthList.innerHTML=strength.map(s=>`<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type">RS</span>${rsBadge(s.rs)}</div>`).join('');
+      DOM.strengthList.innerHTML=strength.map(s=>{
+        const p=pctCellForSym(s.symbol);
+        return `<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${p.color}">${p.txt}</span>${rsBadge(s.rs)}</div>`;
+      }).join('');
     }
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>${rsBadge(s.rs)}<span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></div>`).join('');
@@ -8090,6 +8200,7 @@ async function fetchHmap(){
     renderSankey(j.data||{});
     renderTreemap(j.data||{});
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
+    if(DOM.strengthList&&DOM.strengthList.children.length)fetchSigs();
   }catch(e){console.error('fetchHmap:',e);}
 }
 function startBar(elOrId,sec){
