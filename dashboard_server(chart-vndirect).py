@@ -115,6 +115,7 @@ _get_attent_today = None
 _get_breakvol_today = None
 _get_signal_session_date = None
 _get_history_cache = None
+_get_rs_universe_symbols = None
 _cache_lock = None
 _fetch_heatmap_fn = None
 # Hàm tải giá on-demand cho MÃ LẺ không nằm trong _HEATMAP_NEED_SYMBOLS (ví dụ mã người
@@ -148,6 +149,17 @@ SIGNAL_TTL_SEC = 10
 
 _market_health_cache = {"data": {}, "updated_at": 0, "pending_refresh": False}
 _market_health_lock = threading.Lock()
+
+# RS snapshot persist chung volume với signal_state_cache/market_health.
+_rs_score_cache = {"scores": {}, "asof": None}
+_rs_score_lock = threading.Lock()
+_RS_EXCLUDE_SYMBOLS = {"VNINDEX", "VN30"}
+_RS_LOOKBACK_WEIGHTS = ((10, 0.5), (20, 0.3), (50, 0.2))
+_RS_REQUIRED_BARS = max(days for days, _ in _RS_LOOKBACK_WEIGHTS) + 1
+_RS_SMOOTH_DAYS = 5
+_RS_RAW_TAIL_DAYS = 10
+_RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
+_RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
 
 # ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
 # _market_health_cache vốn chỉ nằm trong RAM (biến Python), nên mỗi lần container
@@ -253,6 +265,74 @@ def warm_market_health_cache():
     print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
           f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
     return data
+
+# ─── Lưu RS snapshot xuống đĩa để dashboard có điểm ngay sau restart ─────────
+def _rs_universe_set():
+    if not _get_rs_universe_symbols:
+        return None
+    try:
+        return {str(sym).upper() for sym in (_get_rs_universe_symbols() or [])}
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Lấy danh sách RS universe lỗi (bỏ qua): {e}")
+        return None
+
+
+def _filter_rs_scores(scores: dict, rs_universe: set | None = None) -> dict:
+    if not isinstance(scores, dict):
+        return {}
+    if rs_universe is None:
+        rs_universe = _rs_universe_set()
+    filtered = {}
+    for sym, val in scores.items():
+        sym_key = str(sym).upper()
+        if sym_key in _RS_EXCLUDE_SYMBOLS or (rs_universe is not None and sym_key not in rs_universe):
+            continue
+        try:
+            filtered[sym_key] = int(round(float(val)))
+        except (TypeError, ValueError):
+            continue
+    return filtered
+
+
+def _save_rs_scores_to_disk():
+    try:
+        cache_dir = os.path.dirname(_RS_SCORE_CACHE_FILE)
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
+        tmp_path = _RS_SCORE_CACHE_FILE + ".tmp"
+        with _rs_score_lock:
+            payload = {
+                "scores": _rs_score_cache["scores"],
+                "asof": _rs_score_cache["asof"],
+                "saved_at": datetime.now(TZ_VN).isoformat(),
+            }
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp_path, _RS_SCORE_CACHE_FILE)
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Lưu RS cache xuống đĩa lỗi (bỏ qua): {e}")
+
+
+def _load_rs_scores_from_disk():
+    try:
+        with open(_RS_SCORE_CACHE_FILE, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        scores = saved.get("scores", {}) if isinstance(saved, dict) else {}
+        if isinstance(scores, dict) and scores:
+            clean_scores = _filter_rs_scores(scores)
+            if clean_scores:
+                with _rs_score_lock:
+                    _rs_score_cache["scores"] = clean_scores
+                    _rs_score_cache["asof"] = saved.get("asof")
+                print(f"  [Dashboard] ✅ Nạp lại RS cache từ đĩa: {len(clean_scores)} mã"
+                      f"{' @ ' + str(saved.get('asof')) if saved.get('asof') else ''}.")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"  [Dashboard] ⚠️  Nạp RS cache từ đĩa lỗi (bỏ qua): {e}")
+
+
+_load_rs_scores_from_disk()
 
 # ─── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
 # Lấy trực tiếp từ API công khai của VNDIRECT (giống trang dstock.vndirect.com.vn/
@@ -539,6 +619,10 @@ _LITE_CHART_CACHE_TTL = 60          # giây
 _lite_chart_cache: dict = {}        # (symbol, tf) -> {"payload": dict, "ts": float}
 _lite_chart_cache_lock = threading.Lock()
 
+# Relative Strength theo công thức RSTOMRK: raw = 0.5*C/Ref(C,-10) +
+# 0.3*C/Ref(C,-20) + 0.2*C/Ref(C,-50), sau đó xếp hạng percentile trong rổ
+# mã đang có trong history_cache (dashboard + quét tín hiệu). RS dùng snapshot
+# close của phiên đã hoàn chỉnh gần nhất, không trộn giá vá intraday trong phiên.
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
@@ -919,6 +1003,128 @@ def _uploaded_ext(filename):
         return ""
     return name.rsplit(".", 1)[1].lower()
 
+
+def invalidate_rs_cache():
+    """Xoá snapshot RS, dùng sau khi rebuild history_cache sang phiên mới."""
+    with _rs_score_lock:
+        _rs_score_cache["scores"] = {}
+        _rs_score_cache["asof"] = None
+
+
+def _compute_rs_scores(force: bool = False) -> dict:
+    """Tính RS percentile từ close của phiên đã hoàn chỉnh gần nhất."""
+    rs_universe = _rs_universe_set()
+
+    with _rs_score_lock:
+        if not force and _rs_score_cache["scores"]:
+            return _filter_rs_scores(_rs_score_cache["scores"], rs_universe)
+
+    cache = _get_history_cache() if _get_history_cache else {}
+    if not cache:
+        return {}
+
+    raw_by_sym = {}
+    snapshot_dates = []
+    today_vn = datetime.now(TZ_VN).date()
+    lock = _cache_lock
+    if lock:
+        lock.acquire()
+    try:
+        items = list(cache.items())
+    finally:
+        if lock:
+            lock.release()
+
+    for sym, df in items:
+        sym_key = str(sym).upper()
+        if sym_key in _RS_EXCLUDE_SYMBOLS or (rs_universe is not None and sym_key not in rs_universe):
+            continue
+        if df is None or len(df) < _RS_REQUIRED_BARS or "close" not in df.columns:
+            continue
+        close = pd.to_numeric(df["close"], errors="coerce")
+        if not isinstance(close.index, pd.DatetimeIndex):
+            close.index = pd.to_datetime(close.index, errors="coerce")
+        close = close[close.index.notna()]
+        close = close[close.index.date < today_vn]
+        if len(close) < _RS_REQUIRED_BARS:
+            continue
+        raw = sum(weight * (close / close.shift(days)) for days, weight in _RS_LOOKBACK_WEIGHTS)
+        raw_valid = raw.dropna()
+        if raw_valid.empty:
+            continue
+        daily_raw = {}
+        for idx, val in raw_valid.tail(_RS_RAW_TAIL_DAYS).items():
+            v = float(val)
+            if math.isfinite(v) and v > 0:
+                daily_raw[idx.date()] = v
+        if not daily_raw:
+            continue
+        snapshot_dates.extend(daily_raw.keys())
+        raw_by_sym[sym_key] = daily_raw
+
+    if not raw_by_sym:
+        return {}
+
+    last_dates = sorted(set(snapshot_dates))[-_RS_SMOOTH_DAYS:]
+    pct_history = {sym: [] for sym in raw_by_sym}
+    for dt in last_dates:
+        date_scores = {}
+        for sym, daily_raw in raw_by_sym.items():
+            v = daily_raw.get(dt)
+            if v is not None:
+                date_scores[sym] = v
+        day_count = len(date_scores)
+        if not day_count:
+            continue
+        for rank, (sym, _) in enumerate(sorted(date_scores.items(), key=lambda item: item[1], reverse=True), start=1):
+            pct_history[sym].append(100 - 100 * rank / day_count)
+
+    scores = {
+        sym: round(sum(vals) / len(vals))
+        for sym, vals in pct_history.items()
+        if vals
+    }
+    scores = _filter_rs_scores(scores, rs_universe)
+    if not scores:
+        return {}
+
+    with _rs_score_lock:
+        _rs_score_cache["scores"] = scores
+        _rs_score_cache["asof"] = max(snapshot_dates).isoformat() if snapshot_dates else None
+    _save_rs_scores_to_disk()
+    return dict(scores)
+
+
+def _rs_cache_meta() -> dict:
+    rs_universe = _rs_universe_set()
+    with _rs_score_lock:
+        scores = _filter_rs_scores(_rs_score_cache["scores"], rs_universe)
+        return {"count": len(scores), "asof": _rs_score_cache["asof"]}
+
+
+def warm_rs_cache():
+    scores = _compute_rs_scores(force=True)
+    meta = _rs_cache_meta()
+    print(f"  [Dashboard] {'✅' if scores else '⚠️ '} Warm RS cache: {len(scores)} mã"
+          f"{' @ ' + str(meta.get('asof')) if meta.get('asof') else ''}.")
+    return scores
+
+
+def _attach_rs(row: dict, rs_scores: dict) -> dict:
+    rs = rs_scores.get(str(row.get("symbol", "")).upper())
+    if rs is not None:
+        row["rs"] = rs
+    return row
+
+
+def _attach_rs_payload(payload: dict, symbol: str) -> dict:
+    rs = _compute_rs_scores().get(str(symbol).upper())
+    if rs is not None:
+        payload["rs"] = rs
+    else:
+        payload.pop("rs", None)
+    return payload
+
 # =============================================================================
 # API
 # =============================================================================
@@ -931,14 +1137,16 @@ def api_signals():
     session_date = _get_signal_session_date() if _get_signal_session_date else None
     today_vn = datetime.now(TZ_VN).date()
     session_stale = bool(session_date) and session_date != today_vn
+    rs_scores = _compute_rs_scores()
+    rs_meta = _rs_cache_meta()
     result = []
     for sym, entry in alerted.items():
         sig = entry["signal"] if isinstance(entry, dict) else entry
         pct = entry.get("pct") if isinstance(entry, dict) else None
         emoji = _signal_emoji.get(sig, "📌")
         rank  = _signal_rank.get(sig, 0)
-        result.append({"symbol": sym, "signal": sig, "emoji": emoji,
-                        "rank": rank, "pct": pct})
+        result.append(_attach_rs({"symbol": sym, "signal": sig, "emoji": emoji,
+                                  "rank": rank, "pct": pct}, rs_scores))
     result.sort(key=lambda x: x["rank"], reverse=True)
     momentum_result = []
     for sig in ("MACD_W", "MACD_M", "RTM"):
@@ -949,7 +1157,7 @@ def api_signals():
             if sig not in sigs:
                 continue
             pct = entry.get("pct") if isinstance(entry, dict) else None
-            rows.append({"symbol": sym, "signal": sig, "pct": pct})
+            rows.append(_attach_rs({"symbol": sym, "signal": sig, "pct": pct}, rs_scores))
         momentum_result.extend(rows)
     attent_result = [
         {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
@@ -959,11 +1167,20 @@ def api_signals():
         {"symbol": sym, "pct": (entry.get("pct") if isinstance(entry, dict) else None)}
         for sym, entry in sorted(breakvol.items())
     ]
+    strength_result = [
+        {"symbol": sym, "rs": rs}
+        for sym, rs in sorted(rs_scores.items(), key=lambda item: item[1], reverse=True)
+        if rs > 80
+    ]
     return jsonify({
         "signals": result,
         "count":   len(result),
         "momentum": momentum_result,
         "momentum_count": len(momentum_result),
+        "strength": strength_result,
+        "strength_count": len(strength_result),
+        "rs_count": rs_meta["count"],
+        "rs_asof": rs_meta["asof"],
         "attent": attent_result,
         "attent_count": len(attent_result),
         "breakvol": breakvol_result,
@@ -1263,7 +1480,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
         "last_date": str(candles[-1]["time"]),
         "has_more": has_more,
     }
-    return payload, None
+    return _attach_rs_payload(payload, symbol), None
 
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
@@ -1294,7 +1511,7 @@ def api_lightweight_chart(symbol):
 
     if not nocache and entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
         # Cache còn hạn → trả ngay ~0ms
-        return jsonify(entry["payload"])
+        return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
     # Cache miss hoặc stale → fetch từ VNDirect
     dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit)
@@ -1321,7 +1538,7 @@ def api_lightweight_chart(symbol):
 
     # Nếu fetch mới lỗi nhưng có cache cũ → trả cache cũ (stale-while-revalidate)
     if entry and entry.get("payload"):
-        return jsonify(entry["payload"])
+        return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
     return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
                     "detail": err or "no_data"}), 502
@@ -1755,8 +1972,8 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None,
-                    extra_quote_fn=None):
-    global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _cache_lock
+                    extra_quote_fn=None, rs_universe_ref=None):
+    global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _get_rs_universe_symbols, _cache_lock
     global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank, _extra_quote_fn
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
@@ -1764,6 +1981,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _get_breakvol_today = breakvol_today_ref
     _get_signal_session_date = signal_session_date_ref
     _get_history_cache = history_cache_ref
+    _get_rs_universe_symbols = rs_universe_ref
     _cache_lock        = cache_lock_ref
     _fetch_heatmap_fn  = fetch_heatmap_fn
     _fetch_market_health_fn = fetch_market_health_fn
@@ -2188,14 +2406,21 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 /* ═══════════════════════════════════════════
    SIGNALS
    ═══════════════════════════════════════════ */
-.sig-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
-.sig-row{display:grid;grid-template-columns:28px 68px 1fr 106px;align-items:center;padding:7px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
+.sig-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.sig-row{display:grid;grid-template-columns:24px max-content max-content max-content 84px;align-items:center;justify-content:space-between;column-gap:8px;padding:7px 8px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .sig-row:hover .s-sym{color:var(--accent)}
 .s-emoji{font-size:14px;text-align:center}
-.s-sym{font-weight:700;font-size:13px;transition:color .15s}
-.s-type{font-size:11px;font-weight:600}
-.s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui)}
+.s-sym{font-weight:700;font-size:13px;transition:color .15s;white-space:nowrap}
+.s-type{font-size:11px;font-weight:600;text-align:center;white-space:nowrap}
+.s-badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui);white-space:nowrap}
+.s-badge-slot{width:84px;display:flex;align-items:center;justify-content:center}
+.rs-badge{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:0;border:1px solid #cbd5e1;background:#f1f5f9;color:#475569;justify-self:center}
+.rs-slot{width:22px;height:22px;display:block;justify-self:center}
+.rs-90{background:#f3e8ff;color:#7e22ce;border-color:#d8b4fe}
+.rs-80{background:#dcfce7;color:#15803d;border-color:#86efac}
+.rs-50{background:#fef9c3;color:#854d0e;border-color:#fde047}
+.rs-low{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
 .b-BREAKOUT{background:#dcfce7;color:#15803d;border:1px solid #86efac}
 .b-POCKET{background:#fef9c3;color:#854d0e;border:1px solid #fde047}
 .b-PREBREAK{background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe}
@@ -2206,8 +2431,11 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .momentum-box{display:none;border-top:1px solid var(--border);background:#fbfcff;padding:8px 16px}
 .momentum-box.on{display:block}
 .momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
-.momentum-list{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
-.momentum-row{display:grid;grid-template-columns:68px 1fr 72px;align-items:center;padding:6px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.momentum-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.strength-list{grid-template-columns:repeat(6,minmax(0,1fr))}
+.momentum-section+.momentum-section{margin-top:10px}
+.momentum-row{display:grid;grid-template-columns:max-content max-content max-content 64px;align-items:center;justify-content:space-between;column-gap:8px;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.strength-row{grid-template-columns:max-content max-content max-content}
 .momentum-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .momentum-row:hover .s-sym{color:var(--accent)}
 .b-MACD_W{background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc}
@@ -2975,13 +3203,20 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
       <div class="sig-list" id="sig-list">
         <div class="empty"><div class="big">📡</div><div>Đang tải...</div></div>
       </div>
-    </div>
-    <div class="momentum-box" id="momentum-box">
-      <div class="momentum-title">Động lượng</div>
-      <div class="momentum-list" id="momentum-list">
-      </div>
-    </div>
-  </div>
+	    </div>
+	    <div class="momentum-box" id="momentum-box">
+	      <div class="momentum-section">
+	        <div class="momentum-title">Động lượng</div>
+	        <div class="momentum-list" id="momentum-list">
+	        </div>
+	      </div>
+	      <div class="momentum-section">
+	        <div class="momentum-title">Sức mạnh</div>
+	        <div class="momentum-list strength-list" id="strength-list">
+	        </div>
+	      </div>
+	    </div>
+	  </div>
 
   <!-- HEATMAP -->
   <div class="panel hmap-panel" id="hmap-panel">
@@ -3496,7 +3731,7 @@ DASHBOARD_MAIN_JS = r"""
 const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
-  signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),
+  signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),strengthList:$('strength-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),triToggle:$('tri-toggle'),
@@ -3595,11 +3830,34 @@ const SIGNAL_LABEL_MAP={
   'POCKET PIVOT':'POCKET'
 };
 const signalLabel=s=>SIGNAL_LABEL_MAP[s]||s;
+function rsClass(rs){
+  const v=Number(rs);
+  if(!Number.isFinite(v))return'';
+  if(v>90)return'rs-90';
+  if(v>80)return'rs-80';
+  if(v>50)return'rs-50';
+  return'rs-low';
+}
+function rsBadge(rs){
+  const v=Number(rs);
+  if(!Number.isFinite(v))return'<span class="rs-slot"></span>';
+  return `<span class="rs-badge ${rsClass(v)}">${Math.round(v)}</span>`;
+}
+function pctCellForSym(sym,fallbackPct=null){
+  const entry=(window._lastHmapData||{})[String(sym||'').toUpperCase()];
+  const raw=entry&&typeof entry.pct==='number'?entry.pct:fallbackPct;
+  const v=Number(raw);
+  if(!Number.isFinite(v))return{txt:'—',color:'#6b7280'};
+  return{txt:(v>=0?'+':'')+v.toFixed(1)+'%',color:v>=0?'#0e9f6e':'#e02424'};
+}
 // Cache tín hiệu "hôm nay" theo mã (được đổ đầy trong fetchSigs() — vòng lặp fetch đã chạy sẵn mỗi SIG_TTL giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này, không tự fetch riêng.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
+let _strengthTodayMap=new Map();
 let _attentTodayMap=new Map();
 let _breakvolTodayMap=new Map();
+let _lastStrengthRows=[];
+let _liteRsScore=null;
 let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
@@ -4103,7 +4361,7 @@ function _liteTitleSegments(bar){
   const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
   // O: và giá open được wrap bằng <span class="lct-open"> để CSS portrait ẩn bớt cho vừa 1 dòng.
   const openHtml=`<span class="lct-open"><span style="color:#111827"> O:</span><span style="color:${col}">${fmtLiteNum(bar.open)}</span></span>`;
-  return [
+  const segments=[
     {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} |`,color:'#111827'},
     {text:openHtml,color:'__html',_open:fmtLiteNum(bar.open)},
     {text:hlHtml,color:'__html',_high:fmtLiteNum(bar.high),_low:fmtLiteNum(bar.low)},
@@ -4113,6 +4371,8 @@ function _liteTitleSegments(bar){
     {text:`${sign}${pct.toFixed(2)}%`,color:col},
     {text:')',color:'#111827'}
   ];
+  if(Number.isFinite(_liteRsScore))segments.push({text:' '+rsBadge(_liteRsScore),color:'__html',_rs:Math.round(_liteRsScore)});
+  return segments;
 }
 // GIÁ PHÓNG TO — lấy ratio_prev/ratio_ma50/progress nguyên từ /api/vol_forecast (dùng chung VMA50 + giờ server với tín hiệu ATTENT/BREAKVOL) để tránh 2 bản logic lệch nhau.
 let _liteVolForecast=null,_liteVolForecastReqId=0;
@@ -5496,6 +5756,13 @@ function _liteStartShapeDrag(hit,ev){
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
     if(seg.color==='__html'){
+      if(seg._rs!=null){
+        ctx.fillStyle='#111827';
+        const t=` RS:${seg._rs}`;
+        ctx.fillText(t,x,y);
+        x+=ctx.measureText(t).width;
+        continue;
+      }
       // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần, luôn hiện đủ O/H/L
       const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
       const parts=seg._open!=null
@@ -6229,8 +6496,9 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       // tab khác nếu đang mở (vs, vnd-cs...). window.parent !== window là cách phân biệt iframe/trang chính.
       if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
     }
-    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
-    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
+	    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
+	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
+	    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
       const prev=idx>0?arr[idx-1].close:null;
       const pct=prev?((bar.close-prev)/prev*100):0;
       return{...bar,pct};
@@ -6282,8 +6550,9 @@ async function _liteQuietRefreshChart(){
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
-    // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
-    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
+	    // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
+	    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
+	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
     const key=liteTimeKey(rawBar.time);
     const isNewBar=!_liteDataByTime.has(key); // true = sang phiên mới (thêm nến), false = vá nến hiện tại
@@ -6661,6 +6930,22 @@ DOM.sigList.addEventListener('dblclick',e=>{
 DOM.momentumList.addEventListener('click',e=>{
   const row=e.target.closest('.momentum-row');if(!row)return;
   _hmapDesktopClick(row.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
+});
+DOM.momentumList.addEventListener('dblclick',e=>{
+  const row=e.target.closest('.momentum-row');if(!row)return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  _jumpLiteChart(row.dataset.sym);
+  openChart(row.dataset.sym);
+});
+DOM.strengthList.addEventListener('click',e=>{
+  const row=e.target.closest('.momentum-row');if(!row)return;
+  _hmapDesktopClick(row.dataset.sym);
+});
+DOM.strengthList.addEventListener('dblclick',e=>{
+  const row=e.target.closest('.momentum-row');if(!row)return;
+  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
+  _jumpLiteChart(row.dataset.sym);
+  openChart(row.dataset.sym);
 });
 DOM.signalHeader.addEventListener('click',e=>{
   if(e.target.closest('#journal-open-btn'))return;
@@ -7913,18 +8198,33 @@ async function loadConfig(){
   DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • Mrk Health ${Math.round(HEALTH_TTL/60)} phút`;
 }
 // FETCH
+function renderStrengthList(strength){
+  if(!DOM.strengthList)return;
+  if(!strength.length){
+    DOM.strengthList.innerHTML='';
+    return;
+  }
+  DOM.strengthList.innerHTML=strength.map(s=>{
+    const p=pctCellForSym(s.symbol);
+    return `<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${p.color}">${p.txt}</span>${rsBadge(s.rs)}</div>`;
+  }).join('');
+}
 async function fetchSigs(){
   try{
     const j=await fetch('/api/signals').then(r=>r.json());
+    const rsMeta=`RS ${j.rs_count||0}${j.rs_asof?' @ '+j.rs_asof:''}`;
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
-      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`
-      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
+      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
+      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`;
     // Cache theo mã để chart CHART tra cứu (xem _liteApplyBuySignal) — không fetch thêm, dùng chung đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
     redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
     const momentum=j.momentum||[];
+    const strength=j.strength||[];
+    _lastStrengthRows=strength;
     _momentumTodayMap=new Map(momentum.map(s=>[s.symbol,s]));
+    _strengthTodayMap=new Map(strength.map(s=>[s.symbol,s]));
     _attentTodayMap=new Map((j.attent||[]).map(s=>[s.symbol,s]));
     _breakvolTodayMap=new Map((j.breakvol||[]).map(s=>[s.symbol,s]));
     if(!momentum.length){
@@ -7933,11 +8233,12 @@ async function fetchSigs(){
       DOM.momentumList.innerHTML=momentum.map(s=>{
         const pct=s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—';
         const pctColor=s.pct==null?'#6b7280':s.pct>=0?'#0e9f6e':'#e02424';
-        return `<div class="momentum-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${pctColor}">${pct}</span><span class="s-badge b-${s.signal}">${s.signal}</span></div>`;
+        return `<div class="momentum-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${pctColor}">${pct}</span>${rsBadge(s.rs)}<span class="s-badge-slot"><span class="s-badge b-${s.signal}">${s.signal}</span></span></div>`;
       }).join('');
     }
+    renderStrengthList(strength);
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
-    DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></div>`).join('');
+    DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>${rsBadge(s.rs)}<span class="s-badge-slot"><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></span></div>`).join('');
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
   }catch(e){console.error('fetchSigs:',e);}
 }
@@ -7951,6 +8252,7 @@ async function fetchHmap(){
     renderSankey(j.data||{});
     renderTreemap(j.data||{});
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
+    if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
   }catch(e){console.error('fetchHmap:',e);}
 }
 function startBar(elOrId,sec){
@@ -8426,10 +8728,15 @@ async function _lgFillMissingQuotes(){
     }
   }catch(e){console.error('_lgFillMissingQuotes:',e);}
 }
-function _sortSymsByMode(syms,alpha){
-  if(alpha)return[...syms].sort((a,b)=>a.localeCompare(b));
+function _sortSymsByMode(syms,mode='pct'){
+  if(mode==='alpha')return[...syms].sort((a,b)=>a.localeCompare(b));
+  if(mode==='rs')return[...syms].sort((a,b)=>(_strengthTodayMap.get(b)?.rs??-1)-(_strengthTodayMap.get(a)?.rs??-1)||a.localeCompare(b));
   const d=window._lastHmapData||{};
-  return[...syms].sort((a,b)=>{const pa=d[a]?d[a].pct||0:-999,pb=d[b]?d[b].pct||0:-999;return pb-pa;});
+  return[...syms].sort((a,b)=>{
+    const ea=d[String(a||'').toUpperCase()],eb=d[String(b||'').toUpperCase()];
+    const pa=Number(ea?.pct),pb=Number(eb?.pct);
+    return (Number.isFinite(pb)?pb:-999)-(Number.isFinite(pa)?pa:-999)||a.localeCompare(b);
+  });
 }
 // CHART — SIDEBAR NHÓM NGÀNH / FAVORITE (overlay, không đụng logic vẽ chart)
 const LG_FAVORITE_KEY='dashboard_favorite_symbols';
@@ -8503,29 +8810,40 @@ function _lgReorderFavorite(dragSym,targetSym){
   LG_FAVORITES.splice(to,0,dragSym);
   _lgSaveFavorites();_lgRenderList();
 }
-let _lgSortAlpha=false,_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
+let _lgSortModes=new Map(),_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
 function _lgGetGroups(){
   return [
     {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
     {name:'SIGNAL',syms:[..._sigTodayMap.keys()]},
     {name:'MOMENTUM',syms:[..._momentumTodayMap.keys()]},
+    {name:'SỨC MẠNH',syms:[..._strengthTodayMap.keys()],isStrength:true},
     {name:'ATTENT',syms:[..._attentTodayMap.keys()]},
     {name:'BREAKVOL',syms:[..._breakvolTodayMap.keys()]},
     ..._hvGroups
   ];
 }
-function _lgSortSyms(syms){
-  return _sortSymsByMode(syms,_lgSortAlpha);
+function _lgDefaultSortMode(g){return g&&g.isStrength?'rs':'pct';}
+function _lgSortModeFor(g){return _lgSortModes.get(g.name)||_lgDefaultSortMode(g);}
+function _lgSortLabel(g){const m=_lgSortModeFor(g);return m==='alpha'?'A↕Z':m==='rs'?'RS↕':'%↕';}
+function _lgNextSortMode(g){
+  const m=_lgSortModeFor(g);
+  _lgSortModes.set(g.name,m==='pct'?'alpha':m==='alpha'?'rs':'pct');
 }
-function _lgSymRow(sym,draggable){
+function _lgSortSyms(syms,g){
+  return _sortSymsByMode(syms,_lgSortModeFor(g));
+}
+function _lgSymRow(sym,draggable,g=null){
   const{price,pctStr,color}=_symDisplayFields(sym);
+  const isStrength=!!(g&&g.isStrength);
+  const rs=_strengthTodayMap.get(sym)?.rs;
+  const rightValue=isStrength&&Number.isFinite(Number(rs))?Math.round(Number(rs)):price;
   const starred=LG_FAVORITES.includes(sym);
   const isFollow=FOLLOW.includes(sym);
   return `<div class="lg-sym-item${sym===_lgActiveSym?' on':''}${isFollow?' lg-follow':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
     +`<span class="lg-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
     +`<span class="lg-sym-name">${sym}</span>`
     +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
-    +`<span class="lg-sym-price">${price}</span></div>`;
+    +`<span class="lg-sym-price">${rightValue}</span></div>`;
 }
 function _lgRenderList(){
   if(!DOM.lgList)return;
@@ -8536,11 +8854,11 @@ function _lgRenderList(){
     if(open){
       if(!g.syms.length)body='<div class="lg-empty-hint">Chưa có mã nào</div>';
       // FAVORITE: giữ nguyên thứ tự lưu (Follow đã ở đầu, mã mới thêm ở cuối, có thể kéo-thả) — không sort
-      else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms)).map(s=>_lgSymRow(s,!!g.isFavorite)).join('');
+      else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms,g)).map(s=>_lgSymRow(s,!!g.isFavorite,g)).join('');
     }
     const addBtn=(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':'';
     // Nút sắp xếp đặt ngay sau tên nhóm khi nhóm đó đang mở (trừ FAVORITE, vốn giữ thứ tự thủ công)
-    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle title="Đổi kiểu sắp xếp">${_lgSortAlpha?'A↕Z':'%↕'}</button>`:'';
+    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle="${g.name}" title="Đổi kiểu sắp xếp">${_lgSortLabel(g)}</button>`:'';
     return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
       +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
@@ -8594,7 +8912,13 @@ DOM.lgList?.addEventListener('click',e=>{
   const addBtn=e.target.closest('[data-add-fav]');
   if(addBtn){e.stopPropagation();_lgQuickAddFavorites();return;}
   const sortBtn=e.target.closest('[data-sort-toggle]');
-  if(sortBtn){e.stopPropagation();_lgSortAlpha=!_lgSortAlpha;_lgRenderList();return;}
+  if(sortBtn){
+    e.stopPropagation();
+    const g=_lgGetGroups().find(x=>x.name===sortBtn.dataset.sortToggle);
+    if(g)_lgNextSortMode(g);
+    _lgRenderList();
+    return;
+  }
   const hdr=e.target.closest('.lg-ghdr');
   if(hdr){_lgActiveGroupName=(_lgActiveGroupName===hdr.dataset.ghdr)?null:hdr.dataset.ghdr;_lgRenderList();return;}
   const item=e.target.closest('.lg-sym-item');
