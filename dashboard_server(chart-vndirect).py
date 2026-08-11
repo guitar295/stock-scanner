@@ -3665,7 +3665,7 @@ const DOM={
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),strengthList:$('strength-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
-  triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),triToggle:$('tri-toggle'),
+  triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),
   healthVniCheckbox:$('health-vni-checkbox'),healthPeriodTabs:$('health-period-tabs'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
@@ -4644,17 +4644,11 @@ function applyLitePaneLayout(skipWidthSync){
   resizeLiteDrawCanvas();redrawLiteDrawings();
   if(!skipWidthSync)_liteSyncPriceScaleWidths();
 }
-// Đồng bộ chiều rộng trục giá (phải) của cả 3 chart main/RSI/MACD để luôn thẳng
-// hàng. Lý do lệch: minimumWidth trong LITE_PRICE_SCALE_BASE (64px) chỉ là mức
-// sàn — label rộng hơn thì trục tự nới, hẹp hơn thì giữ sàn. VNINDEX/VN30 (giá
-// ~1000-1300, nhiều chữ số hơn cổ phiếu thường) khiến trục main tự nới rộng hơn
-// sàn, còn RSI/MACD vẫn giữ 64 → lệch nhau. Cách sửa: đo width thực tế đã render
-// của cả 3 trục (chờ 1 khung hình bằng requestAnimationFrame để thư viện kịp
-// tính lại label), lấy max, ép cả 3 dùng chung minimumWidth đó.
-// Gọi ở cuối applyLitePaneLayout() (layout đổi, dữ liệu không đổi) và cuối
-// renderLiteIndicators() (dữ liệu 3 trục vừa đổi). renderLiteIndicators() tự gọi
-// applyLitePaneLayout(true) ở đầu hàm (skipWidthSync) vì lúc đó series indicator
-// mới chưa setData nên đo width sẽ ra kết quả cũ; nó tự đồng bộ lại 1 lần ở cuối.
+// Đồng bộ chiều rộng trục giá (phải) của main/RSI/MACD cho thẳng hàng: minimumWidth
+// (64px) chỉ là mức sàn, mã giá nhiều chữ số (VNINDEX/VN30) khiến trục main tự nới
+// rộng hơn 2 trục kia. Đo width thực tế cả 3 (sau 1 khung hình, chờ thư viện tính lại
+// label) rồi ép dùng chung minimumWidth = max. Gọi cuối applyLitePaneLayout() và cuối
+// renderLiteIndicators() (renderLiteIndicators tự skip lần đầu vì series chưa setData).
 function _liteSyncPriceScaleWidths(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   requestAnimationFrame(()=>{
@@ -5725,9 +5719,8 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
     }
   }
 }
-// Vẽ khối "Giá phóng to" (bp-price/bp-sub) lên canvas copy (đọc màu/nội dung thật từ DOM) vì đây
-// cũng là lớp DOM nổi đè lên chart (giống signal badge), takeScreenshot() không chụp được.
-// mainCenterX/topY: toạ độ tâm ngang và mép trên của pane main trên canvas tổng hợp.
+// Vẽ lại khối "Giá phóng to" (lớp DOM nổi, takeScreenshot() không chụp được) lên canvas copy.
+// mainCenterX/topY: tâm ngang và mép trên của pane main trên canvas tổng hợp.
 function _liteDrawBigPrice(ctx,mainCenterX,topY,dpr){
   const el=DOM.liteChartBigPrice;
   if(!el||!el.classList.contains('on'))return;
