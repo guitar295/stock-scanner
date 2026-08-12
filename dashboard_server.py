@@ -5702,12 +5702,11 @@ function _liteOverlayRect(el,frameRect,dpr){
   const r=el.getBoundingClientRect();
   return{x:(r.left-frameRect.left)*dpr,y:(r.top-frameRect.top)*dpr,w:r.width*dpr,h:r.height*dpr};
 }
-function _liteDrawTitleSegments(ctx,segments,x,y){
+function _liteDrawTitleSegments(ctx,segments,x,y,dpr){
   for(const seg of segments){
     if(seg.color==='__html'){
       if(seg._rs!=null){
         // Vẽ badge tròn màu giống hệt .rs-badge trên DOM (không còn vẽ chữ "RS:xx" thuần).
-        const dpr=window.devicePixelRatio||1;
         const c=_liteRsBadgeColors(seg._rs);
         const d=Math.round(22*dpr),r=d/2;
         const savedFont=ctx.font,savedAlign=ctx.textAlign;
@@ -5760,7 +5759,7 @@ function _liteDrawTitleOverlay(ctx,segments,frameRect,dpr){
   ctx.textBaseline='middle';
   ctx.textAlign='left';
   const padX=(parseFloat(cs.paddingLeft)||0)*dpr;
-  _liteDrawTitleSegments(ctx,segments,rect.x+padX,rect.y+rect.h/2);
+  _liteDrawTitleSegments(ctx,segments,rect.x+padX,rect.y+rect.h/2,dpr);
   ctx.font=savedFont;ctx.textBaseline=savedBaseline;ctx.textAlign=savedAlign;ctx.fillStyle=savedFill;
 }
 // Vẽ lại khối "Giá phóng to" (lớp DOM nổi, takeScreenshot() không chụp được) lên canvas copy.
