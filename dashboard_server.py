@@ -5692,6 +5692,16 @@ function _liteRsBadgeColors(v){
   if(v>50)return{bg:'#fef9c3',fg:'#854d0e',bd:'#fde047'};
   return{bg:'#fee2e2',fg:'#b91c1c',bd:'#fecaca'};
 }
+// Đo vị trí/kích thước thật của 1 overlay (title/signal/bigprice...) TƯƠNG ĐỐI so với #lite-chart
+// (DOM.liteChart) — panes[0] chụp từ #lite-chart nên toạ độ đo theo cách này khớp thẳng với ảnh
+// chụp, không cần đoán/hard-code theo % hay px cố định như trước.
+// frameRect nhận từ ngoài truyền vào (không tự gọi getBoundingClientRect() trên DOM.liteChart ở
+// đây) vì 1 lượt chụp ảnh gọi hàm này nhiều lần (title, signal, emoji, badge, bigprice) trong khi
+// frameRect luôn giống nhau cả 5 lần đó — đo 1 lần ở nơi gọi rồi dùng lại, tránh đo DOM dư thừa.
+function _liteOverlayRect(el,frameRect,dpr){
+  const r=el.getBoundingClientRect();
+  return{x:(r.left-frameRect.left)*dpr,y:(r.top-frameRect.top)*dpr,w:r.width*dpr,h:r.height*dpr};
+}
 function _liteDrawTitleSegments(ctx,segments,x,y){
   for(const seg of segments){
     if(seg.color==='__html'){
@@ -5734,18 +5744,40 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
     }
   }
 }
+// Vẽ nền mờ + nội dung title lên canvas copy tại đúng vị trí thật (overlay position:absolute;top:8px
+// đè lên #lite-chart trên chart thật), thay vì 1 dải header riêng cộng thêm phía trên chart như trước
+// (nguyên nhân khiến title+badge trông "cao hơn"/tách khỏi chart so với thực tế hiển thị).
+function _liteDrawTitleOverlay(ctx,segments,frameRect,dpr){
+  const el=DOM.liteChartTitle;
+  if(!el)return;
+  const rect=_liteOverlayRect(el,frameRect,dpr),cs=getComputedStyle(el);
+  const br=(parseFloat(cs.borderRadius)||0)*dpr;
+  const savedFont=ctx.font,savedBaseline=ctx.textBaseline,savedAlign=ctx.textAlign,savedFill=ctx.fillStyle;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(rect.x,rect.y,rect.w,rect.h,br);else ctx.rect(rect.x,rect.y,rect.w,rect.h);
+  ctx.fillStyle=cs.backgroundColor;ctx.fill();
+  ctx.font=`400 ${Math.round(11*dpr)}px "IBM Plex Mono",monospace`;
+  ctx.textBaseline='middle';
+  ctx.textAlign='left';
+  const padX=(parseFloat(cs.paddingLeft)||0)*dpr;
+  _liteDrawTitleSegments(ctx,segments,rect.x+padX,rect.y+rect.h/2);
+  ctx.font=savedFont;ctx.textBaseline=savedBaseline;ctx.textAlign=savedAlign;ctx.fillStyle=savedFill;
+}
 // Vẽ lại khối "Giá phóng to" (lớp DOM nổi, takeScreenshot() không chụp được) lên canvas copy.
-// mainCenterX/topY: tâm ngang và mép trên của pane main trên canvas tổng hợp.
-function _liteDrawBigPrice(ctx,mainCenterX,topY,dpr){
+// Trên chart thật đây là overlay position:absolute;top:6px NẰM ĐÈ lên #lite-chart (không phải
+// nằm trong 1 dải header riêng phía trên) — dùng _liteOverlayRect để lấy đúng vị trí thật đó.
+// mainCenterX: tâm ngang của pane main trên canvas tổng hợp (khớp cách CSS canh giữa left:0;right:0;margin:0 auto).
+function _liteDrawBigPrice(ctx,mainCenterX,frameRect,dpr){
   const el=DOM.liteChartBigPrice;
   if(!el||!el.classList.contains('on'))return;
   const priceEl=el.querySelector('.bp-price'),subEl=el.querySelector('.bp-sub');
   if(!priceEl||!priceEl.textContent)return;
   const priceCs=getComputedStyle(priceEl);
+  const rect=_liteOverlayRect(el,frameRect,dpr);
   const savedAlign=ctx.textAlign,savedBaseline=ctx.textBaseline,savedFont=ctx.font,savedFill=ctx.fillStyle;
   ctx.textAlign='center';
   ctx.textBaseline='top';
-  let y=topY+Math.round(6*dpr);
+  let y=rect.y;
   ctx.font=`700 ${Math.round(20*dpr)}px "IBM Plex Mono",monospace`;
   ctx.fillStyle=priceCs.color||'#111827';
   ctx.fillText(priceEl.textContent,mainCenterX,y);
@@ -5758,26 +5790,36 @@ function _liteDrawBigPrice(ctx,mainCenterX,topY,dpr){
   }
   ctx.textAlign=savedAlign;ctx.textBaseline=savedBaseline;ctx.font=savedFont;ctx.fillStyle=savedFill;
 }
-// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi, takeScreenshot() không chụp được.
-function _liteDrawSignalBadge(ctx,x,y,dpr){
+// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi,
+// takeScreenshot() không chụp được. Trên chart thật đây là overlay position:absolute;top:29px NẰM ĐÈ
+// lên #lite-chart (không phải nằm trong 1 dải header riêng phía trên) — dùng _liteOverlayRect để vẽ
+// đúng vị trí + kích thước thật của cả hàng (nền mờ) lẫn từng phần tử con (emoji, badge pill) bên trong,
+// thay vì suy ra toạ độ badge từ bề rộng emoji như trước (nguồn gốc gây lệch tâm chữ trong badge).
+function _liteDrawSignalBadge(ctx,frameRect,dpr){
   const el=DOM.liteChartSignal;
   if(!el)return;
   const emojiEl=el.querySelector('.s-emoji'),badgeEl=el.querySelector('.s-badge');
   if(!emojiEl||!badgeEl)return;
+  const savedBaseline=ctx.textBaseline,savedAlign=ctx.textAlign,savedFont=ctx.font,savedFill=ctx.fillStyle;
+  const rowRect=_liteOverlayRect(el,frameRect,dpr),rowCs=getComputedStyle(el);
+  const rowBr=(parseFloat(rowCs.borderRadius)||0)*dpr;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(rowRect.x,rowRect.y,rowRect.w,rowRect.h,rowBr);else ctx.rect(rowRect.x,rowRect.y,rowRect.w,rowRect.h);
+  ctx.fillStyle=rowCs.backgroundColor;ctx.fill();
   const emojiCs=getComputedStyle(emojiEl),badgeCs=getComputedStyle(badgeEl);
-  const emojiR=emojiEl.getBoundingClientRect(),badgeR=badgeEl.getBoundingClientRect();
-  const gap=Math.round(5*dpr);
+  const emojiR=_liteOverlayRect(emojiEl,frameRect,dpr),badgeR=_liteOverlayRect(badgeEl,frameRect,dpr);
   ctx.textBaseline='middle';
+  ctx.textAlign='left';
   // fontSize đọc từ getComputedStyle là CSS px (không tự nhân dpr) trong khi canvas chụp
   // đã ở kích thước device-pixel, nên phải nhân dpr thủ công — nếu không icon/chữ trong badge
   // sẽ bị vẽ nhỏ hơn hẳn so với khung badge (khung đã scale đúng qua getBoundingClientRect()*dpr).
   const emojiSize=Math.round((parseFloat(emojiCs.fontSize)||16)*dpr);
   ctx.font=`${emojiSize}px ${emojiCs.fontFamily||'sans-serif'}`;
-  ctx.fillText(emojiEl.textContent,x,y+emojiR.height*dpr/2);
-  const bx=x+emojiR.width*dpr+gap,bw=badgeR.width*dpr,bh=badgeR.height*dpr;
+  ctx.fillText(emojiEl.textContent,emojiR.x,emojiR.y+emojiR.h/2);
+  const bx=badgeR.x,by=badgeR.y,bw=badgeR.w,bh=badgeR.h;
   const br=(parseFloat(badgeCs.borderRadius)||0)*dpr;
   ctx.beginPath();
-  if(ctx.roundRect)ctx.roundRect(bx,y,bw,bh,br);else ctx.rect(bx,y,bw,bh);
+  if(ctx.roundRect)ctx.roundRect(bx,by,bw,bh,br);else ctx.rect(bx,by,bw,bh);
   ctx.fillStyle=badgeCs.backgroundColor;ctx.fill();
   ctx.lineWidth=Math.max(1,(parseFloat(badgeCs.borderWidth)||1)*dpr);
   ctx.strokeStyle=badgeCs.borderColor;ctx.stroke();
@@ -5785,8 +5827,11 @@ function _liteDrawSignalBadge(ctx,x,y,dpr){
   const badgeSize=Math.round((parseFloat(badgeCs.fontSize)||11)*dpr);
   ctx.font=`${badgeCs.fontWeight} ${badgeSize}px ${badgeCs.fontFamily||'sans-serif'}`;
   ctx.textAlign='center';
-  ctx.fillText(badgeEl.textContent,bx+bw/2,y+bh/2+dpr);
-  ctx.textAlign='left';
+  // Tâm hộp thuần tuý (bx+bw/2, by+bh/2) qua textBaseline='middle' — bỏ hẳn số nhích +dpr cũ (vốn
+  // được canh cho cỡ chữ NHỎ/chưa nhân dpr trước khi sửa; sau khi cỡ chữ đã đúng tỉ lệ, số nhích đó
+  // làm chữ lệch khỏi tâm) để chữ tín hiệu luôn nằm đúng giữa khung badge.
+  ctx.fillText(badgeEl.textContent,bx+bw/2,by+bh/2);
+  ctx.textBaseline=savedBaseline;ctx.textAlign=savedAlign;ctx.font=savedFont;ctx.fillStyle=savedFill;
 }
 function _liteCopyFeedback(btn,status){
   if(!btn)return;
@@ -5858,33 +5903,39 @@ async function copyLiteChartImage(btn){
     const finalTitleSegments=isMobilePortraitShot?titleSegments.filter(s=>s._open==null&&s._high==null&&s._low==null):titleSegments;
     const hasSigBadge=!!(DOM.liteChartSignal&&DOM.liteChartSignal.classList.contains('on'));
     const dpr=window.devicePixelRatio||1;
-    const titleH=finalTitleSegments.length?Math.round(30*dpr):0;
-    const badgeH=hasSigBadge?Math.round(24*dpr):0;
     const out=document.createElement('canvas');
     out.width=Math.max(...panes.map(p=>p.canvas.width));
-    out.height=titleH+badgeH+panes.reduce((sum,p)=>sum+p.canvas.height,0);
+    // Title/badge/giá phóng to trên chart thật là overlay position:absolute NẰM ĐÈ lên #lite-chart
+    // (top:8px/29px/6px), KHÔNG PHẢI một dải header cộng thêm phía trên chart. Trước đây ảnh chụp
+    // cộng thêm titleH+badgeH vào chiều cao rồi đẩy cả chart xuống, khiến title+badge trông "cao
+    // hơn"/tách rời khỏi chart so với thực tế hiển thị. Nay bỏ hẳn phần cộng thêm này — canvas
+    // tổng chỉ cao đúng bằng tổng chiều cao các pane, và title/badge/giá phóng to được vẽ ĐÈ lên
+    // sau khi đã vẽ chart, tại đúng toạ độ thật đo được từ DOM (xem _liteOverlayRect).
+    out.height=panes.reduce((sum,p)=>sum+p.canvas.height,0);
     const ctx=out.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,out.width,out.height);
-    if(finalTitleSegments.length){
-      ctx.font=`400 ${Math.round(11*dpr)}px "IBM Plex Mono",monospace`;
-      ctx.textBaseline='middle';
-      _liteDrawTitleSegments(ctx,finalTitleSegments,10*dpr,titleH/2);
-    }
-    if(hasSigBadge){
-      _liteDrawSignalBadge(ctx,10*dpr,titleH+Math.round(3*dpr),dpr);
-    }
-    let y=titleH+badgeH;
+    let y=0;
     panes.forEach(p=>{
       ctx.drawImage(p.canvas,0,y);
       y+=p.canvas.height;
     });
     if(DOM.liteDrawCanvas){
       const mainCanvas=panes[0].canvas;
-      ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH+badgeH,mainCanvas.width,mainCanvas.height);
+      ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,0,mainCanvas.width,mainCanvas.height);
     }
-    // "Giá phóng to" nằm đè trên pane main (giống badge tín hiệu) — phải vẽ SAU khi đã drawImage
-    // pane main, nếu không sẽ bị ảnh pane vẽ chồng lên mất.
-    _liteDrawBigPrice(ctx,panes[0].canvas.width/2,titleH+badgeH,dpr);
+    // Title/badge/"Giá phóng to" đều nằm đè trên pane main — phải vẽ SAU khi đã drawImage pane main,
+    // nếu không sẽ bị ảnh pane vẽ chồng lên mất. Thứ tự vẽ khớp thứ tự trong DOM thật (title, rồi
+    // signal, rồi bigprice) để đúng lớp trên/dưới nếu chúng vô tình chồng nhau.
+    // Đo vị trí khung #lite-chart 1 lần duy nhất, dùng chung cho cả 3 lần vẽ overlay bên dưới
+    // (title/signal/bigprice) — tránh gọi getBoundingClientRect() lặp lại nhiều lần cho cùng 1 khung.
+    const frameRect=DOM.liteChart.getBoundingClientRect();
+    if(finalTitleSegments.length){
+      _liteDrawTitleOverlay(ctx,finalTitleSegments,frameRect,dpr);
+    }
+    if(hasSigBadge){
+      _liteDrawSignalBadge(ctx,frameRect,dpr);
+    }
+    _liteDrawBigPrice(ctx,panes[0].canvas.width/2,frameRect,dpr);
     // Mã hoá đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật,
     // không phải Promise — giữ user-gesture trên trình duyệt xử lý Promise<Blob> không ổn định.
     const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
