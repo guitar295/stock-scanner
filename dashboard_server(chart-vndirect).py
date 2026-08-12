@@ -2514,6 +2514,25 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
    chúng làm flex-item hợp lệ trong .lite-chart-toolbar (cha ngoài). */
 html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:flex!important}
 html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:block!important}
+/* Popout (mọi kích thước, kể cả desktop): trước đây .lite-chart-frame giữ nguyên height:720px
+   cố định từ CSS mặc định (dùng cho panel CHART nhúng trong dashboard chính) — khi kéo cạnh
+   dưới cửa sổ popout ra to hơn 720px, panel MACD/chart không giãn theo, để lại khoảng trắng
+   bên dưới. Cho #lite-chart-panel cao đúng bằng phần viewport còn lại (trừ padding #main-wrap
+   8px trên+dưới) rồi dùng flexbox để .lite-chart-frame tự giãn lấp hết phần còn lại sau toolbar
+   — applyLitePaneLayout() (gọi lại khi resize, xem window.addEventListener('resize',...)) sẽ đọc
+   đúng clientHeight thực tế của .lite-chart-frame để chia lại main/RSI/MACD. Rule riêng cho mobile
+   portrait bên dưới (cùng specificity, đứng sau trong file) sẽ tự ghi đè khi khớp @media. */
+html.chart-popout-mode #lite-chart-panel{
+  display:flex;
+  flex-direction:column;
+  height:calc(100vh - 16px);
+}
+html.chart-popout-mode .lite-chart-frame{
+  flex:1 1 auto;
+  height:auto!important;
+  max-height:none!important;
+  min-height:0!important;
+}
 /* Mobile portrait + popout: thay vì đoán cứng chiều cao toolbar (44px — dễ lệch thực tế
    tuỳ máy, khiến panel MACD bị cắt và góc bo dưới bị đẩy khỏi màn hình), cho #lite-chart-panel
    cao đúng bằng phần màn hình còn lại (trừ padding #main-wrap + safe-area đáy iPhone) rồi
@@ -2525,16 +2544,12 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
      8px/2px) mới là phần chiếm phần lớn khoảng trắng đáy trên các máy có safe-area lớn, nên chỉ giảm
      nhẹ số cố định trước đó gần như không thấy khác biệt; bỏ hẳn số cố định mới thực sự sát viền hơn. */
   html.chart-popout-mode #main-wrap{padding:8px 8px var(--sab) 8px}
+  /* Chỉ còn override height (dvh + safe-area đáy iPhone thay vì vh thường) — phần
+     display:flex/flex-direction và rule .lite-chart-frame (flex:1 1 auto; height:auto...)
+     đã chuyển lên rule chung html.chart-popout-mode #lite-chart-panel/.lite-chart-frame
+     phía trên (áp dụng mọi kích thước màn hình), nên không cần lặp lại ở đây nữa. */
   html.chart-popout-mode #lite-chart-panel{
-    display:flex;
-    flex-direction:column;
     height:calc(100dvh - 8px - var(--sab));
-  }
-  html.chart-popout-mode .lite-chart-frame{
-    flex:1 1 auto;
-    height:auto!important;
-    max-height:none!important;
-    min-height:0!important;
   }
   /* Thu nhỏ ô Tìm mã bằng scale — giữ font-size:16px để iOS không auto-zoom khi focus.
      transform-origin neo về phía container để ô không bị lệch ra ngoài;
@@ -2834,6 +2849,20 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
   .health-layout{grid-template-columns:1fr}
   .health-body{height:auto;display:block;overflow:visible}
   .health-chartbox{height:280px}
+  /* left:88.4% (desktop) tính theo bề rộng .health-chartbox lúc đó chỉ là cột trái của layout
+     2 cột nên còn đủ chỗ; trên mobile .health-layout đổi thành 1 cột khiến .health-chartbox
+     giãn gần hết màn hình, 88.4% rơi sát mép phải, không đủ chỗ cho chữ "VNINDEX" và bị
+     .health-chartbox{overflow:hidden} cắt mất, chỉ còn thấy checkbox. Neo theo right thay vì
+     left:% để không phụ thuộc bề rộng box. */
+  .health-vni-toggle{left:auto;right:8px}
+  /* Trục dọc health-svg có L=52,R=112,W=900 CỐ ĐỊNH (không co theo scale — xem comment tại nơi
+     tính L/R trong hàm vẽ chart). Nhãn "100" (text-anchor="end" tại x=L-10=42) luôn nằm trong
+     khoảng ~1.3%-4.7% bề rộng khung; dải màu (rect tô nền) bắt đầu ngay tại x=L=52, tức ~5.78%.
+     .health-period-tabs mặc định neo left:8px nên đè lên đúng chỗ nhãn "100" khi khung health-svg
+     giãn hết bề ngang màn hình ở mobile. Dùng % (không phải px cố định) để nhóm nút luôn bắt đầu
+     đúng ngay mép dải màu trên mọi bề rộng máy — vừa đủ để không che nhãn "100", không lệch quá
+     xa sang phải. */
+  .health-period-tabs{left:5.8%}
   .health-score{font-size:36px}
   .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
   .vnd-panel:last-child{margin-bottom:12px}
@@ -3666,7 +3695,7 @@ const DOM={
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),
-  healthVniCheckbox:$('health-vni-checkbox'),healthPeriodTabs:$('health-period-tabs'),
+  healthVniCheckbox:$('health-vni-checkbox'),healthVniToggle:$('health-vni-toggle'),healthPeriodTabs:$('health-period-tabs'),
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
@@ -4206,11 +4235,17 @@ function initLiteChart(){
     window.addEventListener('resize',()=>{
       clearTimeout(_liteResizeTimer);
       _liteResizeTimer=setTimeout(()=>{
-        // Popout thẻ CHART trên mobile: một số trình duyệt (Android Chrome) không
-        // bắn 'orientationchange' tin cậy bằng 'resize' — dùng chung listener này
-        // làm lưới an toàn dự phòng. _liteRelayoutViewport() đã tự gọi
-        // _liteApplyChartSizes() bên trong nên không gọi lại lần nữa.
-        if(_isChartPopoutWindow&&IS_MOBILE())_liteRelayoutViewport();
+        // Popout thẻ CHART (cả mobile lẫn desktop): #lite-chart-panel giờ tự giãn theo
+        // viewport (xem CSS html.chart-popout-mode #lite-chart-panel) nên khi user kéo
+        // cạnh cửa sổ, clientHeight của .lite-chart-frame đổi theo — phải gọi
+        // _liteRelayoutViewport() để tính lại mainH/rsiH/macdH (applyLitePaneLayout),
+        // không chỉ resize canvas (_liteApplyChartSizes) như trước, nếu không panel sẽ
+        // giữ nguyên chiều cao cũ và để lại khoảng trắng bên dưới khi cửa sổ to ra.
+        // Trên mobile, hàm này còn kiêm luôn vai trò lưới an toàn dự phòng cho
+        // 'orientationchange' (một số trình duyệt Android Chrome không bắn sự kiện đó
+        // tin cậy bằng 'resize'). _liteRelayoutViewport() đã tự gọi _liteApplyChartSizes()
+        // bên trong nên không gọi lại lần nữa ở nhánh popout.
+        if(_isChartPopoutWindow)_liteRelayoutViewport();
         else _liteApplyChartSizes();
         resizeLiteDrawCanvas();redrawLiteDrawings();
       },150);
@@ -5678,12 +5713,21 @@ function _liteRsBadgeColors(v){
   if(v>50)return{bg:'#fef9c3',fg:'#854d0e',bd:'#fde047'};
   return{bg:'#fee2e2',fg:'#b91c1c',bd:'#fecaca'};
 }
-function _liteDrawTitleSegments(ctx,segments,x,y){
+// Đo vị trí/kích thước thật của 1 overlay (title/signal/bigprice...) TƯƠNG ĐỐI so với #lite-chart
+// (DOM.liteChart) — panes[0] chụp từ #lite-chart nên toạ độ đo theo cách này khớp thẳng với ảnh
+// chụp, không cần đoán/hard-code theo % hay px cố định như trước.
+// frameRect nhận từ ngoài truyền vào (không tự gọi getBoundingClientRect() trên DOM.liteChart ở
+// đây) vì 1 lượt chụp ảnh gọi hàm này nhiều lần (title, signal, emoji, badge, bigprice) trong khi
+// frameRect luôn giống nhau cả 5 lần đó — đo 1 lần ở nơi gọi rồi dùng lại, tránh đo DOM dư thừa.
+function _liteOverlayRect(el,frameRect,dpr){
+  const r=el.getBoundingClientRect();
+  return{x:(r.left-frameRect.left)*dpr,y:(r.top-frameRect.top)*dpr,w:r.width*dpr,h:r.height*dpr};
+}
+function _liteDrawTitleSegments(ctx,segments,x,y,dpr){
   for(const seg of segments){
     if(seg.color==='__html'){
       if(seg._rs!=null){
         // Vẽ badge tròn màu giống hệt .rs-badge trên DOM (không còn vẽ chữ "RS:xx" thuần).
-        const dpr=window.devicePixelRatio||1;
         const c=_liteRsBadgeColors(seg._rs);
         const d=Math.round(22*dpr),r=d/2;
         const savedFont=ctx.font,savedAlign=ctx.textAlign;
@@ -5702,7 +5746,8 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
         x+=d;
         continue;
       }
-      // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần, luôn hiện đủ O/H/L
+      // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần thay vì HTML gốc.
+      // (Trên mobile portrait, 2 segment này đã bị lọc bỏ trước khi tới đây — xem copyLiteChartImage.)
       const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
       const parts=seg._open!=null
         ?[{t:' O:',c:'#111827'},{t:seg._open||'',c:col}]
@@ -5719,18 +5764,40 @@ function _liteDrawTitleSegments(ctx,segments,x,y){
     }
   }
 }
+// Vẽ nền mờ + nội dung title lên canvas copy tại đúng vị trí thật (overlay position:absolute;top:8px
+// đè lên #lite-chart trên chart thật), thay vì 1 dải header riêng cộng thêm phía trên chart như trước
+// (nguyên nhân khiến title+badge trông "cao hơn"/tách khỏi chart so với thực tế hiển thị).
+function _liteDrawTitleOverlay(ctx,segments,frameRect,dpr){
+  const el=DOM.liteChartTitle;
+  if(!el)return;
+  const rect=_liteOverlayRect(el,frameRect,dpr),cs=getComputedStyle(el);
+  const br=(parseFloat(cs.borderRadius)||0)*dpr;
+  const savedFont=ctx.font,savedBaseline=ctx.textBaseline,savedAlign=ctx.textAlign,savedFill=ctx.fillStyle;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(rect.x,rect.y,rect.w,rect.h,br);else ctx.rect(rect.x,rect.y,rect.w,rect.h);
+  ctx.fillStyle=cs.backgroundColor;ctx.fill();
+  ctx.font=`400 ${Math.round(11*dpr)}px "IBM Plex Mono",monospace`;
+  ctx.textBaseline='middle';
+  ctx.textAlign='left';
+  const padX=(parseFloat(cs.paddingLeft)||0)*dpr;
+  _liteDrawTitleSegments(ctx,segments,rect.x+padX,rect.y+rect.h/2,dpr);
+  ctx.font=savedFont;ctx.textBaseline=savedBaseline;ctx.textAlign=savedAlign;ctx.fillStyle=savedFill;
+}
 // Vẽ lại khối "Giá phóng to" (lớp DOM nổi, takeScreenshot() không chụp được) lên canvas copy.
-// mainCenterX/topY: tâm ngang và mép trên của pane main trên canvas tổng hợp.
-function _liteDrawBigPrice(ctx,mainCenterX,topY,dpr){
+// Trên chart thật đây là overlay position:absolute;top:6px NẰM ĐÈ lên #lite-chart (không phải
+// nằm trong 1 dải header riêng phía trên) — dùng _liteOverlayRect để lấy đúng vị trí thật đó.
+// mainCenterX: tâm ngang của pane main trên canvas tổng hợp (khớp cách CSS canh giữa left:0;right:0;margin:0 auto).
+function _liteDrawBigPrice(ctx,mainCenterX,frameRect,dpr){
   const el=DOM.liteChartBigPrice;
   if(!el||!el.classList.contains('on'))return;
   const priceEl=el.querySelector('.bp-price'),subEl=el.querySelector('.bp-sub');
   if(!priceEl||!priceEl.textContent)return;
   const priceCs=getComputedStyle(priceEl);
+  const rect=_liteOverlayRect(el,frameRect,dpr);
   const savedAlign=ctx.textAlign,savedBaseline=ctx.textBaseline,savedFont=ctx.font,savedFill=ctx.fillStyle;
   ctx.textAlign='center';
   ctx.textBaseline='top';
-  let y=topY+Math.round(6*dpr);
+  let y=rect.y;
   ctx.font=`700 ${Math.round(20*dpr)}px "IBM Plex Mono",monospace`;
   ctx.fillStyle=priceCs.color||'#111827';
   ctx.fillText(priceEl.textContent,mainCenterX,y);
@@ -5743,30 +5810,48 @@ function _liteDrawBigPrice(ctx,mainCenterX,topY,dpr){
   }
   ctx.textAlign=savedAlign;ctx.textBaseline=savedBaseline;ctx.font=savedFont;ctx.fillStyle=savedFill;
 }
-// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi, takeScreenshot() không chụp được.
-function _liteDrawSignalBadge(ctx,x,y,dpr){
+// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi,
+// takeScreenshot() không chụp được. Trên chart thật đây là overlay position:absolute;top:29px NẰM ĐÈ
+// lên #lite-chart (không phải nằm trong 1 dải header riêng phía trên) — dùng _liteOverlayRect để vẽ
+// đúng vị trí + kích thước thật của cả hàng (nền mờ) lẫn từng phần tử con (emoji, badge pill) bên trong,
+// thay vì suy ra toạ độ badge từ bề rộng emoji như trước (nguồn gốc gây lệch tâm chữ trong badge).
+function _liteDrawSignalBadge(ctx,frameRect,dpr){
   const el=DOM.liteChartSignal;
   if(!el)return;
   const emojiEl=el.querySelector('.s-emoji'),badgeEl=el.querySelector('.s-badge');
   if(!emojiEl||!badgeEl)return;
+  const savedBaseline=ctx.textBaseline,savedAlign=ctx.textAlign,savedFont=ctx.font,savedFill=ctx.fillStyle;
+  const rowRect=_liteOverlayRect(el,frameRect,dpr),rowCs=getComputedStyle(el);
+  const rowBr=(parseFloat(rowCs.borderRadius)||0)*dpr;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(rowRect.x,rowRect.y,rowRect.w,rowRect.h,rowBr);else ctx.rect(rowRect.x,rowRect.y,rowRect.w,rowRect.h);
+  ctx.fillStyle=rowCs.backgroundColor;ctx.fill();
   const emojiCs=getComputedStyle(emojiEl),badgeCs=getComputedStyle(badgeEl);
-  const emojiR=emojiEl.getBoundingClientRect(),badgeR=badgeEl.getBoundingClientRect();
-  const gap=Math.round(5*dpr);
+  const emojiR=_liteOverlayRect(emojiEl,frameRect,dpr),badgeR=_liteOverlayRect(badgeEl,frameRect,dpr);
   ctx.textBaseline='middle';
-  ctx.font=emojiCs.font||`${emojiCs.fontSize} sans-serif`;
-  ctx.fillText(emojiEl.textContent,x,y+emojiR.height*dpr/2);
-  const bx=x+emojiR.width*dpr+gap,bw=badgeR.width*dpr,bh=badgeR.height*dpr;
+  ctx.textAlign='left';
+  // fontSize đọc từ getComputedStyle là CSS px (không tự nhân dpr) trong khi canvas chụp
+  // đã ở kích thước device-pixel, nên phải nhân dpr thủ công — nếu không icon/chữ trong badge
+  // sẽ bị vẽ nhỏ hơn hẳn so với khung badge (khung đã scale đúng qua getBoundingClientRect()*dpr).
+  const emojiSize=Math.round((parseFloat(emojiCs.fontSize)||16)*dpr);
+  ctx.font=`${emojiSize}px ${emojiCs.fontFamily||'sans-serif'}`;
+  ctx.fillText(emojiEl.textContent,emojiR.x,emojiR.y+emojiR.h/2);
+  const bx=badgeR.x,by=badgeR.y,bw=badgeR.w,bh=badgeR.h;
   const br=(parseFloat(badgeCs.borderRadius)||0)*dpr;
   ctx.beginPath();
-  if(ctx.roundRect)ctx.roundRect(bx,y,bw,bh,br);else ctx.rect(bx,y,bw,bh);
+  if(ctx.roundRect)ctx.roundRect(bx,by,bw,bh,br);else ctx.rect(bx,by,bw,bh);
   ctx.fillStyle=badgeCs.backgroundColor;ctx.fill();
   ctx.lineWidth=Math.max(1,(parseFloat(badgeCs.borderWidth)||1)*dpr);
   ctx.strokeStyle=badgeCs.borderColor;ctx.stroke();
   ctx.fillStyle=badgeCs.color;
-  ctx.font=badgeCs.font||`${badgeCs.fontWeight} ${badgeCs.fontSize} sans-serif`;
+  const badgeSize=Math.round((parseFloat(badgeCs.fontSize)||11)*dpr);
+  ctx.font=`${badgeCs.fontWeight} ${badgeSize}px ${badgeCs.fontFamily||'sans-serif'}`;
   ctx.textAlign='center';
-  ctx.fillText(badgeEl.textContent,bx+bw/2,y+bh/2+dpr);
-  ctx.textAlign='left';
+  // Tâm hộp thuần tuý (bx+bw/2, by+bh/2) qua textBaseline='middle' — bỏ hẳn số nhích +dpr cũ (vốn
+  // được canh cho cỡ chữ NHỎ/chưa nhân dpr trước khi sửa; sau khi cỡ chữ đã đúng tỉ lệ, số nhích đó
+  // làm chữ lệch khỏi tâm) để chữ tín hiệu luôn nằm đúng giữa khung badge.
+  ctx.fillText(badgeEl.textContent,bx+bw/2,by+bh/2);
+  ctx.textBaseline=savedBaseline;ctx.textAlign=savedAlign;ctx.font=savedFont;ctx.fillStyle=savedFill;
 }
 function _liteCopyFeedback(btn,status){
   if(!btn)return;
@@ -5797,6 +5882,29 @@ function _liteDownloadChartImage(blob){
   document.body.appendChild(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+// Copy PNG vào clipboard, dùng chung cho Mrk Health/Sankey/Treemap — các ảnh này phải dựng
+// bất đồng bộ (rasterize SVG qua <img> trước khi vẽ canvas). Khác với thẻ CHART (canvas đồng bộ,
+// encode Blob xong luôn rồi mới gọi clipboard.write — xem copyLiteChartImage), ở đây phải gọi
+// clipboard.write() NGAY trong lượt chạm, truyền thẳng Promise<Blob> (buildBlob() chưa resolve)
+// làm giá trị: đây là cách duy nhất giữ được quyền ghi clipboard trên Safari/Chrome mobile khi
+// phần dựng ảnh cần chờ — nếu await xong Blob rồi mới gọi clipboard.write thì "user activation"
+// của lượt chạm đã hết hạn, trình duyệt từ chối và rơi về tải file (đúng lỗi đang gặp).
+async function _liteCopyOrDownloadPng(btn,buildBlob,filename,label){
+  if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
+    try{
+      await navigator.clipboard.write([new ClipboardItem({'image/png':buildBlob()})]);
+      _liteCopyFeedback(btn,'copied');
+      return;
+    }catch(e){console.warn(`Copy ảnh ${label} vào clipboard lỗi, chuyển sang tải PNG:`,e);}
+  }
+  const pngBlob=await buildBlob();
+  const dlUrl=URL.createObjectURL(pngBlob);
+  const link=document.createElement('a');
+  link.href=dlUrl;link.download=filename;
+  document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
+  _liteCopyFeedback(btn,'downloaded');
+}
 async function copyLiteChartImage(btn){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   try{
@@ -5808,35 +5916,46 @@ async function copyLiteChartImage(btn){
       panes.push({kind:'macd',canvas:_liteMacdChart.takeScreenshot()});
     }
     const titleSegments=_liteTitleSegments(_liteData[_liteData.length-1]);
+    // Portrait mobile: title thật đã ẩn O/H/L để vừa 1 dòng (CSS .lct-open/.lct-hl{display:none}).
+    // Bề ngang canvas chụp = đúng bề ngang màn hình (hẹp) nên phải bỏ luôn 2 đoạn này khi vẽ,
+    // nếu không title sẽ tràn/che khuất mất phần cuối (RS, %...).
+    const isMobilePortraitShot=window.innerWidth<=768&&window.innerHeight>window.innerWidth;
+    const finalTitleSegments=isMobilePortraitShot?titleSegments.filter(s=>s._open==null&&s._high==null&&s._low==null):titleSegments;
     const hasSigBadge=!!(DOM.liteChartSignal&&DOM.liteChartSignal.classList.contains('on'));
     const dpr=window.devicePixelRatio||1;
-    const titleH=titleSegments.length?Math.round(30*dpr):0;
-    const badgeH=hasSigBadge?Math.round(24*dpr):0;
     const out=document.createElement('canvas');
     out.width=Math.max(...panes.map(p=>p.canvas.width));
-    out.height=titleH+badgeH+panes.reduce((sum,p)=>sum+p.canvas.height,0);
+    // Title/badge/giá phóng to trên chart thật là overlay position:absolute NẰM ĐÈ lên #lite-chart
+    // (top:8px/29px/6px), KHÔNG PHẢI một dải header cộng thêm phía trên chart. Trước đây ảnh chụp
+    // cộng thêm titleH+badgeH vào chiều cao rồi đẩy cả chart xuống, khiến title+badge trông "cao
+    // hơn"/tách rời khỏi chart so với thực tế hiển thị. Nay bỏ hẳn phần cộng thêm này — canvas
+    // tổng chỉ cao đúng bằng tổng chiều cao các pane, và title/badge/giá phóng to được vẽ ĐÈ lên
+    // sau khi đã vẽ chart, tại đúng toạ độ thật đo được từ DOM (xem _liteOverlayRect).
+    out.height=panes.reduce((sum,p)=>sum+p.canvas.height,0);
     const ctx=out.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,out.width,out.height);
-    if(titleSegments.length){
-      ctx.font=`400 ${Math.round(11*dpr)}px "IBM Plex Mono",monospace`;
-      ctx.textBaseline='middle';
-      _liteDrawTitleSegments(ctx,titleSegments,10*dpr,titleH/2);
-    }
-    if(hasSigBadge){
-      _liteDrawSignalBadge(ctx,10*dpr,titleH+Math.round(3*dpr),dpr);
-    }
-    let y=titleH+badgeH;
+    let y=0;
     panes.forEach(p=>{
       ctx.drawImage(p.canvas,0,y);
       y+=p.canvas.height;
     });
     if(DOM.liteDrawCanvas){
       const mainCanvas=panes[0].canvas;
-      ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,titleH+badgeH,mainCanvas.width,mainCanvas.height);
+      ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,0,mainCanvas.width,mainCanvas.height);
     }
-    // "Giá phóng to" nằm đè trên pane main (giống badge tín hiệu) — phải vẽ SAU khi đã drawImage
-    // pane main, nếu không sẽ bị ảnh pane vẽ chồng lên mất.
-    _liteDrawBigPrice(ctx,panes[0].canvas.width/2,titleH+badgeH,dpr);
+    // Title/badge/"Giá phóng to" đều nằm đè trên pane main — phải vẽ SAU khi đã drawImage pane main,
+    // nếu không sẽ bị ảnh pane vẽ chồng lên mất. Thứ tự vẽ khớp thứ tự trong DOM thật (title, rồi
+    // signal, rồi bigprice) để đúng lớp trên/dưới nếu chúng vô tình chồng nhau.
+    // Đo vị trí khung #lite-chart 1 lần duy nhất, dùng chung cho cả 3 lần vẽ overlay bên dưới
+    // (title/signal/bigprice) — tránh gọi getBoundingClientRect() lặp lại nhiều lần cho cùng 1 khung.
+    const frameRect=DOM.liteChart.getBoundingClientRect();
+    if(finalTitleSegments.length){
+      _liteDrawTitleOverlay(ctx,finalTitleSegments,frameRect,dpr);
+    }
+    if(hasSigBadge){
+      _liteDrawSignalBadge(ctx,frameRect,dpr);
+    }
+    _liteDrawBigPrice(ctx,panes[0].canvas.width/2,frameRect,dpr);
     // Mã hoá đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật,
     // không phải Promise — giữ user-gesture trên trình duyệt xử lý Promise<Blob> không ổn định.
     const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
@@ -7098,12 +7217,13 @@ function _healthWrapText(ctx,text,maxWidth){
 async function copyHealthImage(btn){
   const svgEl=DOM.healthSvg;
   if(!svgEl)return;
+  // Đo trực tiếp vị trí/kích thước thật của 2 khung trên DOM rồi vẽ lại y hệt trên canvas, để ảnh xuất khớp 1:1 với layout thật kể cả khi responsive.
+  const layoutEl=svgEl.closest('.health-layout');
+  const chartBoxEl=svgEl.closest('.health-chartbox');
+  const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
+  if(!layoutEl||!chartBoxEl||!scoreCardEl)return;
   try{
-    // Đo trực tiếp vị trí/kích thước thật của 2 khung trên DOM rồi vẽ lại y hệt trên canvas, để ảnh xuất khớp 1:1 với layout thật kể cả khi responsive.
-    const layoutEl=svgEl.closest('.health-layout');
-    const chartBoxEl=svgEl.closest('.health-chartbox');
-    const scoreCardEl=DOM.healthAnalysis?.previousElementSibling; // .health-score-card — đứng ngay trước .health-analysis trong .health-side
-    if(!layoutEl||!chartBoxEl||!scoreCardEl)return;
+    const buildBlob=async()=>{
     const layoutRect=layoutEl.getBoundingClientRect();
     const chartRect=chartBoxEl.getBoundingClientRect();
     const cardRect=scoreCardEl.getBoundingClientRect();
@@ -7199,9 +7319,15 @@ async function copyHealthImage(btn){
     roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
 
     // Checkbox VNINDEX là overlay HTML ngoài SVG nên rasterize không chụp được — phải vẽ tay để ảnh copy khớp trạng thái tick/disable thật.
+    // Vị trí lấy trực tiếp từ getBoundingClientRect() của .health-vni-toggle (giống cách đo chartBoxEl/scoreCardEl ở trên) thay vì hard-code
+    // theo % cố định — trước đây hard-code đúng công thức left:88.4% của desktop nên trên mobile (CSS đổi qua right:8px) ảnh vẽ sai vị trí,
+    // khiến chữ VNINDEX bị lệch/cắt so với chart thật. Đo DOM trực tiếp thì đổi CSS breakpoint nào sau này ảnh vẫn tự khớp theo.
+    const vniToggleRect=DOM.healthVniToggle?DOM.healthVniToggle.getBoundingClientRect():null;
     const vniChecked=!!DOM.healthVniCheckbox?.checked;
     const vniDisabled=!!DOM.healthVniCheckbox?.disabled;
-    const vx=ox+chartX+chartW*0.884,vy=oy+chartY+6,boxSize=13;
+    const vx=vniToggleRect?ox+relX(vniToggleRect):ox+chartX+chartW*0.884;
+    const vy=vniToggleRect?oy+relY(vniToggleRect):oy+chartY+6;
+    const boxSize=13;
     ctx.fillStyle=vniDisabled?'#f1f5f9':'#ffffff';
     ctx.strokeStyle='#94a3b8';ctx.lineWidth=1;
     if(ctx.roundRect){ctx.beginPath();ctx.roundRect(vx,vy,boxSize,boxSize,3);ctx.fill();ctx.stroke();}
@@ -7263,19 +7389,9 @@ async function copyHealthImage(btn){
     }
 
     const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,'copied');
-        return;
-      }catch(e){console.warn('Copy ảnh Mrk Health vào clipboard lỗi, chuyển sang tải PNG:',e);}
-    }
-    const dlUrl=URL.createObjectURL(pngBlob);
-    const link=document.createElement('a');
-    link.href=dlUrl;link.download=`mrk_health_${_sym||''}.png`;
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
-    _liteCopyFeedback(btn,'downloaded');
+    return pngBlob;
+    };
+    await _liteCopyOrDownloadPng(btn,buildBlob,`mrk_health_${_sym||''}.png`,'Mrk Health');
   }catch(e){console.error('copyHealthImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
 DOM.healthCopyBtn?.addEventListener('click',e=>{
@@ -7493,6 +7609,7 @@ async function copySankeyImage(btn){
   const svgEl=DOM.sankeySvg;
   if(!svgEl)return;
   try{
+    const buildBlob=async()=>{
     const wrapRect=DOM.sankeyWrap.getBoundingClientRect();
     const W=Math.max(1,Math.round(wrapRect.width)),H=Math.max(1,Math.round(wrapRect.height));
     const dpr=window.devicePixelRatio||1;
@@ -7511,20 +7628,9 @@ async function copySankeyImage(btn){
     const ctx=canvas.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,'copied');
-        return;
-      }catch(e){console.warn('Copy ảnh Sankey vào clipboard lỗi, chuyển sang tải PNG:',e);}
-    }
-    const dlUrl=URL.createObjectURL(pngBlob);
-    const link=document.createElement('a');
-    link.href=dlUrl;link.download='sankey.png';
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
-    _liteCopyFeedback(btn,'downloaded');
+    return _litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    };
+    await _liteCopyOrDownloadPng(btn,buildBlob,'sankey.png','Sankey');
   }catch(e){console.error('copySankeyImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
 DOM.sankeyCopyBtn?.addEventListener('click',e=>{
@@ -7647,6 +7753,7 @@ async function copyTreemapImage(btn){
   const svgEl=DOM.treemapSvg;
   if(!svgEl)return;
   try{
+    const buildBlob=async()=>{
     const wrapRect=DOM.treemapWrap.getBoundingClientRect();
     const W=Math.max(1,Math.round(wrapRect.width)),H=Math.max(1,Math.round(wrapRect.height));
     const dpr=window.devicePixelRatio||1;
@@ -7665,20 +7772,9 @@ async function copyTreemapImage(btn){
     const ctx=canvas.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    const pngBlob=_litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob})]);
-        _liteCopyFeedback(btn,'copied');
-        return;
-      }catch(e){console.warn('Copy ảnh Treemap vào clipboard lỗi, chuyển sang tải PNG:',e);}
-    }
-    const dlUrl=URL.createObjectURL(pngBlob);
-    const link=document.createElement('a');
-    link.href=dlUrl;link.download='treemap.png';
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(dlUrl),1000);
-    _liteCopyFeedback(btn,'downloaded');
+    return _litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
+    };
+    await _liteCopyOrDownloadPng(btn,buildBlob,'treemap.png','Treemap');
   }catch(e){console.error('copyTreemapImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
 }
 DOM.treemapCopyBtn?.addEventListener('click',e=>{
