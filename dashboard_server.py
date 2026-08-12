@@ -2514,6 +2514,25 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
    chúng làm flex-item hợp lệ trong .lite-chart-toolbar (cha ngoài). */
 html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:flex!important}
 html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:block!important}
+/* Popout (mọi kích thước, kể cả desktop): trước đây .lite-chart-frame giữ nguyên height:720px
+   cố định từ CSS mặc định (dùng cho panel CHART nhúng trong dashboard chính) — khi kéo cạnh
+   dưới cửa sổ popout ra to hơn 720px, panel MACD/chart không giãn theo, để lại khoảng trắng
+   bên dưới. Cho #lite-chart-panel cao đúng bằng phần viewport còn lại (trừ padding #main-wrap
+   8px trên+dưới) rồi dùng flexbox để .lite-chart-frame tự giãn lấp hết phần còn lại sau toolbar
+   — applyLitePaneLayout() (gọi lại khi resize, xem window.addEventListener('resize',...)) sẽ đọc
+   đúng clientHeight thực tế của .lite-chart-frame để chia lại main/RSI/MACD. Rule riêng cho mobile
+   portrait bên dưới (cùng specificity, đứng sau trong file) sẽ tự ghi đè khi khớp @media. */
+html.chart-popout-mode #lite-chart-panel{
+  display:flex;
+  flex-direction:column;
+  height:calc(100vh - 16px);
+}
+html.chart-popout-mode .lite-chart-frame{
+  flex:1 1 auto;
+  height:auto!important;
+  max-height:none!important;
+  min-height:0!important;
+}
 /* Mobile portrait + popout: thay vì đoán cứng chiều cao toolbar (44px — dễ lệch thực tế
    tuỳ máy, khiến panel MACD bị cắt và góc bo dưới bị đẩy khỏi màn hình), cho #lite-chart-panel
    cao đúng bằng phần màn hình còn lại (trừ padding #main-wrap + safe-area đáy iPhone) rồi
@@ -2525,16 +2544,12 @@ html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:blo
      8px/2px) mới là phần chiếm phần lớn khoảng trắng đáy trên các máy có safe-area lớn, nên chỉ giảm
      nhẹ số cố định trước đó gần như không thấy khác biệt; bỏ hẳn số cố định mới thực sự sát viền hơn. */
   html.chart-popout-mode #main-wrap{padding:8px 8px var(--sab) 8px}
+  /* Chỉ còn override height (dvh + safe-area đáy iPhone thay vì vh thường) — phần
+     display:flex/flex-direction và rule .lite-chart-frame (flex:1 1 auto; height:auto...)
+     đã chuyển lên rule chung html.chart-popout-mode #lite-chart-panel/.lite-chart-frame
+     phía trên (áp dụng mọi kích thước màn hình), nên không cần lặp lại ở đây nữa. */
   html.chart-popout-mode #lite-chart-panel{
-    display:flex;
-    flex-direction:column;
     height:calc(100dvh - 8px - var(--sab));
-  }
-  html.chart-popout-mode .lite-chart-frame{
-    flex:1 1 auto;
-    height:auto!important;
-    max-height:none!important;
-    min-height:0!important;
   }
   /* Thu nhỏ ô Tìm mã bằng scale — giữ font-size:16px để iOS không auto-zoom khi focus.
      transform-origin neo về phía container để ô không bị lệch ra ngoài;
@@ -4220,11 +4235,17 @@ function initLiteChart(){
     window.addEventListener('resize',()=>{
       clearTimeout(_liteResizeTimer);
       _liteResizeTimer=setTimeout(()=>{
-        // Popout thẻ CHART trên mobile: một số trình duyệt (Android Chrome) không
-        // bắn 'orientationchange' tin cậy bằng 'resize' — dùng chung listener này
-        // làm lưới an toàn dự phòng. _liteRelayoutViewport() đã tự gọi
-        // _liteApplyChartSizes() bên trong nên không gọi lại lần nữa.
-        if(_isChartPopoutWindow&&IS_MOBILE())_liteRelayoutViewport();
+        // Popout thẻ CHART (cả mobile lẫn desktop): #lite-chart-panel giờ tự giãn theo
+        // viewport (xem CSS html.chart-popout-mode #lite-chart-panel) nên khi user kéo
+        // cạnh cửa sổ, clientHeight của .lite-chart-frame đổi theo — phải gọi
+        // _liteRelayoutViewport() để tính lại mainH/rsiH/macdH (applyLitePaneLayout),
+        // không chỉ resize canvas (_liteApplyChartSizes) như trước, nếu không panel sẽ
+        // giữ nguyên chiều cao cũ và để lại khoảng trắng bên dưới khi cửa sổ to ra.
+        // Trên mobile, hàm này còn kiêm luôn vai trò lưới an toàn dự phòng cho
+        // 'orientationchange' (một số trình duyệt Android Chrome không bắn sự kiện đó
+        // tin cậy bằng 'resize'). _liteRelayoutViewport() đã tự gọi _liteApplyChartSizes()
+        // bên trong nên không gọi lại lần nữa ở nhánh popout.
+        if(_isChartPopoutWindow)_liteRelayoutViewport();
         else _liteApplyChartSizes();
         resizeLiteDrawCanvas();redrawLiteDrawings();
       },150);
