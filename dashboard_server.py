@@ -25,17 +25,13 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("DASHBOARD_SECRET_KEY", "change-this-dashboard-secret-key")
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
-# Ngưỡng dung lượng tối thiểu (bytes) mới nén — response quá nhỏ thì overhead
-# gzip (header ~20 bytes + CPU) không bù lại được, nén chỉ có lợi từ đây trở lên.
+# Ngưỡng tối thiểu (bytes) mới nén — dưới mức này overhead gzip lớn hơn lợi ích.
 _GZIP_MIN_BYTES = 500
 
 @app.after_request
 def _static_cache_headers(response):
-    """File tĩnh /static (vd lightweight-charts.min.js) hiếm khi đổi giữa các lần
-    deploy → cache cứng 7 ngày, đỡ round-trip revalidate mỗi lần load trang (đổi
-    version lib thì đổi luôn tên file để trình duyệt tự tải bản mới).
-    RIÊNG icon/avatar (favicon, apple-touch-icon, icon-*, manifest.json) người
-    dùng có thể đổi thường xuyên → dùng no-cache, luôn revalidate qua ETag."""
+    """File tĩnh /static cache cứng 7 ngày (đổi version lib thì đổi tên file).
+    Riêng icon/manifest đổi thường xuyên hơn nên dùng no-cache, revalidate qua ETag."""
     if request.path.startswith("/static/"):
         _ICON_STATIC_FILES = (
             "favicon-32.png", "favicon-16.png", "favicon.ico",
@@ -50,11 +46,8 @@ def _static_cache_headers(response):
 
 @app.route("/favicon.ico")
 def _serve_root_favicon():
-    """Safari (và một số trình duyệt/bot) tự dò GET /favicon.ico ở gốc domain,
-    độc lập với thẻ <link rel="icon"> trong <head>. Trước đây route này chưa có
-    → 404 → Safari dùng icon mặc định dù Chrome vẫn hiển thị đúng.
-    Không dùng chung hook _static_cache_headers (path khác /static/) nên set
-    no-cache thủ công ở đây cho đồng bộ chính sách icon."""
+    """Safari tự dò GET /favicon.ico ở gốc domain, độc lập thẻ <link rel="icon">.
+    Path này không đi qua hook _static_cache_headers nên set no-cache thủ công."""
     resp = send_from_directory(app.static_folder, "favicon.ico")
     resp.headers["Cache-Control"] = "no-cache"
     return resp
@@ -63,10 +56,8 @@ _LWC_JS_CACHE = None
 
 @app.route("/static/lightweight-charts.min.js")
 def _serve_lwc_js():
-    """Route riêng cho file lib chart, đè route /static/<path:filename> mặc định
-    của Flask — vì send_from_directory stream với direct_passthrough=True khiến
-    hook _gzip_response() bên dưới bỏ qua, gửi nguyên 160KB không nén. Đọc file
-    vào RAM 1 lần rồi trả qua Response thường để nén được (~60KB sau gzip)."""
+    """Đè route /static mặc định: send_from_directory dùng direct_passthrough
+    khiến hook _gzip_response bỏ qua. Đọc file vào RAM 1 lần để nén được."""
     global _LWC_JS_CACHE
     if _LWC_JS_CACHE is None:
         with open(os.path.join(app.static_folder, "lightweight-charts.min.js"), "rb") as f:
@@ -75,13 +66,11 @@ def _serve_lwc_js():
 
 @app.after_request
 def _gzip_response(response):
-    """Nén gzip response JSON/HTML khi trình duyệt hỗ trợ — payload dạng số/JSON
-    lặp lại nhiều nên nén hiệu quả (thường giảm 70-80%), giúp panel CHART tải
-    nhanh hơn trên mạng chậm mà không cần đổi format/logic ở frontend."""
+    """Nén gzip response JSON/HTML khi trình duyệt hỗ trợ (giảm ~70-80% payload)."""
     if "gzip" not in (request.headers.get("Accept-Encoding", "") or "").lower():
         return response
     if response.direct_passthrough or response.headers.get("Content-Encoding"):
-        return response  # đã stream sẵn (vd file tĩnh) hoặc đã được nén rồi — bỏ qua
+        return response  # đã stream sẵn hoặc đã nén rồi
     data = response.get_data()
     if len(data) < _GZIP_MIN_BYTES:
         return response
@@ -90,7 +79,7 @@ def _gzip_response(response):
         gz.write(data)
     compressed = buf.getvalue()
     if len(compressed) >= len(data):
-        return response  # nén không giúp ích (hiếm, vd data đã compressed sẵn) — giữ nguyên bản gốc
+        return response  # nén không giúp ích (hiếm) — giữ bản gốc
     response.set_data(compressed)
     response.headers["Content-Encoding"] = "gzip"
     response.headers["Content-Length"] = str(len(compressed))
@@ -108,15 +97,13 @@ _get_history_cache = None
 _get_rs_universe_symbols = None
 _cache_lock = None
 _fetch_heatmap_fn = None
-# Tải giá on-demand cho MÃ LẺ ngoài _HEATMAP_NEED_SYMBOLS (vd mã FAVORITE người
-# dùng tự thêm) — inject qua start_dashboard(extra_quote_fn=...). Khác
-# _fetch_heatmap_fn: nhận 1 list mã tuỳ ý, không đụng cache/TTL heatmap chính.
+# Tải giá on-demand cho mã lẻ ngoài _HEATMAP_NEED_SYMBOLS, inject qua
+# start_dashboard(extra_quote_fn=...); nhận 1 list mã tuỳ ý, tách khỏi cache heatmap chính.
 _extra_quote_fn = None
 _fetch_market_health_fn = None
 _vol_forecast_fn = None
 # Hàm tính vpa_flag (calc_vpa_flag bên scanner_full.py), inject qua
-# start_dashboard(calc_vpa_flag_fn=...) để panel CHART tô Volume-Signal
-# trực tiếp trên dữ liệu vừa kéo từ VNDirect, không cần đọc lại history_cache.
+# start_dashboard(calc_vpa_flag_fn=...) để tô Volume-Signal trực tiếp trên dữ liệu vừa kéo.
 _calc_vpa_flag_fn = None
 _signal_emoji = {}
 _signal_rank = {}
@@ -125,9 +112,8 @@ _heatmap_cache = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock = threading.Lock()
 HEATMAP_TTL_SEC = 120
 
-# Cache /api/quote_extra (bù giá on-demand cho mã lẻ ngoài danh sách quét
-# chung) — key = mã, value = {"price","pct","ts"}. TTL ngắn hơn heatmap chính
-# vì ít mã/ít người dùng, nhưng vẫn cần cache để không dội API liên tục.
+# Cache /api/quote_extra — key = mã, value = {"price","pct","ts"}. TTL ngắn hơn
+# heatmap chính vì ít mã/ít người dùng nhưng vẫn cần tránh dội API liên tục.
 _extra_quote_cache = {}
 _extra_quote_lock = threading.Lock()
 EXTRA_QUOTE_TTL_SEC = 20
@@ -150,12 +136,9 @@ _RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
 _RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
 
 # ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
-# _market_health_cache chỉ nằm trong RAM nên mỗi lần container restart sẽ về {},
-# phải đợi build_history_cache() (1-3 phút) xong mới tính lại được HEALTH. Ở đây
-# ghi kết quả thành công gần nhất xuống JSON và nạp lại ngay khi module được
-# import — panel HEALTH có dữ liệu ngay (dù hơi cũ, kèm "updated_at" gốc để cơ
-# chế TTL tự biết khi nào tính lại) thay vì trắng/lỗi trong lúc chờ.
-# Dùng chung volume /data/trade-journal đã mount sẵn, không cần thêm -v mới.
+# _market_health_cache chỉ ở RAM nên restart là mất, phải đợi build_history_cache()
+# (1-3 phút) mới tính lại được. Ghi JSON gần nhất và nạp lại lúc import module để
+# panel có dữ liệu ngay (dù hơi cũ, "updated_at" giữ nguyên để TTL tự tính lại đúng lúc).
 _MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
 
 def _save_market_health_to_disk():
@@ -164,8 +147,7 @@ def _save_market_health_to_disk():
         tmp_path = _MARKET_HEALTH_CACHE_FILE + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(_market_health_cache, f, ensure_ascii=False)
-        os.replace(tmp_path, _MARKET_HEALTH_CACHE_FILE)  # ghi qua file tạm rồi rename — tránh
-        # trường hợp process bị kill giữa lúc ghi làm hỏng file cache (rename là thao tác atomic).
+        os.replace(tmp_path, _MARKET_HEALTH_CACHE_FILE)  # ghi qua file tạm rồi rename (atomic), tránh hỏng cache nếu bị kill giữa chừng
     except Exception as e:
         print(f"  [Dashboard] ⚠️  Lưu HEALTH cache xuống đĩa lỗi (bỏ qua, không ảnh hưởng dashboard): {e}")
 
@@ -180,7 +162,7 @@ def _load_market_health_from_disk():
             print(f"  [Dashboard] ✅ Nạp lại HEALTH cache từ đĩa (cũ {age_min:.1f} phút) — "
                   f"có dữ liệu hiển thị ngay trong lúc chờ tính lại.")
     except FileNotFoundError:
-        pass  # lần đầu chạy / chưa mount volume — không có gì để nạp, bỏ qua im lặng
+        pass  # lần đầu chạy / chưa mount volume — bỏ qua im lặng
     except Exception as e:
         print(f"  [Dashboard] ⚠️  Nạp HEALTH cache từ đĩa lỗi (bỏ qua): {e}")
 
@@ -189,12 +171,8 @@ _load_market_health_from_disk()  # chạy NGAY lúc import module — trước k
 
 def _refresh_market_health(force: bool = False) -> dict:
     """Tính lại HEALTH và ghi vào _market_health_cache — dùng chung cho endpoint
-    /api/market_health và lệnh "warm" cache chủ động lúc khởi động.
-
-    Chỉ cập nhật "updated_at" khi kết quả THỰC SỰ hợp lệ (data["ok"] is True).
-    Nếu lỗi (vd history_cache chưa load xong) thì không đóng dấu "mới", để lần
-    gọi kế tiếp vẫn coi cache hết hạn và thử lại ngay thay vì chờ đủ
-    MARKET_HEALTH_TTL_SEC (30 phút)."""
+    /api/market_health và lệnh "warm" lúc khởi động. Chỉ cập nhật "updated_at" khi
+    data["ok"] is True, để kết quả lỗi không bị coi là cache mới còn hạn."""
     if not _fetch_market_health_fn:
         return _market_health_cache["data"]
     now = time.time()
@@ -210,26 +188,20 @@ def _refresh_market_health(force: bool = False) -> dict:
                 _market_health_cache["pending_refresh"] = False
                 _save_market_health_to_disk()
             else:
-                # data.get("ok") False (vd history_cache chưa load xong) → CHỦ Ý
-                # không ghi đè "data", giữ nguyên HEALTH hợp lệ gần nhất để panel
-                # không trắng. Bật pending_refresh để frontend biết đây là số cũ,
-                # tiếp tục poll nhanh (HEALTH_RETRY_MS) thay vì đợi hết HEALTH_TTL
-                # (30 phút). updated_at cũng không đổi nên lần gọi sau vẫn coi cache
-                # hết hạn và tự thử tính lại ngay.
+                # data không ok → chủ ý không ghi đè "data", giữ HEALTH hợp lệ gần nhất
+                # để panel không trắng; pending_refresh=True cho frontend poll nhanh hơn
+                # (HEALTH_RETRY_MS), updated_at không đổi nên lần sau tự thử lại ngay.
                 _market_health_cache["pending_refresh"] = True
         except Exception as e:
             print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
-            # Giữ dữ liệu HEALTH hợp lệ gần nhất (không ghi đè "data" bằng lỗi
-            # cứng) để panel không trắng; không cập nhật updated_at nên lần
-            # gọi sau sẽ tự thử lại.
+            # Giữ HEALTH hợp lệ gần nhất, không cập nhật updated_at để lần sau tự thử lại.
             _market_health_cache["pending_refresh"] = True
         return _market_health_cache["data"]
 
 
 def warm_market_health_cache():
-    """Chủ động tính HEALTH ngay (không chờ request đầu) — gọi ngay sau khi
-    history_cache load xong, để dashboard có sẵn HEALTH từ lượt xem đầu tiên
-    thay vì đợi client trigger rồi chờ TTL 30 phút."""
+    """Chủ động tính HEALTH ngay sau khi history_cache load xong, để dashboard
+    có sẵn dữ liệu từ lượt xem đầu tiên thay vì đợi TTL 30 phút."""
     data = _refresh_market_health(force=True)
     ok = bool(data.get("ok"))
     print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
@@ -305,10 +277,8 @@ def _load_rs_scores_from_disk():
 _load_rs_scores_from_disk()
 
 # ─── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
-# Lấy trực tiếp từ API công khai VNDIRECT (giống dstock.vndirect.com.vn/du-lieu-
-# thi-truong/dinh-gia-thi-truong) để vẽ ngay trong khung Mrk Health thay vì nhúng
-# iframe. Cache TTL ngắn (5 phút) để không gọi API ngoài quá dày mỗi lần đổi
-# kỳ thời gian/chỉ tiêu, vẫn đủ mới cho khung định giá thị trường.
+# Lấy trực tiếp từ API công khai VNDIRECT để vẽ trong khung Mrk Health thay vì
+# nhúng iframe. Cache TTL ngắn (5 phút) để không gọi API ngoài quá dày.
 VND_BASE = "https://api-finfo.vndirect.com.vn/v4"
 VND_RATIO_CODES = {
     "pe": "PRICE_TO_EARNINGS",
@@ -441,17 +411,16 @@ def api_vndirect_allocation():
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
 
-# ─── Khối ngoại & Tự doanh: gộp theo phiên rồi vẽ bar chart ngay dưới khung
-# HEALTH, trên khung Định giá — cùng nguồn dữ liệu và cùng cơ chế cache TTL 5
-# phút (_vnd_cached_rows) như 2 khung Định giá/Phân bổ ở trên.
+# ─── Khối ngoại & Tự doanh: gộp theo phiên, vẽ bar chart dưới khung HEALTH ──
+# Dùng chung cơ chế cache TTL 5 phút (_vnd_cached_rows) như khung Định giá/Phân bổ.
 _VND_FOREIGN_CODES = "STOCK_HNX,STOCK_UPCOM,STOCK_HOSE,ETF_HOSE,IFC_HOSE"
 _VND_PROPRIETARY_CODES = "HNX,VNINDEX,UPCOM"
 _VND_FLOW_SESSIONS = 130  # số phiên hiển thị trên bar chart Khối ngoại / Tự doanh (~6 tháng giao dịch)
 
 
 def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vol_key, sell_vol_key):
-    # buy_vol_key/sell_vol_key hiện không dùng tới trong vòng lặp (KL ròng đã bỏ khỏi
-    # tooltip ngày 2026-08-06) — giữ lại tham số để khôi phục nhanh nếu cần, xem ghi chú bên dưới.
+    # buy_vol_key/sell_vol_key không dùng trong vòng lặp (KL ròng đã bỏ khỏi tooltip),
+    # giữ tham số lại để khôi phục nhanh nếu cần — xem ghi chú bên dưới.
     grouped = {}
     for item in items:
         row_date = item.get(date_key)
@@ -462,11 +431,8 @@ def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vo
         sell_value = float(item.get(sell_value_key) or 0)
         row["netValue"] += float(item.get("netVal") or (buy_value - sell_value))
 
-    # Chỉ giữ trường frontend đang dùng (date, netValueBn) — panel Khối ngoại/Tự
-    # doanh hiện chỉ hiển thị chart + GT ròng (đã bỏ KL ròng, KL/GT Mua-Bán).
-    # Muốn khôi phục: cộng dồn thêm netVol/buyValue/sellValue/buyVol/sellVol
-    # trong vòng lặp trên, trả thêm các field đó ở dict bên dưới, và thêm lại
-    # phần hiển thị tương ứng trong renderVndFlowPanel() (JS).
+    # Chỉ giữ trường frontend đang dùng (date, netValueBn). Muốn khôi phục KL/GT
+    # Mua-Bán: cộng dồn thêm các field liên quan ở vòng lặp trên và ở renderVndFlowPanel() (JS).
     rows = []
     for row in grouped.values():
         rows.append({"date": row["date"], "netValueBn": row["netValue"] / 1e9})
@@ -475,7 +441,7 @@ def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vo
 
 
 def _vnd_foreign_flow_rows():
-    # size=900 raw / 5 mã rổ ≈ 180 phiên thô — đủ dư cho _VND_FLOW_SESSIONS=130 sau khi gộp theo ngày.
+    # size=900 raw / 5 mã rổ ≈ 180 phiên thô — đủ dư cho _VND_FLOW_SESSIONS=130.
     url = f"{VND_BASE}/foreigns?q=code:{_VND_FOREIGN_CODES}&sort=tradingDate&size=900"
     items = _vnd_fetch_json(
         url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-foreign"
@@ -530,29 +496,21 @@ def api_proprietary_flow():
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
 
-# Màu cột Volume: 0=trung tính, 1=cảnh báo suy yếu (gate xu hướng + Nhánh1-biến
-# A/upThrustBar/topRevBar), 2=tín hiệu tích lũy mạnh (stopVolume/revUpThrust).
-# Cột "vpa_flag" đã tính sẵn khi build/vá history_cache (scanner_full.calc_vpa_flag)
-# — route /api/lightweight_chart chỉ đọc, không tính lại. Nhánh weekly (resample)
-# không có cột này nên rơi về màu trung tính (chấp nhận được, VPA chỉ có ý nghĩa
-# ở khung ngày).
+# Màu cột Volume: 0=trung tính, 1=cảnh báo suy yếu, 2=tín hiệu tích lũy mạnh.
+# "vpa_flag" tính sẵn khi build/vá history_cache (calc_vpa_flag) — route này chỉ đọc.
+# Nhánh weekly (resample) không có cột này nên rơi về màu trung tính.
 _VPA_FLAG_COLOR = {1: "#254fcc", 2: "#00ffe5"}
-# calc_vpa_flag cần tối thiểu ~140 phiên (xem min_bars) cộng buffer cho rolling
-# window nội bộ — khi tính Volume-Signal luôn kéo tối thiểu ngần này phiên. Chỉ
-# dùng cho _refresh_vpa_flags(), KHÔNG áp cho fetch hiển thị nến chính (giữ nhẹ
-# theo đúng `limit` FE xin để chart tải nhanh).
+# calc_vpa_flag cần tối thiểu ~140 phiên + buffer rolling window; chỉ dùng cho
+# _refresh_vpa_flags(), KHÔNG áp cho fetch nến chính (giữ nhẹ theo `limit` FE xin).
 _VPA_MIN_HIST_BARS = 300
-# Volume-Signal (vpa_flag) tốn CPU nên KHÔNG tính lại mỗi request (nhất là khi
-# panel CHART quiet-refresh mỗi 20s) — cache theo mã, TTL ngắn, tính lại nền
-# (thread) khi hết hạn, không chặn response nến. Cache này độc lập hoàn toàn với
-# history_cache: tự fetch VNDirect riêng, không đọc/ghi gì vào history_cache.
+# Volume-Signal tốn CPU nên không tính lại mỗi request — cache theo mã, TTL ngắn,
+# tính lại nền (thread) khi hết hạn. Độc lập hoàn toàn với history_cache.
 _VPA_CACHE_TTL_SEC = 300
 _vpa_flag_cache: dict = {}   # symbol -> {"updated_at": float, "computing": bool, "flags_by_date": {date_str: flag}}
 _vpa_cache_lock = threading.Lock()
 
-# ── RAM cache cho /api/lightweight_chart ──────────────────────────────────────
-# Lưu payload đã build sẵn (candles + volume) theo (symbol, tf) để trả ~0ms cho
-# request thứ 2 trở đi. TTL ngắn (60s) để dữ liệu trong phiên không stale lâu.
+# ── RAM cache cho /api/lightweight_chart: payload theo (symbol, tf), trả ~0ms
+# từ request thứ 2, TTL 60s để không stale lâu trong phiên. ─────────────────
 _LITE_CHART_CACHE_TTL = 60          # giây
 _lite_chart_cache: dict = {}        # (symbol, tf) -> {"payload": dict, "ts": float}
 _lite_chart_cache_lock = threading.Lock()
@@ -566,9 +524,7 @@ _journal_lock = threading.Lock()
 _price_alert_lock = threading.Lock()
 
 # NGUỒN DUY NHẤT cho cấu hình nhóm ngành heatmap — dùng chung cho dashboard
-# (sidebar JS qua __HMAP_COLS_CONFIG__) và scanner_full.py (vẽ heatmap PNG, tự
-# suy ra HEATMAP_COLUMNS từ đây). Thêm/bớt mã hay đổi tên nhóm: chỉ sửa ở đây,
-# 2 nơi tự động đồng bộ.
+# (qua __HMAP_COLS_CONFIG__) và scanner_full.py (vẽ heatmap PNG). Sửa ở đây, 2 nơi tự đồng bộ.
 HMAP_COLS_CONFIG = [
     {"groups": [{"name": "VN30", "syms": ["FPT", "GAS", "NVL", "VNM", "VCB", "PLX", "TCB", "MWG", "STB", "HPG", "PNJ", "BID", "CTG", "HDB", "VJC", "VPB", "KDH", "MBB", "VHM", "POW", "VRE", "MSN", "SSI", "ACB", "BVH", "GVR", "TPB"]}]},
     {"groups": [{"name": "NGÂN HÀNG", "syms": ["VCB", "BID", "CTG", "MBB", "ACB", "TCB", "TPB", "HDB", "SHB", "STB", "VIB", "VPB", "MSB", "ABB", "BVB", "LPB"]}, {"name": "DẦU KHÍ", "syms": ["GAS", "PVD", "PVS", "BSR", "OIL", "PVB", "PVC", "PLX", "PET", "PVT"]}]},
@@ -579,10 +535,8 @@ HMAP_COLS_CONFIG = [
     {"groups": [{"name": "ĐẦU TƯ CÔNG", "syms": ["FCN", "HHV", "LCG", "VCG", "C4G", "CTD", "HBC", "HSG", "NKG", "HPG", "KSB", "PLC"]}]},
 ]
 
-# NGUỒN DUY NHẤT cho "danh sách mã Trading" — dùng chung cho dashboard (sidebar/
-# heatmap) và scanner_full.py (fetch giá qua price_board), import trực tiếp biến
-# này để không bao giờ bị lệch 2 danh sách như trước (BAF/BMI/LCG từng thiếu bên
-# fetch giá, khiến cột Trading hiện "--"). Thêm/bớt mã: chỉ sửa ở đây.
+# NGUỒN DUY NHẤT cho "danh sách mã Trading" — dùng chung cho dashboard và
+# scanner_full.py để không bị lệch 2 danh sách như trước. Thêm/bớt mã: sửa ở đây.
 TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BFC", "BID", "BMI", "BSR", "BVB", "BVH", "BWE", "BAF", "CII", "CKG", "CRE", "CTD", "CTG", "CTI", "CTR", "CTS", "ORS", "D2D", "DBC", "DCM", "DSE", "DGW", "DIG", "DPG", "DPM", "DRC", "DRH", "DXG", "FCN", "FPT", "FRT", "FTS", "GAS", "GEG", "GEX", "GMD", "GVR", "HAG", "HAX", "HBC", "HCM", "HDB", "HDC", "VCK", "HDG", "HNG", "HPG", "HSG", "HTN", "HVN", "IDC", "IJC", "KBC", "KDH", "KSB", "LCG", "LDG", "LPB", "LTG", "MBB", "MBS", "MSB", "MSN", "MWG", "NKG", "NLG", "NTL", "NVL", "PC1", "PDR", "PET", "PHR", "PLC", "PLX", "PNJ", "POW", "PTB", "PVD", "PVS", "PVT", "QNS", "REE", "SBT", "SCR", "SHB", "SHS", "SSI", "STB", "SZC", "TCB", "TDM", "TIG", "TNG", "TPB", "TV2", "VCB", "VCI", "VCS", "VGT", "VHC", "VHM", "VIB", "VIC", "VJC", "VNM", "VPB", "VRE"]
 
 
@@ -604,9 +558,8 @@ _journal_storage_ready = False
 _journal_storage_init_lock = threading.Lock()
 
 def _init_journal_storage():
-    # Trước đây hàm này (CREATE TABLE IF NOT EXISTS) chạy lại ở mọi request đụng
-    # journal, tốn thêm 1 kết nối SQLite + DDL dư thừa mỗi lần — idempotent nên
-    # không sai nhưng lãng phí. Giờ chỉ chạy 1 lần cho cả vòng đời process.
+    # Trước đây DDL này chạy lại ở mọi request đụng journal — lãng phí dù idempotent.
+    # Giờ chỉ chạy 1 lần cho cả vòng đời process.
     global _journal_storage_ready
     if _journal_storage_ready:
         return
@@ -665,8 +618,7 @@ _price_alert_storage_ready = False
 _price_alert_storage_init_lock = threading.Lock()
 
 def _init_price_alert_storage():
-    # Cùng tối ưu như _init_journal_storage(): chỉ chạy DDL đúng 1 lần/process thay
-    # vì mỗi request, tránh mở dư 1 kết nối SQLite mỗi lần gọi _price_alert_conn().
+    # Cùng tối ưu như _init_journal_storage(): DDL chỉ chạy 1 lần/process.
     global _price_alert_storage_ready
     if _price_alert_storage_ready:
         return
@@ -1057,9 +1009,7 @@ def _attach_rs_payload(payload: dict, symbol: str) -> dict:
         payload.pop("rs", None)
     return payload
 
-# =============================================================================
-# API
-# =============================================================================
+# ── API ──────────────────────────────────────────────────────────────────────
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
@@ -1151,8 +1101,7 @@ def api_quote_extra():
     syms = []
     for s in raw.split(","):
         s = s.strip().upper()
-        # Chỉ nhận mã dạng chữ/số thuần, độ dài hợp lý — chặn input rác/độc trước khi đưa vào
-        # hàm fetch giá thật (engine.price_board bên scanner_full.py).
+        # Chỉ nhận mã dạng chữ/số thuần, độ dài hợp lý — chặn input rác/độc.
         if s and s.isalnum() and 1 <= len(s) <= 10 and s not in syms:
             syms.append(s)
     syms = syms[:EXTRA_QUOTE_MAX_SYMS]
@@ -1191,19 +1140,15 @@ def api_market_health():
     payload = dict(data or {})
     payload["cached_age"] = int(time.time() - snap_time) if snap_time else 0
     payload["ttl_sec"] = MARKET_HEALTH_TTL_SEC
-    # True nghĩa là số đang hiển thị là số CŨ (giữ lại từ lần thành công trước / từ đĩa)
-    # trong lúc chờ tính lại — frontend dùng cờ này để biết cần polling nhanh tiếp
-    # (xem fetchHealth() ở JS) thay vì tưởng đã có số mới rồi đợi hết TTL mới hỏi lại.
+    # True = số đang hiển thị là số cũ, chờ tính lại — frontend dùng cờ này để
+    # poll nhanh hơn (xem fetchHealth() ở JS) thay vì đợi hết TTL.
     payload["pending_refresh"] = pending_refresh
     return jsonify(_json_safe(payload))
 
 @app.route("/api/vol_forecast/<symbol>")
 def api_vol_forecast(symbol):
-    """NGUỒN DUY NHẤT cho khối 'Giá phóng to' (bp-price/bp-sub) trên panel CHART —
-    trả progress (% thời gian phiên đã trôi qua, tính bằng đồng hồ SERVER, giờ VN)
-    và ratio_prev/ratio_ma50 (đã tính sẵn từ VMA50 dùng chung với tín hiệu
-    ATTENT/BREAKVOL) từ scanner_full.dashboard_vol_forecast_fn — JS phía trước
-    KHÔNG tự tính lại múi giờ hay MA50 nữa, chỉ hiển thị nguyên số server trả về."""
+    """NGUỒN DUY NHẤT cho khối 'Giá phóng to' trên panel CHART — trả progress
+    (% thời gian phiên, giờ VN) và ratio_prev/ratio_ma50. JS chỉ hiển thị, không tự tính lại."""
     symbol = symbol.upper().strip()
     if not _vol_forecast_fn:
         return jsonify({"symbol": symbol, "error": "unavailable"}), 503
@@ -1212,9 +1157,8 @@ def api_vol_forecast(symbol):
     except Exception as exc:
         return jsonify({"symbol": symbol, "error": "exception", "detail": str(exc)}), 500
 
-# ── Connection Pool cho VNDirect DChart API ────────────────────────────────────
-# Giữ kết nối HTTP Keep-Alive / TLS warm với server VNDirect, tránh việc mỗi request
-# phải handshake lại SSL (tiết kiệm ~150-250ms latency mạng mỗi lần fetch).
+# ── Connection Pool cho VNDirect DChart API: giữ HTTP Keep-Alive/TLS warm để
+# khỏi handshake SSL lại mỗi request (tiết kiệm ~150-250ms/lần fetch). ─────
 _vndirect_http_session = requests.Session()
 _vndirect_http_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
@@ -1260,9 +1204,8 @@ def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
     return raw_bars or None
 
 def _get_vpa_flags_from_raw(symbol, raw_bars):
-    """Tính Volume-Signal (VPA) TRỰC TIẾP trên `raw_bars` đã có trong RAM (~1ms).
-    KHÔNG bắn thêm request HTTP mạng thứ 2 tới VNDirect nữa → hoàn toàn triệt tiêu
-    nghẽn mạng trùng lặp và xung đột kết nối khi load mã mới."""
+    """Tính Volume-Signal (VPA) trực tiếp trên `raw_bars` đã có trong RAM (~1ms),
+    không cần bắn thêm request HTTP thứ 2 tới VNDirect."""
     if not _calc_vpa_flag_fn or not raw_bars:
         return {}
     now = time.time()
@@ -1300,9 +1243,8 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     tf_upper = tf.upper().strip()
     limit = max(50, min(1000, int(limit or 400)))
 
-    # ── Xác định khoảng thời gian cần fetch ──────────────────────────────────
     if before_date:
-        # Lazy load: lấy bar cũ hơn before_date → to_ts = ngay trước before_date
+        # Lazy load: lấy bar cũ hơn before_date
         try:
             from datetime import date as _date
             bd = _date.fromisoformat(str(before_date))
@@ -1330,7 +1272,6 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     if not raw_bars:
         return None, "no_data_from_vndirect"
 
-    # ── Resample theo TF ─────────────────────────────────────────────────────
     if target_tf == "1W":
         weeks = {}
         for bar in raw_bars:
@@ -1385,7 +1326,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     if not final_bars:
         return None, "no_data_after_resample"
 
-    # ── Volume-Signal (VPA) — chỉ khung 1D, tính trực tiếp từ raw_bars (~1ms) ──
+    # VPA chỉ tính cho khung 1D, trực tiếp từ raw_bars (~1ms)
     vpa_flags_by_date = _get_vpa_flags_from_raw(symbol, raw_bars) if target_tf == "1D" else {}
 
     candles = []
@@ -1400,8 +1341,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
             color = _VPA_FLAG_COLOR.get(flag) or color
         volume.append({"time": t_val, "value": v, "color": color})
 
-    # has_more: True khi đây là lazy-load chunk (before_date set) VÀ
-    # số bar trả về bằng limit (có thể còn lịch sử cũ hơn nữa).
+    # has_more: lazy-load chunk và số bar trả về = limit → có thể còn lịch sử cũ hơn.
     has_more = before_date is not None and len(final_bars) >= limit
 
     payload = {
@@ -1426,7 +1366,7 @@ def api_lightweight_chart(symbol):
         limit = 450
     limit = max(5, min(1000, limit))
 
-    # ── Lazy load: request có `before` → fetch lịch sử cũ, KHÔNG đọc cache ──
+    # Lazy load: request có `before` → fetch lịch sử cũ, không đọc cache
     if before_date:
         dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit, before_date=before_date)
         if not err and dchart_data and dchart_data.get("candles"):
@@ -1434,7 +1374,7 @@ def api_lightweight_chart(symbol):
         return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
                         "detail": err or "no_data"}), 502
 
-    # ── Load thường: kiểm tra RAM cache trừ khi nocache=1 ────────────────────
+    # Load thường: kiểm tra RAM cache trừ khi nocache=1
     nocache = (request.args.get("nocache") == "1") or (request.args.get("refresh") == "1")
     cache_key = (symbol, tf)
     now_ts = time.time()
@@ -1450,7 +1390,7 @@ def api_lightweight_chart(symbol):
     if not err and dchart_data and dchart_data.get("candles"):
         # Đánh dấu has_more=True khi load đầu (còn lịch sử cũ phía trước)
         dchart_data["has_more"] = True
-        # CHỈ GHI FULL DATA (limit >= 400) VÀO CACHE — KHÔNG ĐÈ 50-BAR QUIET REFRESH LÊN CACHE
+        # Chỉ ghi full data (limit >= 400) vào cache — không đè 50-bar quiet refresh lên cache
         if limit >= 400 and not nocache:
             with _lite_chart_cache_lock:
                 _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
@@ -1871,9 +1811,8 @@ def api_journal_delete_image(image_id):
 
 @app.route("/")
 def index():
-    # __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ giờ nằm trong DASHBOARD_MAIN_JS (đã tách ra
-    # file JS riêng, xem route /dashboard-main.js bên dưới) chứ không còn trong DASHBOARD_HTML
-    # nữa, nên ở đây khỏi cần .replace() gì thêm — trả thẳng HTML nguyên bản.
+    # __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ nằm trong DASHBOARD_MAIN_JS (route
+    # /dashboard-main.js), không còn trong DASHBOARD_HTML — trả thẳng HTML nguyên bản.
     return Response(DASHBOARD_HTML, mimetype="text/html")
 
 @app.route("/dashboard-main.js")
@@ -1887,15 +1826,12 @@ def dashboard_main_js():
         .replace("__TS_POOL_CONFIG__", json.dumps(TS_POOL_CONFIG, ensure_ascii=False))
     )
     resp = Response(js, content_type="application/javascript; charset=utf-8")
-    # KHÔNG cache dài hạn — khác lightweight-charts.min.js (gần như không đổi),
-    # file này đổi theo mỗi lần deploy. no-cache buộc luôn kiểm tra lại server,
-    # tránh tình trạng "deploy bản mới nhưng proxy/trình duyệt vẫn chạy JS cũ".
+    # KHÔNG cache dài hạn — khác lightweight-charts.min.js, file này đổi theo mỗi
+    # lần deploy, no-cache để tránh trình duyệt chạy JS cũ.
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 
-# =============================================================================
-# START
-# =============================================================================
+# ── START ────────────────────────────────────────────────────────────────────
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
                     vol_forecast_fn=None,
@@ -1932,9 +1868,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s")
 
 
-# =============================================================================
-# TRADE JOURNAL HTML
-# =============================================================================
+# ── TRADE JOURNAL HTML ──────────────────────────────────────────────────────
 JOURNAL_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -2191,9 +2125,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('viewer').clas
 </html>
 """
 
-# =============================================================================
-# DASHBOARD HTML
-# =============================================================================
+# ── DASHBOARD HTML ───────────────────────────────────────────────────────────
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -3677,14 +3609,9 @@ html.chart-popout-mode .lite-chart-frame{
 </html>
 """
 
-# JS chính của dashboard, tách khỏi DASHBOARD_HTML (trước đây nhúng thẳng ~5300
-# dòng ở cuối trang) và serve qua route /dashboard-main.js. Lý do tách:
-#   1) HTML chính nhẹ hơn nhiều, trình duyệt parse xong rất nhanh.
-#   2) <script defer src=...> tải file JS song song ngay khi gặp thẻ, không phải
-#      đợi hết ~376KB HTML rồi mới có JS để chạy.
-#   3) Route riêng tận dụng được hook gzip (_gzip_response) như lightweight-charts.min.js.
-# Hành vi thực thi (thời điểm/thứ tự chạy so với DOM) và nội dung JS giữ nguyên
-# 100% — chỉ đổi cách gửi tới trình duyệt.
+# JS chính, tách khỏi DASHBOARD_HTML và serve qua route /dashboard-main.js: HTML
+# nhẹ hơn, tải JS song song thay vì đợi hết HTML, tận dụng được hook gzip. Hành
+# vi thực thi và nội dung JS giữ nguyên 100% — chỉ đổi cách gửi tới trình duyệt.
 DASHBOARD_MAIN_JS = r"""
 'use strict';
 // DOM CACHE
@@ -3765,11 +3692,9 @@ const DOM={
 // HELPERS
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-// Phát hiện app chạy STANDALONE (mở từ icon "Thêm vào MH chính", không khung
-// Safari/Chrome bao quanh) — navigator.standalone là cờ riêng iOS Safari,
-// matchMedia('display-mode: standalone') là chuẩn chung. Dùng để né lỗi WebKit:
-// khi tắt zoom (user-scalable=no), TAB Safari bình thường vẫn bắn 'dblclick' cho
-// double-tap, nhưng STANDALONE thì không — xem chỗ dùng ở nút FOLLOW bên dưới.
+// Phát hiện app STANDALONE (không khung Safari/Chrome bao quanh): navigator.standalone là cờ
+// iOS Safari, matchMedia('display-mode: standalone') là chuẩn chung. STANDALONE không bắn
+// 'dblclick' khi tắt zoom, khác TAB Safari thường — xem chỗ dùng ở nút FOLLOW bên dưới.
 const IS_STANDALONE_PWA=()=>window.navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
 const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
@@ -3808,8 +3733,7 @@ function pctCellForSym(sym,fallbackPct=null){
   if(!Number.isFinite(v))return{txt:'—',color:'#6b7280'};
   return{txt:(v>=0?'+':'')+v.toFixed(1)+'%',color:v>=0?'#0e9f6e':'#e02424'};
 }
-// Cache tín hiệu "hôm nay" theo mã (đổ đầy trong fetchSigs(), chạy mỗi SIG_TTL
-// giây cho panel "Tín hiệu hôm nay"). Chart CHART chỉ đọc lại map này.
+// Cache tín hiệu "hôm nay" theo mã (đổ đầy trong fetchSigs()); chart CHART chỉ đọc lại map này.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
 let _strengthTodayMap=new Map();
@@ -3872,8 +3796,7 @@ function saveLiteTrendMode(){
   try{localStorage.setItem(LITE_TREND_MODE_KEY,mode);}catch(e){}
 }
 function _liteTrendMode(){
-  // Tra qua document (không phải DOM.liteIndicators) vì dropdown "trend" có thể
-  // bị portal ra <body> — name="trend-mode" là duy nhất trên trang nên vẫn đúng.
+  // Tra qua document (không DOM.liteIndicators) vì dropdown "trend" có thể bị portal ra <body>.
   const el=document.querySelector('input[name="trend-mode"]:checked');
   return el?el.value:'regular';
 }
@@ -3910,8 +3833,7 @@ function bindLiteIndColorPickers(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-label').forEach(span=>{
     span.addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
-      // Tra theo <label> cha trực tiếp, không phải DOM.liteIndicators.querySelector —
-      // vì dropdown chứa cặp span/input có thể đang bị portal ra <body> (mobile portrait).
+      // Tra theo <label> cha trực tiếp — dropdown có thể bị portal ra <body> (mobile portrait).
       const inp=span.closest('label')?.querySelector(`.lite-ind-color[data-ind="${span.dataset.ind}"]`);
       if(inp)inp.click();
     });
@@ -3927,8 +3849,7 @@ function bindLiteIndColorPickers(){
 function updateLiteIndGroupCounts(){
   DOM.liteIndicators?.querySelectorAll('.lite-ind-group').forEach(grp=>{
     const key=grp.dataset.group;
-    // Tra qua document, không grp.querySelectorAll — dropdown của group này có
-    // thể bị portal ra <body>, lúc đó grp.querySelectorAll sẽ luôn ra 0.
+    // Tra qua document, không grp.querySelectorAll — dropdown group có thể bị portal ra <body>.
     const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
     const n=dd?dd.querySelectorAll('input[type="checkbox"]:checked').length:0;
     const badge=grp.querySelector(`.lite-ind-count[data-count="${key}"]`);
@@ -3958,8 +3879,7 @@ function _litePositionIndDropdown(btn,dd){
   const dw=dd.offsetWidth, dh=dd.offsetHeight;
   // Canh trái theo mép trái của nút, kẹp lại để dropdown không tràn ra ngoài 2 mép màn hình.
   let left=Math.min(Math.max(r.left,voX+margin),voX+vw-dw-margin);
-  // Mặc định bung xuống dưới nút; không đủ chỗ thì bung lên trên; cả 2 phía đều
-  // thiếu thì kẹp trong vùng nhìn thấy (CSS overflow-y:auto lo phần cuộn).
+  // Mặc định bung xuống dưới nút, không đủ chỗ thì bung lên trên, thiếu cả 2 thì kẹp trong vùng nhìn thấy.
   let top;
   if(r.bottom+dh+margin<=voY+vh)top=r.bottom+4;
   else if(r.top-dh-4>=voY+margin)top=r.top-dh-4;
@@ -3968,8 +3888,7 @@ function _litePositionIndDropdown(btn,dd){
   dd.style.top=top+'px';
 }
 function _liteRepositionOpenDropdown(){
-  // Gọi lại khi toolbar cuộn ngang/resize/bàn phím ảo đóng-mở lúc dropdown đang
-  // mở trên mobile — dropdown đã portal ra <body> nên không tự trôi theo nút.
+  // Gọi lại khi toolbar cuộn/resize/bàn phím ảo đóng-mở lúc dropdown đang mở trên mobile (đã portal ra <body>).
   const grp=DOM.liteIndicators?.querySelector('.lite-ind-group.open');
   if(!grp)return;
   const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${grp.dataset.group}"]`);
@@ -4052,8 +3971,7 @@ function bindLiteIndGroupDropdowns(){
   });
   document.addEventListener('click',()=>closeAllLiteIndDropdowns());
   window.addEventListener('orientationchange',()=>closeAllLiteIndDropdowns());
-  // Đăng ký lắng nghe cuộn/resize DUY NHẤT 1 lần ở đây — _liteRepositionOpenDropdown
-  // tự kiểm tra có dropdown nào đang mở, khỏi add/remove listener liên tục.
+  // Đăng ký lắng nghe cuộn/resize duy nhất 1 lần — hàm tự kiểm tra dropdown nào đang mở.
   document.querySelector('.lite-chart-toolbar')?.addEventListener('scroll',_liteRepositionOpenDropdown,{passive:true});
   window.addEventListener('resize',_liteRepositionOpenDropdown);
   window.visualViewport?.addEventListener('resize',_liteRepositionOpenDropdown);
@@ -4113,8 +4031,7 @@ let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-M
 let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
 // Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
 const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
-// Resize khung 3 chart (main/RSI/MACD) theo clientWidth/Height hiện tại — dùng
-// chung cho cả resize listener và _liteRelayoutViewport(), tránh lặp code.
+// Resize khung 3 chart theo clientWidth/Height — dùng chung cho resize listener và _liteRelayoutViewport().
 function _liteApplyChartSizes(){
   if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
   if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
@@ -4175,8 +4092,7 @@ function initLiteChart(){
   _liteMacdChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     _liteSyncVisibleRangeFrom(_liteMacdChart,range);
   });
-  // Crosshair hợp nhất (1 dọc+1 ngang) cho 2 panel: mỗi panel tự báo toạ độ cục
-  // bộ, cộng offsetTop rồi set style.left/top cho overlay — mượt, không giật.
+  // Crosshair hợp nhất (1 dọc+1 ngang) cho 2 panel: mỗi panel báo toạ độ cục bộ + offsetTop.
   function _liteHideXhair(){
     if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
     if(DOM.liteXhairH)DOM.liteXhairH.style.display='none';
@@ -4228,23 +4144,15 @@ function initLiteChart(){
   _liteRsiChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteRsiChart,_liteRsiCrosshairSeries,false));
   if(!_liteResizeBound){
     _liteResizeBound=true;
-    // Debounce 150ms giống 2 chỗ resize khác trong file (health-chart, vnd-panel)
-    // — tránh bắn liên tục mỗi pixel lúc kéo giãn/xoay máy, chỉ tính lại 1 lần
-    // sau khi ngừng resize 150ms.
+    // Debounce 150ms (giống health-chart, vnd-panel) — chỉ tính lại 1 lần sau khi ngừng resize.
     let _liteResizeTimer=null;
     window.addEventListener('resize',()=>{
       clearTimeout(_liteResizeTimer);
       _liteResizeTimer=setTimeout(()=>{
-        // Popout thẻ CHART (cả mobile lẫn desktop): #lite-chart-panel giờ tự giãn theo
-        // viewport (xem CSS html.chart-popout-mode #lite-chart-panel) nên khi user kéo
-        // cạnh cửa sổ, clientHeight của .lite-chart-frame đổi theo — phải gọi
-        // _liteRelayoutViewport() để tính lại mainH/rsiH/macdH (applyLitePaneLayout),
-        // không chỉ resize canvas (_liteApplyChartSizes) như trước, nếu không panel sẽ
-        // giữ nguyên chiều cao cũ và để lại khoảng trắng bên dưới khi cửa sổ to ra.
-        // Trên mobile, hàm này còn kiêm luôn vai trò lưới an toàn dự phòng cho
-        // 'orientationchange' (một số trình duyệt Android Chrome không bắn sự kiện đó
-        // tin cậy bằng 'resize'). _liteRelayoutViewport() đã tự gọi _liteApplyChartSizes()
-        // bên trong nên không gọi lại lần nữa ở nhánh popout.
+        // Popout thẻ CHART tự giãn theo viewport khi kéo cạnh cửa sổ — phải gọi
+        // _liteRelayoutViewport() (không chỉ resize canvas) để tính lại pane layout,
+        // nếu không panel giữ chiều cao cũ và để lại khoảng trắng. Trên mobile hàm này
+        // còn là lưới an toàn cho 'orientationchange' (Android Chrome đôi khi không bắn tin cậy).
         if(_isChartPopoutWindow)_liteRelayoutViewport();
         else _liteApplyChartSizes();
         resizeLiteDrawCanvas();redrawLiteDrawings();
@@ -4259,16 +4167,12 @@ function initLiteChart(){
   }
 }
 function _liteChecked(name){
-  // Tra qua document (không DOM.liteIndicators): hàm chạy liên tục lúc vẽ chart,
-  // kể cả khi dropdown đang portal ra <body> — value là định danh duy nhất toàn
-  // trang nên tra qua document vẫn đúng dù checkbox đang nằm ở đâu.
+  // Tra qua document (không DOM.liteIndicators): hàm chạy liên tục lúc vẽ, kể cả khi dropdown đang portal ra <body>.
   return !!document.querySelector(`input[value="${name}"]:checked`);
 }
 function _liteAllIndCheckboxes(){
-  // Gộp checkbox trong #lite-indicators với checkbox trong dropdown đang bị
-  // portal ra <body> (mobile portrait) — chỉ query #lite-indicators sẽ bỏ sót
-  // checkbox của dropdown đang mở, gây mất dữ liệu khi lưu (saveLiteIndicatorPrefs
-  // ghi đè localStorage, thiếu key nào mất giá trị đã lưu của key đó).
+  // Gộp checkbox #lite-indicators với checkbox dropdown portal ra <body> (mobile portrait) —
+  // thiếu sẽ mất giá trị đã lưu khi saveLiteIndicatorPrefs ghi đè localStorage.
   return document.querySelectorAll('#lite-indicators input[type="checkbox"], .lite-ind-dropdown input[type="checkbox"]');
 }
 function loadLiteIndicatorPrefs(){
@@ -4308,8 +4212,7 @@ function _liteTitleSegments(bar){
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
-  // H và L được wrap bằng <span class="lct-hl"> để CSS portrait ẩn bớt cho vừa 1 dòng.
-  // _high/_low lưu riêng để _liteDrawTitleSegments vẫn vẽ đủ trên canvas screenshot.
+  // H/L wrap <span class="lct-hl"> để CSS portrait ẩn bớt; _high/_low lưu riêng cho canvas screenshot.
   const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
   // O: và giá open được wrap bằng <span class="lct-open"> để CSS portrait ẩn bớt cho vừa 1 dòng.
   const openHtml=`<span class="lct-open"><span style="color:#111827"> O:</span><span style="color:${col}">${fmtLiteNum(bar.open)}</span></span>`;
@@ -4614,16 +4517,12 @@ function alignLiteSeries(points){
   const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
-// skipWidthSync=true khi hàm gọi sẽ tự đồng bộ trục giá sau đó (renderLiteIndicators())
-// — tránh đo width lúc dữ liệu 3 trục chưa kịp cập nhật (ra width cũ/rỗng, vô nghĩa).
+// skipWidthSync=true khi hàm gọi tự đồng bộ trục giá sau đó — tránh đo width khi dữ liệu 3 trục chưa cập nhật.
 function applyLitePaneLayout(skipWidthSync){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  // Portrait mobile (IS_MOBILE() && portrait):
-  // - Popout: #lite-chart-panel cao 100dvh trừ padding/safe-area, frame flex:1 tự
-  //   giãn lấp phần còn lại — đọc clientHeight thực tế là đủ chính xác.
-  // - Non-popout: frame height:auto (tự giãn); mainH cố định 56vh.
-  // - Desktop/landscape: đọc clientHeight thực tế (fallback 720).
+  // Portrait mobile: popout đọc clientHeight thực tế (frame flex:1 tự giãn); non-popout dùng
+  // mainH cố định 56vh (frame height:auto). Desktop/landscape: đọc clientHeight thực tế (fallback 720).
   const isPortraitMobile=IS_MOBILE()&&window.innerHeight>window.innerWidth;
   const totalH=Math.max(300,(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720);
   const bothPanes=showRsi&&showMacd;
@@ -4632,8 +4531,7 @@ function applyLitePaneLayout(skipWidthSync){
   const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
-  // Portrait non-popout: mainH = 56vh cố định, frame tự giãn theo RSI/MACD.
-  // Desktop/landscape/popout: mainH = totalH trừ phần indicator bên dưới.
+  // Portrait non-popout: mainH=56vh cố định. Desktop/landscape/popout: mainH = totalH trừ indicator.
   const mobilePortrait=isPortraitMobile&&!_isChartPopoutWindow;
   const mainH=mobilePortrait
     ?Math.max(300,Math.round(window.innerHeight*0.56))
@@ -4650,9 +4548,8 @@ function applyLitePaneLayout(skipWidthSync){
     DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
     DOM.liteRsiChart.classList.toggle('hide-tv-logo',showRsi&&showMacd);
     DOM.liteMacdChart.classList.remove('hide-tv-logo');
-    // Portrait non-popout: set height tường minh (height:auto cần con có size rõ).
-    // Else: clear inline style để CSS landscape/desktop tự quản, tránh giá trị
-    // portrait còn sót khi xoay sang landscape.
+    // Portrait non-popout: set height tường minh. Else: clear inline style để CSS landscape/desktop
+    // tự quản, tránh giá trị portrait còn sót khi xoay sang landscape.
     if(mobilePortrait&&DOM.liteChartFrame)DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
     else if(DOM.liteChartFrame)DOM.liteChartFrame.style.height='';
     DOM.liteChart.style.height=`${mainH}px`;
@@ -4679,11 +4576,8 @@ function applyLitePaneLayout(skipWidthSync){
   resizeLiteDrawCanvas();redrawLiteDrawings();
   if(!skipWidthSync)_liteSyncPriceScaleWidths();
 }
-// Đồng bộ chiều rộng trục giá (phải) của main/RSI/MACD cho thẳng hàng: minimumWidth
-// (64px) chỉ là mức sàn, mã giá nhiều chữ số (VNINDEX/VN30) khiến trục main tự nới
-// rộng hơn 2 trục kia. Đo width thực tế cả 3 (sau 1 khung hình, chờ thư viện tính lại
-// label) rồi ép dùng chung minimumWidth = max. Gọi cuối applyLitePaneLayout() và cuối
-// renderLiteIndicators() (renderLiteIndicators tự skip lần đầu vì series chưa setData).
+// Đồng bộ chiều rộng trục giá (phải) của main/RSI/MACD: đo width thực tế cả 3 rồi ép dùng
+// chung minimumWidth=max, vì mã giá nhiều chữ số (VNINDEX/VN30) khiến trục main tự nới rộng hơn.
 function _liteSyncPriceScaleWidths(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   requestAnimationFrame(()=>{
@@ -4698,9 +4592,8 @@ function _liteSyncPriceScaleWidths(){
     }catch(e){}
   });
 }
-// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel,
-// entry/target/stop, text) ═══ Kiểu TradingView: vẽ xong chọn/kéo/đổi màu được
-// (trừ Entry/Target/Stoploss dùng màu ngữ nghĩa cố định).
+// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop,
+// text) ═══ Kiểu TradingView: vẽ xong chọn/kéo/đổi màu được (trừ Entry/Target/Stoploss màu cố định).
 const LITE_DRAW_KEY='dashboard_lite_drawings';
 const LITE_DRAW_COLOR_KEY='dashboard_lite_draw_color';
 const LITE_TEXT_SIZE_KEY='dashboard_lite_text_size';
@@ -4857,14 +4750,12 @@ function _liteDrawHandle(ctx,x,y){
   ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#1a56db';ctx.lineWidth=1.3;
   ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
 }
-// Vẽ 4 chấm góc của khung 2-điểm (khớp bộ 4 điểm p0/p1/c1/c2 mà
-// _liteCornerHitPart nhận diện) — dùng chung cho Hộp (rect) và Target.
+// Vẽ 4 chấm góc khung 2-điểm (p0/p1/c1/c2 mà _liteCornerHitPart nhận diện) — dùng chung cho Hộp và Target.
 function _liteDrawCornerHandles(ctx,x1,y1,x2,y2){
   _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
   _liteDrawHandle(ctx,x1,y2);_liteDrawHandle(ctx,x2,y1);
 }
-// Vẽ 1 cặp chấm trái/phải cùng mức giá (y) trong khung rx..rx+rw — dùng cho
-// Stop/Target2, không thuộc bộ 4 góc chính (chỉ resize ngang qua edgeL/edgeR).
+// Vẽ 1 cặp chấm trái/phải cùng mức giá trong khung rx..rx+rw — dùng cho Stop/Target2 (resize ngang qua edgeL/edgeR).
 function _liteDrawHandlePair(ctx,rx,rw,y){
   _liteDrawHandle(ctx,rx,y);_liteDrawHandle(ctx,rx+rw,y);
 }
@@ -4872,9 +4763,8 @@ function _liteChannelOffset(d){
   const pts=d.points;
   return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
 }
-// Control-point của quadratic bezier phải tính trong pixel-space, không phải
-// logical/price rồi quy đổi — trục giá log/percentage (phi tuyến) sẽ làm đáy
-// cong lệch khỏi vị trí chuột nếu quy đổi sau.
+// Control-point của quadratic bezier phải tính trong pixel-space, không phải logical/price rồi quy
+// đổi — trục giá log/percentage (phi tuyến) sẽ làm đáy cong lệch khỏi vị trí chuột.
 function _liteArcControlXY(x1,y1,x2,y2,tx,ty){
   if(!Number.isFinite(tx)||!Number.isFinite(ty))return null;
   const midX=(x1+x2)/2,midY=(y1+y2)/2;
@@ -4944,8 +4834,7 @@ function _liteDrawShapeToCanvas(ctx,d){
         const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
         if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
       }
-      // Tô dải màu phía trong: nối khép kín các điểm (đỉnh↔đáy↔đỉnh...) thành
-      // 1 vùng, giống dải màu của Kênh giá/Bán nguyệt, để thấy rõ "vùng" ZigZag bao lấy.
+      // Tô dải màu phía trong: nối khép kín các điểm thành 1 vùng, giống Kênh giá/Bán nguyệt.
       if(scr.length>=3&&!d.noFill){
         ctx.save();
         ctx.beginPath();
@@ -5065,8 +4954,7 @@ function _liteDrawShapeToCanvas(ctx,d){
     const ctrl=(tx!==null&&ty!==null)?_liteArcControlXY(x1,y1,x2,y2,tx,ty):null;
     if(ctrl){
       const cx=ctrl.cx,cy=ctrl.cy;
-      // Tô màu phần diện tích giữa dây cung (đường nối 2 điểm đầu-cuối) và
-      // đường cong, giống dải màu của Kênh giá, để dễ thấy "vùng" bán nguyệt bao lấy.
+      // Tô màu phần diện tích giữa dây cung và đường cong, giống dải màu Kênh giá.
       if(cx!==null&&cy!==null){
         ctx.save();
         ctx.beginPath();
@@ -5206,14 +5094,12 @@ function _liteDrawTrendCloud(ctx){
 // Vẽ mũi tên báo mua thật (đầu tam giác+thân que), đặt cách xa dưới low hơn marker mặc định của thư viện để tránh đụng bấc nến/volume.
 function _liteDrawBuyArrow(ctx){
   if(!_liteBuyArrowData||!_liteChart||!_liteCandle||!_liteData.length)return;
-  // Đọc live nến cuối cùng ngay tại thời điểm vẽ (không dùng time/price lưu
-  // sẵn) — mũi tên luôn bám đúng tâm nến hiện tại, kể cả khi có nến mới chen vào.
+  // Đọc live nến cuối cùng tại thời điểm vẽ (không lưu sẵn) — mũi tên luôn bám đúng tâm nến hiện tại.
   const lastBar=_liteData[_liteData.length-1];
   const{color}=_liteBuyArrowData;
   const x=_liteTimeToX(lastBar.time),yLow=_litePriceToY(lastBar.low);
   if(x===null||yLow===null)return;
-  // GAP: khoảng cách xuống dưới low nến tới đuôi mũi tên. HEAD_H/HEAD_HALF_W:
-  // tam giác đầu (nhỏ, hẹp). SHAFT_H/SHAFT_HALF_W: thân que nối xuống đuôi.
+  // GAP: khoảng cách xuống dưới low tới đuôi mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu. SHAFT_*: thân que.
   const GAP=14,HEAD_H=6,HEAD_HALF_W=2.5,SHAFT_H=5,SHAFT_HALF_W=1;
   const yTip=yLow+GAP;              // đỉnh mũi tên, hướng lên phía nến
   const yHeadBase=yTip+HEAD_H;      // đáy tam giác đầu mũi tên = đỉnh thân que
@@ -5289,8 +5175,7 @@ function _liteOpenTextInput(p0,ev,editingShape){
   DOM.liteTextInput.style.top=Math.max(0,y)+'px';
   _liteApplyTextInputStyle();
   DOM.liteTextInput.classList.add('on');
-  // Focus ngay (đa số đã đủ), rồi focus lại 1 lần nữa ở animation frame kế
-  // tiếp — phòng khi trình duyệt chưa kịp layout xong phần tử vừa hiện ra.
+  // Focus ngay, rồi focus lại ở animation frame kế tiếp — phòng khi trình duyệt chưa layout xong.
   DOM.liteTextInput.focus();
   if(editingShape){const v=DOM.liteTextInput.value;DOM.liteTextInput.setSelectionRange(v.length,v.length);}
   requestAnimationFrame(()=>DOM.liteTextInput.focus());
@@ -5484,8 +5369,7 @@ function _liteSegDist(px,py,x1,y1,x2,y2){
   let t=((px-x1)*dx+(py-y1)*dy)/len2;t=Math.max(0,Math.min(1,t));
   return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
 }
-// Hit-test 4 góc của khung 2-điểm (p0,p1 thật + c1,c2 là 2 góc ảo ghép chéo
-// toạ độ) — dùng chung cho Hộp (rect) và Target, tránh lặp code ở 2 nơi.
+// Hit-test 4 góc khung 2-điểm (p0,p1 thật + c1,c2 là góc ảo ghép chéo) — dùng chung cho Hộp và Target.
 function _liteCornerHitPart(x,y,x1,y1,x2,y2){
   if(Math.hypot(x-x1,y-y1)<=9)return'p0';
   if(Math.hypot(x-x2,y-y2)<=9)return'p1';
@@ -5619,8 +5503,7 @@ function _liteApplyDrag(d,info,cur){
   if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
   else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
   else if(key==='rect:c1'||key==='position:c1'){
-    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p —
-    // 2 điểm gốc không di chuyển toàn khối, tạo hiệu ứng resize từ góc đang kéo.
+    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển.
     d.points[0]={l:op[0].l+dl,p:op[0].p};
     d.points[1]={l:op[1].l,p:op[1].p+dp};
   }else if(key==='rect:c2'||key==='position:c2'){
@@ -5639,8 +5522,7 @@ function _liteApplyDrag(d,info,cur){
   }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
   }else if(key==='arc:offset'){
-    // pts[2] của arc là toạ độ (logical,price) điểm "đáy" — kéo bao nhiêu, đáy
-    // dịch theo bấy nhiêu ở cả 2 chiều, không chỉ riêng chiều dọc như channel.
+    // pts[2] của arc là toạ độ (logical,price) điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu cả 2 chiều.
     const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
     const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
     d.points[2]={l:baseL+dl,p:baseP+dp};
@@ -5713,12 +5595,9 @@ function _liteRsBadgeColors(v){
   if(v>50)return{bg:'#fef9c3',fg:'#854d0e',bd:'#fde047'};
   return{bg:'#fee2e2',fg:'#b91c1c',bd:'#fecaca'};
 }
-// Đo vị trí/kích thước thật của 1 overlay (title/signal/bigprice...) TƯƠNG ĐỐI so với #lite-chart
-// (DOM.liteChart) — panes[0] chụp từ #lite-chart nên toạ độ đo theo cách này khớp thẳng với ảnh
-// chụp, không cần đoán/hard-code theo % hay px cố định như trước.
-// frameRect nhận từ ngoài truyền vào (không tự gọi getBoundingClientRect() trên DOM.liteChart ở
-// đây) vì 1 lượt chụp ảnh gọi hàm này nhiều lần (title, signal, emoji, badge, bigprice) trong khi
-// frameRect luôn giống nhau cả 5 lần đó — đo 1 lần ở nơi gọi rồi dùng lại, tránh đo DOM dư thừa.
+// Đo vị trí/kích thước thật của 1 overlay TƯƠNG ĐỐI so với #lite-chart (panes[0] chụp từ đây nên
+// toạ độ khớp thẳng với ảnh chụp). frameRect nhận từ ngoài truyền vào (không tự gọi
+// getBoundingClientRect() ở đây) vì 1 lượt chụp gọi hàm này nhiều lần với cùng frameRect.
 function _liteOverlayRect(el,frameRect,dpr){
   const r=el.getBoundingClientRect();
   return{x:(r.left-frameRect.left)*dpr,y:(r.top-frameRect.top)*dpr,w:r.width*dpr,h:r.height*dpr};
@@ -5746,8 +5625,7 @@ function _liteDrawTitleSegments(ctx,segments,x,y,dpr){
         x+=d;
         continue;
       }
-      // Segment HTML (lct-open hoặc lct-hl) — trên canvas vẽ text thuần thay vì HTML gốc.
-      // (Trên mobile portrait, 2 segment này đã bị lọc bỏ trước khi tới đây — xem copyLiteChartImage.)
+      // Segment HTML vẽ text thuần trên canvas (đã lọc bỏ trên mobile portrait — xem copyLiteChartImage).
       const col=seg.text.match(/color:([^"]+)"/)?.[1]||'#111827';
       const parts=seg._open!=null
         ?[{t:' O:',c:'#111827'},{t:seg._open||'',c:col}]
@@ -5764,9 +5642,8 @@ function _liteDrawTitleSegments(ctx,segments,x,y,dpr){
     }
   }
 }
-// Vẽ nền mờ + nội dung title lên canvas copy tại đúng vị trí thật (overlay position:absolute;top:8px
-// đè lên #lite-chart trên chart thật), thay vì 1 dải header riêng cộng thêm phía trên chart như trước
-// (nguyên nhân khiến title+badge trông "cao hơn"/tách khỏi chart so với thực tế hiển thị).
+// Vẽ nền mờ + title lên canvas copy đúng vị trí thật (overlay đè lên #lite-chart), thay vì
+// dải header riêng cộng thêm phía trên như trước (khiến title+badge trông tách khỏi chart).
 function _liteDrawTitleOverlay(ctx,segments,frameRect,dpr){
   const el=DOM.liteChartTitle;
   if(!el)return;
@@ -5783,10 +5660,8 @@ function _liteDrawTitleOverlay(ctx,segments,frameRect,dpr){
   _liteDrawTitleSegments(ctx,segments,rect.x+padX,rect.y+rect.h/2,dpr);
   ctx.font=savedFont;ctx.textBaseline=savedBaseline;ctx.textAlign=savedAlign;ctx.fillStyle=savedFill;
 }
-// Vẽ lại khối "Giá phóng to" (lớp DOM nổi, takeScreenshot() không chụp được) lên canvas copy.
-// Trên chart thật đây là overlay position:absolute;top:6px NẰM ĐÈ lên #lite-chart (không phải
-// nằm trong 1 dải header riêng phía trên) — dùng _liteOverlayRect để lấy đúng vị trí thật đó.
-// mainCenterX: tâm ngang của pane main trên canvas tổng hợp (khớp cách CSS canh giữa left:0;right:0;margin:0 auto).
+// Vẽ lại khối "Giá phóng to" (overlay DOM, takeScreenshot() không chụp được) lên canvas copy,
+// dùng _liteOverlayRect để lấy đúng vị trí thật. mainCenterX: tâm ngang pane main trên canvas tổng hợp.
 function _liteDrawBigPrice(ctx,mainCenterX,frameRect,dpr){
   const el=DOM.liteChartBigPrice;
   if(!el||!el.classList.contains('on'))return;
@@ -5810,11 +5685,9 @@ function _liteDrawBigPrice(ctx,mainCenterX,frameRect,dpr){
   }
   ctx.textAlign=savedAlign;ctx.textBaseline=savedBaseline;ctx.font=savedFont;ctx.fillStyle=savedFill;
 }
-// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge) vì badge là lớp DOM nổi,
-// takeScreenshot() không chụp được. Trên chart thật đây là overlay position:absolute;top:29px NẰM ĐÈ
-// lên #lite-chart (không phải nằm trong 1 dải header riêng phía trên) — dùng _liteOverlayRect để vẽ
-// đúng vị trí + kích thước thật của cả hàng (nền mờ) lẫn từng phần tử con (emoji, badge pill) bên trong,
-// thay vì suy ra toạ độ badge từ bề rộng emoji như trước (nguồn gốc gây lệch tâm chữ trong badge).
+// Vẽ badge tín hiệu lên canvas copy (đọc màu/kích thước thật từ DOM badge vì là overlay, không bị
+// takeScreenshot() chụp). Dùng _liteOverlayRect để vẽ đúng vị trí cả hàng lẫn từng phần tử con,
+// thay vì suy ra toạ độ từ bề rộng emoji như trước (nguồn gốc gây lệch tâm chữ).
 function _liteDrawSignalBadge(ctx,frameRect,dpr){
   const el=DOM.liteChartSignal;
   if(!el)return;
@@ -5830,9 +5703,8 @@ function _liteDrawSignalBadge(ctx,frameRect,dpr){
   const emojiR=_liteOverlayRect(emojiEl,frameRect,dpr),badgeR=_liteOverlayRect(badgeEl,frameRect,dpr);
   ctx.textBaseline='middle';
   ctx.textAlign='left';
-  // fontSize đọc từ getComputedStyle là CSS px (không tự nhân dpr) trong khi canvas chụp
-  // đã ở kích thước device-pixel, nên phải nhân dpr thủ công — nếu không icon/chữ trong badge
-  // sẽ bị vẽ nhỏ hơn hẳn so với khung badge (khung đã scale đúng qua getBoundingClientRect()*dpr).
+  // fontSize từ getComputedStyle là CSS px, canvas chụp ở device-pixel nên phải nhân dpr thủ công,
+  // nếu không icon/chữ trong badge sẽ nhỏ hơn khung badge (đã scale đúng qua getBoundingClientRect()*dpr).
   const emojiSize=Math.round((parseFloat(emojiCs.fontSize)||16)*dpr);
   ctx.font=`${emojiSize}px ${emojiCs.fontFamily||'sans-serif'}`;
   ctx.fillText(emojiEl.textContent,emojiR.x,emojiR.y+emojiR.h/2);
@@ -5847,9 +5719,8 @@ function _liteDrawSignalBadge(ctx,frameRect,dpr){
   const badgeSize=Math.round((parseFloat(badgeCs.fontSize)||11)*dpr);
   ctx.font=`${badgeCs.fontWeight} ${badgeSize}px ${badgeCs.fontFamily||'sans-serif'}`;
   ctx.textAlign='center';
-  // Tâm hộp thuần tuý (bx+bw/2, by+bh/2) qua textBaseline='middle' — bỏ hẳn số nhích +dpr cũ (vốn
-  // được canh cho cỡ chữ NHỎ/chưa nhân dpr trước khi sửa; sau khi cỡ chữ đã đúng tỉ lệ, số nhích đó
-  // làm chữ lệch khỏi tâm) để chữ tín hiệu luôn nằm đúng giữa khung badge.
+  // Tâm hộp thuần tuý (bx+bw/2, by+bh/2) qua textBaseline='middle' — bỏ số nhích +dpr cũ (vốn canh
+  // cho cỡ chữ nhỏ trước khi sửa, nay làm chữ lệch tâm) để chữ tín hiệu luôn nằm đúng giữa badge.
   ctx.fillText(badgeEl.textContent,bx+bw/2,by+bh/2);
   ctx.textBaseline=savedBaseline;ctx.textAlign=savedAlign;ctx.font=savedFont;ctx.fillStyle=savedFill;
 }
@@ -5882,13 +5753,9 @@ function _liteDownloadChartImage(blob){
   document.body.appendChild(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-// Copy PNG vào clipboard, dùng chung cho Mrk Health/Sankey/Treemap — các ảnh này phải dựng
-// bất đồng bộ (rasterize SVG qua <img> trước khi vẽ canvas). Khác với thẻ CHART (canvas đồng bộ,
-// encode Blob xong luôn rồi mới gọi clipboard.write — xem copyLiteChartImage), ở đây phải gọi
-// clipboard.write() NGAY trong lượt chạm, truyền thẳng Promise<Blob> (buildBlob() chưa resolve)
-// làm giá trị: đây là cách duy nhất giữ được quyền ghi clipboard trên Safari/Chrome mobile khi
-// phần dựng ảnh cần chờ — nếu await xong Blob rồi mới gọi clipboard.write thì "user activation"
-// của lượt chạm đã hết hạn, trình duyệt từ chối và rơi về tải file (đúng lỗi đang gặp).
+// Copy PNG vào clipboard, dùng chung cho Mrk Health/Sankey/Treemap (dựng ảnh bất đồng bộ qua <img>,
+// khác thẻ CHART là canvas đồng bộ). Phải gọi clipboard.write() NGAY trong lượt chạm, truyền thẳng
+// Promise<Blob> chưa resolve — nếu await xong Blob mới gọi thì user-activation đã hết hạn trên mobile.
 async function _liteCopyOrDownloadPng(btn,buildBlob,filename,label){
   if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
     try{
@@ -5916,21 +5783,17 @@ async function copyLiteChartImage(btn){
       panes.push({kind:'macd',canvas:_liteMacdChart.takeScreenshot()});
     }
     const titleSegments=_liteTitleSegments(_liteData[_liteData.length-1]);
-    // Portrait mobile: title thật đã ẩn O/H/L để vừa 1 dòng (CSS .lct-open/.lct-hl{display:none}).
-    // Bề ngang canvas chụp = đúng bề ngang màn hình (hẹp) nên phải bỏ luôn 2 đoạn này khi vẽ,
-    // nếu không title sẽ tràn/che khuất mất phần cuối (RS, %...).
+    // Portrait mobile: title thật đã ẩn O/H/L (CSS) để vừa 1 dòng; canvas chụp cũng phải bỏ 2 đoạn
+    // này khi vẽ, nếu không sẽ tràn/che khuất phần cuối (RS, %...).
     const isMobilePortraitShot=window.innerWidth<=768&&window.innerHeight>window.innerWidth;
     const finalTitleSegments=isMobilePortraitShot?titleSegments.filter(s=>s._open==null&&s._high==null&&s._low==null):titleSegments;
     const hasSigBadge=!!(DOM.liteChartSignal&&DOM.liteChartSignal.classList.contains('on'));
     const dpr=window.devicePixelRatio||1;
     const out=document.createElement('canvas');
     out.width=Math.max(...panes.map(p=>p.canvas.width));
-    // Title/badge/giá phóng to trên chart thật là overlay position:absolute NẰM ĐÈ lên #lite-chart
-    // (top:8px/29px/6px), KHÔNG PHẢI một dải header cộng thêm phía trên chart. Trước đây ảnh chụp
-    // cộng thêm titleH+badgeH vào chiều cao rồi đẩy cả chart xuống, khiến title+badge trông "cao
-    // hơn"/tách rời khỏi chart so với thực tế hiển thị. Nay bỏ hẳn phần cộng thêm này — canvas
-    // tổng chỉ cao đúng bằng tổng chiều cao các pane, và title/badge/giá phóng to được vẽ ĐÈ lên
-    // sau khi đã vẽ chart, tại đúng toạ độ thật đo được từ DOM (xem _liteOverlayRect).
+    // Title/badge/giá phóng to trên chart thật là overlay đè lên #lite-chart, KHÔNG phải dải header
+    // cộng thêm. Trước đây ảnh chụp cộng titleH+badgeH vào chiều cao khiến chúng trông tách khỏi chart.
+    // Nay canvas tổng chỉ cao bằng tổng pane, overlay được vẽ đè lên sau khi vẽ chart xong.
     out.height=panes.reduce((sum,p)=>sum+p.canvas.height,0);
     const ctx=out.getContext('2d');
     ctx.fillStyle='#ffffff';ctx.fillRect(0,0,out.width,out.height);
@@ -5943,11 +5806,8 @@ async function copyLiteChartImage(btn){
       const mainCanvas=panes[0].canvas;
       ctx.drawImage(DOM.liteDrawCanvas,0,0,DOM.liteDrawCanvas.width,DOM.liteDrawCanvas.height,0,0,mainCanvas.width,mainCanvas.height);
     }
-    // Title/badge/"Giá phóng to" đều nằm đè trên pane main — phải vẽ SAU khi đã drawImage pane main,
-    // nếu không sẽ bị ảnh pane vẽ chồng lên mất. Thứ tự vẽ khớp thứ tự trong DOM thật (title, rồi
-    // signal, rồi bigprice) để đúng lớp trên/dưới nếu chúng vô tình chồng nhau.
-    // Đo vị trí khung #lite-chart 1 lần duy nhất, dùng chung cho cả 3 lần vẽ overlay bên dưới
-    // (title/signal/bigprice) — tránh gọi getBoundingClientRect() lặp lại nhiều lần cho cùng 1 khung.
+    // Title/badge/giá phóng to nằm đè trên pane main nên phải vẽ SAU khi drawImage pane main, theo
+    // đúng thứ tự DOM thật. Đo khung #lite-chart 1 lần, dùng chung cho cả 3 lần vẽ overlay bên dưới.
     const frameRect=DOM.liteChart.getBoundingClientRect();
     if(finalTitleSegments.length){
       _liteDrawTitleOverlay(ctx,finalTitleSegments,frameRect,dpr);
@@ -5956,8 +5816,7 @@ async function copyLiteChartImage(btn){
       _liteDrawSignalBadge(ctx,frameRect,dpr);
     }
     _liteDrawBigPrice(ctx,panes[0].canvas.width/2,frameRect,dpr);
-    // Mã hoá đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật,
-    // không phải Promise — giữ user-gesture trên trình duyệt xử lý Promise<Blob> không ổn định.
+    // Mã hoá đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật (không phải Promise), giữ user-gesture.
     const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
     if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
       try{
@@ -6012,13 +5871,11 @@ function bindLiteDrawToolbar(){
     const sel=_liteGetSelectedShape();
     if(!sel||sel.type!=='position')return;
     if(Number.isFinite(sel.target2P)){
-      // Đang bật → tắt: Target 1 biến mất, Target 2 (giá gốc) trở lại thành
-      // đường Target duy nhất — quay về mặc định chỉ 1 target.
+      // Đang bật → tắt: Target 1 biến mất, Target 2 (giá gốc) trở lại thành Target duy nhất.
       sel.points[1]={...sel.points[1],p:sel.target2P};
       delete sel.target2P;
     }else{
-      // Đang tắt → bật: đường Target hiện có đổi thành Target 2 (giữ nguyên
-      // giá). Target mới (Target 1) chèn vào giữa Entry và Target 2, ở nửa khoảng cách.
+      // Đang tắt → bật: Target hiện có đổi thành Target 2; Target 1 chèn giữa Entry và Target 2.
       const entryP=sel.points[0].p,oldTargetP=sel.points[1].p;
       sel.target2P=oldTargetP;
       sel.points[1]={...sel.points[1],p:entryP+(oldTargetP-entryP)*0.5};
@@ -6202,8 +6059,7 @@ function bindLiteDrawToolbar(){
     // Kết thúc Zigzag bằng double-click: bỏ điểm cuối trùng do click thứ 2 của thao tác double-click sinh ra
     if(_liteDrawTool==='zigzag'&&_liteZigzagPending){
       e.preventDefault();
-      // Double-click sinh 2 lần click liên tiếp cùng vị trí → click thứ 2 đã
-      // bị pointerdown nối thêm thành điểm trùng, cần bỏ điểm cuối đó trước khi chốt hình.
+      // Double-click sinh điểm trùng do click thứ 2 bị pointerdown nối thêm — bỏ điểm cuối trước khi chốt hình.
       if(_liteZigzagPending.points.length>1)_liteZigzagPending.points.pop();
       _liteFinishZigzag();
       setLiteDrawTool('cursor');
@@ -6433,11 +6289,10 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
-  // skipPaneLayout bỏ qua applyLitePaneLayout() khi layout không đổi — set rightOffset dù cùng giá trị vẫn khiến thư viện tự canh lại view, gây "nhảy chart" mỗi 10s.
-  // Truyền true (skipWidthSync) — hàm này tự đồng bộ trục giá lại ở cuối (sau khi data mới đã setData xong), khỏi cần applyLitePaneLayout() làm trước 1 lượt vô nghĩa.
+  // skipPaneLayout: bỏ applyLitePaneLayout() khi layout không đổi (tránh thư viện tự canh lại view, gây "nhảy chart" mỗi 10s).
+  // skipWidthSync=true: hàm tự đồng bộ trục giá ở cuối, khỏi cần applyLitePaneLayout() làm trước 1 lượt vô nghĩa.
   if(!skipPaneLayout)applyLitePaneLayout(true);
-  // (Không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop()
-  // phía dưới tạo lại series volume từ đầu và tự set margin, gọi ở đây sẽ bị ghi đè ngay.)
+  // Không cần applyOptions margin cho _liteVolume ở đây — _liteRefreshVolumeTop() tạo lại series và tự set margin, sẽ ghi đè ngay.
   maOn.forEach(p=>{
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ma',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ma'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   });
@@ -6532,8 +6387,7 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   _liteRefreshVolumeTop(showVpaVol);
   if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
   redrawLiteDrawings();
-  // Dữ liệu 3 trục vừa đổi — applyLitePaneLayout() ở đầu hàm đã reset minimumWidth
-  // về sàn mặc định, phải đo+đồng bộ lại sau khi data mới đã setData xong.
+  // Dữ liệu 3 trục vừa đổi — applyLitePaneLayout() đã reset minimumWidth, phải đo+đồng bộ lại sau khi setData xong.
   _liteSyncPriceScaleWidths();
 }
 function _liteVolColorFor(volBar,showVpa){
@@ -6553,8 +6407,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  // Không xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire lại
-  // 'input', gây chồng chéo lệnh tải chart. Ô input tự clear sau khi loadLiteChart xong.
+  // Không xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire lại 'input'; ô input tự clear sau khi loadLiteChart xong.
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -6563,9 +6416,8 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    // Dùng lại request đã bắn sẵn từ <head> (script "TRANH THỦ GỌI LUÔN API...")
-    // nếu đúng mã + khung giờ của lần tải đầu — chỉ dùng đúng 1 lần (xoá ngay sau
-    // khi lấy ra) để các lần đổi mã/khung giờ sau luôn gọi API tươi mới.
+    // Dùng lại request đã bắn sẵn từ <head> nếu đúng mã + khung giờ của lần tải đầu — chỉ dùng
+    // đúng 1 lần (xoá ngay sau khi lấy ra) để các lần đổi mã/khung giờ sau luôn gọi API tươi mới.
     const _pf=window.__liteChartPrefetch;
     const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
       ?(window.__liteChartPrefetch=null,await _pf.promise)
@@ -6580,8 +6432,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     }else if(!skipPopoutSync){
       if(_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
       if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
-      // Đang chạy trong iframe embedded (tab Chart của cửa sổ openChart): báo lên
-      // trang cha để đồng bộ tên mã trên header popup và reload các tab khác.
+      // Đang chạy trong iframe embedded: báo lên trang cha để đồng bộ tên mã header popup và reload tab khác.
       if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
     }
 	    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
@@ -6702,8 +6553,7 @@ async function _liteFetchMoreHistory(){
     const prependCount=newBars.length;
     // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
     _liteCandle.setData(_liteData);
-    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập
-    // nhật dữ liệu series có sẵn, không destroy/recreate → hết giật.
+    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu, không destroy/recreate → hết giật.
     _liteUpdateIndicatorData();
     // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData() gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
     if(prevRange&&Number.isFinite(prevRange.from)&&Number.isFinite(prevRange.to)){
@@ -6736,15 +6586,12 @@ function bindLiteChartControls(){
     const btn=e.target.closest('.lite-tf-btn');if(!btn)return;
     applyLiteTf(btn.dataset.tf,true);
   });
-  // Gắn lên document (không DOM.liteIndicators) + lọc bằng closest — dropdown
-  // chỉ báo có thể bị portal ra <body> trên mobile portrait, lúc đó sự kiện
-  // 'change' từ checkbox bên trong sẽ không bubble lên tới DOM.liteIndicators
-  // được nữa (không còn là tổ tiên). document luôn là tổ tiên của mọi phần tử.
+  // Gắn lên document (không DOM.liteIndicators) + lọc bằng closest — dropdown có thể bị portal ra
+  // <body> trên mobile portrait, khi đó sự kiện 'change' không bubble lên tới DOM.liteIndicators nữa.
   document.addEventListener('change',(e)=>{
     if(!(e.target.closest('#lite-indicators')||e.target.closest('.lite-ind-dropdown')))return;
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
-    // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge, màu volume, khối giá
-    // phóng to — không đụng MA/EMA/BB/RSI/MACD nên không gọi renderLiteIndicators() đầy đủ.
+    // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge/màu volume/giá phóng to — không cần renderLiteIndicators() đầy đủ.
     const val=e.target?.value;
     if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
       if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
@@ -6759,8 +6606,7 @@ function bindLiteChartControls(){
     }
   });
   DOM.liteChartFrame?.addEventListener('click',()=>{
-    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — nếu
-    // không, focus giật lại về khung ngay sau click, khiến phím gõ sau đó bị hiểu nhầm thành gõ mã.
+    // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — tránh phím gõ sau bị hiểu nhầm thành gõ mã.
     if(_liteTextEditPos)return;
     DOM.liteChartFrame.focus();
   });
@@ -6883,8 +6729,7 @@ function cellStyle(pct){
   else{r=175;g=250;b=255}
   return{bg:`rgb(${r},${g},${b})`,fg:(.299*r+.587*g+.114*b)>160?'rgb(30,30,30)':'rgb(15,15,15)'};
 }
-// Treemap dùng bảng màu riêng: trần/tham chiếu/sàn màu phẳng cố định (tím/
-// vàng/xanh dương); còn lại dùng hue cố định xanh lá 142°/đỏ 0°, độ sáng nội suy 13 mức.
+// Treemap dùng bảng màu riêng: trần/tham chiếu/sàn màu phẳng cố định; còn lại hue cố định xanh lá 142°/đỏ 0°, 13 mức sáng.
 function _tmLightness(r,g,b){return(Math.max(r,g,b)+Math.min(r,g,b))/510;}
 function _tmHue2Rgb(p,q,t){
   if(t<0)t+=1;if(t>1)t-=1;
@@ -6971,13 +6816,11 @@ function renderHeatmap(d){
 DOM.hmapGrid.addEventListener('click',e=>{
   const cell=e.target.closest('.hmap-cell');if(!cell)return;
   const sym=cell.dataset.sym;
-  // Mobile giờ dùng chung cơ chế với desktop: nếu thẻ CHART đang mở thì nhảy chart tại chỗ,
-  // chỉ mở cửa sổ popup (Vietstock/Chart/...) khi thẻ CHART đang đóng — xem _hmapDesktopClick().
+  // Mobile dùng chung cơ chế với desktop: thẻ CHART đang mở thì nhảy chart tại chỗ, đóng mới mở popup — xem _hmapDesktopClick().
   _hmapDesktopClick(sym);
 });
 DOM.hmapGrid.addEventListener('dblclick',e=>{
-  // Mobile giờ dùng chung cơ chế dblclick với desktop (double-tap luôn mở openChart(sym)
-  // kể cả khi thẻ CHART đang mở) — trước đây bị chặn hẳn bằng IS_MOBILE().
+  // Mobile dùng chung cơ chế dblclick với desktop (double-tap luôn mở openChart) — trước đây bị chặn bằng IS_MOBILE().
   const cell=e.target.closest('.hmap-cell');if(!cell)return;
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _jumpLiteChart(cell.dataset.sym);
@@ -7054,8 +6897,7 @@ function healthBand(score){
   if(s>=20)return{label:'Bi quan',fill:'#dc2626'};
   return{label:'Sợ hãi',fill:'#0284c7'};
 }
-// Chu kỳ hiển thị HEALTH — chọn cố định 60/120 phiên (không zoom/kéo lịch sử);
-// backend trả tối đa 120 phiên (compute_market_health_index limit=120).
+// Chu kỳ hiển thị HEALTH cố định 60/120 phiên (không zoom/kéo lịch sử); backend trả tối đa 120 phiên.
 const HEALTH_PERIODS=[60,120];
 let _healthFullHistory=[];      // toàn bộ lịch sử tải về gần nhất từ /api/market_health
 let _healthWindowLen=HEALTH_PERIODS[0]; // số phiên đang hiển thị (đổi khi bấm tab chu kỳ)
@@ -7138,8 +6980,7 @@ function _healthRenderWindow(){
   DOM.healthSvg.innerHTML=`<defs>${defs}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${rects}${grid}<polyline points="${pts}" fill="none" stroke="#0f172a" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round"/>${vniPolyline}${xLabels}<g id="health-crosshair" style="display:none"></g>`;
   _healthLayout={h,L,R,T,B,H,W,plotW,plotH,padX,x,y,vniMin,vniMax,scale};
 }
-// Crosshair gắn nhãn vào trục dưới/phải (giống thẻ CHART); SVG dùng
-// preserveAspectRatio="none" nên phải quy đổi pixel về hệ viewBox theo đúng tỉ lệ co giãn trước khi tính điểm gần nhất.
+// Crosshair gắn nhãn vào trục dưới/phải (giống thẻ CHART); SVG preserveAspectRatio="none" nên phải quy đổi pixel về hệ viewBox trước khi tính điểm gần nhất.
 function _healthClientX(evt){
   return evt.touches&&evt.touches.length?evt.touches[0].clientX:evt.clientX;
 }
@@ -7318,10 +7159,8 @@ async function copyHealthImage(btn){
     ctx.drawImage(chartImg,ox+chartX,oy+chartY,chartW,chartH);
     roundBox(ox+chartX,oy+chartY,chartW,chartH,8,null,cBorder);
 
-    // Checkbox VNINDEX là overlay HTML ngoài SVG nên rasterize không chụp được — phải vẽ tay để ảnh copy khớp trạng thái tick/disable thật.
-    // Vị trí lấy trực tiếp từ getBoundingClientRect() của .health-vni-toggle (giống cách đo chartBoxEl/scoreCardEl ở trên) thay vì hard-code
-    // theo % cố định — trước đây hard-code đúng công thức left:88.4% của desktop nên trên mobile (CSS đổi qua right:8px) ảnh vẽ sai vị trí,
-    // khiến chữ VNINDEX bị lệch/cắt so với chart thật. Đo DOM trực tiếp thì đổi CSS breakpoint nào sau này ảnh vẫn tự khớp theo.
+    // Checkbox VNINDEX là overlay HTML ngoài SVG, rasterize không chụp được nên phải vẽ tay, vị trí
+    // lấy từ getBoundingClientRect() thật (không hard-code %) để tự khớp khi CSS breakpoint đổi.
     const vniToggleRect=DOM.healthVniToggle?DOM.healthVniToggle.getBoundingClientRect():null;
     const vniChecked=!!DOM.healthVniCheckbox?.checked;
     const vniDisabled=!!DOM.healthVniCheckbox?.disabled;
@@ -7708,8 +7547,7 @@ function renderTreemap(data){
     if(headerH){
       // Đường kẻ phân cách header/vùng ô mã thay cho rect nền riêng (2 vùng đã đồng màu).
       svg.appendChild(sankeyEl('line',{x1:sx,y1:sy+headerH,x2:sx+sw,y2:sy+headerH,stroke:'#e4e8ec','stroke-width':1}));
-      // Cắt bớt tên ngành + thêm "…" nếu không đủ chỗ trong khung, tránh tràn
-      // ra ngoài (nhất là ô ngành nhỏ ở góc dưới phải). ~7.3px/ký tự với font-size 12 monospace.
+      // Cắt tên ngành + thêm "…" nếu không đủ chỗ, tránh tràn (~7.3px/ký tự, font-size 12 monospace).
       const label=sectorLabel(sec.item.name);
       const maxChars=Math.max(3,Math.floor((sw-12)/7.3));
       const shown=label.length>maxChars?label.slice(0,Math.max(1,maxChars-1))+'…':label;
@@ -8149,19 +7987,16 @@ DOM.triHdr.addEventListener('click',e=>{
     }
   }
 });
-// Mặc định mở tab Mrk Health — phải gọi triActivateTab() (không chỉ set class
-// "on") để kích hoạt vndInitOnce()/vndRerenderVisible() nạp dữ liệu 4 khung, nếu không sẽ kẹt "Đang tải...".
+// Mặc định mở tab Mrk Health — phải gọi triActivateTab() (không chỉ set class) để kích hoạt vndInitOnce(), nếu không sẽ kẹt "Đang tải...".
 triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
-  // Giống CHART: control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã,
-  // nút popout...) vẫn bấm được bình thường — chỉ coi là "bấm để thu/mở" khi không trúng control.
+  // Control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, popout...) vẫn bấm bình thường — chỉ coi là bấm để thu/mở khi không trúng control.
   if(e.target.closest('button,input,.hmap-search-wrap'))return;
   DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
-  // Control trong thanh công cụ vẫn bấm được bình thường khi thẻ mở; chỉ coi là bấm để thu/mở khi không trúng control, giống SANKEY.
-  // #lite-fav-btn (nút ⭐ Favorite mã đang xem) phải nằm trong danh sách loại
-  // trừ — thiếu nó khiến bấm sao bị hiểu nhầm thành bấm header, tự thu gọn thẻ CHART.
+  // Control trong thanh công cụ vẫn bấm bình thường khi thẻ mở, giống SANKEY. #lite-fav-btn (nút ⭐)
+  // phải nằm trong danh sách loại trừ — thiếu nó sẽ bị hiểu nhầm thành bấm header, tự thu gọn thẻ.
   if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-fav-btn,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
@@ -8205,8 +8040,7 @@ async function fetchSigs(){
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
       :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`;
-    // Cache theo mã để chart CHART tra cứu (_liteApplyBuySignal) — dùng chung
-    // đúng 1 lần gọi API này cho cả panel "Tín hiệu hôm nay" lẫn mũi tên trên chart.
+    // Cache theo mã để chart tra cứu (_liteApplyBuySignal) — dùng chung 1 lần gọi API cho cả panel Tín hiệu lẫn mũi tên.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     _liteApplyBuySignal();
     redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
@@ -8510,9 +8344,8 @@ function _bindSearch(el,onEnter){
 _bindSearch(DOM.hmapSearch,sym=>openChart(sym));
 saveFollowSymbols(FOLLOW);
 if(IS_STANDALONE_PWA()){
-  // Nhánh riêng cho app cài vào MH chính (xem IS_STANDALONE_PWA phía trên) —
-  // 'dblclick' có thể không bắn trong môi trường này, nên tự phân biệt tap
-  // đơn/đúp bằng mốc thời gian của 'click'. Nhánh else giữ nguyên logic gốc.
+  // Nhánh riêng cho app cài vào MH chính — 'dblclick' có thể không bắn, tự phân biệt tap đơn/đúp
+  // bằng mốc thời gian của 'click'. Nhánh else giữ nguyên logic gốc.
   let _followLastTapTs=0,_followTapTimer=null;
   $('hmap-follow-btn').addEventListener('click',function(){
     const el=this,now=Date.now();
@@ -8689,11 +8522,9 @@ function _symDisplayFields(sym,data){
   const color=pct===null?'var(--muted)':pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
   return{pct,price,pctStr,color};
 }
-// Bù giá on-demand cho MÃ LẺ đang hiển thị trên sidebar (NHÓM NGÀNH/FAVORITE)
-// nhưng không có trong window._lastHmapData (mã người dùng tự thêm ngoài
-// TS_POOL_CONFIG/HMAP_COLS_CONFIG) — trước đây các mã này luôn hiện "--".
-// _extraQuoteAsked: nhớ lần gọi gần nhất theo mã để không dội API liên tục
-// mỗi lần sidebar render lại (khớp TTL cache server EXTRA_QUOTE_TTL_SEC=20s).
+// Bù giá on-demand cho mã lẻ hiển thị trên sidebar nhưng không có trong window._lastHmapData (mã
+// người dùng tự thêm ngoài TS_POOL_CONFIG/HMAP_COLS_CONFIG) — trước đây các mã này luôn hiện "--".
+// _extraQuoteAsked: nhớ lần gọi gần nhất theo mã, khớp TTL cache server EXTRA_QUOTE_TTL_SEC=20s.
 const _extraQuoteAsked=new Map();
 const _EXTRA_QUOTE_MIN_INTERVAL=15000;
 async function _lgFillMissingQuotes(){
@@ -8768,8 +8599,7 @@ function _lgToggleFavorite(sym){
   _lgSaveFavorites();_lgRenderList();
   _lgUpdateChartFavBtn();
 }
-// Nút ⭐ đặt ngay trên toolbar chart (cạnh ô Tìm mã): cho phép thêm/bỏ FAVORITE cho đúng mã đang xem trên chart,
-// không cần mở sidebar nhóm ngành. Dùng chung LG_FAVORITES/_lgToggleFavorite để mọi nơi luôn đồng bộ.
+// Nút ⭐ trên toolbar chart: thêm/bỏ FAVORITE cho mã đang xem mà không cần mở sidebar, dùng chung LG_FAVORITES/_lgToggleFavorite.
 function _lgUpdateChartFavBtn(){
   if(!DOM.liteFavBtn)return;
   const on=LG_FAVORITES.includes((_liteSymbol||'').toUpperCase());
@@ -8780,10 +8610,8 @@ DOM.liteFavBtn?.addEventListener('click',()=>{
   if(!_liteSymbol)return;
   _lgToggleFavorite(_liteSymbol); // hàm này tự cập nhật lại nút ⭐ (xem _lgUpdateChartFavBtn ở trên)
 });
-// Đồng bộ FAVORITE giữa cửa sổ CHART chính và popout qua sự kiện 'storage':
-// khi 1 trong 2 cửa sổ ghi lại localStorage[LG_FAVORITE_KEY], cửa sổ còn lại
-// nhận ngay, nạp lại LG_FAVORITES rồi vẽ lại sidebar + nút sao — không cần
-// refresh cả dashboard.
+// Đồng bộ FAVORITE giữa cửa sổ CHART chính và popout qua sự kiện 'storage': khi 1 cửa sổ ghi
+// localStorage[LG_FAVORITE_KEY], cửa sổ còn lại nạp lại LG_FAVORITES và vẽ lại sidebar + nút sao.
 window.addEventListener('storage',e=>{
   if(e.key!==LG_FAVORITE_KEY)return;
   LG_FAVORITES=_lgLoadFavorites();
@@ -8998,8 +8826,7 @@ window.addEventListener('message',e=>{
 
 // CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
 let _chartPopoutWin=null,_lastChartSyncSymbol=null;
-// CHART_POPOUT_CONTENT_H tính sẵn từ CSS cố định (720 chart + 80 header + 18
-// padding + 34 footer) để mở cửa sổ đúng kích thước ngay; scrollbars=yes dự phòng nếu hụt vài px.
+// CHART_POPOUT_CONTENT_H tính sẵn từ CSS cố định (720 chart+80 header+18 padding+34 footer); scrollbars=yes dự phòng.
 const CHART_POPOUT_CONTENT_H=720+80+18+34;
 // Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
 const CHART_POPOUT_WIDTH_RATIO=0.855;
@@ -9019,8 +8846,7 @@ window.addEventListener('message',e=>{
     _lastChartSyncSymbol=String(e.data.symbol).toUpperCase().trim();
     loadLiteChart(_lastChartSyncSymbol,0);
   }
-  // Iframe tab Chart (embedded) báo đổi mã → cập nhật _sym + header popup + reload iframe tab đang active.
-  // _sym là biến của popup (openChart), cần đồng bộ để các tab lazy (vs, vnd-cs...) khi switch vẫn dùng mã mới.
+  // Iframe tab Chart embedded báo đổi mã → cập nhật _sym + header popup + reload tab active (_sym là biến popup, cần đồng bộ).
   if(e.data&&e.data.type==='CHART_EMBED_SYM_CHANGE'&&e.data.symbol){
     const s=String(e.data.symbol).toUpperCase().trim();
     if(!s)return;
@@ -9064,23 +8890,19 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
 }
-// Tính lại toàn bộ layout thẻ CHART (main + RSI + MACD + pane layout + right
-// offset). Tách hàm riêng để orientationchange gọi lại nhiều lần — trên iOS
-// Safari, popout thẻ CHART (100dvh) sau khi xoay chiều cao dvh thường chưa ổn
-// định ngay lần đo đầu, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.
+// Tính lại layout thẻ CHART (main+RSI+MACD+pane+right offset). Tách hàm riêng vì orientationchange
+// gọi lại nhiều lần — trên iOS Safari, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.
 function _liteRelayoutViewport(){
-  // Popout CHART trên mobile: reset scroll về 0 sau mỗi lần đo — iOS Safari giữ
-  // scrollTop cũ trong lúc 100dvh co giãn lại, khiến panel bị đẩy lệch lên trên.
-  // Chỉ áp dụng IS_MOBILE() — popout cũng mở trên desktop, không tự cuộn ở đó.
+  // Popout CHART trên mobile: reset scroll về 0 sau mỗi lần đo — iOS Safari giữ scrollTop cũ khi
+  // 100dvh co giãn. Chỉ áp dụng IS_MOBILE() vì popout cũng mở trên desktop, không tự cuộn ở đó.
   if(_isChartPopoutWindow&&IS_MOBILE()){window.scrollTo(0,0);document.documentElement.scrollTop=0;document.body.scrollTop=0;}
   _liteApplyChartSizes();
   // Tính lại pane layout (totalH thay đổi) và số nến hiển thị (portrait↔landscape)
   if(_liteData.length){applyLitePaneLayout();setLiteRightOffset();}
 }
 window.addEventListener('orientationchange',()=>{
-  // Đo lại nhiều mốc thời gian (150/350/600/900ms) thay vì 1 lần — lần đo cuối
-  // luôn ghi đè lần đo sai trước đó, đảm bảo layout khớp đúng khi dvh/viewport
-  // ổn định hẳn. orientationchange chỉ bắn trên di động nên khỏi cần IS_MOBILE().
+  // Đo lại nhiều mốc thời gian (150/350/600/900ms) — lần đo cuối ghi đè lần sai trước, đảm bảo khớp
+  // khi dvh/viewport ổn định. orientationchange chỉ bắn trên di động nên khỏi cần IS_MOBILE().
   [0,150,350,600,900].forEach(delay=>setTimeout(_liteRelayoutViewport,delay));
 });
 init();
