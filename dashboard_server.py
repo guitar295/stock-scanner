@@ -2794,6 +2794,13 @@ html.chart-popout-mode .lite-chart-frame{
    MOBILE PORTRAIT
    ═══════════════════════════════════════════ */
 @media(max-width:768px){
+  /* Panel TÍN HIỆU/HEATMAP/CHART/MARKET đều là con trực tiếp của .wrap, không có margin ngang
+     riêng — khoảng cách với 2 mép màn hình hoàn toàn do padding trái/phải 20px của .wrap (kế
+     thừa từ desktop). Trên màn hình di động hẹp, 20px mỗi bên chiếm quá nhiều diện tích hữu ích;
+     giảm còn 8px (giữ nguyên padding trên/dưới 16px) để nội dung bên trong các thẻ có thêm chỗ.
+     Dùng padding-left/right riêng lẻ (không viết lại shorthand padding) để khỏi vô tình đổi
+     luôn padding trên/dưới hiện có. */
+  .wrap{padding-left:8px;padding-right:8px}
   header{padding:8px 14px;gap:4px}
   header h1{font-size:15px;letter-spacing:1.5px}
   #clock{font-size:10px}
