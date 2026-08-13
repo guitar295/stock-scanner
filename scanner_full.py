@@ -25,8 +25,11 @@ import numpy as np
 import requests
 import time
 import mplfinance as mpf
+import sys
 import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from concurrent.futures import ProcessPoolExecutor
 import logging
 import os
 import re
@@ -63,6 +66,8 @@ DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
 CACHE_CHECK_INTERVAL_SEC = 1800   # nhịp tự dò/sửa history_cache NGOÀI giờ giao dịch — độc lập với SCAN_INTERVAL_SEC
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
+
+sys.setswitchinterval(0.001)  # nhả GIL thường xuyên hơn (mặc định 5ms), giảm độ trễ chart trên dashboard khi scanner đang tính toán
 
 register_user(VNSTOCK_API)
 
@@ -537,8 +542,19 @@ def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=Non
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
-listing     = Listing(source=DATA_SOURCE)
-df_listing  = listing.all_symbols()
+listing    = Listing(source=DATA_SOURCE)
+df_listing = None
+for _attempt in range(3):
+    try:
+        df_listing = listing.all_symbols()
+        if df_listing is not None and not df_listing.empty:
+            break
+    except Exception as e:
+        print(f"  ⚠️  Lỗi lấy danh sách mã (lần {_attempt+1}/3): {e}")
+    df_listing = None
+    time.sleep(5)
+if df_listing is None:
+    raise RuntimeError("Không lấy được danh sách mã niêm yết sau 3 lần thử — kiểm tra kết nối/API rồi chạy lại.")
 col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
 all_symbols = df_listing[col_name].dropna().unique().tolist()
 
@@ -849,10 +865,10 @@ def _mh_component_phrase(key: str, value) -> str:
         if v >= 15: return "Phần lớn cổ phiếu đã gãy xu hướng tăng"
         return "Hầu hết cổ phiếu trong rổ đã mất xu hướng tăng"
     if key == "new_high_low":
-        if v >= 80: return "Số mã phá đỉnh 52 tuần áp đảo, không có mã phá đáy đáng kể"
-        if v >= 60: return "Số mã phá đỉnh nhỉnh hơn số mã phá đáy"
+        if v >= 80: return "Số mã phá đỉnh 52 tuần (trong phiên) áp đảo, không nhiều mã phá đáy"
+        if v >= 60: return "Số mã phá đỉnh (trong phiên) nhỉnh hơn số mã phá đáy"
         if v >= 40: return "Chưa có làn sóng phá đỉnh hay phá đáy đáng chú ý"
-        if v >= 20: return "Số mã phá đáy 52 tuần nhỉnh hơn số mã phá đỉnh"
+        if v >= 20: return "Số mã phá đáy 52 tuần (trong phiên) nhỉnh hơn số mã phá đỉnh"
         return "Có mã phá đáy 52 tuần trong khi không có mã nào phá đỉnh"
     if key == "volume":
         if v >= 80: return "Dòng tiền đổ vào rất mạnh, nhiều mã tăng kèm khối lượng đột biến"
@@ -1964,6 +1980,8 @@ def detect_signal(df, now_time):
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
+_draw_pool = ProcessPoolExecutor(max_workers=1)  # vẽ chart (matplotlib) ở process riêng, khỏi tranh GIL với Flask
+
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None, as_bytes=False):
     is_daily  = (timeframe == 'Daily')
     is_weekly = (timeframe == 'Weekly')
@@ -2207,15 +2225,15 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             )
 
             df_plot_d  = df_calc.tail(250).copy()
-            img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
-                                    timeframe='Daily', add_arrow=True, date_str=date_str)
+            img_daily  = _draw_pool.submit(draw_chart, df_plot_d, symbol, signal_type, today,
+                                            'Daily', True, date_str).result()
             df_weekly  = build_weekly_df(df_merged)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
             date_str_w = _date_str_from_df(df_merged)
-            img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
-                                    timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-            img_15m    = _build_15m_chart(symbol, signal_type, via="scanner_signal_15m")
+            img_weekly = _draw_pool.submit(draw_chart, df_plot_w, symbol, signal_type, today_w,
+                                            'Weekly', False, date_str_w).result()
+            img_15m    = _draw_pool.submit(_build_15m_chart, symbol, signal_type, "scanner_signal_15m").result()
 
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
