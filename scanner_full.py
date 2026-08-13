@@ -542,8 +542,19 @@ def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=Non
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
-listing     = Listing(source=DATA_SOURCE)
-df_listing  = listing.all_symbols()
+listing    = Listing(source=DATA_SOURCE)
+df_listing = None
+for _attempt in range(3):
+    try:
+        df_listing = listing.all_symbols()
+        if df_listing is not None and not df_listing.empty:
+            break
+    except Exception as e:
+        print(f"  ⚠️  Lỗi lấy danh sách mã (lần {_attempt+1}/3): {e}")
+    df_listing = None
+    time.sleep(5)
+if df_listing is None:
+    raise RuntimeError("Không lấy được danh sách mã niêm yết sau 3 lần thử — kiểm tra kết nối/API rồi chạy lại.")
 col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
 all_symbols = df_listing[col_name].dropna().unique().tolist()
 
