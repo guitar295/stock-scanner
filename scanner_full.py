@@ -849,10 +849,10 @@ def _mh_component_phrase(key: str, value) -> str:
         if v >= 15: return "Phần lớn cổ phiếu đã gãy xu hướng tăng"
         return "Hầu hết cổ phiếu trong rổ đã mất xu hướng tăng"
     if key == "new_high_low":
-        if v >= 80: return "Số mã phá đỉnh 52 tuần (trong phiên) áp đảo, không nhiều mã phá đáy"
-        if v >= 60: return "Số mã phá đỉnh (trong phiên) nhỉnh hơn số mã phá đáy"
+        if v >= 80: return "Số mã phá đỉnh 52 tuần áp đảo, không có mã phá đáy đáng kể"
+        if v >= 60: return "Số mã phá đỉnh nhỉnh hơn số mã phá đáy"
         if v >= 40: return "Chưa có làn sóng phá đỉnh hay phá đáy đáng chú ý"
-        if v >= 20: return "Số mã phá đáy 52 tuần (trong phiên) nhỉnh hơn số mã phá đỉnh"
+        if v >= 20: return "Số mã phá đáy 52 tuần nhỉnh hơn số mã phá đỉnh"
         return "Có mã phá đáy 52 tuần trong khi không có mã nào phá đỉnh"
     if key == "volume":
         if v >= 80: return "Dòng tiền đổ vào rất mạnh, nhiều mã tăng kèm khối lượng đột biến"
