@@ -25,8 +25,11 @@ import numpy as np
 import requests
 import time
 import mplfinance as mpf
+import sys
 import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from concurrent.futures import ProcessPoolExecutor
 import logging
 import os
 import re
@@ -63,6 +66,8 @@ DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
 CACHE_CHECK_INTERVAL_SEC = 1800   # nhịp tự dò/sửa history_cache NGOÀI giờ giao dịch — độc lập với SCAN_INTERVAL_SEC
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
+
+sys.setswitchinterval(0.001)  # nhả GIL thường xuyên hơn (mặc định 5ms), giảm độ trễ chart trên dashboard khi scanner đang tính toán
 
 register_user(VNSTOCK_API)
 
@@ -1964,6 +1969,8 @@ def detect_signal(df, now_time):
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
+_draw_pool = ProcessPoolExecutor(max_workers=1)  # vẽ chart (matplotlib) ở process riêng, khỏi tranh GIL với Flask
+
 def draw_chart(df_plot, symbol, signal_type, today, timeframe='Daily', add_arrow=True, date_str=None, as_bytes=False):
     is_daily  = (timeframe == 'Daily')
     is_weekly = (timeframe == 'Weekly')
@@ -2207,15 +2214,15 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             )
 
             df_plot_d  = df_calc.tail(250).copy()
-            img_daily  = draw_chart(df_plot_d, symbol, signal_type, today,
-                                    timeframe='Daily', add_arrow=True, date_str=date_str)
+            img_daily  = _draw_pool.submit(draw_chart, df_plot_d, symbol, signal_type, today,
+                                            'Daily', True, date_str).result()
             df_weekly  = build_weekly_df(df_merged)
             df_plot_w  = df_weekly.tail(200).copy()
             today_w    = df_plot_w.iloc[-1]
             date_str_w = _date_str_from_df(df_merged)
-            img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w,
-                                    timeframe='Weekly', add_arrow=False, date_str=date_str_w)
-            img_15m    = _build_15m_chart(symbol, signal_type, via="scanner_signal_15m")
+            img_weekly = _draw_pool.submit(draw_chart, df_plot_w, symbol, signal_type, today_w,
+                                            'Weekly', False, date_str_w).result()
+            img_15m    = _draw_pool.submit(_build_15m_chart, symbol, signal_type, "scanner_signal_15m").result()
 
             image_paths = [img_daily, img_weekly]
             if img_15m: image_paths.append(img_15m)
