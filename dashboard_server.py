@@ -2138,13 +2138,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Scanner Dashboard</title>
-<!-- Icon/avatar dashboard: favicon tab trình duyệt + icon khi "Thêm vào MH chính" trên mobile.
-     iOS Safari đọc riêng apple-touch-icon (không dùng favicon), Android Chrome đọc icons khai
-     báo trong manifest.json. Cả 3 file ảnh + manifest.json nằm trong /static, không qua route
-     riêng — dùng lại route /static mặc định của Flask. Các file này được _static_cache_headers
-     phía trên đặt Cache-Control: no-cache (khác các file static khác đang cache 7 ngày) — mỗi
-     lần đổi icon trong static/ trên VPS, trình duyệt tự hỏi lại server và thấy bản mới ngay,
-     không cần đổi tên file hay thêm hậu tố ?v=N. -->
+<!-- Icon/favicon: iOS đọc apple-touch-icon riêng, Android đọc manifest.json. Cả 3 file + manifest
+     nằm trong /static, dùng route /static mặc định. _static_cache_headers đặt Cache-Control:
+     no-cache cho các file này (khác static khác cache 7 ngày) để đổi icon trên VPS thấy ngay. -->
 <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
@@ -2334,11 +2330,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tri-tab.on{color:var(--accent);font-weight:800}
 .tri-toggle{font-size:12px;color:var(--muted);transition:transform .15s;margin-left:auto}
 .tri-panel:not(.collapsed) .tri-toggle{transform:rotate(90deg);color:var(--accent)}
-/* CƠ CHẾ THU/MỞ THẺ DÙNG CHUNG cho tri-panel / hmap-panel / lite-chart-panel (xem thêm 2 khối
-   ".hmap-panel.collapsed" và ".lite-chart-panel.collapsed" bên dưới): khi thẻ có class .collapsed,
-   ẩn toàn bộ nội dung phụ trong header + phần thân, LUÔN dùng !important để mobile media query
-   (@media max-width:768px) không thể ghi đè ngược lại (bug cũ: hmap-ts-wrap vẫn hiện trên mobile
-   dù thẻ đã thu gọn, vì rule ẩn thiếu !important còn rule mobile lại có !important). */
+/* Cơ chế thu/mở thẻ dùng chung cho tri-panel/hmap-panel/lite-chart-panel: .collapsed ẩn nội
+   dung phụ header+thân, LUÔN dùng !important để @media mobile không ghi đè ngược lại (bug cũ:
+   hmap-ts-wrap vẫn hiện trên mobile dù đã thu gọn, vì rule ẩn thiếu !important). */
 .tri-panel.collapsed .tri-tabs,
 .tri-panel.collapsed>.tri-body{display:none!important}
 .tri-content{display:none}
@@ -2533,10 +2527,8 @@ html.chart-popout-mode .lite-chart-frame{
 .lite-chart-bigprice.on{display:flex}
 .lite-chart-bigprice .bp-price{font-family:var(--font-mono);font-size:20px;font-weight:700;line-height:1.1}
 .lite-chart-bigprice .bp-sub{font-family:var(--font-mono);font-size:11px;line-height:1.2}
-/* Khi sidebar nhóm ngành mở: đẩy mốc left từ 0 sang đúng bề rộng sidebar (180px), margin:auto sẽ
-   tự canh giữa trong phần còn lại (180px → hết khung chart) — tức canh giữa đúng phần khung chart
-   còn hiển thị (không bị sidebar che), khác với title/tín hiệu (2 khối đó neo theo left tuyệt đối
-   chứ không canh giữa). */
+/* Sidebar nhóm ngành mở: đẩy mốc left sang 180px (bề rộng sidebar), margin:auto tự canh giữa
+   trong phần khung chart còn hiển thị — khác title/tín hiệu (neo left tuyệt đối, không canh giữa). */
 .lite-groups-sidebar.on~.lite-chart-bigprice{left:180px}
 .lite-chart-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:42px;min-width:42px;max-width:120px;height:34px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:800;text-align:center;text-transform:uppercase;box-shadow:0 8px 28px rgba(17,24,39,.15);outline:none;display:none;transition:width .12s}
 .lite-chart-search.on{display:block}
@@ -2692,12 +2684,9 @@ html.chart-popout-mode .lite-chart-frame{
   #signal-header .panel-hdr-left{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%}
   #signal-header .panel-title{white-space:nowrap;flex-shrink:0}
   #signal-header #sig-meta{display:block;width:100%;white-space:nowrap;overflow:visible;line-height:1.35}
-  /* Header HEATMAP trên mobile dùng CSS Grid (không phải flex-column như trước) để mũi tên
-     thu/mở LUÔN nằm cùng hàng với tiêu đề "Heatmap" (cột phải, căn giữa dọc theo hàng 1) —
-     dù đang mở (row1 + hmap-ts-wrap đều hiển thị) hay đã thu gọn (row1 chỉ còn tiêu đề,
-     hmap-ts-wrap bị ẩn). Nhờ vậy mũi tên không còn tự chiếm riêng 1 hàng lúc mở, và padding
-     phải luôn cố định 16px giống hệt .panel-hdr (tri-hdr / lite-chart-toggle) ở MỌI trạng thái
-     — không cần thêm rule riêng cho .collapsed nữa vì hàng 2 (hmap-ts-wrap) tự co về 0 khi ẩn. */
+  /* Header HEATMAP mobile dùng CSS Grid (không flex-column) để mũi tên thu/mở luôn nằm cùng
+     hàng với tiêu đề "Heatmap" ở mọi trạng thái mở/thu gọn, padding phải luôn cố định 16px
+     giống .panel-hdr — không cần rule riêng cho .collapsed vì hàng 2 tự co về 0 khi ẩn. */
   .hmap-panel-hdr{
     display:grid;
     grid-template-columns:1fr auto;
@@ -2731,19 +2720,13 @@ html.chart-popout-mode .lite-chart-frame{
   .health-layout{grid-template-columns:1fr}
   .health-body{height:auto;display:block;overflow:visible}
   .health-chartbox{height:280px}
-  /* left:88.4% (desktop) tính theo bề rộng .health-chartbox lúc đó chỉ là cột trái của layout
-     2 cột nên còn đủ chỗ; trên mobile .health-layout đổi thành 1 cột khiến .health-chartbox
-     giãn gần hết màn hình, 88.4% rơi sát mép phải, không đủ chỗ cho chữ "VNINDEX" và bị
-     .health-chartbox{overflow:hidden} cắt mất, chỉ còn thấy checkbox. Neo theo right thay vì
-     left:% để không phụ thuộc bề rộng box. */
+  /* Neo theo right thay vì left:% — trên mobile .health-chartbox giãn hết màn hình khiến
+     left:88.4% (đúng cho desktop 2 cột) rơi sát mép phải, chữ "VNINDEX" bị overflow:hidden cắt mất. */
   .health-vni-toggle{left:auto;right:8px}
-  /* Trục dọc health-svg có L=52,R=112,W=900 CỐ ĐỊNH (không co theo scale — xem comment tại nơi
-     tính L/R trong hàm vẽ chart). Nhãn "100" (text-anchor="end" tại x=L-10=42) luôn nằm trong
-     khoảng ~1.3%-4.7% bề rộng khung; dải màu (rect tô nền) bắt đầu ngay tại x=L=52, tức ~5.78%.
-     .health-period-tabs mặc định neo left:8px nên đè lên đúng chỗ nhãn "100" khi khung health-svg
-     giãn hết bề ngang màn hình ở mobile. Dùng % (không phải px cố định) để nhóm nút luôn bắt đầu
-     đúng ngay mép dải màu trên mọi bề rộng máy — vừa đủ để không che nhãn "100", không lệch quá
-     xa sang phải. */
+  /* Trục dọc health-svg L=52,R=112,W=900 cố định (xem comment tại hàm vẽ chart) → nhãn "100"
+     luôn nằm ~1.3-4.7% bề rộng khung, dải màu bắt đầu ~5.78%. .health-period-tabs mặc định
+     left:8px sẽ đè lên nhãn "100" khi khung giãn hết bề ngang ở mobile — dùng % để nhóm nút
+     luôn bắt đầu đúng mép dải màu trên mọi bề rộng máy. */
   .health-period-tabs{left:5.8%}
   .health-score{font-size:36px}
   .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
@@ -2798,13 +2781,9 @@ html.chart-popout-mode .lite-chart-frame{
   #lite-chart {
     touch-action: pan-x pan-y;
   }
-  /* QUAN TRỌNG: top/left ở đây KHÔNG được đánh dấu !important — theo cascade CSS, một khai báo
-     !important trong stylesheet luôn thắng inline style set bằng JS (dd.style.left/top ở
-     _litePositionIndDropdown), dù inline style vốn dĩ có độ ưu tiên cao hơn CSS thường. Nếu để
-     !important ở đây, dropdown sẽ bị "dính cứng" tại góc trên-trái (0,0) — tức sát mép trái màn
-     hình — bất kể JS tính toán ra vị trí nào, đây chính là lỗi đã gặp phải. 0,0 chỉ đóng vai trò
-     giá trị KHỞI TẠO trước khi JS chạy lần đầu; ngay khi _litePositionIndDropdown gán
-     dd.style.left/top (inline, không !important), nó sẽ ghi đè đúng theo cascade và có hiệu lực. */
+  /* QUAN TRỌNG: top/left ở đây KHÔNG đánh dấu !important — nếu có, nó sẽ luôn thắng inline
+     style JS gán (_litePositionIndDropdown), khiến dropdown dính cứng góc (0,0) bất kể JS tính
+     ra vị trí nào (lỗi đã từng gặp). 0,0 chỉ là giá trị khởi tạo trước khi JS chạy lần đầu. */
   .lite-ind-dropdown {
     position: fixed !important;
     top: 0;
