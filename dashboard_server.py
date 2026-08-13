@@ -2155,31 +2155,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <!-- default: thanh trạng thái (giờ/wifi/pin) nằm TÁCH RIÊNG phía trên trang, không đè lên
      nội dung — tránh che mất tiêu đề header khi mở app từ icon màn hình chính. -->
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<!-- Cửa sổ CHART popout (?chartPopout=1, xem openChartPopout()) chỉ cần hiện panel CHART,
-     ẩn hết phần còn lại của dashboard — class chart-popout-mode trước đây chỉ được JS ở
-     cuối trang gắn vào <body> SAU KHI toàn bộ dashboard-main.js tải/parse xong, nên người
-     dùng thấy cả trang dashboard load nháy lên rồi mới thu về đúng mỗi chart. Gắn class này
-     vào <html> NGAY TỪ ĐẦU <head> (chạy đồng bộ, trước khi <body> được parse/paint) để CSS
-     bên dưới ẩn mọi thứ trừ panel CHART ngay từ lần vẽ đầu tiên — bỏ qua hẳn cảnh load full
-     dashboard rồi mới nhảy vào chart.
-     TRANH THỦ GỌI LUÔN API dữ liệu chart ở đây — đây là nơi chạy SỚM NHẤT có thể (ngay khi
-     trình duyệt vừa đọc tới đầu <head>, trước cả khi tải thư viện chart hay dashboard-main.js).
-     Trước đây phải đợi: parse hết HTML → dashboard-main.js (đã defer) chạy xong → init() →
-     loadLiteChart() → lúc đó mới bắn request /api/lightweight_chart/... — tức là cái API
-     tốn thời gian nhất (chờ server truy vấn + trả về nến) lại là thứ được gọi TRỄ nhất.
-     Bắn request này chạy song song ngay từ đầu, gói kết quả (Promise) vào
-     window.__liteChartPrefetch; loadLiteChart() ở dưới sẽ tự nhận ra và dùng lại kết quả
-     này thay vì gọi API lần 2 — cắt hẳn thời gian chờ mạng ra khỏi đường găng tải trang.
-     ÁP DỤNG CHO CẢ 2 TRƯỜNG HỢP — không riêng gì popout:
-       - popout (?chartPopout=1&sym=...): mã lấy từ query string ?sym=.
-       - trang dashboard chính: mã lấy từ localStorage (key 'dashboard_lite_last_symbol' —
-         PHẢI khớp với hằng số LITE_LAST_SYMBOL_KEY khai báo trong dashboard-main.js, đọc được
-         ngay lập tức vì localStorage truy cập đồng bộ, không cần đợi gì).
-     Cả 2 trường hợp đều dùng tf mặc định '1D' + limit=450 — khớp đúng tham số loadLiteChart()
-     dùng ở LẦN GỌI ĐẦU TIÊN (xem let _liteTf='1D' và loadLiteChart()). loadLiteChart() vốn đã
-     luôn tự chạy nền ngay khi trang mở (init(), bất kể panel đang thu gọn hay mở), nên tối ưu
-     này chỉ đổi THỜI ĐIỂM bắn request sớm hơn, không đổi hành vi tải. Đổi mã/khung giờ sau đó
-     vẫn gọi API bình thường qua loadLiteChart(), không liên quan. -->
+<!-- Gắn class chart-popout-mode sớm ngay <head> (trước dashboard-main.js) để CSS ẩn hết
+     trừ panel CHART ngay từ đầu, khỏi nháy full dashboard rồi mới thu về chart.
+     Đồng thời bắn luôn request /api/lightweight_chart (mã lấy từ ?sym= khi popout, hoặc
+     localStorage LITE_LAST_SYMBOL_KEY khi dashboard chính) — chạy song song sớm nhất có thể,
+     kết quả lưu vào window.__liteChartPrefetch để loadLiteChart() tái dùng thay vì gọi lại,
+     cắt thời gian chờ mạng khỏi đường găng tải trang. Không đổi hành vi, chỉ đổi thời điểm gọi. -->
 <script>
 try{
   const _qp=new URLSearchParams(window.location.search);
@@ -2194,13 +2175,8 @@ try{
   }
 }catch(e){}
 </script>
-<!-- Preload thư viện chart NGAY từ đầu <head> — trước đây <script src> của thư
-     viện này nằm tận cuối <body> (ngay trước script chính), nên trình duyệt chỉ bắt đầu
-     tải file này rất muộn (sau khi đã parse xong gần hết trang), rồi mới tới lượt
-     script chính gọi loadLiteChart(). preload giúp trình duyệt TẢI SONG SONG file này
-     ngay trong lúc parse HTML phía trên, nên khi script tag thật ở cuối trang được thực
-     thi, file gần như đã có sẵn — giúp panel CHART có thể vẽ sớm hơn.
-     File này được self-host tại /app/static (không còn phụ thuộc CDN unpkg ngoài). -->
+<!-- Preload thư viện chart ngay từ <head> để tải song song lúc parse HTML, thay vì đợi
+     script cuối trang mới bắt đầu tải — giúp panel CHART vẽ sớm hơn. Self-host tại /app/static. -->
 <link rel="preload" as="script" href="/static/lightweight-charts.min.js">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -2430,38 +2406,21 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
 .lite-chart-panel.collapsed .lite-chart-frame{display:none!important}
-/* Cửa sổ CHART riêng (pop-out): chỉ hiện panel CHART, ẩn toàn bộ phần còn lại của dashboard.
-   Dùng selector html.chart-popout-mode (thay vì body.chart-popout-mode) vì class này giờ
-   được gắn vào <html> ngay từ đầu <head> — xem script inline phía trên — để có hiệu lực
-   ngay từ lần vẽ đầu tiên, không đợi JS cuối trang chạy xong mới ẩn. */
+/* Cửa sổ CHART popout: ẩn hết dashboard, chỉ hiện panel CHART. Dùng html.chart-popout-mode
+   (gắn ở <head>, không phải body) để có hiệu lực ngay lần vẽ đầu, không đợi JS cuối trang. */
 html.chart-popout-mode>body>header,
 html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
 html.chart-popout-mode #lite-chart-popout-btn{display:none}
-/* Panel CHART trong cửa sổ popout: HTML gốc luôn có sẵn class .collapsed (mặc định thu gọn
-   cho trang dashboard chính) — JS ở cuối trang mới gỡ class này ra để mở panel, xem IIFE
-   "Trang mở lại với ?chartPopout=1..." bên dưới. Nếu JS chạy chậm (mạng chậm, máy yếu, thư
-   viện chart to), người dùng thấy đúng cảnh panel hiện thu gọn (chỉ còn chữ CHART) rồi mới
-   bung toolbar+chart ra — đây chính là hiện tượng "thu vào trước, xong mới mở ra". Vô hiệu
-   hoá 2 rule ẩn của .collapsed ngay khi html.chart-popout-mode có mặt (gắn synchronous từ
-   đầu <head>, tức là có hiệu lực NGAY LẦN VẼ ĐẦU TIÊN, không cần đợi JS) để panel luôn hiện
-   sẵn ở trạng thái mở — hết hẳn khoảng nháy thu/mở, bất kể JS/mạng chậm hay nhanh.
-   Dùng display:flex (không dùng revert) vì MỌI phần tử con trực tiếp của .lite-chart-toolbar
-   (.lite-chart-search-wrap, .lite-tf-tabs, .lite-indicators, .lite-draw-toolbar, .lite-alert-wrap...)
-   đều tự dùng display:flex cho layout bên trong chính nó — revert!important sẽ bỏ qua các rule
-   display:flex đó (revert quay thẳng về mặc định UA, không phải cascade tiếp theo), làm vỡ layout
-   ngay trong khoảnh khắc transitional này; flex!important vừa đúng cho từng phần tử con, vừa để
-   chúng làm flex-item hợp lệ trong .lite-chart-toolbar (cha ngoài). */
+/* HTML gốc panel CHART luôn có sẵn class .collapsed (JS mới gỡ ra để mở) — vô hiệu hoá 2 rule
+   ẩn của .collapsed ngay khi html.chart-popout-mode có mặt để panel luôn hiện mở sẵn, khỏi nháy
+   thu/mở khi JS/mạng chậm. Dùng display:flex (không dùng revert) vì các con trực tiếp của
+   .lite-chart-toolbar đều tự cần display:flex cho layout riêng. */
 html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:flex!important}
 html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:block!important}
-/* Popout (mọi kích thước, kể cả desktop): trước đây .lite-chart-frame giữ nguyên height:720px
-   cố định từ CSS mặc định (dùng cho panel CHART nhúng trong dashboard chính) — khi kéo cạnh
-   dưới cửa sổ popout ra to hơn 720px, panel MACD/chart không giãn theo, để lại khoảng trắng
-   bên dưới. Cho #lite-chart-panel cao đúng bằng phần viewport còn lại (trừ padding #main-wrap
-   8px trên+dưới) rồi dùng flexbox để .lite-chart-frame tự giãn lấp hết phần còn lại sau toolbar
-   — applyLitePaneLayout() (gọi lại khi resize, xem window.addEventListener('resize',...)) sẽ đọc
-   đúng clientHeight thực tế của .lite-chart-frame để chia lại main/RSI/MACD. Rule riêng cho mobile
-   portrait bên dưới (cùng specificity, đứng sau trong file) sẽ tự ghi đè khi khớp @media. */
+/* Popout mọi kích thước: cho #lite-chart-panel cao bằng viewport còn lại, .lite-chart-frame
+   tự giãn lấp phần sau toolbar bằng flexbox (thay vì height:720px cố định) — applyLitePaneLayout()
+   đọc clientHeight thực tế để chia main/RSI/MACD. Rule mobile portrait bên dưới sẽ ghi đè. */
 html.chart-popout-mode #lite-chart-panel{
   display:flex;
   flex-direction:column;
@@ -2473,30 +2432,15 @@ html.chart-popout-mode .lite-chart-frame{
   max-height:none!important;
   min-height:0!important;
 }
-/* Mobile portrait + popout: thay vì đoán cứng chiều cao toolbar (44px — dễ lệch thực tế
-   tuỳ máy, khiến panel MACD bị cắt và góc bo dưới bị đẩy khỏi màn hình), cho #lite-chart-panel
-   cao đúng bằng phần màn hình còn lại (trừ padding #main-wrap + safe-area đáy iPhone) rồi
-   dùng flexbox để .lite-chart-frame tự giãn lấp phần còn lại sau toolbar — luôn khớp chính
-   xác bất kể toolbar cao bao nhiêu, không còn cắt panel MACD hay che góc bo dưới. */
+/* Mobile portrait + popout: cùng cơ chế trên nhưng trừ thêm safe-area đáy iPhone thay vì đoán
+   cứng chiều cao toolbar — tránh cắt panel MACD hoặc che góc bo dưới. */
 @media screen and (max-width:768px) and (orientation:portrait){
-  /* Bỏ hẳn phần đệm cố định ở cạnh dưới (trước là 8px, rồi 2px) — chỉ giữ đúng safe-area-inset-bottom
-     cần thiết để không đè lên thanh cử chỉ/home-indicator của iPhone. Phần safe-area (không phải số
-     8px/2px) mới là phần chiếm phần lớn khoảng trắng đáy trên các máy có safe-area lớn, nên chỉ giảm
-     nhẹ số cố định trước đó gần như không thấy khác biệt; bỏ hẳn số cố định mới thực sự sát viền hơn. */
   html.chart-popout-mode #main-wrap{padding:8px 8px var(--sab) 8px}
-  /* Chỉ còn override height (dvh + safe-area đáy iPhone thay vì vh thường) — phần
-     display:flex/flex-direction và rule .lite-chart-frame (flex:1 1 auto; height:auto...)
-     đã chuyển lên rule chung html.chart-popout-mode #lite-chart-panel/.lite-chart-frame
-     phía trên (áp dụng mọi kích thước màn hình), nên không cần lặp lại ở đây nữa. */
   html.chart-popout-mode #lite-chart-panel{
     height:calc(100dvh - 8px - var(--sab));
   }
-  /* Thu nhỏ ô Tìm mã bằng scale — giữ font-size:16px để iOS không auto-zoom khi focus.
-     transform-origin neo về phía container để ô không bị lệch ra ngoài;
-     margin bù lại khoảng trắng dư do element vẫn chiếm layout space gốc sau khi scale.
-     Áp dụng ĐỒNG BỘ cho cả ô Tìm mã của HEATMAP (.hmap-search-wrap) và CHART
-     (.lite-chart-search-wrap) — cùng tỉ lệ scale, cùng công thức margin bù, để 2 ô luôn
-     hiển thị cùng kích thước trên mobile. */
+  /* Thu nhỏ ô Tìm mã bằng scale (font-size giữ 16px để iOS không auto-zoom khi focus);
+     áp dụng đồng bộ cho cả ô Tìm mã HEATMAP và CHART để 2 ô cùng kích thước trên mobile. */
   .hmap-search-wrap,
   .lite-chart-search-wrap{
     transform:scale(0.72);
@@ -2508,11 +2452,9 @@ html.chart-popout-mode .lite-chart-frame{
     transform-origin:right center;
     margin-left:calc((0.72 - 1) * 72px);
   }
-  /* Title chart portrait: ẩn O, H, L để vừa 1 dòng (chỉ còn C và %).
-     Wrap bằng <span class="lct-open"> / <span class="lct-hl"> rồi ẩn qua CSS. */
+  /* Title chart portrait: ẩn O, H, L để vừa 1 dòng (chỉ còn C và %). */
   .lite-chart-title .lct-open,.lite-chart-title .lct-hl{display:none}
-  /* Portrait mobile: để lite-chart-frame tự giãn chiều cao theo nội dung
-     khi thêm RSI/MACD panel — thay vì cố định height rồi co các pane lại. */
+  /* Portrait mobile: lite-chart-frame tự giãn theo nội dung khi thêm RSI/MACD panel. */
   .lite-chart-frame{
     height:auto!important;
     max-height:none!important;
@@ -2827,16 +2769,10 @@ html.chart-popout-mode .lite-chart-frame{
   .tri-tabs [data-tab="fireant"],
   #tri-content-fireant{display:none !important}
 
-  /* ─── Panel CHART trên mobile & iPhone ───────────────────────────────────
-     Bật và tối ưu hiển thị/thao tác panel CHART trên thiết bị di động:
-     - Khung toolbar cuộn ngang 1 hàng mượt mà bằng tay trên iPhone (-webkit-overflow-scrolling: touch).
-     - Loại bỏ hiện tượng tự động phóng to (zoom) của iOS Safari khi chạm vào ô input (font-size 16px).
-     - Hỗ trợ safe area insets cho iPhone có notch / Dynamic Island và thanh Home bar.
-     - Dropdown chỉ báo (Signal/MA-EMA/Trend) được portal ra <body> + neo ĐỘNG ngay dưới nút
-       vừa bấm bằng JS (xem _litePositionIndDropdown/syncLiteIndDropdownPortal), giống hệt
-       cách absolute mặc định hoạt động ở landscape/desktop — CSS bên dưới chỉ còn giữ phần
-       khung (bo góc/đổ bóng/giới hạn kích thước/cuộn nội dung), KHÔNG định vị cứng kiểu
-       bottom-sheet nữa. */
+  /* Panel CHART trên mobile/iPhone: toolbar cuộn ngang mượt (-webkit-overflow-scrolling:touch),
+     input font-size 16px để iOS không tự zoom, hỗ trợ safe-area cho notch/Home bar. Dropdown
+     chỉ báo được portal ra <body> + neo động bằng JS (_litePositionIndDropdown/
+     syncLiteIndDropdownPortal) — CSS ở đây chỉ giữ khung (bo góc/đổ bóng/cuộn), không định vị cứng. */
   #lite-chart-panel{display:block}
   .lite-chart-toolbar{
     flex-wrap:nowrap;
@@ -3604,13 +3540,9 @@ html.chart-popout-mode .lite-chart-frame{
 
 <div id="edge-swipe-zone"></div>
 
-<!-- defer: file đã được preload ở <head> (link rel="preload") nên tải sẵn song song rồi;
-     thêm defer để trình duyệt không phải DỪNG parse HTML tại đúng dòng này chờ tải+chạy xong
-     thư viện (~vài trăm KB) mới đi tiếp — nhất là ảnh hưởng tới cửa sổ CHART popout, nơi hầu
-     như toàn bộ nội dung trang chỉ còn đúng panel CHART, nên mọi mili-giây parse HTML bị chặn
-     ở đây đều lộ ra thành cảm giác "load chậm". defer vẫn đảm bảo chạy TRƯỚC dashboard-main.js
-     (thứ tự các script defer luôn giữ đúng thứ tự khai báo trong tài liệu), nên window.LightweightCharts
-     vẫn sẵn sàng đúng lúc dashboard-main.js cần dùng — hành vi logic không đổi, chỉ bớt chặn parse. -->
+<!-- defer: file đã preload song song ở <head>, defer chỉ để khỏi chặn parse HTML tại dòng này.
+     Script defer luôn chạy đúng thứ tự khai báo nên window.LightweightCharts vẫn sẵn sàng trước
+     khi dashboard-main.js cần dùng — hành vi không đổi, chỉ bớt chặn parse. -->
 <script defer src="/static/lightweight-charts.min.js"></script>
 <script defer src="/dashboard-main.js"></script>
 </body>
@@ -3904,29 +3836,16 @@ function _liteRepositionOpenDropdown(){
   if(dd&&btn&&dd.parentElement===document.body)_litePositionIndDropdown(btn,dd);
 }
 function syncLiteIndDropdownPortal(grp,open){
-  /* Portrait mobile: .lite-ind-dropdown dùng position:fixed và được neo động ngay dưới nút vừa
-     bấm (xem _litePositionIndDropdown), nhưng nó là con của .lite-chart-toolbar — toolbar này
-     có -webkit-overflow-scrolling:touch để cuộn ngang mượt trên iOS. Đây là quirk đã biết của
-     WebKit/Safari: container cuộn có thuộc tính này tự trở thành "khung chứa" MỚI cho mọi phần
-     tử fixed bên trong nó, khiến dropdown bị kẹt trong vùng cuộn hẹp thay vì hiện nổi theo toàn
-     màn hình như CSS đã định — hậu quả là bấm Signal/MA/EMA ở portrait không thấy gì hiện ra.
-     Cách xử lý: khi MỞ dropdown trên mobile, chuyển thẳng nó ra làm con trực tiếp của <body> —
-     thoát khỏi khung chứa bị kẹt, position:fixed hoạt động đúng theo viewport — rồi đo vị trí
-     nút để đặt dropdown dính sát ngay dưới nút đó. Khi ĐÓNG, trả nó về đúng vị trí cũ trong
-     .lite-ind-group và xóa top/left inline để không sót giá trị portrait cũ. Desktop/landscape
-     rộng (>768px) không đụng tới vì dropdown ở đó vẫn dùng position:absolute thường, không cần
-     portal.
-     3 điểm cần lưu ý (đã từng gây lỗi ở bản trước):
-     1) Dùng document.querySelector theo data-dropdown thay vì grp.querySelector — vì sau khi
-        dropdown đã bị chuyển ra <body>, nó KHÔNG còn là con của grp nữa, grp.querySelector sẽ
-        luôn trả về rỗng ở những lần gọi đóng sau đó, khiến không bao giờ trả lại được vị trí cũ.
-     2) CSS ẩn/hiện dropdown dựa vào ".lite-ind-group.open .lite-ind-dropdown{display:flex}" —
-        một khi bị chuyển ra ngoài <body>, dropdown không còn là con của .lite-ind-group.open
-        nữa nên rule CSS này không áp dụng được, phải set display:flex thủ công qua inline style
-        khi đang portal; lúc trả về đúng chỗ thì xóa inline style để CSS gốc tự quyết định lại.
-     3) Phải set display:flex TRƯỚC rồi mới đo offsetWidth/offsetHeight trong
-        _litePositionIndDropdown — phần tử display:none luôn trả về kích thước 0, tính top/left
-        theo đó sẽ sai (dropdown sẽ dính cứng ở góc trên-trái màn hình). */
+  /* Portrait mobile: dropdown chỉ báo dùng position:fixed nhưng là con của .lite-chart-toolbar
+     (có -webkit-overflow-scrolling:touch) — quirk WebKit khiến container cuộn này tự thành
+     "khung chứa" mới cho fixed bên trong, dropdown bị kẹt không hiện ra. Xử lý: khi MỞ, chuyển
+     dropdown ra làm con trực tiếp <body> rồi neo theo vị trí nút; khi ĐÓNG, trả về chỗ cũ +
+     xoá top/left inline. Desktop/landscape (>768px) không cần portal (vẫn absolute thường).
+     3 lưu ý từng gây lỗi: (1) dùng document.querySelector theo data-dropdown, không dùng
+     grp.querySelector — vì sau khi portal ra <body>, dropdown không còn là con của grp nữa;
+     (2) rule CSS ẩn/hiện dựa vào .lite-ind-group.open không còn hiệu lực khi đã portal, phải tự
+     set display:flex qua inline style; (3) phải set display:flex TRƯỚC khi đo offsetWidth/Height
+     trong _litePositionIndDropdown, nếu không kích thước đo được sẽ luôn là 0. */
   const key=grp.dataset.group;
   const dd=document.querySelector(`.lite-ind-dropdown[data-dropdown="${key}"]`);
   if(!dd)return;
@@ -4152,10 +4071,8 @@ function initLiteChart(){
     window.addEventListener('resize',()=>{
       clearTimeout(_liteResizeTimer);
       _liteResizeTimer=setTimeout(()=>{
-        // Popout thẻ CHART tự giãn theo viewport khi kéo cạnh cửa sổ — phải gọi
-        // _liteRelayoutViewport() (không chỉ resize canvas) để tính lại pane layout,
-        // nếu không panel giữ chiều cao cũ và để lại khoảng trắng. Trên mobile hàm này
-        // còn là lưới an toàn cho 'orientationchange' (Android Chrome đôi khi không bắn tin cậy).
+        // Popout cần _liteRelayoutViewport() (không chỉ resize canvas) để tính lại pane layout
+        // khi kéo cạnh cửa sổ; trên mobile còn là lưới an toàn cho 'orientationchange'.
         if(_isChartPopoutWindow)_liteRelayoutViewport();
         else _liteApplyChartSizes();
         resizeLiteDrawCanvas();redrawLiteDrawings();
@@ -4178,8 +4095,26 @@ function initLiteChart(){
     });
   }
 }
+// Cache checkbox theo value: querySelector CSS selector bị gọi hàng chục-hàng trăm lần/giây
+// trong lúc kéo/zoom chart (mỗi lần đổi visible range đều gọi lại _litePaneIsActive→_liteChecked)
+// và trong renderLiteIndicators/quiet-refresh — tra Map là O(1), rẻ hơn nhiều so với CSS attribute
+// selector match lại toàn DOM mỗi lần. Checkbox là phần tử tĩnh (không tạo/huỷ động), kể cả khi bị
+// "portal" ra <body> ở mobile portrait (xem syncLiteIndDropdownPortal) vẫn là CÙNG 1 node — chỉ đổi
+// cha, không đổi định danh — nên cache theo tham chiếu phần tử vẫn đúng sau khi bị portal.
+let _liteCheckedMap=null;
 function _liteChecked(name){
-  return !!document.querySelector(`input[value="${name}"]:checked`);
+  if(!_liteCheckedMap){
+    _liteCheckedMap=new Map();
+    _liteAllIndCheckboxes().forEach(cb=>{if(!_liteCheckedMap.has(cb.value))_liteCheckedMap.set(cb.value,cb);});
+  }
+  let cb=_liteCheckedMap.get(name);
+  if(!cb){
+    // Lưới an toàn: nếu vì lý do nào đó chưa có trong cache (DOM render trễ...), tra trực tiếp 1 lần
+    // rồi nhớ lại — không bao giờ trả sai kết quả so với bản querySelector gốc.
+    cb=document.querySelector(`input[value="${name}"]`);
+    if(cb)_liteCheckedMap.set(name,cb);
+  }
+  return !!(cb&&cb.checked);
 }
 function _liteAllIndCheckboxes(){
   // Gộp checkbox #lite-indicators với checkbox dropdown portal ra <body> (mobile portrait) —
@@ -4189,11 +4124,8 @@ function _liteAllIndCheckboxes(){
 function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
-  /* Danh sách chỉ báo mặc định BẬT khi người dùng mở dashboard lần đầu trên trình duyệt/thiết bị
-     đó (chưa có gì lưu trong localStorage). Panel chart nến luôn hiện sẵn (không qua checkbox
-     nào ở đây). Cờ tổng 2 nhóm Signal/MA-EMA (signalgrp_on, maema_on) CỐ Ý để mặc định TẮT —
-     nhưng các chỉ báo con bên trong vẫn được đánh dấu sẵn BẬT, để khi người dùng tự bật cờ tổng
-     lên thì đúng các thông số này đã có sẵn, không phải chọn lại từ đầu. */
+  /* Chỉ báo mặc định BẬT khi mở dashboard lần đầu (chưa có gì trong localStorage). Cờ tổng
+     Signal/MA-EMA cố ý để TẮT, nhưng chỉ báo con vẫn đánh dấu sẵn BẬT để dùng ngay khi bật cờ tổng. */
   const DEFAULT_ON_INDICATORS=new Set(['macd','signal','volcolor','ma10','ma200','ema20','ema50']);
   _liteAllIndCheckboxes().forEach(cb=>{
     cb.checked=DEFAULT_ON_INDICATORS.has(cb.value)?(prefs[cb.value]!==false):(prefs[cb.value]===true);
