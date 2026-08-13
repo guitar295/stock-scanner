@@ -511,7 +511,7 @@ _vpa_cache_lock = threading.Lock()
 
 # ── RAM cache cho /api/lightweight_chart: payload theo (symbol, tf), trả ~0ms
 # từ request thứ 2, TTL 60s để không stale lâu trong phiên. ─────────────────
-_LITE_CHART_CACHE_TTL = 60          # giây
+_LITE_CHART_CACHE_TTL = 120         # giây — quiet refresh dùng nocache=1 nên nến cuối vẫn realtime
 _lite_chart_cache: dict = {}        # (symbol, tf) -> {"payload": dict, "ts": float}
 _lite_chart_cache_lock = threading.Lock()
 
@@ -1002,7 +1002,11 @@ def _attach_rs(row: dict, rs_scores: dict) -> dict:
 
 
 def _attach_rs_payload(payload: dict, symbol: str) -> dict:
-    rs = _compute_rs_scores().get(str(symbol).upper())
+    # Đọc thẳng từ RAM cache — KHÔNG gọi _compute_rs_scores() để tránh block
+    # request chart mỗi lần cache RS trống (vd sau restart). Background task
+    # hoặc /api/signals sẽ tự populate cache khi có dữ liệu.
+    with _rs_score_lock:
+        rs = _rs_score_cache["scores"].get(str(symbol).upper())
     if rs is not None:
         payload["rs"] = rs
     else:
@@ -1241,7 +1245,9 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """
     symbol = symbol.upper().strip()
     tf_upper = tf.upper().strip()
-    limit = max(50, min(1000, int(limit or 400)))
+    # Lazy-load lịch sử cần tối thiểu 50 bar để có nghĩa; quiet refresh (limit=10) không clamp.
+    min_limit = 50 if before_date else 5
+    limit = max(min_limit, min(1000, int(limit or 400)))
 
     if before_date:
         # Lazy load: lấy bar cũ hơn before_date
@@ -4041,11 +4047,9 @@ function _liteApplyChartSizes(){
 }
 function initLiteChart(){
   if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
-  // Crosshair gốc của thư viện tắt hẳn; dùng overlay DOM riêng (_liteMoveXhair/_liteHideXhair) để mượt, tránh giật/nháy khi applyOptions() chạy liên tục theo mousemove.
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
-    // Tắt shiftVisibleRangeOnNewBar để auto-refresh không tự cuộn chart về phải, tránh giật view khi user đang xem vùng khác.
     timeScale:{borderColor:'#dde3ee',rightOffset:LITE_RIGHT_OFFSET,shiftVisibleRangeOnNewBar:false},
     crosshair:{
       mode:LightweightCharts.CrosshairMode.Normal,
@@ -4076,14 +4080,12 @@ function initLiteChart(){
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
   _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
-  // Series whitespace vô hình giữ các mốc thời gian tương lai để crosshair vẫn hoạt động ở vùng trống bên phải nến cuối.
   _liteMainWhite=_liteChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteRsiWhite=_liteRsiChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteMacdWhite=_liteMacdChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     redrawLiteDrawings();
     _liteSyncVisibleRangeFrom(_liteChart,range);
-    // Lazy load đón đầu: khi user tiến về gần mốc 100 nến sát trái → tự fetch trước 1 bước ngầm
     if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
@@ -4119,7 +4121,6 @@ function initLiteChart(){
     const price=series&&series.coordinateToPrice&&series.coordinateToPrice(localY);
     return Number.isFinite(price)?fmtLiteNum(price):'';
   }
-  // _liteHandleCrosshairMove dùng chung cho main/MACD/RSI (gộp từ 3 khối trùng lặp); isMain giữ nguyên hành vi cập nhật title gốc của mỗi loại.
   function _liteHandleCrosshairMove(param,domEl,priceSeries,isMain){
     if(isMain){
       const key=param&&param.time?liteTimeKey(param.time):'';
@@ -4160,16 +4161,24 @@ function initLiteChart(){
         resizeLiteDrawCanvas();redrawLiteDrawings();
       },150);
     });
-    // Vẽ lại canvas liên tục để bắt thay đổi price-scale khi zoom trục Y; chỉ chạy khi panel Chart đang hiển thị để tránh tốn CPU.
+    // Vẽ lại canvas khi có nội dung cần vẽ và panel đang hiển thị.
+    // Dùng document.hidden + offsetParent check để không tốn CPU khi tab ẩn hoặc panel thu gọn.
+    let _liteDrawLoopActive=true;
     const _liteDrawLoop=()=>{
-      if(_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null&&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData))redrawLiteDrawings();
+      if(!_liteDrawLoopActive)return;
+      if(!document.hidden&&_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null
+         &&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData)){
+        redrawLiteDrawings();
+      }
       requestAnimationFrame(_liteDrawLoop);
     };
     requestAnimationFrame(_liteDrawLoop);
+    document.addEventListener('visibilitychange',()=>{
+      if(!document.hidden&&_liteDrawLoopActive)requestAnimationFrame(_liteDrawLoop);
+    });
   }
 }
 function _liteChecked(name){
-  // Tra qua document (không DOM.liteIndicators): hàm chạy liên tục lúc vẽ, kể cả khi dropdown đang portal ra <body>.
   return !!document.querySelector(`input[value="${name}"]:checked`);
 }
 function _liteAllIndCheckboxes(){
@@ -4301,9 +4310,13 @@ function _liteFutureTimes(lastTimeStr,n,tf){
   }
   return out;
 }
-function _liteUpdateWhitespace(){
+let _liteWhiteLastKey='';
+function _liteUpdateWhitespace(force){
   if(!_liteData.length)return;
   const lastT=liteTimeKey(_liteData[_liteData.length-1].time);
+  const key=lastT+'|'+_liteTf;
+  if(!force&&key===_liteWhiteLastKey)return; // nến cuối + TF không đổi → skip
+  _liteWhiteLastKey=key;
   const future=_liteFutureTimes(lastT,LITE_RIGHT_OFFSET+10,_liteTf).map(t=>({time:t}));
   if(_liteMainWhite)_liteMainWhite.setData(future);
   if(_liteRsiWhite)_liteRsiWhite.setData(future);
@@ -4394,14 +4407,17 @@ function _ema(data,n){
   return out;
 }
 function _bbands(data,n=20,mult=2){
-  const mid=_sma(data,n),midByTime=new Map(mid.map(x=>[liteTimeKey(x.time),x.value]));
+  // Sliding window O(n): dùng online variance thay vì slice() O(n*period)
+  const mid=_sma(data,n);
   const upper=[],lower=[];
-  for(let i=n-1;i<data.length;i++){
-    const slice=data.slice(i-n+1,i+1);
-    const m=midByTime.get(liteTimeKey(data[i].time));
-    if(m===undefined)continue;
-    let sq=0;for(const b of slice)sq+=(b.close-m)*(b.close-m);
-    const sd=Math.sqrt(sq/n);
+  let sumSq=0,winSum=0;
+  for(let i=0;i<data.length;i++){
+    const c=data[i].close;
+    winSum+=c;sumSq+=c*c;
+    if(i>=n){const old=data[i-n].close;winSum-=old;sumSq-=old*old;}
+    if(i<n-1)continue;
+    const m=winSum/n;
+    const sd=Math.sqrt(Math.max(0,sumSq/n-m*m));
     upper.push({time:data[i].time,value:m+mult*sd});
     lower.push({time:data[i].time,value:m-mult*sd});
   }
@@ -4446,13 +4462,15 @@ function _macd(data){
 // period=chu kỳ WMA H-L; mode 'smoothed' dùng Heikin Ashi theo AFL gốc.
 const LITE_TREND_MULT=1.75, LITE_TREND_PERIOD=10;
 function _wma(values,n){
-  // values: mảng số thô (không phải {time,value}) đã align 1-1 theo index với dữ liệu nến.
+  // Sliding window O(n): duy trì weightedSum và linearSum thay vì tính lại inner loop mỗi bar
   const out=new Array(values.length).fill(null);
   const denom=n*(n+1)/2;
-  for(let i=n-1;i<values.length;i++){
-    let sum=0;
-    for(let k=0;k<n;k++)sum+=values[i-k]*(n-k);
-    out[i]=sum/denom;
+  let wSum=0,lSum=0;
+  for(let i=0;i<values.length;i++){
+    wSum+=values[i]*n;
+    lSum+=values[i];
+    if(i>=n){wSum-=lSum;lSum-=values[i-n+1];}
+    if(i>=n-1)out[i]=wSum/denom;
   }
   return out;
 }
@@ -4516,7 +4534,11 @@ function _trendCloudData(data,period=LITE_TREND_PERIOD,mult=LITE_TREND_MULT,mode
   return out;
 }
 function alignLiteSeries(points){
-  const byTime=new Map(points.map(x=>[liteTimeKey(x.time),x]));
+  // Tạo Map 1 lần từ points (thường nhỏ hơn _liteData do warmup); lookup theo time key của _liteData.
+  const n=points.length;
+  if(!n)return _liteData.map(bar=>({time:bar.time}));
+  const byTime=new Map();
+  for(let i=0;i<n;i++){const p=points[i];byTime.set(liteTimeKey(p.time),p);}
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
 // skipWidthSync=true khi hàm gọi tự đồng bộ trục giá sau đó — tránh đo width khi dữ liệu 3 trục chưa cập nhật.
@@ -6262,8 +6284,7 @@ function _liteUpdateIndicatorData(){
   // MACD
   if(_liteMacdCrosshairSeries){
     const m=_macd(_liteData);
-    const histEntry=_liteIndicatorSeries.find(s=>s.chart===_liteMacdChart&&s.series!==_liteMacdCrosshairSeries&&_liteIndicatorSeries.indexOf(s)>_liteIndicatorSeries.indexOf(_liteIndicatorSeries.find(x=>x.series===_liteMacdCrosshairSeries))-2);
-    // Tìm series histogram (loại HistogramSeries) và signal line trong MACD panel
+    // Tìm series histogram và signal line trong MACD panel
     const macdPanelSeries=_liteIndicatorSeries.filter(s=>s.chart===_liteMacdChart);
     if(macdPanelSeries.length>=3){
       const histScaled=alignLiteSeries(m.hist).map(x=>x&&Number.isFinite(x.value)?{...x,value:x.value*LITE_HIST_SCALE}:x);
@@ -6418,8 +6439,6 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   try{
-    // Dùng lại request đã bắn sẵn từ <head> nếu đúng mã + khung giờ của lần tải đầu — chỉ dùng
-    // đúng 1 lần (xoá ngay sau khi lấy ra) để các lần đổi mã/khung giờ sau luôn gọi API tươi mới.
     const _pf=window.__liteChartPrefetch;
     const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
       ?(window.__liteChartPrefetch=null,await _pf.promise)
@@ -6430,21 +6449,23 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     _lgUpdateChartFavBtn();
     if(_lastChartSyncSymbol===s){
-      _lastChartSyncSymbol=null; // mã này vừa nhận đồng bộ từ cửa sổ kia — không gửi ngược lại
+      _lastChartSyncSymbol=null;
     }else if(!skipPopoutSync){
       if(_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
       if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
-      // Đang chạy trong iframe embedded: báo lên trang cha để đồng bộ tên mã header popup và reload tab khác.
       if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
     }
 	    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
 	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
-	    _liteData=(j.candles||[]).map((bar,idx,arr)=>{
-      const prev=idx>0?arr[idx-1].close:null;
-      const pct=prev?((bar.close-prev)/prev*100):0;
-      return{...bar,pct};
-    });
-    _liteDataByTime=new Map(_liteData.map(bar=>[liteTimeKey(bar.time),bar]));
+	    // Tính pct inline, gán trực tiếp — tránh tạo 450 object spread mới
+    const rawCandles=j.candles||[];
+    _liteData=new Array(rawCandles.length);
+    for(let i=0;i<rawCandles.length;i++){
+      const bar=rawCandles[i];
+      bar.pct=i>0?((bar.close-rawCandles[i-1].close)/rawCandles[i-1].close*100):0;
+      _liteData[i]=bar;
+    }
+    _liteDataByTime=new Map();for(let i=0;i<_liteData.length;i++){const b=_liteData[i];_liteDataByTime.set(liteTimeKey(b.time),b);}
     // Khởi động trạng thái lazy-load: server báo has_more=true khi còn lịch sử cũ có thể load thêm
     _liteHasMore=j.has_more!==false;
     _liteOldestDate=_liteData.length?liteTimeKey(_liteData[0].time):null;
@@ -6454,7 +6475,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteChartLoading=true;  // block lazy-load trong suốt quá trình set data + render
     try{
       _liteCandle.setData(_liteData);
-      _liteUpdateWhitespace();
+      _liteUpdateWhitespace(true);    // force reset cache khi load mã mới
       setLiteRightOffset();           // căn đúng 250 bar + 8% lề phải TRƯỚC
       renderLiteIndicators(true);     // skipRangeRestore=true → không ghi đè range vừa set
     }finally{
@@ -6491,28 +6512,33 @@ async function _liteQuietRefreshChart(){
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
-	    // Trong lúc chờ fetch, người dùng có thể đã đổi mã/timeframe khác → bỏ kết quả cũ, khỏi ghi nhầm.
 	    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
 	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
     const key=liteTimeKey(rawBar.time);
-    const isNewBar=!_liteDataByTime.has(key); // true = sang phiên mới (thêm nến), false = vá nến hiện tại
+    const isNewBar=!_liteDataByTime.has(key);
     const prevBar=isNewBar?_liteData[_liteData.length-1]
                           :(_liteData.length>1?_liteData[_liteData.length-2]:null);
-    const pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
-    const bar={...rawBar,pct};
-    // Chốt range NGAY TRƯỚC khi update()/setData() (không phải sau) để tránh thư viện đã tự dịch view rồi mới đọc lại.
+    rawBar.pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
+    const bar=rawBar;
     const prevRangeBeforeUpdate=_liteGetVisibleLogicalRange();
     if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
     _liteDataByTime.set(key,bar);
     _liteCandle.update(bar);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
-      // rawVol.color giữ nguyên màu server tính; renderLiteIndicators() luôn dựng lại series volume nên không cần update() riêng ở đây.
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
-    renderLiteIndicators(false,prevRangeBeforeUpdate,true); // skipPaneLayout=true — layout không đổi, chỉ vá dữ liệu
+    // Dùng bản nhẹ: chỉ setData() trên series có sẵn, không destroy/recreate toàn bộ.
+    // renderLiteIndicators() đầy đủ chỉ cần khi sang phiên mới (isNewBar) — lúc đó
+    // whitespace + rightOffset đã thay đổi nên cần rebuild để layout khớp lại.
+    if(isNewBar){
+      renderLiteIndicators(false,prevRangeBeforeUpdate,true);
+    }else{
+      _liteUpdateIndicatorData();
+      if(!_liteApplyVisibleLogicalRange(prevRangeBeforeUpdate))setLiteRightOffset();
+    }
     updateLiteTitle(_liteData[_liteData.length-1]);
     updateLiteBigPrice(_liteData[_liteData.length-1]); // vẽ lại ngay với dự báo đang có (chưa chờ fetch)
     _liteFetchVolForecast(sym); // cùng nhịp 20s với refresh nến — lấy lại progress/ratio mới nhất từ server
@@ -6541,10 +6567,13 @@ async function _liteFetchMoreHistory(){
     if(!j.candles||!j.candles.length){_liteHasMore=false;return;}
     _liteHasMore=j.has_more!==false;
     // Build các bar mới (cũ hơn) với pct
-    const newBars=j.candles.map((bar,idx,arr)=>{
-      const prev=idx>0?arr[idx-1].close:null;
-      return{...bar,pct:prev?((bar.close-prev)/prev*100):0};
-    });
+    const rawNew=j.candles;
+    const newBars=new Array(rawNew.length);
+    for(let i=0;i<rawNew.length;i++){
+      const bar=rawNew[i];
+      bar.pct=i>0?((bar.close-rawNew[i-1].close)/rawNew[i-1].close*100):0;
+      newBars[i]=bar;
+    }
     // Prepend vào mảng địa phương
     _liteData=[...newBars,..._liteData];
     _liteVolumeData=[...(j.volume||[]),..._liteVolumeData];
@@ -6553,7 +6582,6 @@ async function _liteFetchMoreHistory(){
     // Lưu range đang xem để không bị nhảy sau setData()
     const prevRange=_liteChart.timeScale().getVisibleLogicalRange();
     const prependCount=newBars.length;
-    // setData lại toàn bộ (Lightweight Charts yêu cầu dữ liệu tăng dần, không có prepend API riêng)
     _liteCandle.setData(_liteData);
     // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu, không destroy/recreate → hết giật.
     _liteUpdateIndicatorData();
