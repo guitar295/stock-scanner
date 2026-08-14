@@ -4560,7 +4560,7 @@ function _liteTextBoxMetrics(d){
   _liteDrawCtx.restore();
   return{pad,lh,size,family,lines,width:maxW+pad*2,height:lines.length*lh+pad*2};
 }
-function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol;}
+function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
 function loadLiteDrawings(){
   try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
   catch(e){_liteDrawings=[];}
@@ -4573,9 +4573,7 @@ function saveLiteDrawings(){
         d.points=d.points.map(pt=>{
           if(!pt)return pt;
           if(pt.ts)return pt;
-          if(pt.t&&pt.tf)return pt;
-          const info=_litePtWithTime(pt.l,pt.p);
-          return{...pt,t:pt.t||info.t,ts:info.ts,tf:pt.tf||info.tf};
+          return _litePtWithTime(pt.l,pt.p);
         });
       }
     }
@@ -4584,7 +4582,7 @@ function saveLiteDrawings(){
 }
 // Đồng bộ hình vẽ giữa cửa sổ CHART chính và popout qua sự kiện 'storage' có sẵn của trình duyệt.
 window.addEventListener('storage',e=>{
-  if(e.key!==_liteDrawStoreKey())return; // không phải mã đang xem — bỏ qua (dùng chung mọi TF)
+  if(e.key!==_liteDrawStoreKey())return; // không phải mã/tf đang xem — bỏ qua
   loadLiteDrawings();redrawLiteDrawings();
 });
 function resizeLiteDrawCanvas(){
@@ -4596,8 +4594,8 @@ function resizeLiteDrawCanvas(){
   _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
 }
 function _litePtWithTime(l,p){
-  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null,ts:null,tf:_liteTf};
-  let t=null,ts=null;
+  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,ts:null};
+  let ts=null;
   if(_liteData&&_liteData.length){
     const lastIdx=_liteData.length-1;
     if(_liteData.length===1){
@@ -4619,46 +4617,32 @@ function _litePtWithTime(l,p){
         ts=t1+frac*(t2-t1);
       }
     }
-    const d=new Date(ts);
-    t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
   }
-  return{l,p,t,ts,tf:_liteTf};
+  return{l,p,ts};
 }
 function _litePtLogical(pt){
   if(pt===null||pt===undefined)return null;
   if(typeof pt==='number')return pt;
   if(!_liteData||!_liteData.length)return pt.l;
   let targetTs=pt.ts;
-  let useLegacyOffset=false;
-  if(!targetTs){
-    if(pt.t){
-      targetTs=new Date(String(pt.t)+'T00:00:00Z').getTime();
-      useLegacyOffset=true;
-    }else{
-      return pt.l;
-    }
-  }
-  if(isNaN(targetTs))return pt.l;
+  if(!targetTs)return pt.l;
   const lastIdx=_liteData.length-1;
   if(lastIdx===0)return 0;
   const t0=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime();
   if(targetTs<=t0){
     const t1=new Date(liteTimeKey(_liteData[1].time)+'T00:00:00Z').getTime();
-    const lResult=(targetTs-t0)/(t1-t0);
-    return useLegacyOffset&&pt.offset?lResult+pt.offset:lResult;
+    return (targetTs-t0)/(t1-t0);
   }
   const tLast=new Date(liteTimeKey(_liteData[lastIdx].time)+'T00:00:00Z').getTime();
   if(targetTs>=tLast){
     const tPrev=new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime();
-    const lResult=lastIdx+(targetTs-tLast)/(tLast-tPrev);
-    return useLegacyOffset&&pt.offset?lResult+pt.offset:lResult;
+    return lastIdx+(targetTs-tLast)/(tLast-tPrev);
   }
   const idx=_liteData.findIndex(b=>new Date(liteTimeKey(b.time)+'T00:00:00Z').getTime()>=targetTs);
   if(idx>0){
     const t1=new Date(liteTimeKey(_liteData[idx-1].time)+'T00:00:00Z').getTime();
     const t2=new Date(liteTimeKey(_liteData[idx].time)+'T00:00:00Z').getTime();
-    const lResult=(idx-1)+(targetTs-t1)/(t2-t1);
-    return useLegacyOffset&&pt.offset?lResult+pt.offset:lResult;
+    return (idx-1)+(targetTs-t1)/(t2-t1);
   }
   return pt.l;
 }
