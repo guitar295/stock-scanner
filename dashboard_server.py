@@ -4373,14 +4373,8 @@ function _macd(data){
 // period=chu kỳ WMA H-L; mode 'smoothed' dùng Heikin Ashi theo AFL gốc.
 const LITE_TREND_MULT=1.75, LITE_TREND_PERIOD=10;
 function _wma(values,n){
-  // Sliding window O(n): duy trì weightedSum và linearSum thay vì tính lại inner loop mỗi bar.
-  // 2 giai đoạn tách biệt:
-  //  - i<n (làm nóng cửa sổ): phần tử mới có trọng số tăng dần (1,2,3...,i+1) — KHÔNG phải n cố định,
-  //    vì cửa sổ chưa đủ n phần tử nên chưa có phần tử nào bị "đẩy ra" để giảm trọng số phần tử cũ.
-  //  - i>=n (cửa sổ đã đầy, bắt đầu trượt): phần tử mới nhận trọng số n (tối đa), toàn bộ trọng số các
-  //    phần tử cũ giảm đi 1 (tương đương trừ lSum = tổng cửa sổ TRƯỚC khi thêm phần tử mới), đồng thời
-  //    loại phần tử cũ nhất values[i-n] (không phải values[i-n+1] — lệch 1 index sẽ làm lSum trôi dần
-  //    sai lệch qua từng nến, khiến wma dần lệch xa giá trị thật, thậm chí thành âm ở nến sau).
+  // Sliding window O(n): i<n dùng trọng số tăng dần 1..i+1 (cửa sổ chưa đầy);
+  // i>=n phần tử mới trọng số n, trừ lSum (tổng cửa sổ CŨ) và loại values[i-n].
   const out=new Array(values.length).fill(null);
   const denom=n*(n+1)/2;
   let wSum=0,lSum=0;
