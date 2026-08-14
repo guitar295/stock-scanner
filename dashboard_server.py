@@ -4602,51 +4602,36 @@ function _litePtWithTime(l,p){
   let t=null,offset=0;
   if(_liteData&&_liteData.length){
     const lastIdx=_liteData.length-1;
-    let idx=Math.round(l);
-    if(idx>lastIdx){offset=idx-lastIdx;idx=lastIdx;}
-    else if(idx<0){offset=idx;idx=0;}
-    t=_liteData[idx]?liteTimeKey(_liteData[idx].time):null;
+    let baseIdx=Math.floor(l);
+    let f=l-baseIdx;
+    
+    if(baseIdx>lastIdx){offset=l-lastIdx;baseIdx=lastIdx;f=0;}
+    else if(baseIdx<0){offset=l;baseIdx=0;f=0;}
+    
+    if(_liteData[baseIdx]){
+      const baseDateStr=liteTimeKey(_liteData[baseIdx].time);
+      if(_liteTf==='1W'||_liteTf==='W'){
+        const d=new Date(baseDateStr+'T00:00:00Z');
+        const dayNum=(d.getUTCDay()+6)%7; // Thứ 2 = 0
+        d.setUTCDate(d.getUTCDate()-dayNum); // Về thứ 2
+        const targetDayNum=Math.min(6,Math.max(0,Math.round((f/0.8)*7)));
+        d.setUTCDate(d.getUTCDate()+targetDayNum);
+        t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+      }else if(_liteTf==='1M'||_liteTf==='M'){
+        const d=new Date(baseDateStr+'T00:00:00Z');
+        d.setUTCDate(1); // Về mùng 1
+        const daysInMonth=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
+        const targetDay=Math.min(daysInMonth,Math.max(1,Math.round((f/0.85)*daysInMonth+1)));
+        d.setUTCDate(targetDay);
+        t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+      }else{
+        let rIdx=Math.round(l);
+        if(rIdx>lastIdx)rIdx=lastIdx;else if(rIdx<0)rIdx=0;
+        t=liteTimeKey(_liteData[rIdx].time);
+      }
+    }
   }
   return{l,p,t,offset,tf:_liteTf};
-}
-// Dịch date gốc theo delta logical bar trên TF hiện tại
-function _liteShiftDate(dateStr,deltaLogical){
-  if(!dateStr||!Number.isFinite(deltaLogical))return null;
-  const dlRound=Math.round(deltaLogical);
-  if(dlRound===0)return dateStr;
-  
-  if(_liteTf==='1D'||_liteTf==='D'){
-    if(!_liteData||!_liteData.length)return null;
-    const srcIdx=_liteData.findIndex(b=>liteTimeKey(b.time)===dateStr);
-    if(srcIdx===-1)return null;
-    const tgtIdx=srcIdx+dlRound;
-    if(tgtIdx>=0&&tgtIdx<_liteData.length)return liteTimeKey(_liteData[tgtIdx].time);
-    const baseDate=new Date(dateStr+'T00:00:00Z');
-    let remaining=Math.abs(dlRound),dir=dlRound>0?1:-1,d=new Date(baseDate);
-    while(remaining>0){d.setUTCDate(d.getUTCDate()+dir);const dow=d.getUTCDay();if(dow!==0&&dow!==6)remaining--;}
-    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
-  }
-  
-  if(_liteTf==='1W'||_liteTf==='W'){
-    const d=new Date(dateStr+'T00:00:00Z');
-    d.setUTCDate(d.getUTCDate()+dlRound*7);
-    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
-  }
-  
-  if(_liteTf==='1M'||_liteTf==='M'){
-    const d=new Date(dateStr+'T00:00:00Z');
-    d.setUTCMonth(d.getUTCMonth()+dlRound);
-    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
-  }
-  return null;
-}
-function _liteDragPt(origPt,dl,dp,onlyPrice){
-  if(!origPt)return origPt;
-  const newL=origPt.l+(onlyPrice?0:dl);
-  const newP=origPt.p+dp;
-  const newT=(origPt.t&&!onlyPrice)?(_liteShiftDate(origPt.t,dl)||origPt.t):origPt.t;
-  const newOffset=(origPt.offset||0);
-  return{l:newL,p:newP,t:newT,offset:newOffset,tf:_liteTf};
 }
 // Trả về khóa tuần ISO 'YYYY-Www' cho 1 chuỗi ngày 'YYYY-MM-DD' — khớp CHÍNH XÁC với
 // datetime.isocalendar() phía server (đã kiểm chứng khớp 100% trên 3 năm dữ liệu), dùng để
@@ -5519,55 +5504,51 @@ function _liteShowRectTooltip(hit,x,y){
 function _liteApplyDrag(d,info,cur){
   const dl=cur.l-info.startL,dp=cur.p-info.startP,op=info.origPoints;
   const key=d.type+':'+info.part;
-  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]=_liteDragPt(op[0],dl,dp);
-  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]=_liteDragPt(op[1],dl,dp);
+  const upd=(orig,onlyPrice)=>({l:orig.l+(onlyPrice?0:dl),p:orig.p+dp});
+  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]=upd(op[0]);
+  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]=upd(op[1]);
   else if(key==='rect:c1'||key==='position:c1'){
-    // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển.
-    d.points[0]=_liteDragPt(op[0],dl,0);
-    d.points[1]=_liteDragPt(op[1],0,dp);
+    d.points[0]={l:op[0].l+dl,p:op[0].p};
+    d.points[1]={l:op[1].l,p:op[1].p+dp};
   }else if(key==='rect:c2'||key==='position:c2'){
-    // Góc ảo (x theo p1, y theo p0): kéo ngang đổi p1.l, kéo dọc đổi p0.p.
-    d.points[0]=_liteDragPt(op[0],0,dp);
-    d.points[1]=_liteDragPt(op[1],dl,0);
+    d.points[0]={l:op[0].l,p:op[0].p+dp};
+    d.points[1]={l:op[1].l+dl,p:op[1].p};
   }else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'){
-    d.points[0]=_liteDragPt(op[0],dl,dp);d.points[1]=_liteDragPt(op[1],dl,dp);
+    d.points[0]=upd(op[0]);d.points[1]=upd(op[1]);
   }else if(key==='arc:line'){
-    d.points[0]=_liteDragPt(op[0],dl,dp);d.points[1]=_liteDragPt(op[1],dl,dp);
-    if(op[2]&&Number.isFinite(op[2].l)&&Number.isFinite(op[2].p))d.points[2]=_liteDragPt(op[2],dl,dp);
+    d.points[0]=upd(op[0]);d.points[1]=upd(op[1]);
+    if(op[2]&&Number.isFinite(op[2].l))d.points[2]=upd(op[2]);
   }else if(key==='hline:line'){
-    d.points[0]=_liteDragPt(op[0],0,dp);d.points[1]=_liteDragPt(op[1],0,dp);
+    d.points[0]={l:op[0].l,p:op[0].p+dp};d.points[1]={l:op[1].l,p:op[1].p+dp};
   }else if(key==='vline:line'){
-    d.points[0]=_liteDragPt(op[0],dl,0);d.points[1]=_liteDragPt(op[1],dl,0);
+    d.points[0]={l:op[0].l+dl,p:op[0].p};d.points[1]={l:op[1].l+dl,p:op[1].p};
   }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
   }else if(key==='arc:offset'){
-    // pts[2] của arc là toạ độ (logical,price) điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu cả 2 chiều.
     const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
     const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
-    const basePt=op[2]||op[0];
-    d.points[2]=_liteDragPt({l:baseL,p:baseP,t:basePt.t,offset:basePt.offset||0,tf:basePt.tf},dl,dp);
+    d.points[2]={l:baseL+dl,p:baseP+dp};
   }else if(d.type==='zigzag'&&info.part==='line'){
-    d.points=op.map(pt=>_liteDragPt(pt,dl,dp));
+    d.points=op.map(pt=>upd(pt));
   }else if(d.type==='zigzag'&&info.part[0]==='v'){
     const idx=parseInt(info.part.slice(1),10);
-    if(op[idx])d.points[idx]=_liteDragPt(op[idx],dl,dp);
+    if(op[idx])d.points[idx]=upd(op[idx]);
   }else if(key==='position:body'){
-    d.points[0]=_liteDragPt(op[0],dl,dp);
-    d.points[1]=_liteDragPt(op[1],dl,dp);
+    d.points[0]=upd(op[0]);d.points[1]=upd(op[1]);
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
     if(Number.isFinite(info.origTarget2P))d.target2P=info.origTarget2P+dp;
   }else if(key==='position:target'){
-    d.points[1]=_liteDragPt(op[1],0,dp);
+    d.points[1]={l:op[1].l,p:op[1].p+dp};
   }else if(key==='position:target2'){
     d.target2P=(info.origTarget2P??d.target2P)+dp;
   }else if(key==='position:stop'){
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
   }else if(key==='position:edgeL'){
-    d.points[0]=_liteDragPt(op[0],dl,0);
+    d.points[0]={l:op[0].l+dl,p:op[0].p};
   }else if(key==='position:edgeR'){
-    d.points[1]=_liteDragPt(op[1],dl,0);
+    d.points[1]={l:op[1].l+dl,p:op[1].p};
   }else if(key==='text:p0'){
-    d.points[0]=_liteDragPt(op[0],dl,dp);
+    d.points[0]=upd(op[0]);
   }
 }
 function _liteStartShapeDrag(hit,ev){
