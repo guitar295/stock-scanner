@@ -4576,7 +4576,8 @@ function saveLiteDrawings(){
           const info=_litePtWithTime(l,p);
           const t=pt.t||info.t;
           const offset=(pt.offset!==undefined&&pt.offset!==null)?pt.offset:info.offset;
-          return{...pt,t,offset};
+          const tf=pt.tf||info.tf; // giữ tf gốc lúc điểm được tạo; nếu là dữ liệu cũ (trước bản vá, chưa có tf) thì coi như thuộc khung hiện tại
+          return{...pt,t,offset,tf};
         });
       }
     }
@@ -4597,7 +4598,7 @@ function resizeLiteDrawCanvas(){
   _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
 }
 function _litePtWithTime(l,p){
-  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null,offset:0};
+  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null,offset:0,tf:_liteTf};
   let t=null,offset=0;
   if(_liteData&&_liteData.length){
     const lastIdx=_liteData.length-1;
@@ -4606,16 +4607,38 @@ function _litePtWithTime(l,p){
     else if(idx<0){offset=idx;idx=0;}
     t=_liteData[idx]?liteTimeKey(_liteData[idx].time):null;
   }
-  return{l,p,t,offset};
+  return{l,p,t,offset,tf:_liteTf};
 }
-function _liteSubBarOffset(targetStr,barStr){
-  if(!targetStr||!barStr)return 0;
-  const tTs=new Date(targetStr).getTime();
-  const bTs=new Date(barStr).getTime();
-  if(isNaN(tTs)||isNaN(bTs)||tTs<=bTs)return 0;
-  const diffDays=(tTs-bTs)/86400000;
-  if(_liteTf==='1W'||_liteTf==='W')return Math.max(0,Math.min(0.8, (diffDays/7)*0.8));
-  if(_liteTf==='1M'||_liteTf==='M')return Math.max(0,Math.min(0.85,(diffDays/30)*0.85));
+// Trả về khóa tuần ISO 'YYYY-Www' cho 1 chuỗi ngày 'YYYY-MM-DD' — khớp CHÍNH XÁC với
+// datetime.isocalendar() phía server (đã kiểm chứng khớp 100% trên 3 năm dữ liệu), dùng để
+// xác định 1 ngày daily thuộc bar Tuần nào (server gộp bar tuần theo isocalendar(), không phải
+// theo khoảng cách ngày gần nhất tới ngày cuối tuần — nếu dùng nearest-neighbor, các ngày đầu
+// tuần (Thứ 2) sẽ bị "hút" nhầm sang bar tuần TRƯỚC vì gần thứ Sáu tuần trước hơn thứ Sáu tuần này).
+function _liteIsoWeekKey(dateStr){
+  const d=new Date(dateStr+'T00:00:00Z');
+  if(isNaN(d.getTime()))return null;
+  const dt=new Date(d.getTime());
+  const dayNum=(dt.getUTCDay()+6)%7; // Thứ2=0 .. CN=6
+  dt.setUTCDate(dt.getUTCDate()-dayNum+3); // dịch về Thứ 5 cùng tuần ISO (tuần chứa Thứ 5 này quyết định năm ISO)
+  const yearStart=new Date(Date.UTC(dt.getUTCFullYear(),0,1));
+  const weekNo=Math.ceil((((dt-yearStart)/86400000)+1)/7);
+  return dt.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0');
+}
+// Tỉ lệ vị trí (0..~0.8/0.85) của 1 ngày daily bên trong bar Tuần/Tháng chứa nó — tính trực tiếp
+// từ chính ngày mục tiêu (thứ mấy trong tuần / ngày mấy trong tháng), KHÔNG so sánh với ngày của
+// bar (bar Tuần/Tháng server lưu ngày CUỐI kỳ nên target luôn <= ngày bar, so sánh kiểu cũ luôn ra 0).
+function _liteSubBarOffset(targetStr){
+  const d=new Date(targetStr+'T00:00:00Z');
+  if(isNaN(d.getTime()))return 0;
+  if(_liteTf==='1W'||_liteTf==='W'){
+    let isoDay=d.getUTCDay();isoDay=isoDay===0?7:isoDay; // CN=0 -> 7 (Thứ2=1..CN=7)
+    return Math.max(0,Math.min(0.8,((isoDay-1)/7)*0.8));
+  }
+  if(_liteTf==='1M'||_liteTf==='M'){
+    const dayOfMonth=d.getUTCDate();
+    const daysInMonth=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
+    return Math.max(0,Math.min(0.85,((dayOfMonth-1)/daysInMonth)*0.85));
+  }
   return 0;
 }
 function _litePtLogical(pt){
@@ -4623,24 +4646,42 @@ function _litePtLogical(pt){
   if(typeof pt==='number')return pt;
   if(!_liteData||!_liteData.length)return pt.l;
   const offset=pt.offset||0;
+  // 0. Đang xem ĐÚNG khung lúc điểm được tạo/kéo-thả → dùng thẳng l gốc (chính xác tuyệt đối,
+  // không làm tròn/suy diễn qua ngày). Dữ liệu vẽ từ trước khi có patch này chưa có pt.tf, coi
+  // như đã tạo ở khung hiện tại nên vẫn ưu tiên l gốc — không đổi hành vi cho hình vẽ cũ.
+  if((pt.tf===undefined||pt.tf===_liteTf)&&Number.isFinite(pt.l))return pt.l;
   if(!pt.t)return pt.l;
   const targetStr=String(pt.t);
   
-  // 1. Khớp ngày chính xác (khung D)
-  let idx=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
-  if(idx!==-1)return idx+offset;
+  // 1. Khớp ngày chính xác — chỉ áp dụng khi đang xem khung D. Nếu để chạy cả khi đang ở W/M,
+  // trường hợp ngày vẽ trùng đúng ngày cuối tuần/cuối tháng (ngày bar W/M đang lưu) sẽ bị khớp
+  // idx+0 tại đây, bỏ qua sub-offset — khiến nó nằm BÊN TRÁI các ngày giữa tuần (có sub-offset
+  // dương), đảo ngược thứ tự trái-phải trong nội bộ 1 bar.
+  if(_liteTf==='1D'||_liteTf==='D'){
+    const idxD=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
+    if(idxD!==-1)return idxD+offset;
+  }
+  let idx=-1;
   
   // 2. Khớp Tháng 'YYYY-MM' (khung M) kèm sub-offset ngày trong tháng
   if(_liteTf==='1M'||_liteTf==='M'){
     const prefix=targetStr.slice(0,7);
     idx=_liteData.findIndex(b=>liteTimeKey(b.time).startsWith(prefix));
-    if(idx!==-1){
-      const sub=_liteSubBarOffset(targetStr,liteTimeKey(_liteData[idx].time));
-      return idx+sub+offset;
+    if(idx!==-1)return idx+_liteSubBarOffset(targetStr)+offset;
+  }
+  
+  // 3. Khớp đúng Tuần ISO (khung W) kèm sub-offset ngày trong tuần — dùng isocalendar(), không
+  // dùng khoảng cách ngày gần nhất (nearest-neighbor sai với các ngày đầu tuần, xem giải thích ở
+  // _liteIsoWeekKey).
+  if(_liteTf==='1W'||_liteTf==='W'){
+    const wk=_liteIsoWeekKey(targetStr);
+    if(wk){
+      idx=_liteData.findIndex(b=>_liteIsoWeekKey(liteTimeKey(b.time))===wk);
+      if(idx!==-1)return idx+_liteSubBarOffset(targetStr)+offset;
     }
   }
   
-  // 3. Khớp Tuần gần nhất (khung W) kèm sub-offset ngày trong tuần
+  // 4. Fallback cuối: khớp theo ngày gần nhất tuyệt đối (dữ liệu thiếu bar/khung lạ)
   const targetTs=new Date(targetStr).getTime();
   if(!isNaN(targetTs)){
     let bestIdx=0,minDiff=Infinity;
@@ -4649,8 +4690,7 @@ function _litePtLogical(pt){
       const diff=Math.abs(bTs-targetTs);
       if(diff<minDiff){minDiff=diff;bestIdx=i;}
     }
-    const sub=_liteData[bestIdx]?_liteSubBarOffset(targetStr,liteTimeKey(_liteData[bestIdx].time)):0;
-    return bestIdx+sub+offset;
+    return bestIdx+offset;
   }
   return pt.l;
 }
