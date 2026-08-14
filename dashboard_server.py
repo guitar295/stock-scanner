@@ -4572,12 +4572,12 @@ function saveLiteDrawings(){
       if(d&&d.points){
         d.points=d.points.map(pt=>{
           if(!pt)return pt;
-          const l=pt.l,p=pt.p;
-          const info=_litePtWithTime(l,p);
-          const t=pt.t||info.t;
-          const offset=(pt.offset!==undefined&&pt.offset!==null)?pt.offset:info.offset;
-          const tf=pt.tf||info.tf; // giữ tf gốc lúc điểm được tạo; nếu là dữ liệu cũ (trước bản vá, chưa có tf) thì coi như thuộc khung hiện tại
-          return{...pt,t,offset,tf};
+          if(pt.t&&pt.tf)return pt; // Giữ nguyên t/tf nếu đã có
+          if(!pt.tf||pt.tf===_liteTf){ // Bổ sung cho dữ liệu cũ ở khung gốc
+            const info=_litePtWithTime(pt.l,pt.p);
+            return{...pt,t:pt.t||info.t,offset:(pt.offset!=null)?pt.offset:info.offset,tf:pt.tf||info.tf};
+          }
+          return pt;
         });
       }
     }
@@ -4608,6 +4608,45 @@ function _litePtWithTime(l,p){
     t=_liteData[idx]?liteTimeKey(_liteData[idx].time):null;
   }
   return{l,p,t,offset,tf:_liteTf};
+}
+// Dịch date gốc theo delta logical bar trên TF hiện tại
+function _liteShiftDate(dateStr,deltaLogical){
+  if(!dateStr||!Number.isFinite(deltaLogical))return null;
+  const dlRound=Math.round(deltaLogical);
+  if(dlRound===0)return dateStr;
+  
+  if(_liteTf==='1D'||_liteTf==='D'){
+    if(!_liteData||!_liteData.length)return null;
+    const srcIdx=_liteData.findIndex(b=>liteTimeKey(b.time)===dateStr);
+    if(srcIdx===-1)return null;
+    const tgtIdx=srcIdx+dlRound;
+    if(tgtIdx>=0&&tgtIdx<_liteData.length)return liteTimeKey(_liteData[tgtIdx].time);
+    const baseDate=new Date(dateStr+'T00:00:00Z');
+    let remaining=Math.abs(dlRound),dir=dlRound>0?1:-1,d=new Date(baseDate);
+    while(remaining>0){d.setUTCDate(d.getUTCDate()+dir);const dow=d.getUTCDay();if(dow!==0&&dow!==6)remaining--;}
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  
+  if(_liteTf==='1W'||_liteTf==='W'){
+    const d=new Date(dateStr+'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate()+dlRound*7);
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  
+  if(_liteTf==='1M'||_liteTf==='M'){
+    const d=new Date(dateStr+'T00:00:00Z');
+    d.setUTCMonth(d.getUTCMonth()+dlRound);
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  return null;
+}
+function _liteDragPt(origPt,dl,dp,onlyPrice){
+  if(!origPt)return origPt;
+  const newL=origPt.l+(onlyPrice?0:dl);
+  const newP=origPt.p+dp;
+  const newT=(origPt.t&&!onlyPrice)?(_liteShiftDate(origPt.t,dl)||origPt.t):origPt.t;
+  const newOffset=(origPt.offset||0);
+  return{l:newL,p:newP,t:newT,offset:newOffset,tf:_liteTf};
 }
 // Trả về khóa tuần ISO 'YYYY-Www' cho 1 chuỗi ngày 'YYYY-MM-DD' — khớp CHÍNH XÁC với
 // datetime.isocalendar() phía server (đã kiểm chứng khớp 100% trên 3 năm dữ liệu), dùng để
@@ -5480,71 +5519,64 @@ function _liteShowRectTooltip(hit,x,y){
 function _liteApplyDrag(d,info,cur){
   const dl=cur.l-info.startL,dp=cur.p-info.startP,op=info.origPoints;
   const key=d.type+':'+info.part;
-  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
-  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]=_liteDragPt(op[0],dl,dp);
+  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]=_liteDragPt(op[1],dl,dp);
   else if(key==='rect:c1'||key==='position:c1'){
     // Góc ảo (x theo p0, y theo p1): kéo ngang đổi p0.l, kéo dọc đổi p1.p — 2 điểm gốc không di chuyển.
-    d.points[0]={l:op[0].l+dl,p:op[0].p};
-    d.points[1]={l:op[1].l,p:op[1].p+dp};
+    d.points[0]=_liteDragPt(op[0],dl,0);
+    d.points[1]=_liteDragPt(op[1],0,dp);
   }else if(key==='rect:c2'||key==='position:c2'){
     // Góc ảo (x theo p1, y theo p0): kéo ngang đổi p1.l, kéo dọc đổi p0.p.
-    d.points[0]={l:op[0].l,p:op[0].p+dp};
-    d.points[1]={l:op[1].l+dl,p:op[1].p};
+    d.points[0]=_liteDragPt(op[0],0,dp);
+    d.points[1]=_liteDragPt(op[1],dl,0);
   }else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'){
-    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+    d.points[0]=_liteDragPt(op[0],dl,dp);d.points[1]=_liteDragPt(op[1],dl,dp);
   }else if(key==='arc:line'){
-    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
-    if(op[2]&&Number.isFinite(op[2].l)&&Number.isFinite(op[2].p))d.points[2]={l:op[2].l+dl,p:op[2].p+dp};
+    d.points[0]=_liteDragPt(op[0],dl,dp);d.points[1]=_liteDragPt(op[1],dl,dp);
+    if(op[2]&&Number.isFinite(op[2].l)&&Number.isFinite(op[2].p))d.points[2]=_liteDragPt(op[2],dl,dp);
   }else if(key==='hline:line'){
-    d.points[0]={...op[0],p:op[0].p+dp};d.points[1]={...op[1],p:op[1].p+dp};
+    d.points[0]=_liteDragPt(op[0],0,dp);d.points[1]=_liteDragPt(op[1],0,dp);
   }else if(key==='vline:line'){
-    d.points[0]={...op[0],l:op[0].l+dl};d.points[1]={...op[1],l:op[1].l+dl};
+    d.points[0]=_liteDragPt(op[0],dl,0);d.points[1]=_liteDragPt(op[1],dl,0);
   }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
   }else if(key==='arc:offset'){
     // pts[2] của arc là toạ độ (logical,price) điểm "đáy" — kéo bao nhiêu, đáy dịch theo bấy nhiêu cả 2 chiều.
     const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
     const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
-    d.points[2]={l:baseL+dl,p:baseP+dp};
+    const basePt=op[2]||op[0];
+    d.points[2]=_liteDragPt({l:baseL,p:baseP,t:basePt.t,offset:basePt.offset||0,tf:basePt.tf},dl,dp);
   }else if(d.type==='zigzag'&&info.part==='line'){
-    d.points=op.map(pt=>({l:pt.l+dl,p:pt.p+dp}));
+    d.points=op.map(pt=>_liteDragPt(pt,dl,dp));
   }else if(d.type==='zigzag'&&info.part[0]==='v'){
     const idx=parseInt(info.part.slice(1),10);
-    if(op[idx])d.points[idx]={l:op[idx].l+dl,p:op[idx].p+dp};
+    if(op[idx])d.points[idx]=_liteDragPt(op[idx],dl,dp);
   }else if(key==='position:body'){
-    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
-    d.points[1]={l:op[1].l+dl,p:op[1].p+dp};
+    d.points[0]=_liteDragPt(op[0],dl,dp);
+    d.points[1]=_liteDragPt(op[1],dl,dp);
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
     if(Number.isFinite(info.origTarget2P))d.target2P=info.origTarget2P+dp;
   }else if(key==='position:target'){
-    d.points[1]={...op[1],p:op[1].p+dp};
+    d.points[1]=_liteDragPt(op[1],0,dp);
   }else if(key==='position:target2'){
     d.target2P=(info.origTarget2P??d.target2P)+dp;
   }else if(key==='position:stop'){
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
   }else if(key==='position:edgeL'){
-    d.points[0]={...op[0],l:op[0].l+dl};
+    d.points[0]=_liteDragPt(op[0],dl,0);
   }else if(key==='position:edgeR'){
-    d.points[1]={...op[1],l:op[1].l+dl};
+    d.points[1]=_liteDragPt(op[1],dl,0);
   }else if(key==='text:p0'){
-    d.points[0]={l:op[0].l+dl,p:op[0].p+dp};
-  }
-  if(d&&d.points){
-    d.points=d.points.map(pt=>{
-      if(!pt||!Number.isFinite(pt.l))return pt;
-      return{...pt,..._litePtWithTime(pt.l,pt.p)};
-    });
+    d.points[0]=_liteDragPt(op[0],dl,dp);
   }
 }
 function _liteStartShapeDrag(hit,ev){
   const d=hit.shape;
   _liteSelectShape(d.id);
   const startPt=_litePtFromEvent(ev);if(!startPt)return;
-  // Quy đổi l của origPoints về đúng khung thời gian hiện tại TRƯỚC KHI kéo, tránh dùng l cũ của khung thời gian trước làm hình vẽ bị nhảy sang mốc khác.
   const normalizedPoints=(d.points||[]).map(pt=>{
     if(!pt)return pt;
-    const curL=_litePtLogical(pt);
-    return{...pt,l:curL};
+    return{...pt,l:_litePtLogical(pt)};
   });
   _liteDragInfo={
     part:hit.part,
