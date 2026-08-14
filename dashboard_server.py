@@ -4572,12 +4572,9 @@ function saveLiteDrawings(){
       if(d&&d.points){
         d.points=d.points.map(pt=>{
           if(!pt)return pt;
-          if(pt.t&&pt.tf)return pt; // Giữ nguyên t/tf nếu đã có
-          if(!pt.tf||pt.tf===_liteTf){ // Bổ sung cho dữ liệu cũ ở khung gốc
-            const info=_litePtWithTime(pt.l,pt.p);
-            return{...pt,t:pt.t||info.t,offset:(pt.offset!=null)?pt.offset:info.offset,tf:pt.tf||info.tf};
-          }
-          return pt;
+          if(pt.t&&pt.tf)return pt;
+          const info=_litePtWithTime(pt.l,pt.p);
+          return{...pt,t:pt.t||info.t,offset:(pt.offset!=null)?pt.offset:info.offset,tf:pt.tf||info.tf};
         });
       }
     }
@@ -4602,42 +4599,33 @@ function _litePtWithTime(l,p){
   let t=null,offset=0;
   if(_liteData&&_liteData.length){
     const lastIdx=_liteData.length-1;
-    let baseIdx=Math.floor(l);
-    let f=l-baseIdx;
-    
-    if(baseIdx>lastIdx){offset=l-lastIdx;baseIdx=lastIdx;f=0;}
-    else if(baseIdx<0){offset=l;baseIdx=0;f=0;}
-    
+    const baseIdx=Math.max(0,Math.min(lastIdx,Math.floor(l)));
+    const frac=l-baseIdx;
+    if(l>lastIdx){offset=l-lastIdx;}
+    else if(l<0){offset=l;}
     if(_liteData[baseIdx]){
       const baseDateStr=liteTimeKey(_liteData[baseIdx].time);
-      if(_liteTf==='1W'||_liteTf==='W'){
+      if((_liteTf==='1W'||_liteTf==='W')&&frac>0.001&&l>=0&&l<=lastIdx){
         const d=new Date(baseDateStr+'T00:00:00Z');
-        const dayNum=(d.getUTCDay()+6)%7; // Thứ 2 = 0
-        d.setUTCDate(d.getUTCDate()-dayNum); // Về thứ 2
-        const targetDayNum=Math.min(6,Math.max(0,Math.round((f/0.8)*7)));
-        d.setUTCDate(d.getUTCDate()+targetDayNum);
+        const dow=d.getUTCDay();const isoDay=dow===0?7:dow;
+        d.setUTCDate(d.getUTCDate()-(isoDay-1));
+        const targetIsoDay=Math.max(1,Math.min(7,Math.round(frac/0.8*7)+1));
+        d.setUTCDate(d.getUTCDate()+(targetIsoDay-1));
         t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
-      }else if(_liteTf==='1M'||_liteTf==='M'){
+      }else if((_liteTf==='1M'||_liteTf==='M')&&frac>0.001&&l>=0&&l<=lastIdx){
         const d=new Date(baseDateStr+'T00:00:00Z');
-        d.setUTCDate(1); // Về mùng 1
         const daysInMonth=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
-        const targetDay=Math.min(daysInMonth,Math.max(1,Math.round((f/0.85)*daysInMonth+1)));
+        const targetDay=Math.max(1,Math.min(daysInMonth,Math.round(frac/0.85*daysInMonth)+1));
         d.setUTCDate(targetDay);
         t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
       }else{
-        let rIdx=Math.round(l);
-        if(rIdx>lastIdx)rIdx=lastIdx;else if(rIdx<0)rIdx=0;
-        t=liteTimeKey(_liteData[rIdx].time);
+        t=baseDateStr;
       }
     }
   }
   return{l,p,t,offset,tf:_liteTf};
 }
-// Trả về khóa tuần ISO 'YYYY-Www' cho 1 chuỗi ngày 'YYYY-MM-DD' — khớp CHÍNH XÁC với
-// datetime.isocalendar() phía server (đã kiểm chứng khớp 100% trên 3 năm dữ liệu), dùng để
-// xác định 1 ngày daily thuộc bar Tuần nào (server gộp bar tuần theo isocalendar(), không phải
-// theo khoảng cách ngày gần nhất tới ngày cuối tuần — nếu dùng nearest-neighbor, các ngày đầu
-// tuần (Thứ 2) sẽ bị "hút" nhầm sang bar tuần TRƯỚC vì gần thứ Sáu tuần trước hơn thứ Sáu tuần này).
+// Lấy khoá tuần ISO (YYYY-Www) khớp với datetime.isocalendar() của Python.
 function _liteIsoWeekKey(dateStr){
   const d=new Date(dateStr+'T00:00:00Z');
   if(isNaN(d.getTime()))return null;
@@ -4648,9 +4636,7 @@ function _liteIsoWeekKey(dateStr){
   const weekNo=Math.ceil((((dt-yearStart)/86400000)+1)/7);
   return dt.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0');
 }
-// Tỉ lệ vị trí (0..~0.8/0.85) của 1 ngày daily bên trong bar Tuần/Tháng chứa nó — tính trực tiếp
-// từ chính ngày mục tiêu (thứ mấy trong tuần / ngày mấy trong tháng), KHÔNG so sánh với ngày của
-// bar (bar Tuần/Tháng server lưu ngày CUỐI kỳ nên target luôn <= ngày bar, so sánh kiểu cũ luôn ra 0).
+// Tính tỉ lệ phần trăm của 1 ngày bên trong nến Tuần/Tháng (0..0.85) để hiển thị toạ độ lẻ.
 function _liteSubBarOffset(targetStr){
   const d=new Date(targetStr+'T00:00:00Z');
   if(isNaN(d.getTime()))return 0;
@@ -4670,42 +4656,28 @@ function _litePtLogical(pt){
   if(typeof pt==='number')return pt;
   if(!_liteData||!_liteData.length)return pt.l;
   const offset=pt.offset||0;
-  // 0. Đang xem ĐÚNG khung lúc điểm được tạo/kéo-thả → dùng thẳng l gốc (chính xác tuyệt đối,
-  // không làm tròn/suy diễn qua ngày). Dữ liệu vẽ từ trước khi có patch này chưa có pt.tf, coi
-  // như đã tạo ở khung hiện tại nên vẫn ưu tiên l gốc — không đổi hành vi cho hình vẽ cũ.
-  if((pt.tf===undefined||pt.tf===_liteTf)&&Number.isFinite(pt.l))return pt.l;
-  if(!pt.t)return pt.l;
+  if(pt.tf&&pt.tf===_liteTf&&Number.isFinite(pt.l))return pt.l;
+  if(!pt.t){
+    if(Number.isFinite(pt.l))return pt.l;
+    return 0;
+  }
   const targetStr=String(pt.t);
-  
-  // 1. Khớp ngày chính xác — chỉ áp dụng khi đang xem khung D. Nếu để chạy cả khi đang ở W/M,
-  // trường hợp ngày vẽ trùng đúng ngày cuối tuần/cuối tháng (ngày bar W/M đang lưu) sẽ bị khớp
-  // idx+0 tại đây, bỏ qua sub-offset — khiến nó nằm BÊN TRÁI các ngày giữa tuần (có sub-offset
-  // dương), đảo ngược thứ tự trái-phải trong nội bộ 1 bar.
   if(_liteTf==='1D'||_liteTf==='D'){
     const idxD=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
     if(idxD!==-1)return idxD+offset;
   }
-  let idx=-1;
-  
-  // 2. Khớp Tháng 'YYYY-MM' (khung M) kèm sub-offset ngày trong tháng
   if(_liteTf==='1M'||_liteTf==='M'){
     const prefix=targetStr.slice(0,7);
-    idx=_liteData.findIndex(b=>liteTimeKey(b.time).startsWith(prefix));
+    const idx=_liteData.findIndex(b=>liteTimeKey(b.time).startsWith(prefix));
     if(idx!==-1)return idx+_liteSubBarOffset(targetStr)+offset;
   }
-  
-  // 3. Khớp đúng Tuần ISO (khung W) kèm sub-offset ngày trong tuần — dùng isocalendar(), không
-  // dùng khoảng cách ngày gần nhất (nearest-neighbor sai với các ngày đầu tuần, xem giải thích ở
-  // _liteIsoWeekKey).
   if(_liteTf==='1W'||_liteTf==='W'){
     const wk=_liteIsoWeekKey(targetStr);
     if(wk){
-      idx=_liteData.findIndex(b=>_liteIsoWeekKey(liteTimeKey(b.time))===wk);
+      const idx=_liteData.findIndex(b=>_liteIsoWeekKey(liteTimeKey(b.time))===wk);
       if(idx!==-1)return idx+_liteSubBarOffset(targetStr)+offset;
     }
   }
-  
-  // 4. Fallback cuối: khớp theo ngày gần nhất tuyệt đối (dữ liệu thiếu bar/khung lạ)
   const targetTs=new Date(targetStr).getTime();
   if(!isNaN(targetTs)){
     let bestIdx=0,minDiff=Infinity;
@@ -5504,51 +5476,51 @@ function _liteShowRectTooltip(hit,x,y){
 function _liteApplyDrag(d,info,cur){
   const dl=cur.l-info.startL,dp=cur.p-info.startP,op=info.origPoints;
   const key=d.type+':'+info.part;
-  const upd=(orig,onlyPrice)=>({l:orig.l+(onlyPrice?0:dl),p:orig.p+dp});
-  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]=upd(op[0]);
-  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]=upd(op[1]);
+  const mvPt=(orig,dL,dP)=>_litePtWithTime(orig.l+dL,orig.p+dP);
+  if(key==='trendline:p0'||key==='rect:p0'||key==='channel:p0'||key==='arrow:p0'||key==='arc:p0'||key==='position:p0')d.points[0]=mvPt(op[0],dl,dp);
+  else if(key==='trendline:p1'||key==='rect:p1'||key==='channel:p1'||key==='arrow:p1'||key==='arc:p1'||key==='position:p1')d.points[1]=mvPt(op[1],dl,dp);
   else if(key==='rect:c1'||key==='position:c1'){
-    d.points[0]={l:op[0].l+dl,p:op[0].p};
-    d.points[1]={l:op[1].l,p:op[1].p+dp};
+    d.points[0]=mvPt(op[0],dl,0);
+    d.points[1]=mvPt(op[1],0,dp);
   }else if(key==='rect:c2'||key==='position:c2'){
-    d.points[0]={l:op[0].l,p:op[0].p+dp};
-    d.points[1]={l:op[1].l+dl,p:op[1].p};
+    d.points[0]=mvPt(op[0],0,dp);
+    d.points[1]=mvPt(op[1],dl,0);
   }else if(key==='trendline:line'||key==='rect:line'||key==='channel:line'||key==='arrow:line'){
-    d.points[0]=upd(op[0]);d.points[1]=upd(op[1]);
+    d.points[0]=mvPt(op[0],dl,dp);d.points[1]=mvPt(op[1],dl,dp);
   }else if(key==='arc:line'){
-    d.points[0]=upd(op[0]);d.points[1]=upd(op[1]);
-    if(op[2]&&Number.isFinite(op[2].l))d.points[2]=upd(op[2]);
+    d.points[0]=mvPt(op[0],dl,dp);d.points[1]=mvPt(op[1],dl,dp);
+    if(op[2]&&Number.isFinite(op[2].l))d.points[2]=mvPt(op[2],dl,dp);
   }else if(key==='hline:line'){
-    d.points[0]={l:op[0].l,p:op[0].p+dp};d.points[1]={l:op[1].l,p:op[1].p+dp};
+    d.points[0]=mvPt(op[0],0,dp);d.points[1]=mvPt(op[1],0,dp);
   }else if(key==='vline:line'){
-    d.points[0]={l:op[0].l+dl,p:op[0].p};d.points[1]={l:op[1].l+dl,p:op[1].p};
+    d.points[0]=mvPt(op[0],dl,0);d.points[1]=mvPt(op[1],dl,0);
   }else if(key==='channel:offset'){
     d.points[2]={offsetPrice:(info.origOffsetPrice||0)+dp};
   }else if(key==='arc:offset'){
     const baseL=(op[2]&&Number.isFinite(op[2].l))?op[2].l:(op[0].l+op[1].l)/2;
     const baseP=(op[2]&&Number.isFinite(op[2].p))?op[2].p:(op[0].p+op[1].p)/2;
-    d.points[2]={l:baseL+dl,p:baseP+dp};
+    d.points[2]=mvPt({l:baseL,p:baseP},dl,dp);
   }else if(d.type==='zigzag'&&info.part==='line'){
-    d.points=op.map(pt=>upd(pt));
+    d.points=op.map(pt=>mvPt(pt,dl,dp));
   }else if(d.type==='zigzag'&&info.part[0]==='v'){
     const idx=parseInt(info.part.slice(1),10);
-    if(op[idx])d.points[idx]=upd(op[idx]);
+    if(op[idx])d.points[idx]=mvPt(op[idx],dl,dp);
   }else if(key==='position:body'){
-    d.points[0]=upd(op[0]);d.points[1]=upd(op[1]);
+    d.points[0]=mvPt(op[0],dl,dp);d.points[1]=mvPt(op[1],dl,dp);
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
     if(Number.isFinite(info.origTarget2P))d.target2P=info.origTarget2P+dp;
   }else if(key==='position:target'){
-    d.points[1]={l:op[1].l,p:op[1].p+dp};
+    d.points[1]=mvPt(op[1],0,dp);
   }else if(key==='position:target2'){
     d.target2P=(info.origTarget2P??d.target2P)+dp;
   }else if(key==='position:stop'){
     d.stopP=(info.origStopP??(2*op[0].p-op[1].p))+dp;
   }else if(key==='position:edgeL'){
-    d.points[0]={l:op[0].l+dl,p:op[0].p};
+    d.points[0]=mvPt(op[0],dl,0);
   }else if(key==='position:edgeR'){
-    d.points[1]={l:op[1].l+dl,p:op[1].p};
+    d.points[1]=mvPt(op[1],dl,0);
   }else if(key==='text:p0'){
-    d.points[0]=upd(op[0]);
+    d.points[0]=mvPt(op[0],dl,dp);
   }
 }
 function _liteStartShapeDrag(hit,ev){
