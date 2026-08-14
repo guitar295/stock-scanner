@@ -5989,7 +5989,8 @@ function bindLiteDrawToolbar(){
   DOM.liteDrawCanvas.addEventListener('pointerdown',e=>{
     if(_liteDrawTool==='cursor')return;
     const p0=_litePtFromEvent(e);if(!p0)return;
-    // Bước 2 của Kênh giá: đã có đường chéo (bước 1) → click để chốt độ rộng kênh
+    // Bước 2 của Kênh giá: đã có đường chéo (bước 1) → chỉ cần rê chuột (không cần bấm giữ) để xem
+    // trước độ rộng kênh (cập nhật ở listener pointermove bên dưới), click lần nữa để chốt.
     if(_liteDrawTool==='channel'&&_liteChannelPending){
       const pend=_liteChannelPending;
       pend.points[2]={offsetPrice:_liteOffsetFromChord(pend,p0)};
@@ -6089,13 +6090,6 @@ function bindLiteDrawToolbar(){
       const p1=_litePtFromEvent(ev)||_liteDrawActive.points[1];
       _liteDrawActive.points[1]=p1;
       const moved=Math.abs(p1.l-_liteDrawActive.points[0].l)>0.4||Math.abs(p1.p-_liteDrawActive.points[0].p)>1e-9;
-      if(_liteDrawActive.type==='channel'){
-        // Bước 1 (đường chéo) vừa xong → CHƯA push, chuyển sang chờ bước 2 (rê chuột + click để chốt độ rộng)
-        if(moved)_liteChannelPending=_liteDrawActive;
-        _liteDrawActive=null;
-        redrawLiteDrawings();
-        return;
-      }
       if(_liteDrawActive.type==='position'){
         const entryP=_liteDrawActive.points[0].p,targetP=_liteDrawActive.points[1].p;
         const dir=targetP>=entryP?1:-1;
