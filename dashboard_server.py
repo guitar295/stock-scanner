@@ -4572,9 +4572,10 @@ function saveLiteDrawings(){
       if(d&&d.points){
         d.points=d.points.map(pt=>{
           if(!pt)return pt;
+          if(pt.ts)return pt;
           if(pt.t&&pt.tf)return pt;
           const info=_litePtWithTime(pt.l,pt.p);
-          return{...pt,t:pt.t||info.t,offset:(pt.offset!=null)?pt.offset:info.offset,tf:pt.tf||info.tf};
+          return{...pt,t:pt.t||info.t,ts:info.ts,tf:pt.tf||info.tf};
         });
       }
     }
@@ -4595,98 +4596,69 @@ function resizeLiteDrawCanvas(){
   _liteDrawCtx.setTransform(dpr,0,0,dpr,0,0);
 }
 function _litePtWithTime(l,p){
-  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null,offset:0,tf:_liteTf};
-  let t=null,offset=0;
+  if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,t:null,ts:null,tf:_liteTf};
+  let t=null,ts=null;
   if(_liteData&&_liteData.length){
     const lastIdx=_liteData.length-1;
-    const baseIdx=Math.max(0,Math.min(lastIdx,Math.floor(l)));
-    const frac=l-baseIdx;
-    if(l>lastIdx){offset=l-lastIdx;}
-    else if(l<0){offset=l;}
-    if(_liteData[baseIdx]){
-      const baseDateStr=liteTimeKey(_liteData[baseIdx].time);
-      if((_liteTf==='1W'||_liteTf==='W')&&frac>0.001&&l>=0&&l<=lastIdx){
-        const d=new Date(baseDateStr+'T00:00:00Z');
-        const dow=d.getUTCDay();const isoDay=dow===0?7:dow;
-        d.setUTCDate(d.getUTCDate()-(isoDay-1));
-        const targetIsoDay=Math.max(1,Math.min(7,Math.round(frac/0.8*7)+1));
-        d.setUTCDate(d.getUTCDate()+(targetIsoDay-1));
-        t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
-      }else if((_liteTf==='1M'||_liteTf==='M')&&frac>0.001&&l>=0&&l<=lastIdx){
-        const d=new Date(baseDateStr+'T00:00:00Z');
-        const daysInMonth=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
-        const targetDay=Math.max(1,Math.min(daysInMonth,Math.round(frac/0.85*daysInMonth)+1));
-        d.setUTCDate(targetDay);
-        t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+    if(_liteData.length===1){
+      ts=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime();
+    }else{
+      if(l<=0){
+        const t0=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime();
+        const t1=new Date(liteTimeKey(_liteData[1].time)+'T00:00:00Z').getTime();
+        ts=t0+l*(t1-t0);
+      }else if(l>=lastIdx){
+        const tLast=new Date(liteTimeKey(_liteData[lastIdx].time)+'T00:00:00Z').getTime();
+        const tPrev=new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime();
+        ts=tLast+(l-lastIdx)*(tLast-tPrev);
       }else{
-        t=baseDateStr;
+        const baseIdx=Math.floor(l);
+        const frac=l-baseIdx;
+        const t1=new Date(liteTimeKey(_liteData[baseIdx].time)+'T00:00:00Z').getTime();
+        const t2=new Date(liteTimeKey(_liteData[baseIdx+1].time)+'T00:00:00Z').getTime();
+        ts=t1+frac*(t2-t1);
       }
     }
+    const d=new Date(ts);
+    t=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
   }
-  return{l,p,t,offset,tf:_liteTf};
-}
-// Lấy khoá tuần ISO (YYYY-Www) khớp với datetime.isocalendar() của Python.
-function _liteIsoWeekKey(dateStr){
-  const d=new Date(dateStr+'T00:00:00Z');
-  if(isNaN(d.getTime()))return null;
-  const dt=new Date(d.getTime());
-  const dayNum=(dt.getUTCDay()+6)%7; // Thứ2=0 .. CN=6
-  dt.setUTCDate(dt.getUTCDate()-dayNum+3); // dịch về Thứ 5 cùng tuần ISO (tuần chứa Thứ 5 này quyết định năm ISO)
-  const yearStart=new Date(Date.UTC(dt.getUTCFullYear(),0,1));
-  const weekNo=Math.ceil((((dt-yearStart)/86400000)+1)/7);
-  return dt.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0');
-}
-// Tính tỉ lệ phần trăm của 1 ngày bên trong nến Tuần/Tháng (0..0.85) để hiển thị toạ độ lẻ.
-function _liteSubBarOffset(targetStr){
-  const d=new Date(targetStr+'T00:00:00Z');
-  if(isNaN(d.getTime()))return 0;
-  if(_liteTf==='1W'||_liteTf==='W'){
-    let isoDay=d.getUTCDay();isoDay=isoDay===0?7:isoDay; // CN=0 -> 7 (Thứ2=1..CN=7)
-    return Math.max(0,Math.min(0.8,((isoDay-1)/7)*0.8));
-  }
-  if(_liteTf==='1M'||_liteTf==='M'){
-    const dayOfMonth=d.getUTCDate();
-    const daysInMonth=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
-    return Math.max(0,Math.min(0.85,((dayOfMonth-1)/daysInMonth)*0.85));
-  }
-  return 0;
+  return{l,p,t,ts,tf:_liteTf};
 }
 function _litePtLogical(pt){
   if(pt===null||pt===undefined)return null;
   if(typeof pt==='number')return pt;
   if(!_liteData||!_liteData.length)return pt.l;
-  const offset=pt.offset||0;
-  if(pt.tf&&pt.tf===_liteTf&&Number.isFinite(pt.l))return pt.l;
-  if(!pt.t){
-    if(Number.isFinite(pt.l))return pt.l;
-    return 0;
-  }
-  const targetStr=String(pt.t);
-  if(_liteTf==='1D'||_liteTf==='D'){
-    const idxD=_liteData.findIndex(b=>liteTimeKey(b.time)===targetStr);
-    if(idxD!==-1)return idxD+offset;
-  }
-  if(_liteTf==='1M'||_liteTf==='M'){
-    const prefix=targetStr.slice(0,7);
-    const idx=_liteData.findIndex(b=>liteTimeKey(b.time).startsWith(prefix));
-    if(idx!==-1)return idx+_liteSubBarOffset(targetStr)+offset;
-  }
-  if(_liteTf==='1W'||_liteTf==='W'){
-    const wk=_liteIsoWeekKey(targetStr);
-    if(wk){
-      const idx=_liteData.findIndex(b=>_liteIsoWeekKey(liteTimeKey(b.time))===wk);
-      if(idx!==-1)return idx+_liteSubBarOffset(targetStr)+offset;
+  let targetTs=pt.ts;
+  let useLegacyOffset=false;
+  if(!targetTs){
+    if(pt.t){
+      targetTs=new Date(String(pt.t)+'T00:00:00Z').getTime();
+      useLegacyOffset=true;
+    }else{
+      return pt.l;
     }
   }
-  const targetTs=new Date(targetStr).getTime();
-  if(!isNaN(targetTs)){
-    let bestIdx=0,minDiff=Infinity;
-    for(let i=0;i<_liteData.length;i++){
-      const bTs=new Date(liteTimeKey(_liteData[i].time)).getTime();
-      const diff=Math.abs(bTs-targetTs);
-      if(diff<minDiff){minDiff=diff;bestIdx=i;}
-    }
-    return bestIdx+offset;
+  if(isNaN(targetTs))return pt.l;
+  const lastIdx=_liteData.length-1;
+  if(lastIdx===0)return 0;
+  const t0=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime();
+  if(targetTs<=t0){
+    const t1=new Date(liteTimeKey(_liteData[1].time)+'T00:00:00Z').getTime();
+    const lResult=(targetTs-t0)/(t1-t0);
+    return useLegacyOffset&&pt.offset?lResult+pt.offset:lResult;
+  }
+  const tLast=new Date(liteTimeKey(_liteData[lastIdx].time)+'T00:00:00Z').getTime();
+  if(targetTs>=tLast){
+    const tPrev=new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime();
+    const lResult=lastIdx+(targetTs-tLast)/(tLast-tPrev);
+    return useLegacyOffset&&pt.offset?lResult+pt.offset:lResult;
+  }
+  const idx=_liteData.findIndex(b=>new Date(liteTimeKey(b.time)+'T00:00:00Z').getTime()>=targetTs);
+  if(idx>0){
+    const t1=new Date(liteTimeKey(_liteData[idx-1].time)+'T00:00:00Z').getTime();
+    const t2=new Date(liteTimeKey(_liteData[idx].time)+'T00:00:00Z').getTime();
+    const lResult=(idx-1)+(targetTs-t1)/(t2-t1);
+    return useLegacyOffset&&pt.offset?lResult+pt.offset:lResult;
   }
   return pt.l;
 }
