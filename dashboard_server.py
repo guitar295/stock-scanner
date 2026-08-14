@@ -4573,6 +4573,9 @@ function saveLiteDrawings(){
         d.points=d.points.map(pt=>{
           if(!pt)return pt;
           if(pt.ts)return pt;
+          // Điểm thứ 3 của Kênh giá là {offsetPrice}: độ rộng kênh (chênh lệch giá), không phải toạ độ
+          // thời gian/giá thật — không được ép qua _litePtWithTime (sẽ mất offsetPrice, kênh biến mất).
+          if('offsetPrice' in pt)return pt;
           return _litePtWithTime(pt.l,pt.p);
         });
       }
