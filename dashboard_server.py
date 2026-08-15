@@ -1237,71 +1237,164 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
     return flags_by_date
 
-# ── SMC Order Block: vùng kháng cự/hỗ trợ theo cấu trúc phá vỡ (swing + BOS) ──
-def _smc_last_opposite_candle(opens, closes, start_i, end_i, want_down):
-    """Nến ngược chiều cuối cùng trước cú phá cấu trúc → làm Order Block."""
-    for i in range(end_i - 1, start_i - 1, -1):
-        if (closes[i] < opens[i]) == want_down:
-            return i
-    return None
+# ── SMC Order Block: port trung thành từ AFL gốc "Smart Money Concepts [LuxAlgo]" ──
+# Tương ứng calculatePivots(period) + OB() + drawblock() mitigation trong bản AFL.
+# Mặc định dùng Internal Order Block (INLen=10, ShowINOB=Yes) — cấu hình bật sẵn của
+# indicator gốc — và mitigation theo High/Low (OBMitigation mặc định = "High/Low").
+def _smc_wilder_atr(highs, lows, closes, period=200):
+    """ATR kiểu Wilder — dùng để phát hiện nến biến động mạnh (highVolatilityBar)."""
+    n = len(highs)
+    tr = [0.0] * n
+    for i in range(n):
+        if i == 0:
+            tr[i] = highs[i] - lows[i]
+        else:
+            tr[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+    atr = [None] * n
+    if n < period:
+        return atr
+    atr[period - 1] = sum(tr[:period]) / period
+    for i in range(period, n):
+        atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
+    run = 0.0
+    for i in range(period - 1):
+        run += tr[i]
+        atr[i] = run / (i + 1)  # backfill nến đầu bằng trung bình mở rộng
+    return atr
 
-def _compute_smc_zones(bars, swing_len=10, max_zones=12):
-    """Dò swing high/low rồi lấy nến Order Block tại mỗi lần phá cấu trúc (BOS).
-    Không phải mọi swing đều thành vùng — chỉ swing THỰC SỰ bị phá mới được chọn,
-    nên số vùng trả về ít và có chọn lọc (khác đường S/R vẽ mọi pivot)."""
+def _compute_smc_zones(bars, swing_len=10, max_zones=12, mitigation_mode="hl"):
+    """calculatePivots(period): zigzag pivot LUÂN PHIÊN cao/thấp, xác nhận trễ `period`
+    nến (đúng cơ chế downbar/upbar + biến trend trong AFL) — khác cách dò cực trị độc
+    lập theo cửa sổ trượt trước đây (có thể ra 2 đỉnh/đáy liên tiếp không luân phiên).
+
+    OB(): Order Block KHÔNG phải "nến ngược màu gần nhất trước breakout" — mà là nến
+    có High (bearish OB) / Low (bullish OB) CỰC TRỊ trong toàn bộ đoạn từ lúc giá đóng
+    cửa phá vỡ pivot gần nhất (breakout) cho tới khi pivot đối lập tiếp theo được xác
+    nhận. Nến biến động mạnh (High-Low ≥ 2×ATR200) dùng Low/High thay vì High/Low khi
+    tìm cực trị, đúng như pdn/pup trong bản gốc.
+
+    Mitigation mặc định dùng High (vùng kháng cự) / Low (vùng hỗ trợ), không phải Close."""
     n = len(bars)
-    if n < swing_len * 2 + 5:
+    period = swing_len
+    if n < period * 3 + 5:
         return []
-    highs = [b["high"] for b in bars]
-    lows = [b["low"] for b in bars]
-    closes = [b["close"] for b in bars]
-    opens = [b["open"] for b in bars]
+    H = [b["high"] for b in bars]
+    L = [b["low"] for b in bars]
+    C = [b["close"] for b in bars]
 
-    sh_idx = [i for i in range(swing_len, n - swing_len)
-              if highs[i] == max(highs[i - swing_len:i + swing_len + 1])]
-    sl_idx = [i for i in range(swing_len, n - swing_len)
-              if lows[i] == min(lows[i - swing_len:i + swing_len + 1])]
-    if not sh_idx or not sl_idx:
-        return []
+    atr = _smc_wilder_atr(H, L, C, 200)
+    high_vol = [(H[i] - L[i]) >= 2 * atr[i] if atr[i] is not None else False for i in range(n)]
+
+    # ── calculatePivots(period) ──
+    downbar = [False] * n
+    upbar = [False] * n
+    for i in range(period, n):
+        downbar[i] = L[i - period] < min(L[i - period + 1:i + 1])
+        upbar[i] = H[i - period] > max(H[i - period + 1:i + 1])
+
+    pk = [False] * n   # bar được xác nhận là swing-high
+    tr = [False] * n   # bar được xác nhận là swing-low
+    trend, topidx, botidx = 1, 0, 0
+    for i in range(period + 1, n):
+        if trend > 0 and downbar[i]:
+            pk[topidx] = True
+            botidx = i - period
+            trend = -1
+        elif trend < 0 and upbar[i]:
+            tr[botidx] = True
+            topidx = i - period
+            trend = 1
+
+    # ── OB(): vùng dnrange/uprange (từ breakout tới pivot xác nhận kế tiếp) + cực trị ──
+    bearish_obs, bullish_obs = [], []
+    last_trough_idx = last_peak_idx = None
+    prev_trlo = prev_pkhi = None
+    dn_active = up_active = False
+    dn_max_val = dn_max_bar = up_min_val = up_min_bar = None
+    dn_has_bars = up_has_bars = False
+
+    def close_dn_zone():
+        nonlocal dn_active, dn_max_val, dn_max_bar, dn_has_bars
+        if dn_has_bars and dn_max_bar is not None:
+            bearish_obs.append({"bar": dn_max_bar, "high": H[dn_max_bar], "low": L[dn_max_bar]})
+        dn_active, dn_max_val, dn_max_bar, dn_has_bars = False, None, None, False
+
+    def close_up_zone():
+        nonlocal up_active, up_min_val, up_min_bar, up_has_bars
+        if up_has_bars and up_min_bar is not None:
+            bullish_obs.append({"bar": up_min_bar, "high": H[up_min_bar], "low": L[up_min_bar]})
+        up_active, up_min_val, up_min_bar, up_has_bars = False, None, None, False
+
+    for i in range(n):
+        if tr[i]:
+            if dn_active:
+                close_dn_zone()
+            last_trough_idx = i
+        if pk[i]:
+            if up_active:
+                close_up_zone()
+            last_peak_idx = i
+
+        trlo = L[last_trough_idx] if last_trough_idx is not None else None
+        pkhi = H[last_peak_idx] if last_peak_idx is not None else None
+
+        dnbias = (trlo is not None and prev_trlo is not None and C[i] < trlo
+                  and not (i > 0 and C[i - 1] < trlo))
+        upbias = (pkhi is not None and prev_pkhi is not None and C[i] > pkhi
+                  and not (i > 0 and C[i - 1] > pkhi))
+
+        if dnbias and not dn_active:
+            dn_active, dn_max_val, dn_max_bar, dn_has_bars = True, None, None, False
+        if upbias and not up_active:
+            up_active, up_min_val, up_min_bar, up_has_bars = True, None, None, False
+
+        if dn_active:
+            pdn = L[i] if high_vol[i] else H[i]
+            if dn_max_val is None or pdn > dn_max_val:
+                dn_max_val, dn_max_bar = pdn, i
+            dn_has_bars = True
+
+        if up_active:
+            pup = H[i] if high_vol[i] else L[i]
+            if up_min_val is None or pup < up_min_val:
+                up_min_val, up_min_bar = pup, i
+            up_has_bars = True
+
+        prev_trlo, prev_pkhi = trlo, pkhi
+
+    if dn_active:
+        close_dn_zone()
+    if up_active:
+        close_up_zone()
+
+    # ── mitigation: mặc định High (bearish) / Low (bullish), như OBMitigation gốc ──
+    def mitigation_price(i, is_bear):
+        if mitigation_mode == "close":
+            return C[i]
+        return H[i] if is_bear else L[i]
 
     zones = []
-    last_sh, last_sl = sh_idx[0], sl_idx[0]
-    sh_ptr = sl_ptr = 1
-    start_i = max(last_sh, last_sl) + 1
-    for i in range(start_i, n):
-        while sh_ptr < len(sh_idx) and sh_idx[sh_ptr] < i:
-            last_sh = sh_idx[sh_ptr]; sh_ptr += 1
-        while sl_ptr < len(sl_idx) and sl_idx[sl_ptr] < i:
-            last_sl = sl_idx[sl_ptr]; sl_ptr += 1
-
-        if closes[i] > highs[last_sh]:  # BOS tăng → OB hỗ trợ (nến giảm cuối)
-            ob = _smc_last_opposite_candle(opens, closes, last_sh, i, want_down=True)
-            if ob is not None:
-                zones.append({"type": "bullish", "start": ob, "high": highs[ob], "low": lows[ob]})
-            last_sh = i
-        if closes[i] < lows[last_sl]:   # BOS giảm → OB kháng cự (nến tăng cuối)
-            ob = _smc_last_opposite_candle(opens, closes, last_sl, i, want_down=False)
-            if ob is not None:
-                zones.append({"type": "bearish", "start": ob, "high": highs[ob], "low": lows[ob]})
-            last_sl = i
-
-    # Mitigation: vùng hết hiệu lực khi giá đóng cửa quay lại lấp vùng
-    for z in zones:
-        z["mitigated"] = False
-        z["end"] = n - 1
-        for j in range(z["start"] + 1, n):
-            broke = closes[j] < z["low"] if z["type"] == "bullish" else closes[j] > z["high"]
-            if broke:
-                z["mitigated"] = True
-                z["end"] = j
+    for ob in bearish_obs:
+        bar, top, bot = ob["bar"], ob["high"], ob["low"]
+        mitigated, end = False, n - 1
+        for j in range(bar + 1, n):
+            if mitigation_price(j, True) >= top:
+                mitigated, end = True, j
                 break
+        zones.append({"type": "bearish", "high": top, "low": bot, "mitigated": mitigated,
+                      "time_start": bars[bar]["time"], "time_end": bars[end]["time"]})
+    for ob in bullish_obs:
+        bar, top, bot = ob["bar"], ob["high"], ob["low"]
+        mitigated, end = False, n - 1
+        for j in range(bar + 1, n):
+            if mitigation_price(j, False) <= bot:
+                mitigated, end = True, j
+                break
+        zones.append({"type": "bullish", "high": top, "low": bot, "mitigated": mitigated,
+                      "time_start": bars[bar]["time"], "time_end": bars[end]["time"]})
 
-    zones = zones[-max_zones:]  # chỉ giữ N vùng gần nhất, tránh rối chart
-    return [{
-        "type": z["type"], "high": z["high"], "low": z["low"], "mitigated": z["mitigated"],
-        "time_start": bars[z["start"]]["time"],
-        "time_end": bars[z["end"] if z["mitigated"] else n - 1]["time"],
-    } for z in zones]
+    zones.sort(key=lambda z: z["time_start"])
+    return zones[-max_zones:]
 
 def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
