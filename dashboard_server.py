@@ -1237,6 +1237,72 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
         _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
     return flags_by_date
 
+# ── SMC Order Block: vùng kháng cự/hỗ trợ theo cấu trúc phá vỡ (swing + BOS) ──
+def _smc_last_opposite_candle(opens, closes, start_i, end_i, want_down):
+    """Nến ngược chiều cuối cùng trước cú phá cấu trúc → làm Order Block."""
+    for i in range(end_i - 1, start_i - 1, -1):
+        if (closes[i] < opens[i]) == want_down:
+            return i
+    return None
+
+def _compute_smc_zones(bars, swing_len=10, max_zones=12):
+    """Dò swing high/low rồi lấy nến Order Block tại mỗi lần phá cấu trúc (BOS).
+    Không phải mọi swing đều thành vùng — chỉ swing THỰC SỰ bị phá mới được chọn,
+    nên số vùng trả về ít và có chọn lọc (khác đường S/R vẽ mọi pivot)."""
+    n = len(bars)
+    if n < swing_len * 2 + 5:
+        return []
+    highs = [b["high"] for b in bars]
+    lows = [b["low"] for b in bars]
+    closes = [b["close"] for b in bars]
+    opens = [b["open"] for b in bars]
+
+    sh_idx = [i for i in range(swing_len, n - swing_len)
+              if highs[i] == max(highs[i - swing_len:i + swing_len + 1])]
+    sl_idx = [i for i in range(swing_len, n - swing_len)
+              if lows[i] == min(lows[i - swing_len:i + swing_len + 1])]
+    if not sh_idx or not sl_idx:
+        return []
+
+    zones = []
+    last_sh, last_sl = sh_idx[0], sl_idx[0]
+    sh_ptr = sl_ptr = 1
+    start_i = max(last_sh, last_sl) + 1
+    for i in range(start_i, n):
+        while sh_ptr < len(sh_idx) and sh_idx[sh_ptr] < i:
+            last_sh = sh_idx[sh_ptr]; sh_ptr += 1
+        while sl_ptr < len(sl_idx) and sl_idx[sl_ptr] < i:
+            last_sl = sl_idx[sl_ptr]; sl_ptr += 1
+
+        if closes[i] > highs[last_sh]:  # BOS tăng → OB hỗ trợ (nến giảm cuối)
+            ob = _smc_last_opposite_candle(opens, closes, last_sh, i, want_down=True)
+            if ob is not None:
+                zones.append({"type": "bullish", "start": ob, "high": highs[ob], "low": lows[ob]})
+            last_sh = i
+        if closes[i] < lows[last_sl]:   # BOS giảm → OB kháng cự (nến tăng cuối)
+            ob = _smc_last_opposite_candle(opens, closes, last_sl, i, want_down=False)
+            if ob is not None:
+                zones.append({"type": "bearish", "start": ob, "high": highs[ob], "low": lows[ob]})
+            last_sl = i
+
+    # Mitigation: vùng hết hiệu lực khi giá đóng cửa quay lại lấp vùng
+    for z in zones:
+        z["mitigated"] = False
+        z["end"] = n - 1
+        for j in range(z["start"] + 1, n):
+            broke = closes[j] < z["low"] if z["type"] == "bullish" else closes[j] > z["high"]
+            if broke:
+                z["mitigated"] = True
+                z["end"] = j
+                break
+
+    zones = zones[-max_zones:]  # chỉ giữ N vùng gần nhất, tránh rối chart
+    return [{
+        "type": z["type"], "high": z["high"], "low": z["low"], "mitigated": z["mitigated"],
+        "time_start": bars[z["start"]]["time"],
+        "time_end": bars[z["end"] if z["mitigated"] else n - 1]["time"],
+    } for z in zones]
+
 def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
     - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
@@ -1350,11 +1416,15 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     # has_more: lazy-load chunk và số bar trả về = limit → có thể còn lịch sử cũ hơn.
     has_more = before_date is not None and len(final_bars) >= limit
 
+    # SMC Order Block chỉ tính khung Daily (khớp dữ liệu vnstock hiện có)
+    smc_zones = _compute_smc_zones(final_bars) if target_tf == "1D" else []
+
     payload = {
         "symbol": symbol,
         "timeframe": target_tf,
         "candles": candles,
         "volume": volume,
+        "smc_zones": smc_zones,
         "last_date": str(candles[-1]["time"]),
         "has_more": has_more,
     }
@@ -3085,6 +3155,7 @@ html.chart-popout-mode .lite-chart-frame{
               <label><input type="checkbox" value="signal">Buy-Signal</label>
               <label><input type="checkbox" value="volcolor">Volume-Signal</label>
               <label><input type="checkbox" value="bigprice">Giá phóng to</label>
+              <label><input type="checkbox" value="smc">Smart Money (OB)</label>
             </div>
           </div>
           <div class="lite-ind-group" data-group="maema">
@@ -3923,6 +3994,7 @@ function _liteSyncVisibleRangeFrom(source,range){
 }
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
+let _liteSmcZonesRaw=[],_liteSmcZonesData=null; // Raw=nguyên từ server, Data=null khi checkbox tắt
 // Mũi tên báo mua tự vẽ canvas (không dùng setMarkers()) vì setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart.
 let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price của nến LUÔN đọc live từ _liteData
 // Vị trí mũi tên tính lại tại thời điểm vẽ (không lưu cứng) để luôn khớp nến mới nhất khi auto-refresh chèn nến mới vào giữa.
@@ -4299,6 +4371,7 @@ function _clearLiteIndicators(){
   _liteMacdCrosshairSeries=null;
   _liteBBFillData=null;
   _liteTrendFillData=null;
+  _liteSmcZonesRaw=[];_liteSmcZonesData=null;
   _liteBuyArrowData=null; // tránh mũi tên của mã cũ chớp lên sai vị trí trước khi _liteApplyBuySignal() chạy lại cho mã mới
 }
 function _sma(data,n){
@@ -5026,6 +5099,22 @@ function _liteDrawTrendCloud(ctx){
   }
   ctx.restore();
 }
+// Vẽ dải màu Order Block (SMC) — đỏ=kháng cự, xanh=hỗ trợ; nhạt hơn khi đã mitigated.
+function _liteDrawSmcZones(ctx){
+  if(!_liteSmcZonesData||!_liteChart||!_liteSmcZonesData.length)return;
+  ctx.save();
+  _liteClipMainPlot(ctx);
+  const xRight=_liteTimeToX(_liteData[_liteData.length-1].time)??ctx.canvas.width;
+  for(const z of _liteSmcZonesData){
+    const x1=_liteTimeToX(z.time_start),yTop=_litePriceToY(z.high),yBot=_litePriceToY(z.low);
+    if(x1===null||yTop===null||yBot===null)continue;
+    const x2=z.mitigated?(_liteTimeToX(z.time_end)??xRight):xRight;
+    const col=z.type==='bearish'?'#ef5350':'#26a69a';
+    ctx.fillStyle=_liteHexAlpha(col,z.mitigated?.08:.2);
+    ctx.fillRect(x1,yTop,Math.max(1,x2-x1),Math.max(1,yBot-yTop));
+  }
+  ctx.restore();
+}
 // Vẽ mũi tên báo mua thật (đầu tam giác+thân que), đặt cách xa dưới low hơn marker mặc định của thư viện để tránh đụng bấc nến/volume.
 function _liteDrawBuyArrow(ctx){
   if(!_liteBuyArrowData||!_liteChart||!_liteCandle||!_liteData.length)return;
@@ -5058,6 +5147,7 @@ function redrawLiteDrawings(){
   _liteDrawCtx.clearRect(0,0,w,h);
   _liteDrawTrendCloud(_liteDrawCtx);
   _liteDrawBBBand(_liteDrawCtx);
+  _liteDrawSmcZones(_liteDrawCtx);
   _liteDrawBuyArrow(_liteDrawCtx);
   for(const d of _liteDrawings)_liteDrawShapeToCanvas(_liteDrawCtx,d);
   if(_liteDrawActive)_liteDrawShapeToCanvas(_liteDrawCtx,_liteDrawActive);
@@ -6169,6 +6259,8 @@ function _liteUpdateIndicatorData(){
   if(_liteTrendFillData){
     _liteTrendFillData=_trendCloudData(_liteData,LITE_TREND_PERIOD,LITE_TREND_MULT,_liteTrendMode());
   }
+  // SMC: dữ liệu tới từ server nên chỉ cần tham chiếu lại bản Raw mới nhất (nếu đang bật)
+  if(_liteSmcZonesData)_liteSmcZonesData=_liteSmcZonesRaw;
   // RSI
   if(_liteRsiCrosshairSeries){
     const rsiAligned=alignLiteSeries(_rsi(_liteData,LITE_RSI_PERIOD));
@@ -6206,6 +6298,7 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   const bbOn=_liteChecked('bb');
   const trendOn=_liteChecked('trend');
   const showVpaVol=_liteChecked('signalgrp_on')&&_liteChecked('volcolor');
+  _liteSmcZonesData=(_liteChecked('signalgrp_on')&&_liteChecked('smc'))?_liteSmcZonesRaw:null;
   // skipPaneLayout: bỏ applyLitePaneLayout() khi layout không đổi (tránh thư viện tự canh lại view, gây "nhảy chart" mỗi 10s).
   // skipWidthSync=true: hàm tự đồng bộ trục giá ở cuối, khỏi cần applyLitePaneLayout() làm trước 1 lượt vô nghĩa.
   if(!skipPaneLayout)applyLitePaneLayout(true);
@@ -6366,6 +6459,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteLoadingMore=false;
     // Màu volume (đã được server tính sẵn)
     _liteVolumeData=j.volume||[];
+    _liteSmcZonesRaw=j.smc_zones||[];
     _liteChartLoading=true;  // block lazy-load trong suốt quá trình set data + render
     try{
       _liteCandle.setData(_liteData);
@@ -6471,6 +6565,7 @@ async function _liteFetchMoreHistory(){
     // Prepend vào mảng địa phương
     _liteData=[...newBars,..._liteData];
     _liteVolumeData=[...(j.volume||[]),..._liteVolumeData];
+    _liteSmcZonesRaw=[...(j.smc_zones||[]),..._liteSmcZonesRaw];
     _liteDataByTime=new Map(_liteData.map(b=>[liteTimeKey(b.time),b]));
     _liteOldestDate=liteTimeKey(_liteData[0].time);
     // Lưu range đang xem để không bị nhảy sau setData()
@@ -6517,9 +6612,10 @@ function bindLiteChartControls(){
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
     // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge/màu volume/giá phóng to — không cần renderLiteIndicators() đầy đủ.
     const val=e.target?.value;
-    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
+    if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'||val==='smc'){
       if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
       if(val==='bigprice'||val==='signalgrp_on')updateLiteBigPrice(_liteData&&_liteData.length?_liteData[_liteData.length-1]:null);
+      if(val==='smc'||val==='signalgrp_on')_liteSmcZonesData=(_liteChecked('signalgrp_on')&&_liteChecked('smc'))?_liteSmcZonesRaw:null;
       if(val!=='bigprice'){ // bigprice riêng lẻ không đụng tới marker tín hiệu hay hình vẽ tay — khỏi vẽ lại thừa
         _liteApplyBuySignal();
         redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
