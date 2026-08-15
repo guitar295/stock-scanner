@@ -1339,9 +1339,9 @@ def _compute_smc_zones(bars, swing_len=10, max_zones=12, mitigation_mode="hl"):
         pkhi = H[last_peak_idx] if last_peak_idx is not None else None
 
         dnbias = (trlo is not None and prev_trlo is not None and C[i] < trlo
-                  and not (i > 0 and C[i - 1] < trlo))
+                  and not (i > 0 and C[i - 1] < prev_trlo))
         upbias = (pkhi is not None and prev_pkhi is not None and C[i] > pkhi
-                  and not (i > 0 and C[i - 1] > pkhi))
+                  and not (i > 0 and C[i - 1] > prev_pkhi))
 
         if dnbias and not dn_active:
             dn_active, dn_max_val, dn_max_bar, dn_has_bars = True, None, None, False
