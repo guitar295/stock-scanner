@@ -7774,10 +7774,7 @@ function renderVndChart(config){
   }
   const axisDigits=config.rightSeries[0].axisDigits;
   const rightSuffix=config.rightMax===100?'%':''; // '%' cho khung Phân bổ (MA50/MA200), rỗng cho P/E,P/B — dùng chung cho axis label lẫn badge bên dưới
-  for(const tick of vndNiceTicks(rightMin,rightMax,4)){
-    const y=syRight(tick);
-    add('text',{x:width-margin.right+8,y:y+4,'text-anchor':'start',class:'vnd-axis-label'},`${vndFmt(tick,axisDigits)}${rightSuffix}`);
-  }
+  // Bỏ vẽ các nấc giá trị trên trục phải — chỉ giữ badge giá trị hiện tại (_vBadge bên dưới) để đỡ rối mắt.
   for(const row of vndPickXTicks(rows,5)){
     const x=sx(new Date(row.date+'T00:00:00').getTime());
     add('text',{x,y:height-10,'text-anchor':'middle',class:'vnd-x-label'},vndLabelDate(row.date));
