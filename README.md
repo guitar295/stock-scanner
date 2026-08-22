@@ -1,5 +1,7 @@
 # stock-scanner
-
+```
+docker system prune -f
+```
 
 ```
 docker logs -f scanner
