@@ -1217,20 +1217,49 @@ cache_lock          = threading.Lock()
 last_bar_update: dict = {}   # {symbol: timestamp} - dùng chung cho CẢ scan cycle lẫn chart on-demand
 BAR_UPDATE_TTL_SEC = 60
 
-def load_history_for_symbol(symbol: str, current_date: date):
+_vndirect_session = requests.Session()
+_vndirect_session.headers.update({
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json,*/*",
+    "Referer": "https://dstock.vndirect.com.vn/",
+})
+
+def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
+    symbol = symbol.upper().strip()
+    to_ts = int(time.time())
+    if resolution == "15":
+        from_ts = to_ts - int(limit * 3600 * 24 / 20)  # ~20 nến 15m/ngày
+    else:
+        from_ts = to_ts - int(limit * 1.6 + 30) * 86400
+    url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution={resolution}&symbol={symbol}&from={from_ts}&to={to_ts}"
+    res = _vndirect_session.get(url, timeout=10)
+    if res.status_code != 200: return None
+    data = res.json()
+    if not data or data.get("s") != "ok" or not data.get("t"): return None
+    times, opens, highs = data.get("t", []), data.get("o", []), data.get("h", [])
+    lows, closes, vols = data.get("l", []), data.get("c", []), data.get("v", [])
+    bars = []
+    for i in range(len(times)):
+        try:
+            o, h, l, c, v = float(opens[i]), float(highs[i]), float(lows[i]), float(closes[i]), float(vols[i])
+            if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
+                dt = datetime.utcfromtimestamp(times[i] + 25200)
+                bars.append({"time": dt, "open": o, "high": h, "low": l, "close": c, "volume": max(0.0, v)})
+        except: pass
+    if not bars: return None
+    df = pd.DataFrame(bars)
+    df.set_index('time', inplace=True)
+    return df
+
+def load_history_for_symbol(symbol: str):
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1000', interval='1D')
-            if df_raw is None or len(df_raw) < 60: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            df = df_raw[['open','high','low','close','volume']].copy()
+            df = _fetch_vnd(symbol, limit=1000)
+            if df is None or len(df) < 60: return None
             df['vpa_flag'] = calc_vpa_flag(df)
             return df
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ Load history {symbol}: {e}")
     return None
 
@@ -1239,13 +1268,13 @@ def build_history_cache(symbols: list, current_date: date):
     print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã...")
     new_history = {}
     for i, symbol in enumerate(symbols, 1):
-        df = load_history_for_symbol(symbol, current_date)
+        df = load_history_for_symbol(symbol)
         if df is not None and len(df) >= 60:
             new_history[symbol] = df
         if i % 20 == 0:
             ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
             print(f"  [{ts2}] Đã load {i}/{len(symbols)} mã...")
-        time.sleep(0.3)
+        time.sleep(0.05)  # Dùng VNDirect không lo rate limit, chỉ delay nhẹ nhường CPU
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
@@ -1279,32 +1308,19 @@ def _next_trading_session_label(now_time: int) -> str:
     return "08:55 ngày mai"
 
 def _expected_last_session(current_date: date, now_time: int) -> date:
-    """
-    Ngày nến cuối cùng mà cache/lịch sử BẮT BUỘC phải có tính tới thời điểm hiện tại.
-    Dùng chung cho mọi nơi cần biết "cache đã đủ mới chưa" (build cache theo ngày,
-    ensure-on-demand cho lite chart, chart on-demand cho Telegram/scanner).
-    - Ngày thường, trước 15:00 (chưa chốt phiên) → kỳ vọng = phiên liền trước.
-    - Ngày thường, từ 15:00 (đã chốt phiên) → kỳ vọng = chính hôm nay.
-    """
+    """Trả về ngày nến kỳ vọng của cache dựa trên mốc 15h00."""
     expected = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
     if current_date.weekday() < 5 and now_time >= 150000:
         expected = current_date
     return expected
 
 def _cache_is_fresh(df_hist, current_date: date, now_time: int) -> bool:
-    """True nếu nến cuối của df_hist đã đạt tới _expected_last_session()."""
     if df_hist is None or len(df_hist) == 0:
         return False
     return df_hist.index[-1].date() >= _expected_last_session(current_date, now_time)
 
 def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
-    """
-    Kiểm tra 1 mã mẫu đại diện cho cả `history_cache`; nếu lệch phiên kỳ vọng thì
-    rebuild lại toàn bộ. Hàm này KHÔNG tự giới hạn tần suất gọi — việc gọi hàm này
-    cách nhau bao lâu (30 phút, ngoài giờ giao dịch) do nơi gọi (vòng lặp chính,
-    qua CACHE_CHECK_INTERVAL_SEC) quyết định, để tách bạch rõ "khi nào kiểm tra"
-    khỏi "kiểm tra làm gì".
-    """
+    """Kiểm tra cache qua 1 mã mẫu, rebuild nếu lệch phiên."""
     now_obj  = datetime.now(TZ_VN)
     ts       = now_obj.strftime('%H:%M:%S')
     now_time = int(now_obj.strftime("%H%M%S"))
@@ -1329,24 +1345,14 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         new_last = sample_df2.index[-1].date()
         ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
         print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
-    # KHÔNG warm HEALTH chủ động ở đây: hàm này chỉ chạy NGOÀI giờ giao dịch
-    # (tối đa 1 lần/30 phút), lúc gần như không ai theo dõi HEALTH sát sao. Nhờ
-    # Fix A trong dashboard_server.py (_refresh_market_health không đóng dấu
-    # "cache mới" khi tính lỗi), lần request thật sự tiếp theo từ client sẽ tự
-    # tính lại đúng trên cache vừa rebuild — không cần tốn thêm 1 lần tính toán
-    # HEALTH (khá nặng, phải chạy trên toàn bộ rổ mã) mà không ai xem tới.
     return False
 
 def fetch_today_bar(symbol: str, current_date: date):
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='2', interval='1D')
+            df_raw = _fetch_vnd(symbol, limit=5)
             if df_raw is None or df_raw.empty: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-
+            
             today_rows = df_raw[df_raw.index.date == current_date]
             if today_rows.empty: return None
 
@@ -1394,14 +1400,11 @@ def fetch_today_bar(symbol: str, current_date: date):
                 name=pd.Timestamp(current_date)
             )
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_today_bar {symbol}: {e}")
     return None
 
 def upsert_today_bar(df_hist, today_bar):
-    """Vá/thêm nến hôm nay vào cache lịch sử. vpa_flag phụ thuộc rolling window
-    (RWI, avg_spread...) nên phải tính lại trên TOÀN BỘ chuỗi sau khi vá — không
-    thể chỉ tính cho 1 bar mới, các bar gần cuối cũng đổi giá trị theo."""
     bar_date = pd.Timestamp(today_bar.name).date()
     new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -1411,13 +1414,7 @@ def upsert_today_bar(df_hist, today_bar):
     return merged
 
 def chart_symbol_status(symbol: str) -> dict:
-    """
-    Kiểm tra nhanh (KHÔNG gọi mạng/vnstock) xem việc tải chart cho `symbol`
-    sẽ được phục vụ từ cache có sẵn hay sẽ cần ensure_symbol_live_in_cache()
-    thực hiện một lượt gọi mạng (tải mới toàn bộ lịch sử, hoặc cập nhật nến
-    hôm nay từ vnstock). Dùng để hiển thị trạng thái "Đang tải cache" /
-    "Đang update chart" ở giao diện TRƯỚC khi gọi endpoint tải dữ liệu thật.
-    """
+    """Kiểm tra trạng thái cache cho symbol (không gọi mạng)."""
     symbol = symbol.upper().strip()
     now = datetime.now(TZ_VN)
     current_date = now.date()
@@ -1459,25 +1456,21 @@ def ensure_symbol_live_in_cache(symbol: str) -> dict:
 
     if df_hist is None or len(df_hist) < 60:
         result["vnstock_action"] = "fetch_full_history"
-        df_hist = load_history_for_symbol(symbol, current_date)
+        df_hist = load_history_for_symbol(symbol)
         if df_hist is None or len(df_hist) < 60:
             return result
         with cache_lock:
             history_cache[symbol] = df_hist
         return result
 
-    # Cache đã có nhưng lệch hơn 1 phiên so với kỳ vọng (ví dụ bị bỏ lỡ phiên gần nhất
-    # do không ai xem chart lúc phiên đó diễn ra) → nạp lại toàn bộ và ghi đè cache dùng
-    # chung, thay vì chỉ cố vá đúng bar "hôm nay" như nhánh live-update bên dưới.
     if not _cache_is_fresh(df_hist, current_date, now_time):
         result["vnstock_action"] = "fetch_full_history"
-        fresh = load_history_for_symbol(symbol, current_date)
+        fresh = load_history_for_symbol(symbol)
         if fresh is not None and len(fresh) >= 60:
             with cache_lock:
                 history_cache[symbol] = fresh
             last_bar_update[symbol] = time.time()
             return result
-        # Fetch fresh lỗi → rơi xuống logic live-update bên dưới để vẫn thử vá tạm
 
     if not _is_trading_session_time(current_date, now_time):
         return result
@@ -1514,21 +1507,13 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
 def fetch_index_history(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1000', interval='1D')
+            df_raw = _fetch_vnd(symbol, limit=1000)
             if df_raw is None or df_raw.empty: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            for col in ['open','high','low','close']:
-                if col not in df_raw.columns: df_raw[col] = np.nan
-            if 'volume' not in df_raw.columns: df_raw['volume'] = 0
-            df_raw = df_raw[['open','high','low','close','volume']].copy()
             df_raw = df_raw.dropna(subset=['close'])
             if len(df_raw) < 10: return None
             return df_raw
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_index_history {symbol}: {e}")
     return None
 
@@ -1538,21 +1523,13 @@ def fetch_index_history(symbol: str) -> pd.DataFrame | None:
 def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='200', interval='15m')
+            df_raw = _fetch_vnd(symbol, limit=200, resolution="15")
             if df_raw is None or df_raw.empty: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            for col in ['open','high','low','close']:
-                if col not in df_raw.columns: df_raw[col] = np.nan
-            if 'volume' not in df_raw.columns: df_raw['volume'] = 0
-            df_raw = df_raw[['open','high','low','close','volume']].copy()
             df_raw = df_raw.dropna(subset=['close'])
             if len(df_raw) < 10: return None
             return compute_indicators(df_raw)
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_intraday_15m {symbol}: {e}")
     return None
 
@@ -1560,22 +1537,11 @@ def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
 # BƯỚC 5F: FETCH FRESH HOÀN TOÀN CHO ON-DEMAND CHART (không dùng cache)
 # =============================================================================
 def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | None:
-    """
-    Fetch dữ liệu mới hoàn toàn từ server, không phụ thuộc cache.
-    Dùng cho on-demand chart và button tín hiệu hôm nay.
-    - Lấy toàn bộ lịch sử (length=1000)
-    - Không filter ngày → lấy nến mới nhất server có
-    - Bỏ nến hôm nay nếu volume < 100 (chưa giao dịch / ngày nghỉ)
-    """
+    """Fetch dữ liệu tươi từ server (không qua cache)."""
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1000', interval='1D')
+            df_raw = _fetch_vnd(symbol, limit=1000)
             if df_raw is None or len(df_raw) < 60: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            df_raw = df_raw[['open','high','low','close','volume']].copy()
 
             today_rows = df_raw[df_raw.index.date == current_date]
             if not today_rows.empty:
@@ -1586,7 +1552,7 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
             if len(df_raw) < 60: return None
             return df_raw
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_fresh_for_chart {symbol}: {e}")
     return None
 
@@ -2142,9 +2108,9 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=2)...")
+    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (VNDirect)...")
 
-    for symbol in symbols:
+    for symbol in cache_symbol_set:
         try:
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is None or len(df_hist) < 60: continue
@@ -2157,22 +2123,22 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 history_cache[symbol] = latest
                 df_merged = latest.copy()
             last_bar_update[symbol] = time.time()
+
+            # Chỉ phát tín hiệu cho các mã trong danh sách symbols (symbols_to_scan)
+            if symbol not in symbols:
+                continue
+
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
-                    # compute_indicators() không cần thiết ở đây: giá trị dùng bên dưới chỉ
-                    # là cột 'close' gốc (không đổi qua compute_indicators), nên dùng thẳng
-                    # df_merged thay vì tính lại toàn bộ ~20 cột chỉ báo (MA/EMA/RSI/MACD)
-                    # chỉ để lấy 2 giá đóng cửa gần nhất — kết quả mom_pct giữ nguyên y hệt.
+                    # mom_pct chỉ dùng cột 'close' gốc — không cần compute_indicators
                     mom_pct = (df_merged['close'].iloc[-1] - df_merged['close'].iloc[-2]) / df_merged['close'].iloc[-2] * 100
                     current_momentum[symbol] = {"signals": momentum_signals, "pct": round(mom_pct, 1)}
             except Exception as e:
                 print(f"    ⚠️  Momentum {symbol}: {e}")
 
             try:
-                # ATTENT/BREAKVOL cần các cột MA/EMA/VMA/RSI → tính riêng compute_indicators()
-                # 1 lần dùng chung cho cả 2, tách khỏi detect_signal() (vốn tự tính bản copy
-                # riêng của nó) để không phải sửa chữ ký/kết quả của detect_signal().
+                # ATTENT/BREAKVOL cần MA/VMA/RSI — tính compute_indicators 1 lần dùng chung cả 2
                 df_ind = compute_indicators(df_merged)
                 if len(df_ind) >= 60:
                     pct_today = (df_ind['close'].iloc[-1] - df_ind['close'].iloc[-2]) / df_ind['close'].iloc[-2] * 100
@@ -2185,14 +2151,14 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
-                time.sleep(0.3); continue
+                continue
 
             prev_entry = alerted_today.get(symbol)
             prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
             prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
             if prev_rank >= current_rank:
-                time.sleep(0.3); continue
+                continue
 
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
@@ -2243,7 +2209,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
-        time.sleep(0.3)
 
     momentum_today.clear()
     momentum_today.update(current_momentum)
@@ -3076,9 +3041,7 @@ while True:
             time.sleep(SCAN_INTERVAL_SEC)
             continue
 
-        # ── PHIÊN GIAO DỊCH MỚI THỰC SỰ BẮT ĐẦU ─────────────────────────────
-        # Chỉ tới đây (đã qua ngày mới VÀ đang trong giờ giao dịch, tức có dữ liệu
-        # phiên mới) mới reset danh sách tín hiệu đã gửi + lưu lại trạng thái mới.
+        # Reset danh sách tín hiệu khi vào phiên mới
         if current_date > signal_session_date:
             alerted_today.clear()
             momentum_today.clear()
@@ -3086,14 +3049,8 @@ while True:
             breakvol_today.clear()
             signal_session_date = current_date
             _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
-            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi (kể cả ATTENT/BREAKVOL).")
+            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi.")
 
-        # Trong giờ giao dịch: KHÔNG chạy check_and_rebuild_cache_if_stale ở đây nữa
-        # (rebuild toàn bộ có thể tốn 45s-vài phút, làm chậm/nghẽn chu kỳ quét tín hiệu).
-        # Việc tự dò + tự sửa cache lệch phiên chỉ chạy ở nhánh ngoài giờ giao dịch phía
-        # trên (trước 09:00, nghỉ trưa 11:30-13:00, sau 15:00). Ở đây chỉ giữ lại 1 lớp
-        # bảo hiểm rẻ: nếu cache trống hoàn toàn (sự cố nghiêm trọng, gần như không xảy ra
-        # trong vận hành bình thường) thì vẫn bắt buộc load để tránh quét trên cache rỗng.
         with cache_lock:
             cache_empty = len(history_cache) == 0
         if cache_empty:
@@ -3102,7 +3059,7 @@ while True:
             warm_market_health_cache()
 
         print(f"\n{'='*60}")
-        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
+        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (VNDirect)")
         print(f"{'='*60}")
 
         new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today,
@@ -3113,10 +3070,7 @@ while True:
             print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
         else:
             print(f"[{ts}] Không có tín hiệu mới.")
-        # Lưu lại xuống đĩa sau MỖI chu kỳ quét (không chỉ khi có tín hiệu mới) vì
-        # momentum_today/attent_today/breakvol_today được tính lại toàn bộ mỗi chu kỳ
-        # — cần đồng bộ liên tục để khi restart giữa/ngoài phiên vẫn khôi phục được
-        # đúng danh sách gần nhất.
+
         _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
         if triggered_alerts:
             print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
