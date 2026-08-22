@@ -124,32 +124,13 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # =============================================================================
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
-# NGUỒN DUY NHẤT nằm ở dashboard_server.TS_POOL_CONFIG — import ở đầu file.
-# KHÔNG khai báo lại danh sách mã ở đây nữa, tránh lặp lại lỗi lệch 2 danh sách
-# (BAF/BMI/LCG từng bị thiếu bên fetch giá khiến cột Trading hiện "--" dù đã
-# có trong danh sách hiển thị). Muốn thêm/bớt mã: sửa TS_POOL_CONFIG bên
-# dashboard_server.py, scanner_full.py tự động dùng theo qua alias dưới đây.
 TRADING_STOCKS_POOL = TS_POOL_CONFIG
 
-# NGUỒN DUY NHẤT nằm ở dashboard_server.HMAP_COLS_CONFIG (import ở đầu file) —
-# cùng lý do và cùng cách làm với TRADING_STOCKS_POOL: tránh lệch dữ liệu giữa
-# sidebar dashboard và ảnh heatmap của scanner khi có người sửa 1 bên quên sửa
-# bên kia. HMAP_COLS_CONFIG dùng tên nhóm tiếng Việt có dấu (đẹp hơn khi vẽ lên
-# ảnh) và khoá "syms" (khớp định dạng dashboard cần) — dòng dưới đây tự suy ra
-# đúng cấu trúc HEATMAP_COLUMNS mà code vẽ ảnh heatmap của scanner cần (thêm số
-# thứ tự cột "col", đổi khoá "syms" -> "symbols"). Muốn thêm/bớt mã hay đổi tên
-# nhóm: chỉ sửa HMAP_COLS_CONFIG bên dashboard_server.py.
 HEATMAP_COLUMNS = [
     {"col": idx + 1, "groups": [{"name": g["name"], "symbols": g["syms"]} for g in col["groups"]]}
     for idx, col in enumerate(HMAP_COLS_CONFIG)
 ]
 
-# Precompute 1 lần duy nhất lúc module load: HEATMAP_COLUMNS/TRADING_STOCKS_POOL là
-# cấu hình tĩnh (không đổi khi chạy), nên tập hợp "mã cần tải giá" cho heatmap luôn
-# giống hệt nhau ở mọi lần gọi fetch_heatmap_data(). Trước đây set/list này bị dựng lại
-# (duyệt lồng nhau qua toàn bộ HEATMAP_COLUMNS) mỗi lần fetch_heatmap_data() chạy — tức
-# mỗi 120s (HEATMAP_TTL_SEC) cho dashboard, cộng thêm mỗi lần lệnh /heatmap Telegram —
-# dù kết quả không bao giờ đổi. Giữ nguyên kết quả hệt như trước, chỉ tính 1 lần.
 _HEATMAP_NEED_SYMBOLS = list(
     {s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
     | set(TRADING_STOCKS_POOL)
@@ -219,13 +200,7 @@ def _hmap_rounded_rect(draw, x0, y0, x1, y1, r, fill, outline=None, lw=1):
         draw.line([x1, y0+r, x1, y1-r], fill=outline, width=lw)
 
 def _hmap_load_fonts():
-    # Fix: font hệ thống (dejavu/liberation) có thể KHÔNG được cài trong image Docker
-    # (nhiều base image Python tối giản không có gói fonts-dejavu-core/fonts-liberation),
-    # khiến bold/reg = None → rơi về ImageFont.load_default() (bitmap, không có dấu
-    # tiếng Việt) → "tên ngành" (chữ duy nhất có dấu trong ảnh heatmap) bị lỗi phông.
-    # Ưu tiên dùng DejaVu Sans đóng gói SẴN bên trong matplotlib (đã là dependency của
-    # scanner qua `import matplotlib.pyplot as plt`) nên luôn tồn tại bất kể môi trường,
-    # không phụ thuộc font hệ thống nữa. Giữ path hệ thống làm fallback dự phòng.
+    # Load DejaVu Sans từ matplotlib hoặc font hệ thống
     try:
         _mpl_font_dir = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
     except Exception:
@@ -574,24 +549,9 @@ heatmap_symbols = {
     for s in group["symbols"]
 }
 cache_symbol_set = set(vn30_symbols) | set(TRADING_STOCKS_POOL) | heatmap_symbols
-# Đồng bộ với _HEATMAP_NEED_SYMBOLS (định nghĩa ở đầu file, trước khi vn30_symbols tồn tại):
-# vn30_symbols là danh sách được quét tín hiệu (SIGNAL/MOMENTUM/ATTENT/BREAKVOL, xem
-# symbols_to_scan ngay dưới đây) nên bất kỳ mã nào trong đó lên tín hiệu đều có thể xuất
-# hiện trên sidebar CHART. Nếu mã đó không nằm trong _HEATMAP_NEED_SYMBOLS gốc (vốn chỉ
-# gồm HEATMAP_COLUMNS + TRADING_STOCKS_POOL) thì price_board() sẽ không tải giá cho nó,
-# khiến window._lastHmapData thiếu entry -> sidebar hiện "--" dù mã đã có tín hiệu thật
-# (ví dụ G36/VGC: có trong vn30_symbols nhưng thiếu ở 2 danh sách kia). Gộp thêm ở đây,
-# trước dòng gán symbols_to_scan, để lần fetch_heatmap_data() nào cũng tải đủ giá.
 _HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
 symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
 symbols_to_rs = [s for s in all_symbols if s in cache_symbol_set]
-# VNINDEX/VN30 (chỉ số) không nằm trong all_symbols (danh sách mã niêm yết) nên không
-# lọt qua filter phía trên — trước đây 2 mã này chỉ được nạp on-demand lúc user mở
-# chart (ensure_symbol_live_in_cache), khiến lần xem đầu tiên phải chờ gọi mạng vnstock
-# thật (có thể 6-10s+ do load_history_for_symbol tự retry 3 lần) — dễ vượt quá thời gian
-# chờ/retry phía frontend (loadLiteChart) và làm chart (kể cả khung MACD) không hiển thị.
-# Thêm thủ công vào đây để được build_history_cache() nạp sẵn cùng lúc server khởi động,
-# và được check_and_rebuild_cache_if_stale()/vòng lặp định kỳ giữ luôn ở trạng thái "ấm".
 symbols_to_cache = list(dict.fromkeys(symbols_to_rs + ["VNINDEX", "VN30"]))
 print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to_scan)}")
 print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã (gồm cả VNINDEX, VN30)")
@@ -960,18 +920,11 @@ def compute_market_health_index(limit: int = 120) -> dict:
         new_high[sym] = (d["close"] >= d["close"].rolling(252, min_periods=60).max()).astype(float)
         new_low[sym] = (d["close"] <= d["close"].rolling(252, min_periods=60).min()).astype(float)
         pct = d["close"].pct_change() * 100
-        # Cờ "giảm giá trong phiên" (bất kể mức độ) — dùng riêng để đo diện rộng của
-        # phiên giảm, KHÔNG gộp vào score_df vì đây là điều kiện phụ cho nhãn cảnh
-        # báo, không phải một thành phần chấm điểm HEALTH.
         decline_today[sym] = (pct < 0).astype(float)
         v_ratio = d["volume"] / d["VMA20"].replace(0, np.nan)
         excite = ((pct >= 2.5) & (v_ratio >= 1.5)).astype(float)
         panic = ((pct <= -2.5) & (v_ratio >= 1.5)).astype(float)
         vol_push[sym] = excite - panic
-        # 2 cờ riêng cho tag "Hoảng loạn" / "Bán tháo" — đều là sự kiện CẤP TÍNH trong
-        # 1 phiên (giảm sâu + volume xác nhận ≥1.3x TB 20 phiên), độc lập với band/xu
-        # hướng điểm HEALTH. Phân biệt theo biên độ giảm: 2,5%-4% là "Hoảng loạn" (mức
-        # nhẹ hơn), từ 4% trở lên là "Bán tháo" (mức nặng hơn, diện rộng thực sự).
         hoang_loan[sym] = ((pct <= -2.5) & (pct > -4) & (v_ratio >= 1.3)).astype(float)
         ban_thao[sym] = ((pct <= -4) & (v_ratio >= 1.3)).astype(float)
 
