@@ -2147,9 +2147,9 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (cache + Quote length=2)...")
+    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (VNDirect)...")
 
-    for symbol in symbols:
+    for symbol in cache_symbol_set:
         try:
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is None or len(df_hist) < 60: continue
@@ -2162,6 +2162,11 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 history_cache[symbol] = latest
                 df_merged = latest.copy()
             last_bar_update[symbol] = time.time()
+            
+            # CHỈ TÍNH TOÁN VÀ PHÁT TÍN HIỆU CHO CÁC MÃ TRONG DANH SÁCH symbols (TRADING_SYMBOLS)
+            if symbol not in symbols:
+                continue
+
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
