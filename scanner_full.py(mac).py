@@ -494,6 +494,7 @@ def build_monthly_df(df_daily):
     return compute_indicators(df_m)
 
 def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=None):
+    return
     if image_path and not image_paths:
         image_paths = [image_path]
 
@@ -2560,6 +2561,7 @@ def _price_alert_triggered(rule: dict, prev_row, cur_row):
 
 
 def send_price_alert_chart_to_telegram(symbol: str, chat_id: str, alert_message: str):
+    return
     image_paths = []
     symbol = symbol.upper().strip()
     try:
@@ -2962,7 +2964,7 @@ _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stal
 
 _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
-listener_thread.start()
+# listener_thread.start()
 
 # ─── (Đã BỎ ý tưởng đảo thứ tự start_dashboard/build_history_cache) ────────
 # Ban đầu định đảo build_history_cache() lên trước start_dashboard() để tránh
