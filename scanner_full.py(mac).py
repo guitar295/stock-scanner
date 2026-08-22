@@ -1218,20 +1218,49 @@ cache_lock          = threading.Lock()
 last_bar_update: dict = {}   # {symbol: timestamp} - dùng chung cho CẢ scan cycle lẫn chart on-demand
 BAR_UPDATE_TTL_SEC = 60
 
+_vndirect_session = requests.Session()
+_vndirect_session.headers.update({
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json,*/*",
+    "Referer": "https://dstock.vndirect.com.vn/",
+})
+
+def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
+    symbol = symbol.upper().strip()
+    to_ts = int(time.time())
+    if resolution == "15":
+        from_ts = to_ts - int(limit * 3600 * 24 / 20)  # ~20 nến 15m/ngày
+    else:
+        from_ts = to_ts - int(limit * 1.6 + 30) * 86400
+    url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution={resolution}&symbol={symbol}&from={from_ts}&to={to_ts}"
+    res = _vndirect_session.get(url, timeout=10)
+    if res.status_code != 200: return None
+    data = res.json()
+    if not data or data.get("s") != "ok" or not data.get("t"): return None
+    times, opens, highs = data.get("t", []), data.get("o", []), data.get("h", [])
+    lows, closes, vols = data.get("l", []), data.get("c", []), data.get("v", [])
+    bars = []
+    for i in range(len(times)):
+        try:
+            o, h, l, c, v = float(opens[i]), float(highs[i]), float(lows[i]), float(closes[i]), float(vols[i])
+            if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
+                dt = datetime.utcfromtimestamp(times[i] + 25200)
+                bars.append({"time": dt, "open": o, "high": h, "low": l, "close": c, "volume": max(0.0, v)})
+        except: pass
+    if not bars: return None
+    df = pd.DataFrame(bars)
+    df.set_index('time', inplace=True)
+    return df
+
 def load_history_for_symbol(symbol: str, current_date: date):
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1000', interval='1D')
-            if df_raw is None or len(df_raw) < 60: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            df = df_raw[['open','high','low','close','volume']].copy()
+            df = _fetch_vnd(symbol, limit=1000)
+            if df is None or len(df) < 60: return None
             df['vpa_flag'] = calc_vpa_flag(df)
             return df
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ Load history {symbol}: {e}")
     return None
 
@@ -1246,7 +1275,7 @@ def build_history_cache(symbols: list, current_date: date):
         if i % 20 == 0:
             ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
             print(f"  [{ts2}] Đã load {i}/{len(symbols)} mã...")
-        time.sleep(0.8)  # Tránh rate limit 60req/phút: 0.3s(API)+0.8s(delay)=1.1s/mã → 54req/phút
+        time.sleep(0.05)  # Dùng VNDirect không lo rate limit, chỉ delay nhẹ nhường CPU
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
@@ -1341,13 +1370,9 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
 def fetch_today_bar(symbol: str, current_date: date):
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='2', interval='1D')
+            df_raw = _fetch_vnd(symbol, limit=5)
             if df_raw is None or df_raw.empty: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-
+            
             today_rows = df_raw[df_raw.index.date == current_date]
             if today_rows.empty: return None
 
@@ -1395,7 +1420,7 @@ def fetch_today_bar(symbol: str, current_date: date):
                 name=pd.Timestamp(current_date)
             )
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_today_bar {symbol}: {e}")
     return None
 
@@ -1515,21 +1540,13 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
 def fetch_index_history(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1000', interval='1D')
+            df_raw = _fetch_vnd(symbol, limit=1000)
             if df_raw is None or df_raw.empty: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            for col in ['open','high','low','close']:
-                if col not in df_raw.columns: df_raw[col] = np.nan
-            if 'volume' not in df_raw.columns: df_raw['volume'] = 0
-            df_raw = df_raw[['open','high','low','close','volume']].copy()
             df_raw = df_raw.dropna(subset=['close'])
             if len(df_raw) < 10: return None
             return df_raw
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_index_history {symbol}: {e}")
     return None
 
@@ -1539,21 +1556,13 @@ def fetch_index_history(symbol: str) -> pd.DataFrame | None:
 def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='200', interval='15m')
+            df_raw = _fetch_vnd(symbol, limit=200, resolution="15")
             if df_raw is None or df_raw.empty: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            for col in ['open','high','low','close']:
-                if col not in df_raw.columns: df_raw[col] = np.nan
-            if 'volume' not in df_raw.columns: df_raw['volume'] = 0
-            df_raw = df_raw[['open','high','low','close','volume']].copy()
             df_raw = df_raw.dropna(subset=['close'])
             if len(df_raw) < 10: return None
             return compute_indicators(df_raw)
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_intraday_15m {symbol}: {e}")
     return None
 
@@ -1570,13 +1579,8 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
     """
     for attempt in range(3):
         try:
-            quote  = Quote(symbol=symbol, source=DATA_SOURCE)
-            df_raw = quote.history(length='1000', interval='1D')
+            df_raw = _fetch_vnd(symbol, limit=1000)
             if df_raw is None or len(df_raw) < 60: return None
-            df_raw['time'] = pd.to_datetime(df_raw['time'])
-            df_raw.set_index('time', inplace=True)
-            df_raw.columns = [c.lower() for c in df_raw.columns]
-            df_raw = df_raw[['open','high','low','close','volume']].copy()
 
             today_rows = df_raw[df_raw.index.date == current_date]
             if not today_rows.empty:
@@ -1587,7 +1591,7 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
             if len(df_raw) < 60: return None
             return df_raw
         except Exception as e:
-            if attempt < 2: time.sleep(2)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ fetch_fresh_for_chart {symbol}: {e}")
     return None
 
@@ -2186,14 +2190,14 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
-                time.sleep(0.8); continue  # Tránh rate limit: 0.3s(API)+0.8s(delay)=1.1s/mã → 54req/phút
+                continue
 
             prev_entry = alerted_today.get(symbol)
             prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
             prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
             if prev_rank >= current_rank:
-                time.sleep(0.8); continue  # Tránh rate limit: 0.3s(API)+0.8s(delay)=1.1s/mã → 54req/phút
+                continue
 
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
