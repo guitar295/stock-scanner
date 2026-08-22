@@ -1252,7 +1252,7 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
     df.set_index('time', inplace=True)
     return df
 
-def load_history_for_symbol(symbol: str, current_date: date):
+def load_history_for_symbol(symbol: str):
     for attempt in range(3):
         try:
             df = _fetch_vnd(symbol, limit=1000)
@@ -1269,7 +1269,7 @@ def build_history_cache(symbols: list, current_date: date):
     print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã...")
     new_history = {}
     for i, symbol in enumerate(symbols, 1):
-        df = load_history_for_symbol(symbol, current_date)
+        df = load_history_for_symbol(symbol)
         if df is not None and len(df) >= 60:
             new_history[symbol] = df
         if i % 20 == 0:
@@ -1309,32 +1309,19 @@ def _next_trading_session_label(now_time: int) -> str:
     return "08:55 ngày mai"
 
 def _expected_last_session(current_date: date, now_time: int) -> date:
-    """
-    Ngày nến cuối cùng mà cache/lịch sử BẮT BUỘC phải có tính tới thời điểm hiện tại.
-    Dùng chung cho mọi nơi cần biết "cache đã đủ mới chưa" (build cache theo ngày,
-    ensure-on-demand cho lite chart, chart on-demand cho Telegram/scanner).
-    - Ngày thường, trước 15:00 (chưa chốt phiên) → kỳ vọng = phiên liền trước.
-    - Ngày thường, từ 15:00 (đã chốt phiên) → kỳ vọng = chính hôm nay.
-    """
+    """Trả về ngày nến kỳ vọng của cache dựa trên mốc 15h00."""
     expected = (pd.Timestamp(current_date) - pd.tseries.offsets.BDay(1)).date()
     if current_date.weekday() < 5 and now_time >= 150000:
         expected = current_date
     return expected
 
 def _cache_is_fresh(df_hist, current_date: date, now_time: int) -> bool:
-    """True nếu nến cuối của df_hist đã đạt tới _expected_last_session()."""
     if df_hist is None or len(df_hist) == 0:
         return False
     return df_hist.index[-1].date() >= _expected_last_session(current_date, now_time)
 
 def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
-    """
-    Kiểm tra 1 mã mẫu đại diện cho cả `history_cache`; nếu lệch phiên kỳ vọng thì
-    rebuild lại toàn bộ. Hàm này KHÔNG tự giới hạn tần suất gọi — việc gọi hàm này
-    cách nhau bao lâu (30 phút, ngoài giờ giao dịch) do nơi gọi (vòng lặp chính,
-    qua CACHE_CHECK_INTERVAL_SEC) quyết định, để tách bạch rõ "khi nào kiểm tra"
-    khỏi "kiểm tra làm gì".
-    """
+    """Kiểm tra cache qua 1 mã mẫu, rebuild nếu lệch phiên."""
     now_obj  = datetime.now(TZ_VN)
     ts       = now_obj.strftime('%H:%M:%S')
     now_time = int(now_obj.strftime("%H%M%S"))
@@ -1359,12 +1346,6 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
         new_last = sample_df2.index[-1].date()
         ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
         print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
-    # KHÔNG warm HEALTH chủ động ở đây: hàm này chỉ chạy NGOÀI giờ giao dịch
-    # (tối đa 1 lần/30 phút), lúc gần như không ai theo dõi HEALTH sát sao. Nhờ
-    # Fix A trong dashboard_server.py (_refresh_market_health không đóng dấu
-    # "cache mới" khi tính lỗi), lần request thật sự tiếp theo từ client sẽ tự
-    # tính lại đúng trên cache vừa rebuild — không cần tốn thêm 1 lần tính toán
-    # HEALTH (khá nặng, phải chạy trên toàn bộ rổ mã) mà không ai xem tới.
     return False
 
 def fetch_today_bar(symbol: str, current_date: date):
@@ -1425,9 +1406,6 @@ def fetch_today_bar(symbol: str, current_date: date):
     return None
 
 def upsert_today_bar(df_hist, today_bar):
-    """Vá/thêm nến hôm nay vào cache lịch sử. vpa_flag phụ thuộc rolling window
-    (RWI, avg_spread...) nên phải tính lại trên TOÀN BỘ chuỗi sau khi vá — không
-    thể chỉ tính cho 1 bar mới, các bar gần cuối cũng đổi giá trị theo."""
     bar_date = pd.Timestamp(today_bar.name).date()
     new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -1437,13 +1415,7 @@ def upsert_today_bar(df_hist, today_bar):
     return merged
 
 def chart_symbol_status(symbol: str) -> dict:
-    """
-    Kiểm tra nhanh (KHÔNG gọi mạng/vnstock) xem việc tải chart cho `symbol`
-    sẽ được phục vụ từ cache có sẵn hay sẽ cần ensure_symbol_live_in_cache()
-    thực hiện một lượt gọi mạng (tải mới toàn bộ lịch sử, hoặc cập nhật nến
-    hôm nay từ vnstock). Dùng để hiển thị trạng thái "Đang tải cache" /
-    "Đang update chart" ở giao diện TRƯỚC khi gọi endpoint tải dữ liệu thật.
-    """
+    """Kiểm tra trạng thái cache cho symbol (không gọi mạng)."""
     symbol = symbol.upper().strip()
     now = datetime.now(TZ_VN)
     current_date = now.date()
@@ -1485,25 +1457,21 @@ def ensure_symbol_live_in_cache(symbol: str) -> dict:
 
     if df_hist is None or len(df_hist) < 60:
         result["vnstock_action"] = "fetch_full_history"
-        df_hist = load_history_for_symbol(symbol, current_date)
+        df_hist = load_history_for_symbol(symbol)
         if df_hist is None or len(df_hist) < 60:
             return result
         with cache_lock:
             history_cache[symbol] = df_hist
         return result
 
-    # Cache đã có nhưng lệch hơn 1 phiên so với kỳ vọng (ví dụ bị bỏ lỡ phiên gần nhất
-    # do không ai xem chart lúc phiên đó diễn ra) → nạp lại toàn bộ và ghi đè cache dùng
-    # chung, thay vì chỉ cố vá đúng bar "hôm nay" như nhánh live-update bên dưới.
     if not _cache_is_fresh(df_hist, current_date, now_time):
         result["vnstock_action"] = "fetch_full_history"
-        fresh = load_history_for_symbol(symbol, current_date)
+        fresh = load_history_for_symbol(symbol)
         if fresh is not None and len(fresh) >= 60:
             with cache_lock:
                 history_cache[symbol] = fresh
             last_bar_update[symbol] = time.time()
             return result
-        # Fetch fresh lỗi → rơi xuống logic live-update bên dưới để vẫn thử vá tạm
 
     if not _is_trading_session_time(current_date, now_time):
         return result
@@ -1570,13 +1538,7 @@ def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
 # BƯỚC 5F: FETCH FRESH HOÀN TOÀN CHO ON-DEMAND CHART (không dùng cache)
 # =============================================================================
 def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | None:
-    """
-    Fetch dữ liệu mới hoàn toàn từ server, không phụ thuộc cache.
-    Dùng cho on-demand chart và button tín hiệu hôm nay.
-    - Lấy toàn bộ lịch sử (length=1000)
-    - Không filter ngày → lấy nến mới nhất server có
-    - Bỏ nến hôm nay nếu volume < 100 (chưa giao dịch / ngày nghỉ)
-    """
+    """Fetch dữ liệu tươi từ server (không qua cache)."""
     for attempt in range(3):
         try:
             df_raw = _fetch_vnd(symbol, limit=1000)
@@ -2162,27 +2124,22 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 history_cache[symbol] = latest
                 df_merged = latest.copy()
             last_bar_update[symbol] = time.time()
-            
-            # CHỈ TÍNH TOÁN VÀ PHÁT TÍN HIỆU CHO CÁC MÃ TRONG DANH SÁCH symbols (TRADING_SYMBOLS)
+
+            # Chỉ phát tín hiệu cho các mã trong danh sách symbols (symbols_to_scan)
             if symbol not in symbols:
                 continue
 
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
-                    # compute_indicators() không cần thiết ở đây: giá trị dùng bên dưới chỉ
-                    # là cột 'close' gốc (không đổi qua compute_indicators), nên dùng thẳng
-                    # df_merged thay vì tính lại toàn bộ ~20 cột chỉ báo (MA/EMA/RSI/MACD)
-                    # chỉ để lấy 2 giá đóng cửa gần nhất — kết quả mom_pct giữ nguyên y hệt.
+                    # mom_pct chỉ dùng cột 'close' gốc — không cần compute_indicators
                     mom_pct = (df_merged['close'].iloc[-1] - df_merged['close'].iloc[-2]) / df_merged['close'].iloc[-2] * 100
                     current_momentum[symbol] = {"signals": momentum_signals, "pct": round(mom_pct, 1)}
             except Exception as e:
                 print(f"    ⚠️  Momentum {symbol}: {e}")
 
             try:
-                # ATTENT/BREAKVOL cần các cột MA/EMA/VMA/RSI → tính riêng compute_indicators()
-                # 1 lần dùng chung cho cả 2, tách khỏi detect_signal() (vốn tự tính bản copy
-                # riêng của nó) để không phải sửa chữ ký/kết quả của detect_signal().
+                # ATTENT/BREAKVOL cần MA/VMA/RSI — tính compute_indicators 1 lần dùng chung cả 2
                 df_ind = compute_indicators(df_merged)
                 if len(df_ind) >= 60:
                     pct_today = (df_ind['close'].iloc[-1] - df_ind['close'].iloc[-2]) / df_ind['close'].iloc[-2] * 100
@@ -2253,7 +2210,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
-        time.sleep(0.3)
 
     momentum_today.clear()
     momentum_today.update(current_momentum)
@@ -3087,9 +3043,7 @@ while True:
             time.sleep(SCAN_INTERVAL_SEC)
             continue
 
-        # ── PHIÊN GIAO DỊCH MỚI THỰC SỰ BẮT ĐẦU ─────────────────────────────
-        # Chỉ tới đây (đã qua ngày mới VÀ đang trong giờ giao dịch, tức có dữ liệu
-        # phiên mới) mới reset danh sách tín hiệu đã gửi + lưu lại trạng thái mới.
+        # Reset danh sách tín hiệu khi vào phiên mới
         if current_date > signal_session_date:
             alerted_today.clear()
             momentum_today.clear()
@@ -3097,14 +3051,8 @@ while True:
             breakvol_today.clear()
             signal_session_date = current_date
             _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
-            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi (kể cả ATTENT/BREAKVOL).")
+            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi.")
 
-        # Trong giờ giao dịch: KHÔNG chạy check_and_rebuild_cache_if_stale ở đây nữa
-        # (rebuild toàn bộ có thể tốn 45s-vài phút, làm chậm/nghẽn chu kỳ quét tín hiệu).
-        # Việc tự dò + tự sửa cache lệch phiên chỉ chạy ở nhánh ngoài giờ giao dịch phía
-        # trên (trước 09:00, nghỉ trưa 11:30-13:00, sau 15:00). Ở đây chỉ giữ lại 1 lớp
-        # bảo hiểm rẻ: nếu cache trống hoàn toàn (sự cố nghiêm trọng, gần như không xảy ra
-        # trong vận hành bình thường) thì vẫn bắt buộc load để tránh quét trên cache rỗng.
         with cache_lock:
             cache_empty = len(history_cache) == 0
         if cache_empty:
@@ -3113,7 +3061,7 @@ while True:
             warm_market_health_cache()
 
         print(f"\n{'='*60}")
-        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (cache + Quote length=2)")
+        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (VNDirect)")
         print(f"{'='*60}")
 
         new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today,
@@ -3124,10 +3072,7 @@ while True:
             print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
         else:
             print(f"[{ts}] Không có tín hiệu mới.")
-        # Lưu lại xuống đĩa sau MỖI chu kỳ quét (không chỉ khi có tín hiệu mới) vì
-        # momentum_today/attent_today/breakvol_today được tính lại toàn bộ mỗi chu kỳ
-        # — cần đồng bộ liên tục để khi restart giữa/ngoài phiên vẫn khôi phục được
-        # đúng danh sách gần nhất.
+
         _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
         if triggered_alerts:
             print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
