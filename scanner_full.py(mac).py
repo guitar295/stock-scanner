@@ -1246,7 +1246,7 @@ def build_history_cache(symbols: list, current_date: date):
         if i % 20 == 0:
             ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
             print(f"  [{ts2}] Đã load {i}/{len(symbols)} mã...")
-        time.sleep(0.3)
+        time.sleep(0.8)  # Tránh rate limit 60req/phút: 0.3s(API)+0.8s(delay)=1.1s/mã → 54req/phút
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
@@ -2186,14 +2186,14 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
             signal_type = detect_signal(df_merged, now_time)
             if not signal_type:
-                time.sleep(0.3); continue
+                time.sleep(0.8); continue  # Tránh rate limit: 0.3s(API)+0.8s(delay)=1.1s/mã → 54req/phút
 
             prev_entry = alerted_today.get(symbol)
             prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
             prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
             if prev_rank >= current_rank:
-                time.sleep(0.3); continue
+                time.sleep(0.8); continue  # Tránh rate limit: 0.3s(API)+0.8s(delay)=1.1s/mã → 54req/phút
 
             df_calc      = compute_indicators(df_merged)
             today        = df_calc.iloc[-1]
