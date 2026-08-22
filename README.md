@@ -297,6 +297,29 @@ docker logs --tail 20 scanner
 
 ```
 
+Chạy trên Mac:
+```
+cd ~/Desktop/Dashboard_mac && \
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py && \
+curl -o dashboard_server.py "https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server(mac).py" && \
+mkdir -p static && \
+[ -f static/lightweight-charts.min.js ] || curl -L "https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js" -o static/lightweight-charts.min.js && \
+sync && sleep 2 && \
+docker stop scanner 2>/dev/null || true && \
+docker rm scanner 2>/dev/null || true && \
+docker build --no-cache -t stock-scanner . && \
+docker run -d \
+  --name scanner \
+  --restart unless-stopped \
+  --env-file ~/Desktop/Dashboard_mac/.env \
+  -p 8888:8888 \
+  -v ~/Desktop/Dashboard_mac/data/trade-journal:/data/trade-journal \
+  -v ~/Desktop/Dashboard_mac/static:/app/static \
+  stock-scanner && \
+echo "✅ Cập nhật hoàn tất trên máy Mac!" && \
+docker logs --tail 20 scanner
+```
+
 Lệnh này tự động làm 6 việc theo thứ tự:
 
 Tải scanner_full.py mới nhất từ GitHub
