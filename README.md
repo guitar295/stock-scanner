@@ -313,7 +313,7 @@ docker rm -f scanner
 
 docker build --no-cache -t stock-scanner .
 
-docker run -d --name scanner --restart unless-stopped --env-file ~/Desktop/Dashboard_mac/.env -p 8888:8888 -v ~/Desktop/Dashboard_mac/data/trade-journal:/data/trade-journal -v ~/Desktop/Dashboard_mac/static:/app/static stock-scanner
+docker run -d --name scanner --restart unless-stopped --env-file ~/Desktop/Dashboard_mac/.env -p 127.0.0.1:8888:8888 -v ~/Desktop/Dashboard_mac/data/trade-journal:/data/trade-journal -v ~/Desktop/Dashboard_mac/static:/app/static stock-scanner
 
 docker logs --tail 20 scanner
 ```
