@@ -318,6 +318,23 @@ docker run -d --name scanner --restart unless-stopped --env-file ~/Desktop/Dashb
 docker logs --tail 20 scanner
 ```
 
+Chạy trên Mac (không tải file từ Git):
+
+```
+cd ~/Desktop/Dashboard_mac
+
+mkdir -p static
+[ -f static/lightweight-charts.min.js ] || curl -L https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js -o static/lightweight-charts.min.js
+
+docker rm -f scanner
+
+docker build --no-cache -t stock-scanner .
+
+docker run -d --name scanner --restart unless-stopped --env-file ~/Desktop/Dashboard_mac/.env -p 127.0.0.1:8888:8888 -v ~/Desktop/Dashboard_mac/data/trade-journal:/data/trade-journal -v ~/Desktop/Dashboard_mac/static:/app/static stock-scanner
+
+docker logs --tail 20 scanner
+```
+
 Lệnh này tự động làm 6 việc theo thứ tự:
 
 Tải scanner_full.py mới nhất từ GitHub
