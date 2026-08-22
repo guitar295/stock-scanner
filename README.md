@@ -301,9 +301,9 @@ Chạy trên Mac:
 ```
 cd ~/Desktop/Dashboard_mac
 
-curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py
+curl -o scanner_full.py https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/scanner_full.py\(mac\).py
 
-curl -o dashboard_server.py https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server\(mac\).py
+curl -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/main/dashboard_server.py
 
 mkdir -p static
 
