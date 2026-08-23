@@ -19,7 +19,7 @@ Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoà
 # =============================================================================
 # BƯỚC 1: IMPORT
 # =============================================================================
-from vnstock import register_user, Listing, Quote, Trading
+from vnstock import register_user, Listing, Trading
 import pandas as pd
 import numpy as np
 import requests
@@ -29,7 +29,7 @@ import sys
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import logging
 import os
 import re
