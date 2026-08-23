@@ -55,6 +55,7 @@ logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
+ENABLE_TELEGRAM     = os.environ.get('ENABLE_TELEGRAM', 'false').lower() in ('true', '1', 'yes')
 
 SCAN_INTERVAL_SEC  = 120
 CACHE_CHECK_INTERVAL_SEC = 1800   # nhịp tự dò/sửa history_cache NGOÀI giờ giao dịch — độc lập với SCAN_INTERVAL_SEC
@@ -115,14 +116,8 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # =============================================================================
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
-# HMAP_COLS: bản cục bộ của HMAP_COLS_CONFIG (đổi key syms→symbols cho hàm vẽ PNG)
-HMAP_COLS = [
-    {"col": idx + 1, "groups": [{"name": g["name"], "symbols": g["syms"]} for g in col["groups"]]}
-    for idx, col in enumerate(HMAP_COLS_CONFIG)
-]
-
 _HEATMAP_NEED_SYMBOLS = list(
-    {s for col in HMAP_COLS for g in col["groups"] for s in g["symbols"]}
+    {s for col in HMAP_COLS_CONFIG for g in col["groups"] for s in g["syms"]}
     | set(TS_POOL_CONFIG)
 )
 
@@ -258,17 +253,10 @@ def _hmap_avg_pct(syms, data):
     vals = [data[s]["pct"] for s in syms if s in data]
     return round(sum(vals) / len(vals), 1) if vals else 0.0
 
-def _finite_num(value, default=0.0):
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return default
-    return num if math.isfinite(num) else default
-
 def _hmap_col_height(groups):
     h = HMAP_TOP_BAR + HMAP_MARGIN
     for g in groups:
-        h += (1 + len(g["symbols"])) * HMAP_CELL_H
+        h += (1 + len(g["syms"])) * HMAP_CELL_H
     return h + HMAP_MARGIN
 
 def fetch_heatmap_data() -> tuple:
@@ -292,6 +280,22 @@ def fetch_heatmap_data() -> tuple:
             result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
+
+    # Fallback tự động qua Cache/VNDirect khi SSI bị chặn (Cloudflare 403 trên VPS nước ngoài)
+    if not result:
+        print(f"  [{ts_log}] 🗺  Heatmap: SSI không khả dụng → Fallback lấy từ Cache/VNDirect...")
+        with cache_lock:
+            for sym in need:
+                df = history_cache.get(sym)
+                if df is not None and len(df) >= 2:
+                    ref_p = float(df.iloc[-2]['close'])
+                    close = float(df.iloc[-1]['close'])
+                    vol = float(df.iloc[-1]['volume'])
+                    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                    if not math.isfinite(pct):
+                        pct = 0.0
+                    total_value = round(close * vol * 1000, 0)
+                    result[sym] = {"price": close, "pct": pct, "total_value": total_value}
 
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
@@ -317,13 +321,24 @@ def fetch_extra_quotes(syms: list) -> dict:
             result[sym.upper().strip()] = {"price": close, "pct": pct}
     except Exception as e:
         print(f"  ❌ fetch_extra_quotes lỗi: {e}")
+
+    # Fallback qua cache nếu SSI bị chặn
+    if not result:
+        with cache_lock:
+            for sym in syms:
+                df = history_cache.get(sym)
+                if df is not None and len(df) >= 2:
+                    ref_p = float(df.iloc[-2]['close'])
+                    close = float(df.iloc[-1]['close'])
+                    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                    result[sym] = {"price": close, "pct": pct}
     return result
 
 
 def build_heatmap_image(data: dict, timestamp: str) -> str:
     f_title, f_hdr, f_sym, f_data, f_sector = _hmap_load_fonts()
 
-    max_rows   = max(sum(len(g["symbols"]) for g in c["groups"]) for c in HMAP_COLS)
+    max_rows   = max(sum(len(g["syms"]) for g in c["groups"]) for c in HMAP_COLS_CONFIG)
     ts_display = sorted(
         [s for s in TS_POOL_CONFIG if s in data],
         key=lambda s: data[s]["pct"], reverse=True
@@ -332,12 +347,12 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
     def srt(syms):
         return sorted(syms, key=lambda s: data.get(s, {}).get("pct", 0), reverse=True)
 
-    col0     = {"col": 0, "groups": [{"name": "TRADING STOCKS", "symbols": ts_display}]}
-    all_cols = [col0] + HMAP_COLS
+    col0     = {"col": 0, "groups": [{"name": "TRADING STOCKS", "syms": ts_display}]}
+    all_cols = [col0] + [{"col": idx + 1, **cd} for idx, cd in enumerate(HMAP_COLS_CONFIG)]
 
     all_sorted = []
     for cd in all_cols:
-        all_sorted.append([{"name": g["name"], "symbols": srt(g["symbols"])} for g in cd["groups"]])
+        all_sorted.append([{"name": g["name"], "syms": srt(g["syms"])} for g in cd["groups"]])
 
     IMG_W = len(all_cols) * HMAP_COL_W + HMAP_MARGIN * 2
     IMG_H = max(_hmap_col_height(gs) for gs in all_sorted)
@@ -357,10 +372,10 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
         cx = cd["col"] * HMAP_COL_W + HMAP_MARGIN
         y  = HMAP_TOP_BAR + HMAP_MARGIN
         for g in all_sorted[idx]:
-            avg = _hmap_avg_pct(g["symbols"], data)
+            avg = _hmap_avg_pct(g["syms"], data)
             _hmap_draw_group_header(draw, cx, y, g["name"], avg, f_hdr, f_sector)
             y += HMAP_CELL_H
-            for sym in g["symbols"]:
+            for sym in g["syms"]:
                 info = data.get(sym, {})
                 _hmap_draw_stock_cell(draw, cx, y, sym,
                                       info.get("price", 0.0), info.get("pct", 0.0),
@@ -423,7 +438,8 @@ def build_monthly_df(df_daily):
     return compute_indicators(df_m)
 
 def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=None):
-    return
+    if not ENABLE_TELEGRAM:
+        return
     if image_path and not image_paths:
         image_paths = [image_path]
 
@@ -483,16 +499,16 @@ vn30_symbols = [
 ]
 heatmap_symbols = {
     s
-    for col in HMAP_COLS
+    for col in HMAP_COLS_CONFIG
     for group in col["groups"]
-    for s in group["symbols"]
+    for s in group["syms"]
 }
 cache_symbol_set = set(vn30_symbols) | set(TS_POOL_CONFIG) | heatmap_symbols
 _HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
 symbols_to_scan = list(dict.fromkeys(vn30_symbols))
 symbols_to_rs = list(dict.fromkeys(cache_symbol_set))
 symbols_to_cache = list(dict.fromkeys(symbols_to_rs + ["VNINDEX", "VN30"]))
-print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã: {', '.join(symbols_to_scan)}")
+print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã")
 print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã (gồm cả VNINDEX, VN30)")
 
 # =============================================================================
@@ -2060,22 +2076,31 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (SSI Batch + VNDirect)...")
 
     batch_bars = fetch_today_bars_batch(list(cache_symbol_set), current_date)
-    if not batch_bars:
-        print(f"  ⚠️  [{ts}] SSI Batch trả về rỗng → toàn bộ sẽ fallback sang VNDirect từng mã.")
+    missing_symbols = [s for s in cache_symbol_set if s not in batch_bars]
 
-    fallback_symbols = []
+    if missing_symbols:
+        if len(missing_symbols) == len(cache_symbol_set):
+            print(f"  ⚠️  [{ts}] SSI Batch không khả dụng → Toàn bộ {len(missing_symbols)} mã tải song song qua VNDirect (8 luồng)...")
+        else:
+            print(f"  [{ts}] SSI Batch thiếu {len(missing_symbols)} mã → Tải bổ sung song song qua VNDirect (8 luồng)...")
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
+            for fut in futures:
+                s = futures[fut]
+                try:
+                    bar = fut.result()
+                    if bar is not None:
+                        batch_bars[s] = bar
+                except Exception:
+                    pass
 
     for symbol in cache_symbol_set:
         try:
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is None or len(df_hist) < 60: continue
 
-            if batch_bars.get(symbol):
-                today_bar = batch_bars[symbol]
-            else:
-                today_bar = fetch_today_bar(symbol, current_date)
-                if today_bar is not None:
-                    fallback_symbols.append(symbol)
+            today_bar = batch_bars.get(symbol)
             if today_bar is None: continue
 
             with cache_lock:
@@ -2175,10 +2200,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     if breakvol_today is not None:
         breakvol_today.clear()
         breakvol_today.update(current_breakvol)
-
-    if fallback_symbols:
-        ts_end = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  ⚠️  [{ts_end}] Fallback VNDirect ({len(fallback_symbols)} mã): {', '.join(fallback_symbols)}")
 
     return new_signals
 
@@ -2480,7 +2501,8 @@ def _price_alert_triggered(rule: dict, prev_row, cur_row):
 
 
 def send_price_alert_chart_to_telegram(symbol: str, chat_id: str, alert_message: str):
-    return
+    if not ENABLE_TELEGRAM:
+        return
     image_paths = []
     symbol = symbol.upper().strip()
     try:
@@ -2883,7 +2905,9 @@ _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stal
 
 _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
-# listener_thread.start()
+if ENABLE_TELEGRAM:
+    listener_thread.start()
+    print("🎧 Telegram Listener thread đã khởi chạy.")
 
 # ─── (Đã BỎ ý tưởng đảo thứ tự start_dashboard/build_history_cache) ────────
 # Ban đầu định đảo build_history_cache() lên trước start_dashboard() để tránh
