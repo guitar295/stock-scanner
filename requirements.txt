@@ -1,3 +1,4 @@
+vnstock
 pandas
 requests
 mplfinance
