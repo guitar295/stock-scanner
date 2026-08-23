@@ -252,13 +252,6 @@ def _hmap_avg_pct(syms, data):
     vals = [data[s]["pct"] for s in syms if s in data]
     return round(sum(vals) / len(vals), 1) if vals else 0.0
 
-def _finite_num(value, default=0.0):
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return default
-    return num if math.isfinite(num) else default
-
 def _hmap_col_height(groups):
     h = HMAP_TOP_BAR + HMAP_MARGIN
     for g in groups:
@@ -2205,10 +2198,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     if breakvol_today is not None:
         breakvol_today.clear()
         breakvol_today.update(current_breakvol)
-
-    if fallback_symbols:
-        ts_end = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  ⚠️  [{ts_end}] Fallback VNDirect ({len(fallback_symbols)} mã): {', '.join(fallback_symbols)}")
 
     return new_signals
 
