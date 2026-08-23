@@ -262,7 +262,6 @@ def _hmap_col_height(groups):
 def fetch_heatmap_data() -> tuple:
     need = _HEATMAP_NEED_SYMBOLS
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã (SSI)...")
     result = {}
     try:
         items = _fetch_ssi_priceboard_batch(need)
@@ -279,11 +278,12 @@ def fetch_heatmap_data() -> tuple:
                 pct = 0.0
             result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
     except Exception as e:
-        print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
+        print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
 
-    # Fallback tự động qua Cache/VNDirect khi SSI bị chặn (Cloudflare 403 trên VPS nước ngoài)
-    if not result:
-        print(f"  [{ts_log}] 🗺  Heatmap: SSI không khả dụng → Fallback lấy từ Cache/VNDirect...")
+    if result:
+        print(f"  [{ts_log}] 🗺  Heatmap: tải thành công {len(result)}/{len(need)} mã từ [SSI Priceboard]")
+    else:
+        # Fallback tự động qua Cache/VNDirect khi SSI bị chặn (Cloudflare 403 trên VPS nước ngoài)
         with cache_lock:
             for sym in need:
                 df = history_cache.get(sym)
@@ -296,6 +296,7 @@ def fetch_heatmap_data() -> tuple:
                         pct = 0.0
                     total_value = round(close * vol * 1000, 0)
                     result[sym] = {"price": close, "pct": pct, "total_value": total_value}
+        print(f"  [{ts_log}] 🗺  Heatmap: SSI không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache VNDirect]")
 
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
