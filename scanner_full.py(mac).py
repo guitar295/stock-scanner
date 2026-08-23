@@ -287,6 +287,22 @@ def fetch_heatmap_data() -> tuple:
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
 
+    # Fallback tự động qua Cache/VNDirect khi SSI bị chặn (Cloudflare 403 trên VPS nước ngoài)
+    if not result:
+        print(f"  [{ts_log}] 🗺  Heatmap: SSI không khả dụng → Fallback lấy từ Cache/VNDirect...")
+        with cache_lock:
+            for sym in need:
+                df = history_cache.get(sym)
+                if df is not None and len(df) >= 2:
+                    ref_p = float(df.iloc[-2]['close'])
+                    close = float(df.iloc[-1]['close'])
+                    vol = float(df.iloc[-1]['volume'])
+                    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                    if not math.isfinite(pct):
+                        pct = 0.0
+                    total_value = round(close * vol * 1000, 0)
+                    result[sym] = {"price": close, "pct": pct, "total_value": total_value}
+
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
 
@@ -311,6 +327,17 @@ def fetch_extra_quotes(syms: list) -> dict:
             result[sym.upper().strip()] = {"price": close, "pct": pct}
     except Exception as e:
         print(f"  ❌ fetch_extra_quotes lỗi: {e}")
+
+    # Fallback qua cache nếu SSI bị chặn
+    if not result:
+        with cache_lock:
+            for sym in syms:
+                df = history_cache.get(sym)
+                if df is not None and len(df) >= 2:
+                    ref_p = float(df.iloc[-2]['close'])
+                    close = float(df.iloc[-1]['close'])
+                    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                    result[sym] = {"price": close, "pct": pct}
     return result
 
 
@@ -2054,22 +2081,31 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (SSI Batch + VNDirect)...")
 
     batch_bars = fetch_today_bars_batch(list(cache_symbol_set), current_date)
-    if not batch_bars:
-        print(f"  ⚠️  [{ts}] SSI Batch trả về rỗng → toàn bộ sẽ fallback sang VNDirect từng mã.")
+    missing_symbols = [s for s in cache_symbol_set if s not in batch_bars]
 
-    fallback_symbols = []
+    if missing_symbols:
+        if len(missing_symbols) == len(cache_symbol_set):
+            print(f"  ⚠️  [{ts}] SSI Batch không khả dụng → Toàn bộ {len(missing_symbols)} mã tải song song qua VNDirect (8 luồng)...")
+        else:
+            print(f"  [{ts}] SSI Batch thiếu {len(missing_symbols)} mã → Tải bổ sung song song qua VNDirect (8 luồng)...")
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
+            for fut in futures:
+                s = futures[fut]
+                try:
+                    bar = fut.result()
+                    if bar is not None:
+                        batch_bars[s] = bar
+                except Exception:
+                    pass
 
     for symbol in cache_symbol_set:
         try:
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is None or len(df_hist) < 60: continue
 
-            if batch_bars.get(symbol):
-                today_bar = batch_bars[symbol]
-            else:
-                today_bar = fetch_today_bar(symbol, current_date)
-                if today_bar is not None:
-                    fallback_symbols.append(symbol)
+            today_bar = batch_bars.get(symbol)
             if today_bar is None: continue
 
             with cache_lock:
