@@ -14,6 +14,7 @@ Tích hợp: SSI Batch + VNDirect + Telegram + Chart mplfinance + Dashboard
 # =============================================================================
 # BƯỚC 1: IMPORT
 # =============================================================================
+from __future__ import annotations
 import pandas as pd
 import numpy as np
 import requests
@@ -37,8 +38,9 @@ import math
 from PIL import Image, ImageDraw, ImageFont
 from dashboard_server import (
     start_dashboard,
-    push_signal_to_dashboard,
-    push_vpa_matrix_to_dashboard,
+    get_active_price_alert_rules,
+    record_price_alert_event,
+    warm_market_health_cache,
     invalidate_rs_cache,
     warm_rs_cache,
     TS_POOL_CONFIG,
@@ -113,16 +115,15 @@ INDEX_SYMBOLS = set(INDEX_SYMBOL_MAP.keys())
 # =============================================================================
 # BƯỚC 2C: CẤU HÌNH HEATMAP
 # =============================================================================
-TRADING_STOCKS_POOL = TS_POOL_CONFIG
-
-HEATMAP_COLUMNS = [
+# HMAP_COLS: bản cục bộ của HMAP_COLS_CONFIG (đổi key syms→symbols cho hàm vẽ PNG)
+HMAP_COLS = [
     {"col": idx + 1, "groups": [{"name": g["name"], "symbols": g["syms"]} for g in col["groups"]]}
     for idx, col in enumerate(HMAP_COLS_CONFIG)
 ]
 
 _HEATMAP_NEED_SYMBOLS = list(
-    {s for col in HEATMAP_COLUMNS for g in col["groups"] for s in g["symbols"]}
-    | set(TRADING_STOCKS_POOL)
+    {s for col in HMAP_COLS for g in col["groups"] for s in g["symbols"]}
+    | set(TS_POOL_CONFIG)
 )
 
 HMAP_POS_COLORS = [
@@ -322,9 +323,9 @@ def fetch_extra_quotes(syms: list) -> dict:
 def build_heatmap_image(data: dict, timestamp: str) -> str:
     f_title, f_hdr, f_sym, f_data, f_sector = _hmap_load_fonts()
 
-    max_rows   = max(sum(len(g["symbols"]) for g in c["groups"]) for c in HEATMAP_COLUMNS)
+    max_rows   = max(sum(len(g["symbols"]) for g in c["groups"]) for c in HMAP_COLS)
     ts_display = sorted(
-        [s for s in TRADING_STOCKS_POOL if s in data],
+        [s for s in TS_POOL_CONFIG if s in data],
         key=lambda s: data[s]["pct"], reverse=True
     )[:max_rows]
 
@@ -332,7 +333,7 @@ def build_heatmap_image(data: dict, timestamp: str) -> str:
         return sorted(syms, key=lambda s: data.get(s, {}).get("pct", 0), reverse=True)
 
     col0     = {"col": 0, "groups": [{"name": "TRADING STOCKS", "symbols": ts_display}]}
-    all_cols = [col0] + HEATMAP_COLUMNS
+    all_cols = [col0] + HMAP_COLS
 
     all_sorted = []
     for cd in all_cols:
@@ -482,7 +483,7 @@ vn30_symbols = [
 ]
 heatmap_symbols = {
     s
-    for col in HEATMAP_COLS_CONFIG
+    for col in HMAP_COLS
     for group in col["groups"]
     for s in group["symbols"]
 }
