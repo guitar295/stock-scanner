@@ -496,7 +496,7 @@ vn30_symbols = [
     'KDH','KSB','LPB','MBB','MBS','MSB','MSN','MWG','NKG','NLG','NTL','NVL','PC1','PET','PLC',
     'PLX','PNJ','POW','PVD','PVS','PVT','REE','SBT','SCR','SHB','SHS','SSI','STB','SZC','TCB',
     'TIG','TNG','TPB','VCB','VCI','VGT','VHC','VHM','VIB','VIC','VJC','VNM','VPB','VRE',
-    'MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF'
+    'MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF','ORS'
 ]
 heatmap_symbols = {
     s
