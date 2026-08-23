@@ -1,8 +1,8 @@
 """
 =============================================================================
-SCANNER TÍN HIỆU MUA CỔ PHIẾU — PHIÊN BẢN TỐI ƯU
+SCANNER TÍN HIỆU MUA CỔ PHIẾU — PHIÊN BẢN TỐI ƯU (CACHE + QUOTE length=2)
 Pocket Pivot / Breakout / Pre-Break / BottomFish / BottomBreakP / MA_Cross
-Tích hợp: SSI Batch + VNDirect + Telegram + Chart mplfinance + Dashboard
+Tích hợp: vnstock + Telegram + Chart mplfinance + Chống spam + Nghỉ ngoài giờ
 + HEATMAP BOT (lệnh /h hoặc /heatmap)
 + CHỈ SỐ: VNINDEX, VN30 (lệnh /VNINDEX, /VN30, /c VNINDEX ...)
 + CHART 15 PHÚT: gửi kèm tín hiệu, on-demand, và khi nhấn nút /s
@@ -12,9 +12,14 @@ Tích hợp: SSI Batch + VNDirect + Telegram + Chart mplfinance + Dashboard
 """
 
 # =============================================================================
+# BƯỚC 0: CÀI ĐẶT THƯ VIỆN (chạy 1 lần nếu chưa có)
+# =============================================================================
+#!pip install -U vnstock pandas requests mplfinance pytz pillow flask
+
+# =============================================================================
 # BƯỚC 1: IMPORT
 # =============================================================================
-from __future__ import annotations
+from vnstock import register_user, Listing, Quote, Trading
 import pandas as pd
 import numpy as np
 import requests
@@ -24,7 +29,7 @@ import sys
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 import re
@@ -52,15 +57,19 @@ logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 # =============================================================================
 # BƯỚC 2: CẤU HÌNH
 # =============================================================================
+VNSTOCK_API         = os.environ.get('VNSTOCK_API')
 TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 
+DATA_SOURCE        = 'KBS'
 SCAN_INTERVAL_SEC  = 120
 CACHE_CHECK_INTERVAL_SEC = 1800   # nhịp tự dò/sửa history_cache NGOÀI giờ giao dịch — độc lập với SCAN_INTERVAL_SEC
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
 sys.setswitchinterval(0.001)  # nhả GIL thường xuyên hơn (mặc định 5ms), giảm độ trễ chart trên dashboard khi scanner đang tính toán
+
+register_user(VNSTOCK_API)
 
 # =============================================================================
 # BƯỚC 2A: PHÂN QUYỀN VIP / FREE SLOT
@@ -266,49 +275,85 @@ def _hmap_col_height(groups):
     return h + HMAP_MARGIN
 
 def fetch_heatmap_data() -> tuple:
-    need = _HEATMAP_NEED_SYMBOLS
+    engine = Trading(source=DATA_SOURCE)
+    need   = _HEATMAP_NEED_SYMBOLS
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã (SSI)...")
-    result = {}
+    print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã...")
+    result    = {}
+    data_time = None
     try:
-        items = _fetch_ssi_priceboard_batch(need)
-        for it in items:
-            sym = it.get('stockSymbol')
-            if not sym:
-                continue
-            matched = float(it.get('matchedPrice') or 0) / 1000.0
-            ref_p = float(it.get('refPrice') or 0) / 1000.0
-            total_value = float(it.get('nmTotalTradedValue') or 0)
-            close = matched if matched > 0 else ref_p
-            pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-            if not math.isfinite(pct):
-                pct = 0.0
-            result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
+        df = engine.price_board(need)
+        if df is not None and not df.empty:
+            time_col = next(
+                (c for c in df.columns
+                 if c.lower() in ('time', 'trading_date', 'date', 'timestamp', 'last_time')),
+                None
+            )
+            if time_col:
+                raw_times = df[time_col].dropna()
+                if not raw_times.empty:
+                    val = raw_times.iloc[-1]
+                    try:
+                        val_num = float(val)
+                        if val_num > 1_000_000_000_000:
+                            data_time = datetime.fromtimestamp(val_num / 1000, tz=TZ_VN)
+                        elif val_num > 1_000_000_000:
+                            data_time = datetime.fromtimestamp(val_num, tz=TZ_VN)
+                        else:
+                            data_time = None
+                    except (TypeError, ValueError, OSError):
+                        data_time = None
+
+            for _, row in df.iterrows():
+                sym   = str(row.get("symbol", "")).strip()
+                if not sym: continue
+                close = _finite_num(row.get("close_price", 0)) / 1000
+                ref_p = _finite_num(row.get("reference_price", 0)) / 1000
+                total_value = _finite_num(row.get("total_value", 0))
+                if close <= 0 and ref_p > 0:
+                    close = ref_p
+                pct   = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                if not math.isfinite(pct):
+                    pct = 0.0
+                result[sym] = {"price": close, "pct": pct, "total_value": total_value}
+
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
 
-    ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
+    if data_time is None:
+        data_time = datetime.now(TZ_VN)
+
+    ts_str = data_time.strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
 
 
 def fetch_extra_quotes(syms: list) -> dict:
+    """Bù giá on-demand cho MÃ LẺ không nằm trong _HEATMAP_NEED_SYMBOLS (ví dụ mã người dùng
+    tự thêm vào FAVORITE trên sidebar CHART, ngoài mọi danh sách quét chung). Dùng lại đúng
+    engine + công thức tính pct với fetch_heatmap_data() để 2 nguồn giá luôn khớp nhau, nhưng
+    CHỈ tải đúng danh sách mã được truyền vào (không đụng _HEATMAP_NEED_SYMBOLS/HEATMAP_TTL,
+    không ảnh hưởng cache heatmap chính) — được gọi từ dashboard_server.api_quote_extra()
+    qua start_dashboard(extra_quote_fn=fetch_extra_quotes)."""
     syms = [s for s in dict.fromkeys(s.strip().upper() for s in syms) if s]
     if not syms:
         return {}
+    engine = Trading(source=DATA_SOURCE)
     result = {}
     try:
-        items = _fetch_ssi_priceboard_batch(syms)
-        for it in items:
-            sym = it.get('stockSymbol')
-            if not sym:
-                continue
-            matched = float(it.get('matchedPrice') or 0) / 1000.0
-            ref_p = float(it.get('refPrice') or 0) / 1000.0
-            close = matched if matched > 0 else ref_p
-            pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-            if not math.isfinite(pct):
-                pct = 0.0
-            result[sym.upper().strip()] = {"price": close, "pct": pct}
+        df = engine.price_board(syms)
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                sym = str(row.get("symbol", "")).strip()
+                if not sym:
+                    continue
+                close = _finite_num(row.get("close_price", 0)) / 1000
+                ref_p = _finite_num(row.get("reference_price", 0)) / 1000
+                if close <= 0 and ref_p > 0:
+                    close = ref_p
+                pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                if not math.isfinite(pct):
+                    pct = 0.0
+                result[sym] = {"price": close, "pct": pct}
     except Exception as e:
         print(f"  ❌ fetch_extra_quotes lỗi: {e}")
     return result
@@ -465,6 +510,22 @@ def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=Non
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
+listing    = Listing(source=DATA_SOURCE)
+df_listing = None
+for _attempt in range(3):
+    try:
+        df_listing = listing.all_symbols()
+        if df_listing is not None and not df_listing.empty:
+            break
+    except Exception as e:
+        print(f"  ⚠️  Lỗi lấy danh sách mã (lần {_attempt+1}/3): {e}")
+    df_listing = None
+    time.sleep(5)
+if df_listing is None:
+    raise RuntimeError("Không lấy được danh sách mã niêm yết sau 3 lần thử — kiểm tra kết nối/API rồi chạy lại.")
+col_name    = 'symbol' if 'symbol' in df_listing.columns else 'ticker'
+all_symbols = df_listing[col_name].dropna().unique().tolist()
+
 vn30_symbols = [
     'AAA','ACB','ANV','BFC','BID','BSR','BVH','BWE','CII','CRE','CTD','CTG','CTI','CTR','CTS',
     'DBC','DCM','DGW','DIG','DPG','DPM','DXG','FCN','FPT','FRT','FTS','GAS','GEG','GEX','GMD',
@@ -482,8 +543,8 @@ heatmap_symbols = {
 }
 cache_symbol_set = set(vn30_symbols) | set(TS_POOL_CONFIG) | heatmap_symbols
 _HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
-symbols_to_scan = list(dict.fromkeys(vn30_symbols))
-symbols_to_rs = list(dict.fromkeys(cache_symbol_set))
+symbols_to_scan = [s for s in all_symbols if s in vn30_symbols]
+symbols_to_rs = [s for s in all_symbols if s in cache_symbol_set]
 symbols_to_cache = list(dict.fromkeys(symbols_to_rs + ["VNINDEX", "VN30"]))
 print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã")
 print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã (gồm cả VNINDEX, VN30)")
@@ -1095,7 +1156,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
     }
 
 # =============================================================================
-# BƯỚC 5B: NẠP DỮ LIỆU & CACHE LỊCH SỬ (VNDIRECT ĐA LUỒNG & SSI BATCH)
+# BƯỚC 5B: CACHE LỊCH SỬ
 # =============================================================================
 history_cache: dict = {}
 cache_lock          = threading.Lock()
@@ -1109,18 +1170,11 @@ _vndirect_session.headers.update({
     "Referer": "https://dstock.vndirect.com.vn/",
 })
 
-_ssi_session = requests.Session()
-_ssi_session.headers.update({
-    "User-Agent": "Mozilla/5.0",
-    "Referer": "https://iboard.ssi.com.vn/",
-    "Accept": "application/json, */*"
-})
-
 def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
     symbol = symbol.upper().strip()
     to_ts = int(time.time())
     if resolution == "15":
-        from_ts = to_ts - int(limit * 3600 * 24 / 20)
+        from_ts = to_ts - int(limit * 3600 * 24 / 20)  # ~20 nến 15m/ngày
     else:
         from_ts = to_ts - int(limit * 1.6 + 30) * 86400
     url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution={resolution}&symbol={symbol}&from={from_ts}&to={to_ts}"
@@ -1143,54 +1197,6 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
     df.set_index('time', inplace=True)
     return df
 
-def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
-    if not symbols:
-        return []
-    url = "https://iboard-query.ssi.com.vn/stock/multiple"
-    results = []
-    for i in range(0, len(symbols), 100):
-        chunk = [s.upper().strip() for s in symbols[i:i + 100]]
-        try:
-            res = _ssi_session.post(url, json={"stocks": chunk},
-                                    headers={"Content-Type": "application/json"}, timeout=5)
-            if res.status_code == 200:
-                data = res.json().get("data", [])
-                if isinstance(data, list):
-                    results.extend(data)
-        except Exception:
-            pass
-    return results
-
-def ssi_item_to_today_bar(item: dict, current_date: date) -> pd.Series | None:
-    try:
-        open_ = float(item.get('openPrice') or 0) / 1000.0
-        high = float(item.get('highest') or 0) / 1000.0
-        low = float(item.get('lowest') or 0) / 1000.0
-        close = float(item.get('matchedPrice') or 0) / 1000.0
-        volume = float(item.get('nmTotalTradedQty') or item.get('stockVol') or 0)
-        if volume < 100 or min(open_, high, low, close) <= 0:
-            return None
-        high = max(high, open_, close)
-        low = min(low, open_, close)
-        return pd.Series(
-            {'open': open_, 'high': high, 'low': low, 'close': close, 'volume': volume},
-            name=pd.Timestamp(current_date)
-        )
-    except Exception:
-        return None
-
-def fetch_today_bars_batch(symbols: list[str], current_date: date) -> dict[str, pd.Series]:
-    items = _fetch_ssi_priceboard_batch(symbols)
-    bars = {}
-    for it in items:
-        sym = it.get('stockSymbol')
-        if not sym:
-            continue
-        bar = ssi_item_to_today_bar(it, current_date)
-        if bar is not None:
-            bars[sym.upper().strip()] = bar
-    return bars
-
 def load_history_for_symbol(symbol: str):
     for attempt in range(3):
         try:
@@ -1199,7 +1205,7 @@ def load_history_for_symbol(symbol: str):
             df['vpa_flag'] = calc_vpa_flag(df)
             return df
         except Exception as e:
-            if attempt < 2: time.sleep(0.5)
+            if attempt < 2: time.sleep(1)
             else: print(f"    ❌ Load history {symbol}: {e}")
     return None
 
@@ -1391,13 +1397,13 @@ def ensure_symbol_live_in_cache(symbol: str) -> dict:
     now = datetime.now(TZ_VN)
     current_date = now.date()
     now_time = int(now.strftime("%H%M%S"))
-    result = {"action": "skip"}
+    result = {"vnstock_action": "skip"}
 
     with cache_lock:
         df_hist = history_cache.get(symbol)
 
     if df_hist is None or len(df_hist) < 60:
-        result["action"] = "fetch_full_history"
+        result["vnstock_action"] = "fetch_full_history"
         df_hist = load_history_for_symbol(symbol)
         if df_hist is None or len(df_hist) < 60:
             return result
@@ -1406,7 +1412,7 @@ def ensure_symbol_live_in_cache(symbol: str) -> dict:
         return result
 
     if not _cache_is_fresh(df_hist, current_date, now_time):
-        result["action"] = "fetch_full_history"
+        result["vnstock_action"] = "fetch_full_history"
         fresh = load_history_for_symbol(symbol)
         if fresh is not None and len(fresh) >= 60:
             with cache_lock:
@@ -1421,7 +1427,7 @@ def ensure_symbol_live_in_cache(symbol: str) -> dict:
     if time.time() - last_touch < BAR_UPDATE_TTL_SEC:
         return result
 
-    result["action"] = _append_chart_action(result["action"], "fetch_today_bar")
+    result["vnstock_action"] = _append_chart_action(result["vnstock_action"], "fetch_today_bar")
     today_bar = fetch_today_bar(symbol, current_date)
     last_bar_update[symbol] = time.time()
     if today_bar is None:
@@ -2016,14 +2022,14 @@ def _build_15m_chart(symbol: str, signal_type: str, via: str = "telegram_15m") -
         return None
     today_15m    = df_15m.iloc[-1]
     date_str_15m = _date_str_from_df(df_15m)
-    print(f"  [Chart] {symbol} | cache_state=intraday_15m | action=fetch_intraday_15m | source=vndirect_15m | last_bar={df_15m.index[-1]} | via={via}")
+    print(f"  [Chart] {symbol} | cache_state=intraday_15m | action=fetch_intraday_15m | source=vnstock_15m | last_bar={df_15m.index[-1]} | via={via}")
     return draw_chart(
         df_15m.tail(200).copy(), symbol, signal_type, today_15m,
         timeframe='15m', add_arrow=False, date_str=date_str_15m
     )
 
 # =============================================================================
-# BƯỚC 8: HÀM QUÉT 1 CHU KỲ (SSI BATCH + VNDIRECT FALLBACK)
+# BƯỚC 8: HÀM QUÉT 1 CHU KỲ
 # =============================================================================
 SIGNAL_RANK  = {
     'PRE-BREAK':    1,
@@ -2050,25 +2056,27 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (SSI Batch + VNDirect)...")
+    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (VNDirect đa luồng)...")
 
-    batch_bars = fetch_today_bars_batch(list(cache_symbol_set), current_date)
-    if not batch_bars:
-        print(f"  ⚠️  [{ts}] SSI Batch trả về rỗng → toàn bộ sẽ fallback sang VNDirect từng mã.")
-
-    fallback_symbols = []
+    # Tải song song nến hôm nay (VNDirect 8 luồng)
+    today_bars_map = {}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(fetch_today_bar, s, current_date): s for s in cache_symbol_set}
+        for fut in futures:
+            s = futures[fut]
+            try:
+                bar = fut.result()
+                if bar is not None:
+                    today_bars_map[s] = bar
+            except Exception:
+                pass
 
     for symbol in cache_symbol_set:
         try:
             with cache_lock: df_hist = history_cache.get(symbol)
             if df_hist is None or len(df_hist) < 60: continue
 
-            if batch_bars.get(symbol):
-                today_bar = batch_bars[symbol]
-            else:
-                today_bar = fetch_today_bar(symbol, current_date)
-                if today_bar is not None:
-                    fallback_symbols.append(symbol)
+            today_bar = today_bars_map.get(symbol)
             if today_bar is None: continue
 
             with cache_lock:
@@ -2077,18 +2085,21 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 df_merged = latest.copy()
             last_bar_update[symbol] = time.time()
 
+            # Chỉ phát tín hiệu cho các mã trong danh sách symbols (symbols_to_scan)
             if symbol not in symbols:
                 continue
 
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
                 if momentum_signals:
+                    # mom_pct chỉ dùng cột 'close' gốc — không cần compute_indicators
                     mom_pct = (df_merged['close'].iloc[-1] - df_merged['close'].iloc[-2]) / df_merged['close'].iloc[-2] * 100
                     current_momentum[symbol] = {"signals": momentum_signals, "pct": round(mom_pct, 1)}
             except Exception as e:
                 print(f"    ⚠️  Momentum {symbol}: {e}")
 
             try:
+                # ATTENT/BREAKVOL cần MA/VMA/RSI — tính compute_indicators 1 lần dùng chung cả 2
                 df_ind = compute_indicators(df_merged)
                 if len(df_ind) >= 60:
                     pct_today = (df_ind['close'].iloc[-1] - df_ind['close'].iloc[-2]) / df_ind['close'].iloc[-2] * 100
@@ -2168,11 +2179,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     if breakvol_today is not None:
         breakvol_today.clear()
         breakvol_today.update(current_breakvol)
-
-    if fallback_symbols:
-        ts_end = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  ⚠️  [{ts_end}] Fallback VNDirect ({len(fallback_symbols)} mã): {', '.join(fallback_symbols)}")
-
     return new_signals
 
 # =============================================================================
@@ -2220,7 +2226,7 @@ def _get_chart_context(symbol: str):
     is_index = symbol in INDEX_SYMBOLS
     trace = {
         "cache_state": "index" if is_index else "unknown",
-        "action": "fetch_index_history" if is_index else "skip",
+        "vnstock_action": "fetch_index_history" if is_index else "skip",
         "source": "index_api" if is_index else "unknown",
     }
 
@@ -2229,17 +2235,24 @@ def _get_chart_context(symbol: str):
     else:
         pre_status = chart_symbol_status(symbol)
         trace["cache_state"] = pre_status.get("reason", "unknown")
+        # Dùng chung cơ chế "vá nến hôm nay nếu quá BAR_UPDATE_TTL_SEC" với thẻ CHART
+        # (ensure_symbol_live_in_cache), thay vì chỉ kiểm tra tươi theo NGÀY như trước.
+        # Nhờ vậy mã NGOÀI danh sách quét (không được run_scan_cycle() chạm tới) khi
+        # xem qua scanner chart / Telegram cũng được vá giá/khối lượng mới nhất trong
+        # phiên, không còn bị coi là "fresh" chỉ vì nến cuối cùng ngày với hôm nay.
         ensure_result = ensure_symbol_live_in_cache(symbol)
-        trace["action"] = ensure_result.get("action", "skip")
+        trace["vnstock_action"] = ensure_result.get("vnstock_action", "skip")
         with cache_lock:
             cached = history_cache.get(symbol)
             df_raw = cached.copy() if cached is not None and len(cached) >= 10 else None
         if df_raw is not None:
             trace["source"] = "history_cache"
         if df_raw is None:
-            trace["action"] = _append_chart_action(trace["action"], "fetch_fresh_fallback")
+            trace["vnstock_action"] = _append_chart_action(trace["vnstock_action"], "fetch_fresh_fallback")
             trace["source"] = "fresh_fetch"
             df_raw = fetch_fresh_for_chart(symbol, current_date)
+            # Ghi ngược vào history_cache dùng chung để các nơi khác (thẻ CHART, quét tín
+            # hiệu) không phải tự fetch lại từ đầu ở lần gọi kế tiếp.
             if df_raw is not None and len(df_raw) >= 60:
                 with cache_lock:
                     history_cache[symbol] = df_raw.copy()
@@ -2255,7 +2268,7 @@ def _get_chart_context(symbol: str):
         "is_index": is_index,
         "source": trace["source"],
         "cache_state": trace["cache_state"],
-        "action": trace["action"],
+        "vnstock_action": trace["vnstock_action"],
         "df_raw": df_raw,
         "df_calc": df_calc,
         "today": today,
@@ -2266,7 +2279,7 @@ def _get_chart_context(symbol: str):
 def _format_chart_trace(ctx):
     return (
         f"cache_state={ctx.get('cache_state', 'unknown')} | "
-        f"action={ctx.get('action', 'unknown')} | "
+        f"action={ctx.get('vnstock_action', 'unknown')} | "
         f"source={ctx.get('source', 'unknown')}"
     )
 
@@ -2416,7 +2429,7 @@ def _send_chart_to_chat(msg, image_paths, chat_id):
             if os.path.exists(path): os.remove(path)
 
 # =============================================================================
-# BƯỚC 8D: CẢNH BÁO DAILY CHO DASHBOARD / TELEGRAM
+# BƯỚC 8D0: CẢNH BÁO DAILY CHO DASHBOARD / TELEGRAM
 # =============================================================================
 def _price_alert_series_value(row, rule: dict, side: str):
     typ = rule.get(f"{side}_type")
@@ -2542,7 +2555,7 @@ def check_price_alerts():
     return triggered
 
 # =============================================================================
-# BƯỚC 8E: HÀM DASHBOARD VOL FORECAST
+# BƯỚC 8D: HÀM DASHBOARD VOL FORECAST
 # =============================================================================
 def dashboard_vol_forecast_fn(symbol: str):
     """
@@ -2595,7 +2608,7 @@ def dashboard_vol_forecast_fn(symbol: str):
         return {"symbol": symbol, "error": "exception", "detail": str(e)}
 
 # =============================================================================
-# BƯỚC 8F: TELEGRAM LISTENER
+# BƯỚC 8E: TELEGRAM LISTENER
 # =============================================================================
 def telegram_listener(stop_event: threading.Event):
     url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
@@ -2781,7 +2794,7 @@ def telegram_listener(stop_event: threading.Event):
     print("🛑 Listener đã dừng.")
 
 # =============================================================================
-# BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
+# BƯỚC 8D: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
 # =============================================================================
 # Mục đích: alerted_today trước đây chỉ sống trong RAM → mỗi lần restart server
 # giữa ngày/phiên sẽ mất sạch, khiến các mã đã gửi tin nhắn rồi bị coi là "chưa
@@ -2876,7 +2889,6 @@ _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stal
 _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
 listener_thread.start()
-print('🎧 Telegram Listener thread đã khởi chạy.')
 
 # ─── (Đã BỎ ý tưởng đảo thứ tự start_dashboard/build_history_cache) ────────
 # Ban đầu định đảo build_history_cache() lên trước start_dashboard() để tránh
