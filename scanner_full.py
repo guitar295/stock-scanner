@@ -262,7 +262,6 @@ def _hmap_col_height(groups):
 def fetch_heatmap_data() -> tuple:
     need = _HEATMAP_NEED_SYMBOLS
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts_log}] 🗺  Heatmap: tải {len(need)} mã (SSI)...")
     result = {}
     try:
         items = _fetch_ssi_priceboard_batch(need)
@@ -279,11 +278,12 @@ def fetch_heatmap_data() -> tuple:
                 pct = 0.0
             result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
     except Exception as e:
-        print(f"  [{ts_log}] ❌ Heatmap API lỗi: {e}")
+        print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
 
-    # Fallback tự động qua Cache/VNDirect khi SSI bị chặn (Cloudflare 403 trên VPS nước ngoài)
-    if not result:
-        print(f"  [{ts_log}] 🗺  Heatmap: SSI không khả dụng → Fallback lấy từ Cache/VNDirect...")
+    if result:
+        print(f"  [{ts_log}] 🗺  Heatmap: tải thành công {len(result)}/{len(need)} mã từ [SSI Priceboard]")
+    else:
+        # Fallback tự động qua Cache/VNDirect khi SSI bị chặn (Cloudflare 403 trên VPS nước ngoài)
         with cache_lock:
             for sym in need:
                 df = history_cache.get(sym)
@@ -296,6 +296,7 @@ def fetch_heatmap_data() -> tuple:
                         pct = 0.0
                     total_value = round(close * vol * 1000, 0)
                     result[sym] = {"price": close, "pct": pct, "total_value": total_value}
+        print(f"  [{ts_log}] 🗺  Heatmap: SSI không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache VNDirect]")
 
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
@@ -2909,20 +2910,7 @@ if ENABLE_TELEGRAM:
     listener_thread.start()
     print("🎧 Telegram Listener thread đã khởi chạy.")
 
-# ─── (Đã BỎ ý tưởng đảo thứ tự start_dashboard/build_history_cache) ────────
-# Ban đầu định đảo build_history_cache() lên trước start_dashboard() để tránh
-# HEALTH tính trên cache rỗng lúc khởi động. Nhưng làm vậy khiến Flask KHÔNG
-# mở cổng cho tới khi cache load xong (1-3 phút) → HEATMAP/MARKET/CHART cũng
-# không truy cập được trong lúc đó, dù các panel này vốn có cơ chế fallback
-# "fetch tươi" khi cache chưa có (xem ensure_symbol_live_in_cache, fetch_today_bar)
-# và KHÔNG cần cache sẵn để hoạt động. Đánh đổi đó không đáng — nên GIỮ NGUYÊN
-# thứ tự gốc: mở dashboard trước để HEATMAP/CHART dùng được ngay (chậm hơn do
-# fetch tươi), còn HEALTH tự khắc phục nhờ 2 cơ chế bên dưới:
-#   (1) Fix A trong dashboard_server.py: kết quả lỗi "0 mã hợp lệ" không bị
-#       đóng dấu "cache mới" → không kẹt 30 phút, tự thử lại ở lần gọi sau.
-#   (2) warm_market_health_cache() được gọi CHỦ ĐỘNG ngay khi build_history_cache()
-#       xong (xem bên dưới) → HEALTH có dữ liệu đúng chỉ vài giây sau khi cache
-#       sẵn sàng, không cần đợi ai request hay đợi TTL.
+# Khởi động Dashboard trước để các panel phục vụ ngay, sau đó nạp cache lịch sử
 start_dashboard(
     alerted_today_ref = lambda: alerted_today,
     history_cache_ref = lambda: history_cache,
@@ -2993,21 +2981,11 @@ while True:
         if current_date > last_run_date:
             last_run_date = current_date
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reload cache lịch sử.")
-            # LƯU Ý: KHÔNG reset alerted_today/momentum_today ở đây. Sang ngày mới
-            # nhưng chưa vào giờ giao dịch thì vẫn chưa có dữ liệu phiên mới — danh
-            # sách tín hiệu của phiên gần nhất (signal_session_date) vẫn cần giữ
-            # nguyên để hiển thị. Việc reset chỉ diễn ra khi phiên giao dịch mới
-            # THỰC SỰ bắt đầu — xem đoạn kiểm tra signal_session_date bên dưới.
             build_history_cache(symbols_to_cache, current_date)
-            # Cache vừa reload cho ngày mới → warm lại HEALTH ngay, tránh 30 phút
-            # đầu ngày dashboard hiển thị HEALTH tính trên dữ liệu của phiên hôm trước.
             warm_market_health_cache()
 
         if not _is_trading_session_time(current_date, now_time):
-            # Tự dò + tự sửa cache lệch phiên — CHỈ chạy ngoài giờ giao dịch, với nhịp
-            # riêng CACHE_CHECK_INTERVAL_SEC (30 phút), hoàn toàn tách khỏi SCAN_INTERVAL_SEC
-            # (nhịp quét tín hiệu). Vòng lặp vẫn "thức" mỗi SCAN_INTERVAL_SEC để không lỡ
-            # thời điểm mở cửa, nhưng chỉ THỰC SỰ gọi kiểm tra cache mỗi 30 phút 1 lần.
+            # Kiểm tra cache định kỳ mỗi 30 phút ngoài giờ giao dịch
             if time.time() - _last_cache_check_ts >= CACHE_CHECK_INTERVAL_SEC:
                 _last_cache_check_ts = time.time()
                 check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
