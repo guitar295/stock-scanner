@@ -1032,7 +1032,8 @@ def api_signals():
         emoji = _signal_emoji.get(sig, "📌")
         rank  = _signal_rank.get(sig, 0)
         result.append(_attach_rs({"symbol": sym, "signal": sig, "emoji": emoji,
-                                  "rank": rank, "pct": pct}, rs_scores))
+                                  "rank": rank, "pct": pct,
+                                  "price": entry.get("price") if isinstance(entry, dict) else None}, rs_scores))
     result.sort(key=lambda x: x["rank"], reverse=True)
     momentum_result = []
     for sig in ("MACD_W", "MACD_M", "RTM"):
@@ -7982,11 +7983,28 @@ async function fetchSigs(){
       }).join('');
     }
     renderStrengthList(strength);
+    if(!_isChartPopoutWindow&&j.signals?.length){
+      j.signals.forEach(s=>{
+        const k=`${s.symbol}_${s.signal}_${j.session_date||''}`;
+        if(!_knownSignalsSet.has(k)){
+          if(_isSignalsInitialized){
+            const p=s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'', pr=s.price!=null?Number(s.price).toFixed(2):'';
+            const priceWithPct=pr?(p?`${pr} (${p})`:pr):(p?`(${p})`:'');
+            showToastNotify(s.symbol,`${s.emoji||'🎯'} ${s.symbol} - ${signalLabel(s.signal)}`,`${s.symbol} | ${signalLabel(s.signal)} | ${priceWithPct}`,'sig-'+s.symbol+'-'+s.signal);
+          }
+          _knownSignalsSet.add(k);
+        }
+      });
+      _isSignalsInitialized=true;
+    }
+
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>${rsBadge(s.rs)}<span class="s-badge-slot"><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></span></div>`).join('');
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
   }catch(e){console.error('fetchSigs:',e);}
 }
+let _isSignalsInitialized=false;
+const _knownSignalsSet=new Set();
 async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
@@ -8114,25 +8132,24 @@ async function pollAlertFeed(showToast=true){
     }
   }catch(e){console.error('pollAlertFeed:',e);}
 }
-function showAlertToast(ev){
+function showToastNotify(sym,title,body,tag){
   if(desktopNotifyEnabled()){
     try{
-      const n=new Notification(ev.symbol+' - Cảnh báo',{
-        body:ev.message||'',
-        tag:'price-alert-'+ev.id, // trùng id thì thay thế, không chồng nhiều notification
-      });
-      n.onclick=()=>{window.focus();_alertJumpSymbol(ev.symbol);n.close();};
+      const n=new Notification(title,{body,tag});
+      n.onclick=()=>{window.focus();_alertJumpSymbol(sym);n.close();};
       return;
     }catch(e){console.error('Notification error:',e);}
   }
-  // Dự phòng: trình duyệt không hỗ trợ/chưa cấp/đã từ chối quyền, hoặc người dùng đã tắt qua nút 🖥 -> vẫn hiện toast trên dashboard như trước để không mất cảnh báo.
   if(!DOM.alertToastWrap)return;
   const el=document.createElement('div');
   el.className='alert-toast';
-  el.innerHTML=`<div class="alert-toast-title">${_esc(ev.symbol)} - Cảnh báo</div><div class="alert-toast-sub">${_esc(ev.message)}</div>`;
-  el.addEventListener('click',()=>_alertJumpSymbol(ev.symbol));
+  el.innerHTML=`<div class="alert-toast-title">${_esc(title)}</div><div class="alert-toast-sub">${_esc(body)}</div>`;
+  el.addEventListener('click',()=>_alertJumpSymbol(sym));
   DOM.alertToastWrap.prepend(el);
   setTimeout(()=>{el.style.opacity='0';el.style.transform='translateY(-4px)';setTimeout(()=>el.remove(),260);},10000);
+}
+function showAlertToast(ev){
+  showToastNotify(ev.symbol,`${ev.symbol} - Cảnh báo`,ev.message||'',`price-alert-${ev.id}`);
 }
 function alertPayload(){
   const leftType=DOM.liteAlertLeftType.value,rightType=DOM.liteAlertRightType.value;
