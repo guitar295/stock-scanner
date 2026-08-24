@@ -3936,6 +3936,7 @@ let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
 let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
 let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
+let _liteUserVisibleSpan=null; // số nến đang hiển thị do NGƯỜI DÙNG zoom — giữ nguyên khi đổi mã, thay vì luôn về mặc định 250/80 nến
 // Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
 const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
 // Resize khung 3 chart theo clientWidth/Height — dùng chung cho resize listener và _liteRelayoutViewport().
@@ -3985,6 +3986,12 @@ function initLiteChart(){
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     redrawLiteDrawings();
     _liteSyncVisibleRangeFrom(_liteChart,range);
+    // Ghi nhớ độ zoom hiện tại (số nến đang hiển thị) — CHỈ khi không phải đang trong quá trình
+    // load chart/set data theo lập trình, để không ghi đè lại bằng giá trị mặc định lúc load mã mới.
+    if(range&&Number.isFinite(range.from)&&Number.isFinite(range.to)&&!_liteChartLoading&&!_liteLoadingMore){
+      const span=range.to-range.from;
+      if(span>0)_liteUserVisibleSpan=span;
+    }
     if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
@@ -4275,8 +4282,11 @@ function setLiteRightOffset(){
   const last=_liteData.length-1;
   const rightOffset=22; // Lề phải ~8% chiều rộng màn hình
   const to=last+rightOffset;
-  // Mobile portrait (~390px): 80 nến đủ rõ từng cây nến; landscape/desktop: 250 như cũ
-  const visibleCount=IS_MOBILE()&&window.innerHeight>window.innerWidth?80:250;
+  // Mặc định lúc mới vào dashboard: mobile portrait 80 nến, desktop/landscape 250 nến.
+  // Nếu người dùng đã tự zoom trước đó (_liteUserVisibleSpan có giá trị) thì ưu tiên dùng
+  // đúng số nến đang xem đó khi đổi sang mã khác, thay vì luôn quay về mặc định.
+  const defaultCount=IS_MOBILE()&&window.innerHeight>window.innerWidth?80:250;
+  const visibleCount=_liteUserVisibleSpan!=null?Math.max(5,Math.round(_liteUserVisibleSpan)):defaultCount;
   const from=Math.max(0,last-visibleCount+1);
   _liteApplyVisibleLogicalRange({from,to});
 }
