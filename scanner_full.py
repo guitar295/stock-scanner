@@ -2152,7 +2152,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
-            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 1)}
+            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 1), "price": round(float(today['close']), 2)}
             new_signals.append(symbol)
 
             link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
