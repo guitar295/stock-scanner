@@ -97,13 +97,10 @@ _get_history_cache = None
 _get_rs_universe_symbols = None
 _cache_lock = None
 _fetch_heatmap_fn = None
-# Tải giá on-demand cho mã lẻ ngoài _HEATMAP_NEED_SYMBOLS, inject qua
-# start_dashboard(extra_quote_fn=...); nhận 1 list mã tuỳ ý, tách khỏi cache heatmap chính.
+# Callback hooks injected qua start_dashboard
 _extra_quote_fn = None
 _fetch_market_health_fn = None
 _vol_forecast_fn = None
-# Hàm tính vpa_flag (calc_vpa_flag bên scanner_full.py), inject qua
-# start_dashboard(calc_vpa_flag_fn=...) để tô Volume-Signal trực tiếp trên dữ liệu vừa kéo.
 _calc_vpa_flag_fn = None
 _signal_emoji = {}
 _signal_rank = {}
@@ -112,19 +109,18 @@ _heatmap_cache = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock = threading.Lock()
 HEATMAP_TTL_SEC = 120
 
-# Cache /api/quote_extra — key = mã, value = {"price","pct","ts"}. TTL ngắn hơn
-# heatmap chính vì ít mã/ít người dùng nhưng vẫn cần tránh dội API liên tục.
+# Cache /api/quote_extra
 _extra_quote_cache = {}
 _extra_quote_lock = threading.Lock()
 EXTRA_QUOTE_TTL_SEC = 20
-EXTRA_QUOTE_MAX_SYMS = 15  # giới hạn số mã/lần gọi, tránh 1 request kéo quá nhiều mã lạ cùng lúc
+EXTRA_QUOTE_MAX_SYMS = 15
 MARKET_HEALTH_TTL_SEC = 1800
 SIGNAL_TTL_SEC = 10
 
 _market_health_cache = {"data": {}, "updated_at": 0, "pending_refresh": False}
 _market_health_lock = threading.Lock()
 
-# RS snapshot persist chung volume với signal_state_cache/market_health.
+# RS snapshot persist
 _rs_score_cache = {"scores": {}, "asof": None}
 _rs_score_lock = threading.Lock()
 _RS_EXCLUDE_SYMBOLS = {"VNINDEX", "VN30"}
@@ -135,10 +131,7 @@ _RS_RAW_TAIL_DAYS = 10
 _RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
 _RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
 
-# ─── Lưu HEALTH xuống đĩa để sống sót qua mỗi lần deploy ──────────────────────
-# _market_health_cache chỉ ở RAM nên restart là mất, phải đợi build_history_cache()
-# (1-3 phút) mới tính lại được. Ghi JSON gần nhất và nạp lại lúc import module để
-# panel có dữ liệu ngay (dù hơi cũ, "updated_at" giữ nguyên để TTL tự tính lại đúng lúc).
+# Lưu HEALTH xuống đĩa
 _MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
 
 def _save_market_health_to_disk():
@@ -147,9 +140,9 @@ def _save_market_health_to_disk():
         tmp_path = _MARKET_HEALTH_CACHE_FILE + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(_market_health_cache, f, ensure_ascii=False)
-        os.replace(tmp_path, _MARKET_HEALTH_CACHE_FILE)  # ghi qua file tạm rồi rename (atomic), tránh hỏng cache nếu bị kill giữa chừng
+        os.replace(tmp_path, _MARKET_HEALTH_CACHE_FILE)
     except Exception as e:
-        print(f"  [Dashboard] ⚠️  Lưu HEALTH cache xuống đĩa lỗi (bỏ qua, không ảnh hưởng dashboard): {e}")
+        print(f"  [Dashboard] ⚠️  Lưu HEALTH cache xuống đĩa lỗi: {e}")
 
 def _load_market_health_from_disk():
     try:
@@ -159,20 +152,17 @@ def _load_market_health_from_disk():
             _market_health_cache["data"] = saved["data"]
             _market_health_cache["updated_at"] = saved.get("updated_at", 0)
             age_min = (time.time() - _market_health_cache["updated_at"]) / 60
-            print(f"  [Dashboard] ✅ Nạp lại HEALTH cache từ đĩa (cũ {age_min:.1f} phút) — "
-                  f"có dữ liệu hiển thị ngay trong lúc chờ tính lại.")
+            print(f"  [Dashboard] ✅ Nạp lại HEALTH cache từ đĩa (cũ {age_min:.1f} phút).")
     except FileNotFoundError:
-        pass  # lần đầu chạy / chưa mount volume — bỏ qua im lặng
+        pass
     except Exception as e:
-        print(f"  [Dashboard] ⚠️  Nạp HEALTH cache từ đĩa lỗi (bỏ qua): {e}")
+        print(f"  [Dashboard] ⚠️  Nạp HEALTH cache từ đĩa lỗi: {e}")
 
-_load_market_health_from_disk()  # chạy NGAY lúc import module — trước khi Flask mở cổng
+_load_market_health_from_disk()
 
 
 def _refresh_market_health(force: bool = False) -> dict:
-    """Tính lại HEALTH và ghi vào _market_health_cache — dùng chung cho endpoint
-    /api/market_health và lệnh "warm" lúc khởi động. Chỉ cập nhật "updated_at" khi
-    data["ok"] is True, để kết quả lỗi không bị coi là cache mới còn hạn."""
+    """Tính lại HEALTH và ghi vào _market_health_cache."""
     if not _fetch_market_health_fn:
         return _market_health_cache["data"]
     now = time.time()
@@ -188,20 +178,15 @@ def _refresh_market_health(force: bool = False) -> dict:
                 _market_health_cache["pending_refresh"] = False
                 _save_market_health_to_disk()
             else:
-                # data không ok → chủ ý không ghi đè "data", giữ HEALTH hợp lệ gần nhất
-                # để panel không trắng; pending_refresh=True cho frontend poll nhanh hơn
-                # (HEALTH_RETRY_MS), updated_at không đổi nên lần sau tự thử lại ngay.
                 _market_health_cache["pending_refresh"] = True
         except Exception as e:
             print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
-            # Giữ HEALTH hợp lệ gần nhất, không cập nhật updated_at để lần sau tự thử lại.
             _market_health_cache["pending_refresh"] = True
         return _market_health_cache["data"]
 
 
 def warm_market_health_cache():
-    """Chủ động tính HEALTH ngay sau khi history_cache load xong, để dashboard
-    có sẵn dữ liệu từ lượt xem đầu tiên thay vì đợi TTL 30 phút."""
+    """Chủ động tính HEALTH ngay sau khi history_cache load xong."""
     data = _refresh_market_health(force=True)
     ok = bool(data.get("ok"))
     print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
@@ -2204,7 +2189,10 @@ header h1{
   letter-spacing:2.5px;color:var(--accent);text-transform:uppercase;
   white-space:nowrap;
 }
-.hdr-right{display:flex;gap:18px;align-items:center;flex-shrink:0}
+.hdr-right{display:flex;gap:12px;align-items:center;flex-shrink:0}
+.hdr-sound-btn{height:24px;min-width:26px;padding:0 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;user-select:none}
+.hdr-sound-btn:hover{background:var(--surf2);border-color:var(--accent);color:var(--text)}
+.hdr-sound-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 #clock{color:var(--muted);font-size:11px;white-space:nowrap}
 .dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
@@ -3002,6 +2990,7 @@ html.chart-popout-mode .lite-chart-frame{
 <header>
   <h1>⚡ Scanner Dashboard</h1>
   <div class="hdr-right">
+    <button class="hdr-sound-btn" id="hdr-sound-btn" title="Bật âm thanh thông báo (đang tắt)">🔕</button>
     <div class="dot-live"></div>
     <span id="clock">--:--:--</span>
   </div>
@@ -3148,7 +3137,7 @@ html.chart-popout-mode .lite-chart-frame{
           <div class="lite-alert-wrap" id="lite-alert-wrap">
             <button class="lite-draw-btn" id="lite-alert-btn" title="Cảnh báo giá">🔔<span class="lite-alert-badge" id="lite-alert-badge"></span></button>
             <div class="lite-alert-panel" id="lite-alert-panel">
-              <div class="lite-alert-title"><span>CẢNH BÁO</span><span style="display:flex;gap:4px"><button class="lite-alert-mini" id="lite-alert-desktop-notify" title="Bật thông báo desktop">🖥</button><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></span></div>
+              <div class="lite-alert-title"><span>CẢNH BÁO</span><span style="display:flex;gap:4px"><button class="lite-alert-mini" id="lite-alert-sound-notify" title="Bật âm thanh cảnh báo">🔕</button><button class="lite-alert-mini" id="lite-alert-desktop-notify" title="Bật thông báo desktop">🖥</button><button class="lite-alert-mini" id="lite-alert-seen" title="Đã xem">✓</button></span></div>
               <div class="lite-alert-grid">
                 <div class="lite-alert-field">
                   <label>Mã</label>
@@ -3537,7 +3526,7 @@ DASHBOARD_MAIN_JS = r"""
 // DOM CACHE
 const $=id=>document.getElementById(id);
 const DOM={
-  clock:$('clock'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
+  clock:$('clock'),hdrSoundBtn:$('hdr-sound-btn'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),strengthList:$('strength-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
@@ -3578,7 +3567,7 @@ const DOM={
   liteShapeArrowStyle:$('lite-shape-arrow-style'),liteShapeZigzagFill:$('lite-shape-zigzag-fill'),
   liteShapeArrowWidth:$('lite-shape-arrow-width'),
   liteAlertWrap:$('lite-alert-wrap'),liteAlertBtn:$('lite-alert-btn'),liteAlertBadge:$('lite-alert-badge'),
-  liteAlertDesktopNotify:$('lite-alert-desktop-notify'),
+  liteAlertSoundNotify:$('lite-alert-sound-notify'),liteAlertDesktopNotify:$('lite-alert-desktop-notify'),
   liteAlertPanel:$('lite-alert-panel'),liteAlertSymbol:$('lite-alert-symbol'),
   liteAlertLeftType:$('lite-alert-left-type'),liteAlertLeftKind:$('lite-alert-left-kind'),
   liteAlertLeftPeriod:$('lite-alert-left-period'),liteAlertLeftKindWrap:$('lite-alert-left-kind-wrap'),
@@ -3594,27 +3583,19 @@ const DOM={
   pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),healthCopyBtn:$('health-copy-btn'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
-  // Desktop popup header
   ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
-  // Mobile portrait rows
   mobHdrRow1:$('mob-hdr-row1'),mobPtitle:$('mob-ptitle'),mobSearch:$('mob-search'),
   mobTabRow:$('mob-tab-row'),
-  // Mobile landscape row
   mobHdrLand:$('mob-hdr-landscape'),mobLandSym:$('mob-land-sym'),
   mobLandSearch:$('mob-land-search'),mobLandTabs:$('mob-land-tabs'),
-  // iframes
   ifVs:$('iframe-vs'),
   edgeZone:$('edge-swipe-zone'),mobClose:$('mob-close-float'),
   footer:$('footer-txt'),
   lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
   lgList:$('lite-groups-list'),
 };
-// HELPERS
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
-// Phát hiện app STANDALONE (không khung Safari/Chrome bao quanh): navigator.standalone là cờ
-// iOS Safari, matchMedia('display-mode: standalone') là chuẩn chung. STANDALONE không bắn
-// 'dblclick' khi tắt zoom, khác TAB Safari thường — xem chỗ dùng ở nút FOLLOW bên dưới.
 const IS_STANDALONE_PWA=()=>window.navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
 const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
@@ -3653,7 +3634,6 @@ function pctCellForSym(sym,fallbackPct=null){
   if(!Number.isFinite(v))return{txt:'—',color:'#6b7280'};
   return{txt:(v>=0?'+':'')+v.toFixed(1)+'%',color:v>=0?'#0e9f6e':'#e02424'};
 }
-// Cache tín hiệu "hôm nay" theo mã (đổ đầy trong fetchSigs()); chart CHART chỉ đọc lại map này.
 let _sigTodayMap=new Map();
 let _momentumTodayMap=new Map();
 let _strengthTodayMap=new Map();
@@ -3716,11 +3696,9 @@ function saveLiteTrendMode(){
   try{localStorage.setItem(LITE_TREND_MODE_KEY,mode);}catch(e){}
 }
 function _liteTrendMode(){
-  // Tra qua document (không DOM.liteIndicators) vì dropdown "trend" có thể bị portal ra <body>.
   const el=document.querySelector('input[name="trend-mode"]:checked');
   return el?el.value:'regular';
 }
-// Helper get/set localStorage dùng chung cho toàn bộ chart CHART — gộp lại các khối try/catch lặp lại y hệt nhau ở rất nhiều nơi (đọc/ghi màu vẽ, cỡ chữ, font, nền chữ...).
 function _liteLSGet(key,fallback){
   try{return localStorage.getItem(key)||fallback;}catch(e){return fallback;}
 }
@@ -3929,7 +3907,7 @@ let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price c
 // Vị trí mũi tên tính lại tại thời điểm vẽ (không lưu cứng) để luôn khớp nến mới nhất khi auto-refresh chèn nến mới vào giữa.
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false;
 let _liteMacdSoloHeight=176;
-let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map();
+let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map(),_liteSessionRange=null,_liteUserInteractedZoom=false;
 const LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
 // Lazy load lịch sử: khi user kéo trái đến đầu dữ liệu, tự động fetch thêm bar cũ hơn.
 let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load (server báo)
@@ -3985,6 +3963,10 @@ function initLiteChart(){
   _liteChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
     redrawLiteDrawings();
     _liteSyncVisibleRangeFrom(_liteChart,range);
+    if(_liteUserInteractedZoom&&!_liteChartLoading&&!_liteSyncing&&!_liteLoadingMore&&_liteData.length>0&&range&&Number.isFinite(range.from)&&Number.isFinite(range.to)){
+      const last=_liteData.length-1,span=range.to-range.from;
+      if(span>5&&span<2000)_liteSessionRange={span,offsetRight:range.to-last};
+    }
     if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
@@ -4089,23 +4071,17 @@ function _liteChecked(name){
   }
   let cb=_liteCheckedMap.get(name);
   if(!cb){
-    // Lưới an toàn: nếu vì lý do nào đó chưa có trong cache (DOM render trễ...), tra trực tiếp 1 lần
-    // rồi nhớ lại — không bao giờ trả sai kết quả so với bản querySelector gốc.
     cb=document.querySelector(`input[value="${name}"]`);
     if(cb)_liteCheckedMap.set(name,cb);
   }
   return !!(cb&&cb.checked);
 }
 function _liteAllIndCheckboxes(){
-  // Gộp checkbox #lite-indicators với checkbox dropdown portal ra <body> (mobile portrait) —
-  // thiếu sẽ mất giá trị đã lưu khi saveLiteIndicatorPrefs ghi đè localStorage.
   return document.querySelectorAll('#lite-indicators input[type="checkbox"], .lite-ind-dropdown input[type="checkbox"]');
 }
 function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
-  /* Chỉ báo mặc định BẬT khi mở dashboard lần đầu (chưa có gì trong localStorage). Cờ tổng
-     Signal/MA-EMA cố ý để TẮT, nhưng chỉ báo con vẫn đánh dấu sẵn BẬT để dùng ngay khi bật cờ tổng. */
   const DEFAULT_ON_INDICATORS=new Set(['macd','signal','volcolor','ma10','ma200','ema20','ema50']);
   _liteAllIndCheckboxes().forEach(cb=>{
     cb.checked=DEFAULT_ON_INDICATORS.has(cb.value)?(prefs[cb.value]!==false):(prefs[cb.value]===true);
@@ -4135,9 +4111,7 @@ function _liteTitleSegments(bar){
   const sign=pct>0?'+':'';
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
-  // H/L wrap <span class="lct-hl"> để CSS portrait ẩn bớt; _high/_low lưu riêng cho canvas screenshot.
   const hlHtml=`<span class="lct-hl"><span style="color:#111827"> H:</span><span style="color:${col}">${fmtLiteNum(bar.high)}</span><span style="color:#111827"> L:</span><span style="color:${col}">${fmtLiteNum(bar.low)}</span></span>`;
-  // O: và giá open được wrap bằng <span class="lct-open"> để CSS portrait ẩn bớt cho vừa 1 dòng.
   const openHtml=`<span class="lct-open"><span style="color:#111827"> O:</span><span style="color:${col}">${fmtLiteNum(bar.open)}</span></span>`;
   const segments=[
     {text:`${_liteSymbol} [${tf}] ${fmtLiteDate(bar.time)} |`,color:'#111827'},
@@ -4152,14 +4126,13 @@ function _liteTitleSegments(bar){
   if(Number.isFinite(_liteRsScore))segments.push({text:' '+rsBadge(_liteRsScore),color:'__html',_rs:Math.round(_liteRsScore)});
   return segments;
 }
-// GIÁ PHÓNG TO — lấy ratio_prev/ratio_ma50/progress nguyên từ /api/vol_forecast (dùng chung VMA50 + giờ server với tín hiệu ATTENT/BREAKVOL) để tránh 2 bản logic lệch nhau.
 let _liteVolForecast=null,_liteVolForecastReqId=0;
 async function _liteFetchVolForecast(sym){
-  const reqId=++_liteVolForecastReqId; // chặn trường hợp 2 lượt fetch chồng nhau (đổi mã nhanh +
-  try{                                 // đúng lúc quiet-refresh) trả về không đúng thứ tự, khiến
-    const r=await fetch('/api/vol_forecast/'+encodeURIComponent(sym)); // kết quả cũ ghi đè lên mới
+  const reqId=++_liteVolForecastReqId;
+  try{
+    const r=await fetch('/api/vol_forecast/'+encodeURIComponent(sym));
     const j=await r.json();
-    if(reqId!==_liteVolForecastReqId||sym!==_liteSymbol)return; // đã có lượt fetch mới hơn hoặc đổi mã — bỏ kết quả này
+    if(reqId!==_liteVolForecastReqId||sym!==_liteSymbol)return;
     _liteVolForecast=(j&&!j.error)?j:null;
   }catch(e){
     if(reqId===_liteVolForecastReqId&&sym===_liteSymbol)_liteVolForecast=null;
@@ -4173,15 +4146,13 @@ function updateLiteBigPrice(bar){
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
   const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)&&pct!==0
     ?bar.close-bar.close/(1+pct/100):(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close-bar.open:0);
-  // Chỉ 2 màu xanh/đỏ — không còn màu xám: bằng tham chiếu (pct===0, hoặc close>=open) tính là xanh.
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const sign=pct>0?'+':(pct<0?'':'');
-  const fc=_liteVolForecast; // {ratio_prev, ratio_ma50, progress, symbol, ...} từ server, hoặc null nếu chưa có/lỗi
+  const fc=_liteVolForecast;
   const sameSym=fc&&fc.symbol===_liteSymbol;
   const progress=sameSym&&Number.isFinite(fc.progress)?fc.progress:null;
   const fmtEst=v=>(Number.isFinite(v)&&progress>0.001)?(v/progress).toFixed(2):'--';
-  // Tỉ lệ tiến độ phiên hiển thị dạng số thập phân (tối đa 1) thay vì phần trăm, bỏ số 0 thừa (1 thay vì 1.00).
   const fmtProgress=v=>Number.isFinite(v)?String(Math.round(v*100)/100):'--';
   const ratioPrev=sameSym?fc.ratio_prev:null;
   const ratioMA50=sameSym?fc.ratio_ma50:null;
@@ -4191,13 +4162,11 @@ function updateLiteBigPrice(bar){
     `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
-  // Chuẩn hoá ký tự gõ từ IME tiếng Việt (Telex/VNI...) về chữ Latin gốc thay vì để bị mất chữ: ví dụ 'â'→'a', 'ư'→'u', 'đ'→'d', rồi mới loại bỏ ký tự không phải A-Z0-9.
   return String(v||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[đĐ]/g,'d')
     .toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
-// Dọn value ô nhập mã chỉ tại điểm chốt (Enter/blur), không đụng lúc đang gõ để tránh xung đột IME.
 function _liteBindSymInput(el){
   if(!el)return ()=>'';
   function _apply(){
@@ -4273,7 +4242,13 @@ function _liteApplyBuySignal(){
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
   const last=_liteData.length-1;
-  const rightOffset=22; // Lề phải ~8% chiều rộng màn hình
+  if(_liteSessionRange&&Number.isFinite(_liteSessionRange.span)&&_liteSessionRange.span>0){
+    const to=last+_liteSessionRange.offsetRight;
+    const from=to-_liteSessionRange.span;
+    _liteApplyVisibleLogicalRange({from,to});
+    return;
+  }
+  const rightOffset=LITE_RIGHT_OFFSET;
   const to=last+rightOffset;
   // Mobile portrait (~390px): 80 nến đủ rõ từng cây nến; landscape/desktop: 250 như cũ
   const visibleCount=IS_MOBILE()&&window.innerHeight>window.innerWidth?80:250;
@@ -6530,6 +6505,8 @@ function bindLiteChartControls(){
       _liteApplyBuySignal();
     }
   });
+  DOM.liteChartFrame?.addEventListener('wheel',()=>{_liteUserInteractedZoom=true;},{passive:true});
+  DOM.liteChartFrame?.addEventListener('pointerdown',()=>{_liteUserInteractedZoom=true;},{passive:true});
   DOM.liteChartFrame?.addEventListener('click',()=>{
     // Không cướp focus về khung chart khi đang gõ chữ (công cụ Text) — tránh phím gõ sau bị hiểu nhầm thành gõ mã.
     if(_liteTextEditPos)return;
@@ -8069,9 +8046,7 @@ function renderAlertRules(){
   }
   DOM.liteAlertList.innerHTML=rows.join('');
 }
-// Cửa sổ CHART popout (?chartPopout=1) cũng chạy init()/pollAlertFeed() — cờ này để nó không bắn thông báo giá trùng với cửa sổ chính.
 const _isChartPopoutWindow=new URLSearchParams(window.location.search).get('chartPopout')==='1';
-// Cờ ứng dụng riêng để biết có ĐANG MUỐN dùng desktop notification hay không, độc lập với quyền Notification của trình duyệt (JS không thể tự thu hồi quyền đã granted).
 const DESKTOP_NOTIFY_KEY='dashboard_desktop_notify_on';
 function desktopNotifyEnabled(){
   return 'Notification' in window&&Notification.permission==='granted'&&_liteLSGet(DESKTOP_NOTIFY_KEY,'0')==='1';
@@ -8085,7 +8060,6 @@ function syncDesktopNotifyBtn(){
 async function toggleDesktopNotify(){
   if(!('Notification' in window)){alert('Trình duyệt không hỗ trợ thông báo desktop');return;}
   if(desktopNotifyEnabled()){
-    // Đang bật -> tắt: chỉ đổi cờ ứng dụng, không đụng tới quyền trình duyệt (JS không thu hồi được).
     _liteLSSet(DESKTOP_NOTIFY_KEY,'0');
     syncDesktopNotifyBtn();
     return;
@@ -8102,9 +8076,53 @@ async function toggleDesktopNotify(){
 }
 function initDesktopNotifyBtn(){
   if(!DOM.liteAlertDesktopNotify)return;
-  if(_isChartPopoutWindow){DOM.liteAlertDesktopNotify.style.display='none';return;} // chỉ điều khiển từ cửa sổ chính
+  if(_isChartPopoutWindow){DOM.liteAlertDesktopNotify.style.display='none';return;}
   syncDesktopNotifyBtn();
   DOM.liteAlertDesktopNotify.addEventListener('click',e=>{e.stopPropagation();toggleDesktopNotify();});
+}
+const SOUND_NOTIFY_KEY='dashboard_sound_notify_on';
+let _audioCtx=null,_lastSoundTime=0;
+function soundNotifyEnabled(){return _liteLSGet(SOUND_NOTIFY_KEY,'0')==='1';}
+function playPingSound(force=false){
+  if(!force&&!soundNotifyEnabled())return;
+  const now=Date.now();
+  if(!force&&now-_lastSoundTime<600)return;
+  _lastSoundTime=now;
+  try{
+    if(!_audioCtx)_audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(_audioCtx.state==='suspended')_audioCtx.resume().catch(()=>{});
+    const t=_audioCtx.currentTime;
+    [[880,t,0.18,0.35],[1318.5,t+0.11,0.22,0.45]].forEach(([freq,st,vol,dur])=>{
+      const osc=_audioCtx.createOscillator(),g=_audioCtx.createGain();
+      osc.type='sine';osc.frequency.setValueAtTime(freq,st);
+      g.gain.setValueAtTime(vol,st);g.gain.exponentialRampToValueAtTime(0.0001,st+dur);
+      osc.connect(g);g.connect(_audioCtx.destination);
+      osc.start(st);osc.stop(st+dur);
+    });
+  }catch(e){}
+}
+function syncSoundNotifyBtn(){
+  const on=soundNotifyEnabled();
+  [DOM.hdrSoundBtn,DOM.liteAlertSoundNotify].forEach(btn=>{
+    if(!btn)return;
+    btn.classList.toggle('on',on);btn.innerHTML=on?'🔔':'🔕';
+    btn.title=(on?'Tắt':'Bật')+' âm thanh thông báo';
+  });
+}
+function toggleSoundNotify(){
+  const next=soundNotifyEnabled()?'0':'1';
+  _liteLSSet(SOUND_NOTIFY_KEY,next);
+  syncSoundNotifyBtn();
+  if(next==='1')playPingSound(true);
+}
+function initSoundNotifyBtn(){
+  syncSoundNotifyBtn();
+  [DOM.hdrSoundBtn,DOM.liteAlertSoundNotify].forEach(btn=>{
+    if(!btn)return;
+    if(_isChartPopoutWindow){btn.style.display='none';return;}
+    btn.addEventListener('click',e=>{e.stopPropagation();toggleSoundNotify();});
+  });
+  document.addEventListener('pointerdown',()=>{if(_audioCtx&&_audioCtx.state==='suspended')_audioCtx.resume().catch(()=>{});},{once:true});
 }
 async function loadAlerts(){
   try{
@@ -8133,6 +8151,7 @@ async function pollAlertFeed(showToast=true){
   }catch(e){console.error('pollAlertFeed:',e);}
 }
 function showToastNotify(sym,title,body,tag){
+  playPingSound();
   if(desktopNotifyEnabled()){
     try{
       const n=new Notification(title,{body,tag});
@@ -8810,6 +8829,7 @@ window.addEventListener('message',e=>{
 
 // INIT
 async function init(){
+  initSoundNotifyBtn();
   initDesktopNotifyBtn();
   bindLiteChartControls();
   bindAlertControls();
