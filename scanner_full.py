@@ -1246,6 +1246,7 @@ def build_history_cache(symbols: list, current_date: date):
         history_cache.update(new_history)
     invalidate_rs_cache()
     warm_rs_cache()
+    warm_market_health_cache()
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
 
@@ -2813,34 +2814,15 @@ def telegram_listener(stop_event: threading.Event):
 
 # =============================================================================
 # BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
-# =============================================================================
-# Mục đích: alerted_today trước đây chỉ sống trong RAM → mỗi lần restart server
-# giữa ngày/phiên sẽ mất sạch, khiến các mã đã gửi tin nhắn rồi bị coi là "chưa
-# gửi" và bắn lại từ đầu. Giờ ghi xuống đĩa kèm "phiên giao dịch" mà nó thuộc về,
-# để khi restart cùng phiên thì đọc lại và KHÔNG gửi trùng; chỉ thực sự xoá khi
-# một phiên giao dịch MỚI thực sự bắt đầu (xem đoạn reset trong vòng lặp chính).
-# LƯU Ý: đặt trong DASHBOARD_DATA_DIR (mặc định /data/trade-journal) — đây là
-# thư mục đã được mount làm volume trong lệnh `docker run` (-v ...:/data/trade-journal),
-# giống trade_journal.sqlite/market_warning.txt. Nếu để cạnh source code như trước,
-# file sẽ nằm trong writable layer của container và bị xoá mỗi khi tạo lại container
-# (docker rm + build lại image), khiến "Tín hiệu hôm nay"/"Động lượng" mất sau restart.
+# Lưu/đọc trạng thái tín hiệu đã gửi (alerted_today, momentum...) qua restart
 _SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
 if not os.path.isdir(_SIGNAL_STATE_DIR):
-    # Fallback khi chạy ngoài Docker (không có /data/trade-journal) để không vỡ local dev.
     _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
 SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 _signal_state_lock = threading.Lock()
 
 def _load_signal_state():
-    """
-    Đọc lại alerted_today + momentum_today + attent_today + breakvol_today + ngày
-    phiên giao dịch đã lưu từ lần chạy trước. Trả về
-    (alerted_dict, momentum_dict, attent_dict, breakvol_dict, session_date).
-    session_date=None nếu chưa từng lưu (lần đầu chạy) hoặc file lỗi — khi đó coi
-    như chưa có gì, sẽ tự đồng bộ lại ngay trong lần khởi tạo bên dưới.
-    ATTENT/BREAKVOL dùng chung file + cơ chế lưu/đọc với MOMENTUM (key mới, mặc
-    định {} nếu đọc từ file cũ chưa có 2 key này → tương thích ngược).
-    """
+    """Đọc lại alerted_today + momentum_today + attent_today + breakvol_today đã lưu."""
     try:
         with open(SIGNAL_STATE_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -2903,6 +2885,7 @@ if signal_session_date is None:
     signal_session_date = last_run_date
     _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
 _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
+_last_morning_warmup_date = None
 
 _stop_listener  = threading.Event()
 listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
@@ -2932,12 +2915,6 @@ start_dashboard(
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
 build_history_cache(symbols_to_cache, last_run_date)
-
-# Cache lịch sử vừa load xong → chủ động tính HEALTH ngay, không đợi client
-# đầu tiên tự trigger. Trong khoảng thời gian build_history_cache() đang chạy
-# ở trên, dashboard vẫn phản hồi HEATMAP/CHART bình thường (qua fallback fetch
-# tươi); nếu có ai request HEALTH đúng lúc đó thì Fix A đảm bảo không bị kẹt.
-warm_market_health_cache()
 
 print("\n" + "="*60)
 print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
@@ -2982,9 +2959,14 @@ while True:
             last_run_date = current_date
             print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reload cache lịch sử.")
             build_history_cache(symbols_to_cache, current_date)
-            warm_market_health_cache()
 
         if not _is_trading_session_time(current_date, now_time):
+            # Khởi động nạp mới 100% cache & Market Health vào 08h30 sáng trước giờ giao dịch
+            if now_time >= 83000 and _last_morning_warmup_date != current_date:
+                _last_morning_warmup_date = current_date
+                print(f"\n☀️ [{ts}] Khởi động đầu ngày 08h30 — Nạp mới toàn bộ cache lịch sử & tính Market Health chuẩn...")
+                build_history_cache(symbols_to_cache, current_date)
+
             # Kiểm tra cache định kỳ mỗi 30 phút ngoài giờ giao dịch
             if time.time() - _last_cache_check_ts >= CACHE_CHECK_INTERVAL_SEC:
                 _last_cache_check_ts = time.time()
@@ -3014,7 +2996,6 @@ while True:
         if cache_empty:
             print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
             build_history_cache(symbols_to_cache, current_date)
-            warm_market_health_cache()
 
         print(f"\n{'='*60}")
         print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (VNDirect)")
