@@ -8083,6 +8083,12 @@ function initDesktopNotifyBtn(){
 const SOUND_NOTIFY_KEY='dashboard_sound_notify_on';
 let _audioCtx=null,_lastSoundTime=0;
 function soundNotifyEnabled(){return _liteLSGet(SOUND_NOTIFY_KEY,'0')==='1';}
+function _unlockAudio(){
+  try{
+    if(!_audioCtx)_audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(_audioCtx&&_audioCtx.state==='suspended')_audioCtx.resume().catch(()=>{});
+  }catch(e){}
+}
 function playPingSound(force=false){
   if(!force&&!soundNotifyEnabled())return;
   const now=Date.now();
@@ -8092,7 +8098,7 @@ function playPingSound(force=false){
     if(!_audioCtx)_audioCtx=new(window.AudioContext||window.webkitAudioContext)();
     if(_audioCtx.state==='suspended')_audioCtx.resume().catch(()=>{});
     const t=_audioCtx.currentTime;
-    [[880,t,0.18,0.35],[1318.5,t+0.11,0.22,0.45]].forEach(([freq,st,vol,dur])=>{
+    [[880,t,0.2,0.35],[1318.5,t+0.11,0.25,0.45]].forEach(([freq,st,vol,dur])=>{
       const osc=_audioCtx.createOscillator(),g=_audioCtx.createGain();
       osc.type='sine';osc.frequency.setValueAtTime(freq,st);
       g.gain.setValueAtTime(vol,st);g.gain.exponentialRampToValueAtTime(0.0001,st+dur);
@@ -8122,7 +8128,9 @@ function initSoundNotifyBtn(){
     if(_isChartPopoutWindow){btn.style.display='none';return;}
     btn.addEventListener('click',e=>{e.stopPropagation();toggleSoundNotify();});
   });
-  document.addEventListener('pointerdown',()=>{if(_audioCtx&&_audioCtx.state==='suspended')_audioCtx.resume().catch(()=>{});},{once:true});
+  ['pointerdown','click','keydown','touchstart'].forEach(evt=>{
+    window.addEventListener(evt,_unlockAudio,{passive:true});
+  });
 }
 async function loadAlerts(){
   try{
