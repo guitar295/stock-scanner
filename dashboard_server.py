@@ -4433,12 +4433,9 @@ function alignLiteSeries(points){
   for(let i=0;i<n;i++){const p=points[i];byTime.set(liteTimeKey(p.time),p);}
   return _liteData.map(bar=>byTime.get(liteTimeKey(bar.time))||{time:bar.time});
 }
-// skipWidthSync=true khi hàm gọi tự đồng bộ trục giá sau đó — tránh đo width khi dữ liệu 3 trục chưa cập nhật.
 function applyLitePaneLayout(skipWidthSync){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
-  // Portrait mobile: popout đọc clientHeight thực tế (frame flex:1 tự giãn); non-popout dùng
-  // mainH cố định 56vh (frame height:auto). Desktop/landscape: đọc clientHeight thực tế (fallback 720).
   const isPortraitMobile=IS_MOBILE()&&window.innerHeight>window.innerWidth;
   const totalH=Math.max(300,(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720);
   const bothPanes=showRsi&&showMacd;
@@ -4447,7 +4444,6 @@ function applyLitePaneLayout(skipWidthSync){
   const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
-  // Portrait non-popout: mainH=56vh cố định. Desktop/landscape/popout: mainH = totalH trừ indicator.
   const mobilePortrait=isPortraitMobile&&!_isChartPopoutWindow;
   const mainH=mobilePortrait
     ?Math.max(300,Math.round(window.innerHeight*0.56))
@@ -4464,8 +4460,6 @@ function applyLitePaneLayout(skipWidthSync){
     DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
     DOM.liteRsiChart.classList.toggle('hide-tv-logo',showRsi&&showMacd);
     DOM.liteMacdChart.classList.remove('hide-tv-logo');
-    // Portrait non-popout: set height tường minh. Else: clear inline style để CSS landscape/desktop
-    // tự quản, tránh giá trị portrait còn sót khi xoay sang landscape.
     if(mobilePortrait&&DOM.liteChartFrame)DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
     else if(DOM.liteChartFrame)DOM.liteChartFrame.style.height='';
     DOM.liteChart.style.height=`${mainH}px`;
@@ -4492,8 +4486,6 @@ function applyLitePaneLayout(skipWidthSync){
   resizeLiteDrawCanvas();redrawLiteDrawings();
   if(!skipWidthSync)_liteSyncPriceScaleWidths();
 }
-// Đồng bộ chiều rộng trục giá (phải) của main/RSI/MACD: đo width thực tế cả 3 rồi ép dùng
-// chung minimumWidth=max, vì mã giá nhiều chữ số (VNINDEX/VN30) khiến trục main tự nới rộng hơn.
 function _liteSyncPriceScaleWidths(){
   if(!_liteChart||!_liteRsiChart||!_liteMacdChart)return;
   requestAnimationFrame(()=>{
@@ -4508,8 +4500,6 @@ function _liteSyncPriceScaleWidths(){
     }catch(e){}
   });
 }
-// ═══ DRAWING TOOLS (trend line, horizontal/vertical line, rectangle, channel, entry/target/stop,
-// text) ═══ Kiểu TradingView: vẽ xong chọn/kéo/đổi màu được (trừ Entry/Target/Stoploss màu cố định).
 const LITE_DRAW_KEY='dashboard_lite_drawings';
 const LITE_DRAW_COLOR_KEY='dashboard_lite_draw_color';
 const LITE_TEXT_SIZE_KEY='dashboard_lite_text_size';
@@ -4523,7 +4513,6 @@ let _liteArcPending=null,_liteZigzagPending=null,_liteTextEditPos=null,_liteText
 let _liteTextSize=13,_liteTextFont='mono',_liteTextBg='';
 function _liteTextFontCSS(sizePx,familyKey){return sizePx+'px '+(LITE_TEXT_FONT_CSS[familyKey]||LITE_TEXT_FONT_CSS.mono);}
 function _liteTextLineHeight(sizePx){return Math.round(sizePx*1.35);}
-// Đo kích thước khối chữ (nhiều dòng) trên canvas để tính vùng bắt-trúng (hit-test) và vị trí neo cho thanh điều chỉnh.
 function _liteTextBoxMetrics(d){
   if(!_liteDrawCtx)return null;
   const size=d.fontSize||13,family=d.fontFamily||'mono',pad=4;
@@ -4536,10 +4525,28 @@ function _liteTextBoxMetrics(d){
   _liteDrawCtx.restore();
   return{pad,lh,size,family,lines,width:maxW+pad*2,height:lines.length*lh+pad*2};
 }
-function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf;}
+function _liteDrawStoreKey(){return LITE_DRAW_KEY+':'+_liteSymbol;}
 function loadLiteDrawings(){
-  try{_liteDrawings=JSON.parse(localStorage.getItem(_liteDrawStoreKey())||'[]')||[];}
-  catch(e){_liteDrawings=[];}
+  try{
+    let raw=localStorage.getItem(_liteDrawStoreKey());
+    if(!raw){
+      raw=localStorage.getItem(LITE_DRAW_KEY+':'+_liteSymbol+':'+_liteTf)
+        ||localStorage.getItem(LITE_DRAW_KEY+':'+_liteSymbol+':1D')
+        ||localStorage.getItem(LITE_DRAW_KEY+':'+_liteSymbol+':D');
+    }
+    _liteDrawings=JSON.parse(raw||'[]')||[];
+    if(_liteDrawings&&_liteData&&_liteData.length){
+      for(const d of _liteDrawings){
+        if(d&&d.points){
+          d.points=d.points.map(pt=>{
+            if(!pt||'offsetPrice' in pt)return pt;
+            if(!pt.ts&&Number.isFinite(pt.l))return _litePtWithTime(pt.l,pt.p);
+            return pt;
+          });
+        }
+      }
+    }
+  }catch(e){_liteDrawings=[];}
   _liteSelectedId=null;_liteChannelPending=null;_liteArcPending=null;_liteZigzagPending=null;_liteLinePending=null;_liteDrawActive=null;
 }
 function saveLiteDrawings(){
@@ -4548,20 +4555,17 @@ function saveLiteDrawings(){
       if(d&&d.points){
         d.points=d.points.map(pt=>{
           if(!pt)return pt;
-          if(pt.ts)return pt;
-          // Điểm thứ 3 của Kênh giá là {offsetPrice}: độ rộng kênh (chênh lệch giá), không phải toạ độ
-          // thời gian/giá thật — không được ép qua _litePtWithTime (sẽ mất offsetPrice, kênh biến mất).
           if('offsetPrice' in pt)return pt;
-          return _litePtWithTime(pt.l,pt.p);
+          if(!pt.ts&&Number.isFinite(pt.l))return _litePtWithTime(pt.l,pt.p);
+          return pt;
         });
       }
     }
   }
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
 }
-// Đồng bộ hình vẽ giữa cửa sổ CHART chính và popout qua sự kiện 'storage' có sẵn của trình duyệt.
 window.addEventListener('storage',e=>{
-  if(e.key!==_liteDrawStoreKey())return; // không phải mã/tf đang xem — bỏ qua
+  if(e.key!==_liteDrawStoreKey())return;
   loadLiteDrawings();redrawLiteDrawings();
 });
 function resizeLiteDrawCanvas(){
@@ -4617,6 +4621,21 @@ function _litePtLogical(pt){
     const tPrev=new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime();
     return lastIdx+(targetTs-tLast)/(tLast-tPrev);
   }
+  const tf=(_liteTf||'1D').toUpperCase();
+  if(tf==='1M'||tf==='M'||tf==='MONTH'||tf==='MONTHLY'){
+    const targetDate=new Date(targetTs);
+    const tY=targetDate.getUTCFullYear(),tM=targetDate.getUTCMonth();
+    for(let i=0;i<_liteData.length;i++){
+      const d=new Date(liteTimeKey(_liteData[i].time)+'T00:00:00Z');
+      if(d.getUTCFullYear()===tY&&d.getUTCMonth()===tM)return i;
+    }
+  }
+  if(tf==='1W'||tf==='W'||tf==='WEEK'||tf==='WEEKLY'){
+    for(let i=0;i<_liteData.length;i++){
+      const d=new Date(liteTimeKey(_liteData[i].time)+'T00:00:00Z').getTime();
+      if(Math.abs(targetTs-d)<4.5*86400000)return i;
+    }
+  }
   const idx=_liteData.findIndex(b=>new Date(liteTimeKey(b.time)+'T00:00:00Z').getTime()>=targetTs);
   if(idx>0){
     const t1=new Date(liteTimeKey(_liteData[idx-1].time)+'T00:00:00Z').getTime();
@@ -4661,12 +4680,10 @@ function _liteDrawHandle(ctx,x,y){
   ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#1a56db';ctx.lineWidth=1.3;
   ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
 }
-// Vẽ 4 chấm góc khung 2-điểm (p0/p1/c1/c2 mà _liteCornerHitPart nhận diện) — dùng chung cho Hộp và Target.
 function _liteDrawCornerHandles(ctx,x1,y1,x2,y2){
   _liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);
   _liteDrawHandle(ctx,x1,y2);_liteDrawHandle(ctx,x2,y1);
 }
-// Vẽ 1 cặp chấm trái/phải cùng mức giá trong khung rx..rx+rw — dùng cho Stop/Target2 (resize ngang qua edgeL/edgeR).
 function _liteDrawHandlePair(ctx,rx,rw,y){
   _liteDrawHandle(ctx,rx,y);_liteDrawHandle(ctx,rx+rw,y);
 }
@@ -4674,8 +4691,6 @@ function _liteChannelOffset(d){
   const pts=d.points;
   return(pts[2]&&Number.isFinite(pts[2].offsetPrice))?pts[2].offsetPrice:(Math.abs(pts[1].p-pts[0].p)||pts[0].p*0.02||1);
 }
-// Control-point của quadratic bezier phải tính trong pixel-space, không phải logical/price rồi quy
-// đổi — trục giá log/percentage (phi tuyến) sẽ làm đáy cong lệch khỏi vị trí chuột.
 function _liteArcControlXY(x1,y1,x2,y2,tx,ty){
   if(!Number.isFinite(tx)||!Number.isFinite(ty))return null;
   const midX=(x1+x2)/2,midY=(y1+y2)/2;
@@ -4691,25 +4706,24 @@ function _liteQuadDist(px,py,x1,y1,cx,cy,x2,y2){
   }
   return min;
 }
-// Mũi tên "vệt": thân thon dần rồi xoè thành đầu tam giác rõ nét; widthScale = hệ số độ dày người dùng chọn.
 function _liteDrawWideArrow(ctx,x1,y1,x2,y2,color,widthScale){
   const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
   if(len<1e-3)return;
-  const ws=Number.isFinite(widthScale)?widthScale/2:1; // chuẩn hoá quanh mức "Vừa" (=2) → hệ số 1
-  const ux=dx/len,uy=dy/len,px=-uy,py=ux; // vector đơn vị: dọc thân & vuông góc thân
-  const headLen=Math.max(10,Math.min(len*.42,32)); // chiều dài phần đầu mũi tên (tam giác xòe rộng)
-  const shaftW=Math.max(2,Math.min(len*.09,7))*ws; // độ rộng thân (thon, hẹp hơn hẳn đầu mũi tên)
-  const headW=Math.max(10,Math.min(len*.34,26))*ws; // độ rộng đáy đầu mũi tên (xòe rộng)
-  const baseT=Math.max(0,len-headLen); // vị trí bắt đầu xòe đầu mũi tên, tính từ đuôi
+  const ws=Number.isFinite(widthScale)?widthScale/2:1;
+  const ux=dx/len,uy=dy/len,px=-uy,py=ux;
+  const headLen=Math.max(10,Math.min(len*.42,32));
+  const shaftW=Math.max(2,Math.min(len*.09,7))*ws;
+  const headW=Math.max(10,Math.min(len*.34,26))*ws;
+  const baseT=Math.max(0,len-headLen);
   const bx=x1+ux*baseT,by=y1+uy*baseT;
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(x1,y1); // đuôi — điểm nhọn
-  ctx.lineTo(bx+px*shaftW/2,by+py*shaftW/2); // mép thân trái, thon dần tới đáy đầu mũi tên
-  ctx.lineTo(bx+px*headW/2,by+py*headW/2); // xòe rộng ra đáy đầu mũi tên bên trái
-  ctx.lineTo(x2,y2); // đỉnh mũi tên
-  ctx.lineTo(bx-px*headW/2,by-py*headW/2); // đáy đầu mũi tên bên phải
-  ctx.lineTo(bx-px*shaftW/2,by-py*shaftW/2); // mép thân phải
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(bx+px*shaftW/2,by+py*shaftW/2);
+  ctx.lineTo(bx+px*headW/2,by+py*headW/2);
+  ctx.lineTo(x2,y2);
+  ctx.lineTo(bx-px*headW/2,by-py*headW/2);
+  ctx.lineTo(bx-px*shaftW/2,by-py*shaftW/2);
   ctx.closePath();
   ctx.fillStyle=color;
   ctx.fill();
@@ -4736,16 +4750,13 @@ function _liteDrawShapeToCanvas(ctx,d){
     return;
   }
   if(d.type==='zigzag'){
-    // Nhiều điểm (click nối tiếp), có thể mới có 1 điểm khi đang vẽ dở → xử lý riêng, không cần đủ 2 điểm.
     const color=d.color||_liteDrawColor;
     if(pts.length){
-      // Quy đổi trước toàn bộ điểm sang toạ độ pixel (bỏ điểm không hợp lệ) để dùng chung cho cả tô nền lẫn vẽ nét.
       const scr=[];
       for(const pt of pts){
         const xx=_liteLogicalToX(pt),yy=_litePriceToY(pt.p);
         if(xx!==null&&yy!==null)scr.push({x:xx,y:yy});
       }
-      // Tô dải màu phía trong: nối khép kín các điểm thành 1 vùng, giống Kênh giá/Bán nguyệt.
       if(scr.length>=3&&!d.noFill){
         ctx.save();
         ctx.beginPath();
@@ -5355,7 +5366,6 @@ function _liteHitTestShape(d,x,y){
     const entryY=y1,targetY=y2,stopY=_litePriceToY(stopP);
     const target2Y=Number.isFinite(d.target2P)?_litePriceToY(d.target2P):null;
     const rx=Math.min(x1,x2),rw=Math.abs(x2-x1);
-    // 4 góc khung Entry-Target (gốc + 2 góc ảo) cho phép chỉnh cả ngang lẫn dọc cùng lúc, giống công cụ Hộp.
     const c=_liteCornerHitPart(x,y,x1,y1,x2,y2);
     if(c)return{part:c};
     if(x<rx-LITE_HIT_TOL||x>rx+rw+LITE_HIT_TOL)return null;
@@ -5379,7 +5389,6 @@ function _liteHitTest(x,y){
   }
   return null;
 }
-// Tooltip hộp vẽ chỉ hiện sau khi con trỏ dừng lại một khoảng, giống tooltip mã trên Heatmap.
 const LITE_RECT_TOOLTIP_DELAY_MS=600;
 let _liteRectTooltipTimer=null;
 function _liteClearRectTooltipTimer(){
@@ -5389,14 +5398,12 @@ function _liteHideRectTooltip(){
   _liteClearRectTooltipTimer();
   if(DOM.liteRectTooltip)DOM.liteRectTooltip.style.display='none';
 }
-// % tăng/giảm giữa 2 mức giá (cạnh trên/dưới hộp) của 1 hình chữ nhật — dùng chung cho cả nhãn vẽ trên canvas lẫn tooltip hover, tránh lặp lại cùng phép tính ở 2 nơi.
 function _liteRectPct(d){
   if(!d||d.type!=='rect'||!d.points||d.points.length<2)return null;
   const p0=d.points[0].p,p1=d.points[1].p;
   if(typeof p0!=='number'||typeof p1!=='number'||!p0)return null;
   return(p1-p0)/p0*100;
 }
-// Hiện % tăng/giảm ngay dưới con trỏ khi di chuột vào 1 hộp đã vẽ xong (giống hover trên heatmap), bất kể hộp đó có đang bật hiển thị nhãn cố định (showPct) hay không.
 function _liteShowRectTooltip(hit,x,y){
   const tip=DOM.liteRectTooltip;
   if(!tip)return;
@@ -5922,10 +5929,10 @@ function bindLiteDrawToolbar(){
     });
   }
   if(!DOM.liteDrawCanvas)return;
-  // Tính offset (theo giá) của điểm chuột hiện tại so với đường chéo gốc — dùng chung cho bước 2 của cả công cụ Kênh giá (channel) và Đường cong bán nguyệt (arc).
   function _liteOffsetFromChord(pend,p){
-    const denom=(pend.points[1].l-pend.points[0].l)||1e-6;
-    const lineP=pend.points[0].p+(pend.points[1].p-pend.points[0].p)*(p.l-pend.points[0].l)/denom;
+    const p0L=_litePtLogical(pend.points[0]),p1L=_litePtLogical(pend.points[1]),pL=_litePtLogical(p);
+    const denom=(p1L-p0L)||1e-6;
+    const lineP=pend.points[0].p+(pend.points[1].p-pend.points[0].p)*(pL-p0L)/denom;
     return p.p-lineP;
   }
   DOM.liteDrawCanvas.addEventListener('pointermove',e=>{
@@ -5956,10 +5963,8 @@ function bindLiteDrawToolbar(){
     }
   });
   DOM.liteDrawCanvas.addEventListener('dblclick',e=>{
-    // Kết thúc Zigzag bằng double-click: bỏ điểm cuối trùng do click thứ 2 của thao tác double-click sinh ra
     if(_liteDrawTool==='zigzag'&&_liteZigzagPending){
       e.preventDefault();
-      // Double-click sinh điểm trùng do click thứ 2 bị pointerdown nối thêm — bỏ điểm cuối trước khi chốt hình.
       if(_liteZigzagPending.points.length>1)_liteZigzagPending.points.pop();
       _liteFinishZigzag();
       setLiteDrawTool('cursor');
@@ -5968,8 +5973,6 @@ function bindLiteDrawToolbar(){
   DOM.liteDrawCanvas.addEventListener('pointerdown',e=>{
     if(_liteDrawTool==='cursor')return;
     const p0=_litePtFromEvent(e);if(!p0)return;
-    // Bước 2 của Kênh giá: đã có đường chéo (bước 1) → chỉ cần rê chuột (không cần bấm giữ) để xem
-    // trước độ rộng kênh (cập nhật ở listener pointermove bên dưới), click lần nữa để chốt.
     if(_liteDrawTool==='channel'&&_liteChannelPending){
       const pend=_liteChannelPending;
       pend.points[2]={offsetPrice:_liteOffsetFromChord(pend,p0)};
@@ -5978,7 +5981,6 @@ function bindLiteDrawToolbar(){
       setLiteDrawTool('cursor');_liteSelectShape(pend.id);
       return;
     }
-    // Bước 2 của Đường cong bán nguyệt: đã có đường chéo (bước 1) → click để chốt độ cong
     if(_liteDrawTool==='arc'&&_liteArcPending){
       const pend=_liteArcPending;
       pend.points[2]=p0;
@@ -5987,7 +5989,6 @@ function bindLiteDrawToolbar(){
       setLiteDrawTool('cursor');_liteSelectShape(pend.id);
       return;
     }
-    // Zigzag: mỗi click nối thêm 1 điểm; double-click (xử lý riêng ở trên) để kết thúc
     if(_liteDrawTool==='zigzag'){
       if(_liteZigzagPending){
         _liteZigzagPending.points.push(p0);
@@ -5999,13 +6000,11 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='text'){
-      // Click ra ngoài lúc đang soạn chữ chỉ kết thúc soạn, không mở khung chữ mới; phải bấm lại công cụ Text để viết tiếp.
       if(_liteTextEditPos){
         _liteCommitTextInput();
         setLiteDrawTool('cursor');
         return;
       }
-      // Chưa soạn gì (mới bật công cụ Text): click thẳng lên chart để gõ chữ tại đúng vị trí click, không dùng hộp thoại prompt() nữa.
       _liteOpenTextInput(p0,e);
       return;
     }
@@ -6024,7 +6023,6 @@ function bindLiteDrawToolbar(){
       return;
     }
     if(_liteDrawTool==='trendline'||_liteDrawTool==='rect'||_liteDrawTool==='arrow'||_liteDrawTool==='channel'||_liteDrawTool==='arc'){
-      // Vẽ kiểu click-click (không kéo giữ chuột); với channel/arc, điểm cuối chỉ xác lập đường chéo, bước 2 mới tạo kênh/uốn cong.
       if(_liteLinePending&&_liteLinePending.type===_liteDrawTool){
         _liteLinePending.points[1]=p0;
         const moved=Math.abs(p0.l-_liteLinePending.points[0].l)>0.4||Math.abs(p0.p-_liteLinePending.points[0].p)>1e-9;
