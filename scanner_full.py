@@ -581,7 +581,7 @@ def _true_range(df):
         df['high'] - df['low'],
         (df['high'] - prev_close).abs(),
         (df['low']  - prev_close).abs(),
-    ], axis=1).max(axis=1)
+    ], axis=1, sort=False).max(axis=1)
 
 def _wilder_atr(tr, period):
     """ATR(period) theo Wilder/AmiBroker: seed bằng SMA(period), sau đó recursive."""
@@ -859,7 +859,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
             "components": [],
         }
 
-    close_df = pd.concat({sym: d["close"] for sym, d in prepared.items()}, axis=1).sort_index()
+    close_df = pd.concat({sym: d["close"] for sym, d in prepared.items()}, axis=1, sort=False).sort_index()
     close_df = close_df.dropna(how="all").tail(360)
     returns = close_df.pct_change(fill_method=None)
     eq_ret = returns.mean(axis=1, skipna=True).fillna(0)
@@ -885,16 +885,16 @@ def compute_market_health_index(limit: int = 120) -> dict:
         ban_thao[sym] = ((pct <= -4) & (v_ratio >= 1.3)).astype(float)
 
     dates = close_df.index[-max(limit, 30):]
-    breadth_s = pd.concat(above_ma50, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
-    decline_s = pd.concat(decline_today, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
-    hoang_loan_s = pd.concat(hoang_loan, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
-    ban_thao_s = pd.concat(ban_thao, axis=1).reindex(dates).mean(axis=1, skipna=True) * 100
-    rsi_s = pd.concat(rsi14, axis=1).reindex(dates).median(axis=1, skipna=True).clip(0, 100)
-    nh_s = pd.concat(new_high, axis=1).reindex(dates).sum(axis=1, skipna=True)
-    nl_s = pd.concat(new_low, axis=1).reindex(dates).sum(axis=1, skipna=True)
+    breadth_s = pd.concat(above_ma50, axis=1, sort=False).reindex(dates).mean(axis=1, skipna=True) * 100
+    decline_s = pd.concat(decline_today, axis=1, sort=False).reindex(dates).mean(axis=1, skipna=True) * 100
+    hoang_loan_s = pd.concat(hoang_loan, axis=1, sort=False).reindex(dates).mean(axis=1, skipna=True) * 100
+    ban_thao_s = pd.concat(ban_thao, axis=1, sort=False).reindex(dates).mean(axis=1, skipna=True) * 100
+    rsi_s = pd.concat(rsi14, axis=1, sort=False).reindex(dates).median(axis=1, skipna=True).clip(0, 100)
+    nh_s = pd.concat(new_high, axis=1, sort=False).reindex(dates).sum(axis=1, skipna=True)
+    nl_s = pd.concat(new_low, axis=1, sort=False).reindex(dates).sum(axis=1, skipna=True)
     denom = (nh_s + nl_s).replace(0, np.nan)
     newhl_s = (50 + 50 * ((nh_s - nl_s) / denom)).fillna(50).clip(0, 100)
-    vol_push_s = (50 + 50 * pd.concat(vol_push, axis=1).reindex(dates).mean(axis=1, skipna=True)).clip(0, 100)
+    vol_push_s = (50 + 50 * pd.concat(vol_push, axis=1, sort=False).reindex(dates).mean(axis=1, skipna=True)).clip(0, 100)
 
     component_series = {
         "momentum": momentum_score.reindex(dates),
