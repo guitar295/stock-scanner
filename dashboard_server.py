@@ -4045,7 +4045,7 @@ function initLiteChart(){
     let _liteDrawLoopActive=true;
     const _liteDrawLoop=()=>{
       if(!_liteDrawLoopActive)return;
-      if(!document.hidden&&_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null
+      if(!document.hidden&&!_liteChartLoading&&_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null
          &&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData)){
         redrawLiteDrawings();
       }
@@ -4262,6 +4262,8 @@ function setLiteTf(tf){
 function applyLiteTf(tf,force=false){
   if(!tf)return false;
   if(!force&&_liteTf===tf)return true;
+  _liteSessionRange=null;
+  _liteUserInteractedZoom=false;
   setLiteTf(tf);
   loadLiteChart(_liteSymbol,0);
   return true;
@@ -4578,68 +4580,66 @@ function resizeLiteDrawCanvas(){
 }
 function _litePtWithTime(l,p){
   if(l===null||l===undefined||!Number.isFinite(l))return{l:0,p:p||0,ts:null};
-  let ts=null;
+  let ts=null,futureOffset=null,futureTf=null;
   if(_liteData&&_liteData.length){
     const lastIdx=_liteData.length-1;
     if(_liteData.length===1){
       ts=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime();
+    }else if(l<=0){
+      const t0=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime(),t1=new Date(liteTimeKey(_liteData[1].time)+'T00:00:00Z').getTime();
+      ts=t0+l*(t1-t0);
+    }else if(l>lastIdx+0.4){
+      futureOffset=l-lastIdx;futureTf=_liteTf;
+      const tLast=new Date(liteTimeKey(_liteData[lastIdx].time)+'T00:00:00Z').getTime(),tPrev=new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime();
+      ts=tLast+(l-lastIdx)*(tLast-tPrev);
+    }else if(l>=lastIdx-0.4){
+      ts=new Date(liteTimeKey(_liteData[lastIdx].time)+'T00:00:00Z').getTime();
     }else{
-      if(l<=0){
-        const t0=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime();
-        const t1=new Date(liteTimeKey(_liteData[1].time)+'T00:00:00Z').getTime();
-        ts=t0+l*(t1-t0);
-      }else if(l>=lastIdx){
-        const tLast=new Date(liteTimeKey(_liteData[lastIdx].time)+'T00:00:00Z').getTime();
-        const tPrev=new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime();
-        ts=tLast+(l-lastIdx)*(tLast-tPrev);
-      }else{
-        const baseIdx=Math.floor(l);
-        const frac=l-baseIdx;
-        const t1=new Date(liteTimeKey(_liteData[baseIdx].time)+'T00:00:00Z').getTime();
-        const t2=new Date(liteTimeKey(_liteData[baseIdx+1].time)+'T00:00:00Z').getTime();
-        ts=t1+frac*(t2-t1);
-      }
+      const b=Math.floor(l),f=l-b;
+      const t1=new Date(liteTimeKey(_liteData[b].time)+'T00:00:00Z').getTime(),t2=new Date(liteTimeKey(_liteData[b+1].time)+'T00:00:00Z').getTime();
+      ts=t1+f*(t2-t1);
     }
   }
-  return{l,p,ts};
+  return{l,p,ts,futureOffset,futureTf,origTf:(_liteTf||'1D').toUpperCase()};
 }
 function _litePtLogical(pt){
-  if(pt===null||pt===undefined)return null;
+  if(!pt)return null;
   if(typeof pt==='number')return pt;
   if(!_liteData||!_liteData.length)return pt.l;
-  let targetTs=pt.ts;
-  if(!targetTs)return pt.l;
   const lastIdx=_liteData.length-1;
+  if(Number.isFinite(pt.futureOffset)&&pt.futureOffset>0.4)return(pt.futureTf===_liteTf)?lastIdx+pt.futureOffset:lastIdx;
+  const targetTs=pt.ts;
+  if(!targetTs)return pt.l;
   if(lastIdx===0)return 0;
   const t0=new Date(liteTimeKey(_liteData[0].time)+'T00:00:00Z').getTime();
-  if(targetTs<=t0){
-    const t1=new Date(liteTimeKey(_liteData[1].time)+'T00:00:00Z').getTime();
-    return (targetTs-t0)/(t1-t0);
-  }
+  if(targetTs<=t0)return (targetTs-t0)/(new Date(liteTimeKey(_liteData[1].time)+'T00:00:00Z').getTime()-t0);
   const tLast=new Date(liteTimeKey(_liteData[lastIdx].time)+'T00:00:00Z').getTime();
-  if(targetTs>=tLast){
-    const tPrev=new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime();
-    return lastIdx+(targetTs-tLast)/(tLast-tPrev);
-  }
-  const tf=(_liteTf||'1D').toUpperCase();
+  if(targetTs>=tLast)return lastIdx+(targetTs-tLast)/(tLast-new Date(liteTimeKey(_liteData[lastIdx-1].time)+'T00:00:00Z').getTime());
+
+  const tf=(_liteTf||'1D').toUpperCase(),targetDate=new Date(targetTs),tY=targetDate.getUTCFullYear(),tM=targetDate.getUTCMonth();
   if(tf==='1M'||tf==='M'||tf==='MONTH'||tf==='MONTHLY'){
-    const targetDate=new Date(targetTs);
-    const tY=targetDate.getUTCFullYear(),tM=targetDate.getUTCMonth();
-    for(let i=0;i<_liteData.length;i++){
-      const d=new Date(liteTimeKey(_liteData[i].time)+'T00:00:00Z');
-      if(d.getUTCFullYear()===tY&&d.getUTCMonth()===tM)return i;
-    }
+    for(let i=0;i<_liteData.length;i++){const d=new Date(liteTimeKey(_liteData[i].time)+'T00:00:00Z');if(d.getUTCFullYear()===tY&&d.getUTCMonth()===tM)return i;}
   }
-  if(tf==='1W'||tf==='W'||tf==='WEEK'||tf==='WEEKLY'){
+  const isSubW=(tf==='1W'||tf==='W')&&(pt.origTf==='1M'||targetDate.getUTCDate()===1);
+  const isSubD=(tf==='1D'||tf==='D')&&(pt.origTf==='1M'||pt.origTf==='1W'||targetDate.getUTCDate()===1||targetDate.getUTCDay()===1);
+  if(isSubW||isSubD){
+    const matchFn=(tf==='1W'||tf==='W'||pt.origTf==='1M'||targetDate.getUTCDate()===1)?d=>(d.getUTCFullYear()===tY&&d.getUTCMonth()===tM):d=>Math.abs(targetTs-d.getTime())<4.0*86400000;
+    let bestIdx=null,minDist=Infinity;
     for(let i=0;i<_liteData.length;i++){
-      const d=new Date(liteTimeKey(_liteData[i].time)+'T00:00:00Z').getTime();
-      if(Math.abs(targetTs-d)<4.5*86400000)return i;
+      const bar=_liteData[i],d=new Date(liteTimeKey(bar.time)+'T00:00:00Z');
+      if(!matchFn(d))continue;
+      const p=pt.p||0,dist=Math.min(Math.abs((bar.high||p)-p),Math.abs((bar.low||p)-p),Math.abs((bar.close||p)-p));
+      if(dist<minDist){minDist=dist;bestIdx=i;}
     }
+    if(bestIdx!==null)return bestIdx;
+  }
+  if(tf==='1W'||tf==='W'){
+    for(let i=0;i<_liteData.length;i++){if(Math.abs(targetTs-new Date(liteTimeKey(_liteData[i].time)+'T00:00:00Z').getTime())<4.0*86400000)return i;}
   }
   const idx=_liteData.findIndex(b=>new Date(liteTimeKey(b.time)+'T00:00:00Z').getTime()>=targetTs);
+  if(idx===0)return 0;
   if(idx>0){
-    const t1=new Date(liteTimeKey(_liteData[idx-1].time)+'T00:00:00Z').getTime();
-    const t2=new Date(liteTimeKey(_liteData[idx].time)+'T00:00:00Z').getTime();
+    const t1=new Date(liteTimeKey(_liteData[idx-1].time)+'T00:00:00Z').getTime(),t2=new Date(liteTimeKey(_liteData[idx].time)+'T00:00:00Z').getTime();
     return (idx-1)+(targetTs-t1)/(t2-t1);
   }
   return pt.l;
@@ -4794,9 +4794,10 @@ function _liteDrawShapeToCanvas(ctx,d){
     _liteDrawLine(ctx,x1,y1,x2,y2,color,d.dash?[5,4]:null);
     if(selected){_liteDrawHandle(ctx,x1,y1);_liteDrawHandle(ctx,x2,y2);}
   }else if(d.type==='hline'){
+    const plotW=_liteMainPlotWidth();
     ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?1.8:1.2;if(d.dash)ctx.setLineDash([5,4]);
-    ctx.beginPath();ctx.moveTo(0,y1);ctx.lineTo(DOM.liteChart.clientWidth,y1);ctx.stroke();ctx.restore();
-    if(selected)_liteDrawHandle(ctx,DOM.liteChart.clientWidth/2,y1);
+    ctx.beginPath();ctx.moveTo(0,y1);ctx.lineTo(plotW,y1);ctx.stroke();ctx.restore();
+    if(selected)_liteDrawHandle(ctx,plotW/2,y1);
   }else if(d.type==='vline'){
     ctx.save();ctx.strokeStyle=color;ctx.lineWidth=selected?1.8:1.2;if(d.dash)ctx.setLineDash([5,4]);
     ctx.beginPath();ctx.moveTo(x1,0);ctx.lineTo(x1,DOM.liteChart.clientHeight);ctx.stroke();ctx.restore();
@@ -5042,6 +5043,10 @@ function _liteDrawBuyArrow(ctx){
 function redrawLiteDrawings(){
   if(!_liteDrawCtx||!DOM.liteDrawCanvas)return;
   const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight;
+  if(_liteChartLoading){
+    _liteDrawCtx.clearRect(0,0,w,h);
+    return;
+  }
   _liteDrawCtx.clearRect(0,0,w,h);
   _liteDrawTrendCloud(_liteDrawCtx);
   _liteDrawBBBand(_liteDrawCtx);
@@ -5167,7 +5172,7 @@ function _liteShapeAnchor(d){
   const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
   const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return null;
-  if(d.type==='hline')return{x:DOM.liteChart.clientWidth/2,y:y1};
+  if(d.type==='hline')return{x:_liteMainPlotWidth()/2,y:y1};
   if(d.type==='vline')return{x:x1,y:12};
   if(d.type==='position'){
     const entryP=pts[0].p,targetP=pts[1].p;
@@ -5313,7 +5318,10 @@ function _liteHitTestShape(d,x,y){
   const x1=_liteLogicalToX(pts[0]),y1=_litePriceToY(pts[0].p);
   const x2=_liteLogicalToX(pts[1]),y2=_litePriceToY(pts[1].p);
   if(x1===null||y1===null||x2===null||y2===null)return null;
-  if(d.type==='hline')return Math.abs(y-y1)<=LITE_HIT_TOL?{part:'line'}:null;
+  if(d.type==='hline'){
+    const plotW=_liteMainPlotWidth();
+    return(x>=0&&x<=plotW&&Math.abs(y-y1)<=LITE_HIT_TOL)?{part:'line'}:null;
+  }
   if(d.type==='vline')return Math.abs(x-x1)<=LITE_HIT_TOL?{part:'line'}:null;
   if(d.type==='trendline'||d.type==='arrow'){
     if(Math.hypot(x-x1,y-y1)<=9)return{part:'p0'};
@@ -6306,6 +6314,8 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),1200);
     return;
   }
+  _liteChartLoading=true;
+  if(_liteDrawCtx&&DOM.liteChart)_liteDrawCtx.clearRect(0,0,DOM.liteChart.clientWidth,DOM.liteChart.clientHeight);
   try{
     const _pf=window.__liteChartPrefetch;
     const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
@@ -6338,30 +6348,27 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteHasMore=j.has_more!==false;
     _liteOldestDate=_liteData.length?liteTimeKey(_liteData[0].time):null;
     _liteLoadingMore=false;
-    // Màu volume (đã được server tính sẵn)
     _liteVolumeData=j.volume||[];
-    _liteChartLoading=true;  // block lazy-load trong suốt quá trình set data + render
-    try{
-      _liteCandle.setData(_liteData);
-      _liteUpdateWhitespace(true);    // force reset cache khi load mã mới
-      setLiteRightOffset();           // căn đúng 250 bar + 8% lề phải TRƯỚC
-      renderLiteIndicators(true);     // skipRangeRestore=true → không ghi đè range vừa set
-    }finally{
-      _liteChartLoading=false;
-    }
-    if(DOM.liteChartInput)DOM.liteChartInput.value='';  // xoá ô input SAU KHI chart đã ổn định
+    _liteCandle.setData(_liteData);
+    _liteUpdateWhitespace(true);
+    setLiteRightOffset();
+    renderLiteIndicators(true);
+    if(DOM.liteChartInput)DOM.liteChartInput.value='';
     DOM.liteChartEmpty.style.display='none';
     updateLiteTitle(_liteData[_liteData.length-1]);
     _liteVolForecast=null;
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(_liteSymbol);
     _liteApplyBuySignal();
-    loadLiteDrawings();resizeLiteDrawCanvas();redrawLiteDrawings();
+    loadLiteDrawings();resizeLiteDrawCanvas();
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     updateLiteBigPrice(null);
     DOM.liteChartEmpty.textContent='Không lấy được dữ liệu VNDirect cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
+  }finally{
+    _liteChartLoading=false;
+    redrawLiteDrawings();
   }
 }
 // AUTO-REFRESH CHART — chỉ vá cây nến cuối (series.update(), không setData() lại toàn bộ) nên không nháy màn hình/mất zoom/pan.
