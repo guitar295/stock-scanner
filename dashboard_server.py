@@ -15,17 +15,17 @@ import requests
 import sqlite3
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import pytz
 import pandas as pd
+import numpy as np
 
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 app = Flask(__name__)
 app.secret_key = os.environ.get("DASHBOARD_SECRET_KEY", "change-this-dashboard-secret-key")
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
-# Ngưỡng tối thiểu (bytes) mới nén — dưới mức này overhead gzip lớn hơn lợi ích.
 _GZIP_MIN_BYTES = 500
 
 @app.after_request
@@ -70,7 +70,7 @@ def _gzip_response(response):
     if "gzip" not in (request.headers.get("Accept-Encoding", "") or "").lower():
         return response
     if response.direct_passthrough or response.headers.get("Content-Encoding"):
-        return response  # đã stream sẵn hoặc đã nén rồi
+        return response
     data = response.get_data()
     if len(data) < _GZIP_MIN_BYTES:
         return response
@@ -79,7 +79,7 @@ def _gzip_response(response):
         gz.write(data)
     compressed = buf.getvalue()
     if len(compressed) >= len(data):
-        return response  # nén không giúp ích (hiếm) — giữ bản gốc
+        return response
     response.set_data(compressed)
     response.headers["Content-Encoding"] = "gzip"
     response.headers["Content-Length"] = str(len(compressed))
@@ -97,7 +97,6 @@ _get_history_cache = None
 _get_rs_universe_symbols = None
 _cache_lock = None
 _fetch_heatmap_fn = None
-# Callback hooks injected qua start_dashboard
 _extra_quote_fn = None
 _fetch_market_health_fn = None
 _vol_forecast_fn = None
@@ -107,9 +106,9 @@ _signal_rank = {}
 
 _heatmap_cache = {"data": {}, "ts": "", "updated_at": 0}
 _heatmap_lock = threading.Lock()
+HEATMAP_LIVE_TTL_SEC = 5
 HEATMAP_TTL_SEC = 120
 
-# Cache /api/quote_extra
 _extra_quote_cache = {}
 _extra_quote_lock = threading.Lock()
 EXTRA_QUOTE_TTL_SEC = 20
@@ -120,7 +119,6 @@ SIGNAL_TTL_SEC = 10
 _market_health_cache = {"data": {}, "updated_at": 0, "pending_refresh": False}
 _market_health_lock = threading.Lock()
 
-# RS snapshot persist
 _rs_score_cache = {"scores": {}, "asof": None}
 _rs_score_lock = threading.Lock()
 _RS_EXCLUDE_SYMBOLS = {"VNINDEX", "VN30"}
@@ -131,7 +129,6 @@ _RS_RAW_TAIL_DAYS = 10
 _RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
 _RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
 
-# Lưu HEALTH xuống đĩa
 _MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
 
 def _save_market_health_to_disk():
@@ -193,7 +190,6 @@ def warm_market_health_cache():
           f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
     return data
 
-# ─── Lưu RS snapshot xuống đĩa để dashboard có điểm ngay sau restart ─────────
 def _rs_universe_set():
     if not _get_rs_universe_symbols:
         return None
@@ -261,9 +257,6 @@ def _load_rs_scores_from_disk():
 
 _load_rs_scores_from_disk()
 
-# ─── VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ thị trường (MA50/MA200) ──
-# Lấy trực tiếp từ API công khai VNDIRECT để vẽ trong khung Mrk Health thay vì
-# nhúng iframe. Cache TTL ngắn (5 phút) để không gọi API ngoài quá dày.
 VND_BASE = "https://api-finfo.vndirect.com.vn/v4"
 VND_RATIO_CODES = {
     "pe": "PRICE_TO_EARNINGS",
@@ -396,16 +389,12 @@ def api_vndirect_allocation():
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
 
-# ─── Khối ngoại & Tự doanh: gộp theo phiên, vẽ bar chart dưới khung HEALTH ──
-# Dùng chung cơ chế cache TTL 5 phút (_vnd_cached_rows) như khung Định giá/Phân bổ.
 _VND_FOREIGN_CODES = "STOCK_HNX,STOCK_UPCOM,STOCK_HOSE,ETF_HOSE,IFC_HOSE"
 _VND_PROPRIETARY_CODES = "HNX,VNINDEX,UPCOM"
-_VND_FLOW_SESSIONS = 130  # số phiên hiển thị trên bar chart Khối ngoại / Tự doanh (~6 tháng giao dịch)
+_VND_FLOW_SESSIONS = 130
 
 
 def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vol_key, sell_vol_key):
-    # buy_vol_key/sell_vol_key không dùng trong vòng lặp (KL ròng đã bỏ khỏi tooltip),
-    # giữ tham số lại để khôi phục nhanh nếu cần — xem ghi chú bên dưới.
     grouped = {}
     for item in items:
         row_date = item.get(date_key)
@@ -416,8 +405,6 @@ def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vo
         sell_value = float(item.get(sell_value_key) or 0)
         row["netValue"] += float(item.get("netVal") or (buy_value - sell_value))
 
-    # Chỉ giữ trường frontend đang dùng (date, netValueBn). Muốn khôi phục KL/GT
-    # Mua-Bán: cộng dồn thêm các field liên quan ở vòng lặp trên và ở renderVndFlowPanel() (JS).
     rows = []
     for row in grouped.values():
         rows.append({"date": row["date"], "netValueBn": row["netValue"] / 1e9})
@@ -426,7 +413,6 @@ def _vnd_sum_flow_by_date(items, date_key, buy_value_key, sell_value_key, buy_vo
 
 
 def _vnd_foreign_flow_rows():
-    # size=900 raw / 5 mã rổ ≈ 180 phiên thô — đủ dư cho _VND_FLOW_SESSIONS=130.
     url = f"{VND_BASE}/foreigns?q=code:{_VND_FOREIGN_CODES}&sort=tradingDate&size=900"
     items = _vnd_fetch_json(
         url, referer="https://dstock.vndirect.com.vn/market-watch/daily-trade-foreign"
@@ -465,7 +451,6 @@ def api_foreign_flow():
 
 @app.route("/api/proprietary_flow")
 def api_proprietary_flow():
-    # ~6 tháng lịch (182 ngày) để đủ dữ liệu thô cho _VND_FLOW_SESSIONS=130 phiên giao dịch.
     from_date = request.args.get("from") or (datetime.now(TZ_VN).date() - timedelta(days=182)).isoformat()
     cache_key = f"proprietary_flow:{from_date}"
     try:
@@ -481,23 +466,10 @@ def api_proprietary_flow():
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
 
-# Màu cột Volume: 0=trung tính, 1=cảnh báo suy yếu, 2=tín hiệu tích lũy mạnh.
-# "vpa_flag" tính sẵn khi build/vá history_cache (calc_vpa_flag) — route này chỉ đọc.
-# Nhánh weekly (resample) không có cột này nên rơi về màu trung tính.
 _VPA_FLAG_COLOR = {1: "#254fcc", 2: "#00ffe5"}
-# calc_vpa_flag cần tối thiểu ~140 phiên + buffer rolling window; chỉ dùng cho
-# _refresh_vpa_flags(), KHÔNG áp cho fetch nến chính (giữ nhẹ theo `limit` FE xin).
-_VPA_MIN_HIST_BARS = 300
-# Volume-Signal tốn CPU nên không tính lại mỗi request — cache theo mã, TTL ngắn,
-# tính lại nền (thread) khi hết hạn. Độc lập hoàn toàn với history_cache.
-_VPA_CACHE_TTL_SEC = 300
-_vpa_flag_cache: dict = {}   # symbol -> {"updated_at": float, "computing": bool, "flags_by_date": {date_str: flag}}
-_vpa_cache_lock = threading.Lock()
 
-# ── RAM cache cho /api/lightweight_chart: payload theo (symbol, tf), trả ~0ms
-# từ request thứ 2, TTL 60s để không stale lâu trong phiên. ─────────────────
-_LITE_CHART_CACHE_TTL = 120         # giây — quiet refresh dùng nocache=1 nên nến cuối vẫn realtime
-_lite_chart_cache: dict = {}        # (symbol, tf) -> {"payload": dict, "ts": float}
+_LITE_CHART_CACHE_TTL = 120
+_lite_chart_cache: dict = {}
 _lite_chart_cache_lock = threading.Lock()
 
 JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
@@ -508,8 +480,6 @@ JOURNAL_ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
 _journal_lock = threading.Lock()
 _price_alert_lock = threading.Lock()
 
-# NGUỒN DUY NHẤT cho cấu hình nhóm ngành heatmap — dùng chung cho dashboard
-# (qua __HMAP_COLS_CONFIG__) và scanner_full.py (vẽ heatmap PNG). Sửa ở đây, 2 nơi tự đồng bộ.
 HMAP_COLS_CONFIG = [
     {"groups": [{"name": "VN30", "syms": ["FPT", "GAS", "NVL", "VNM", "VCB", "PLX", "TCB", "MWG", "STB", "HPG", "PNJ", "BID", "CTG", "HDB", "VJC", "VPB", "KDH", "MBB", "VHM", "POW", "VRE", "MSN", "SSI", "ACB", "BVH", "GVR", "TPB"]}]},
     {"groups": [{"name": "NGÂN HÀNG", "syms": ["VCB", "BID", "CTG", "MBB", "ACB", "TCB", "TPB", "HDB", "SHB", "STB", "VIB", "VPB", "MSB", "ABB", "BVB", "LPB"]}, {"name": "DẦU KHÍ", "syms": ["GAS", "PVD", "PVS", "BSR", "OIL", "PVB", "PVC", "PLX", "PET", "PVT"]}]},
@@ -520,8 +490,6 @@ HMAP_COLS_CONFIG = [
     {"groups": [{"name": "ĐẦU TƯ CÔNG", "syms": ["FCN", "HHV", "LCG", "VCG", "C4G", "CTD", "HBC", "HSG", "NKG", "HPG", "KSB", "PLC"]}]},
 ]
 
-# NGUỒN DUY NHẤT cho "danh sách mã Trading" — dùng chung cho dashboard và
-# scanner_full.py để không bị lệch 2 danh sách như trước. Thêm/bớt mã: sửa ở đây.
 TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BFC", "BID", "BMI", "BSR", "BVB", "BVH", "BWE", "BAF", "CII", "CKG", "CRE", "CTD", "CTG", "CTI", "CTR", "CTS", "ORS", "D2D", "DBC", "DCM", "DSE", "DGW", "DIG", "DPG", "DPM", "DRC", "DRH", "DXG", "FCN", "FPT", "FRT", "FTS", "GAS", "GEG", "GEX", "GMD", "GVR", "HAG", "HAX", "HBC", "HCM", "HDB", "HDC", "VCK", "HDG", "HNG", "HPG", "HSG", "HTN", "HVN", "IDC", "IJC", "KBC", "KDH", "KSB", "LCG", "LDG", "LPB", "MBB", "MBS", "MSB", "MSN", "MWG", "NKG", "NLG", "NTL", "NVL", "PC1", "PDR", "PET", "PHR", "PLC", "PLX", "PNJ", "POW", "PTB", "PVD", "PVS", "PVT", "QNS", "REE", "SBT", "SCR", "SHB", "SHS", "SSI", "STB", "SZC", "TCB", "TDM", "TIG", "TNG", "TPB", "TV2", "VCB", "VCI", "VCS", "VGT", "VHC", "VHM", "VIB", "VIC", "VJC", "VNM", "VPB", "VRE"]
 
 
@@ -543,8 +511,6 @@ _journal_storage_ready = False
 _journal_storage_init_lock = threading.Lock()
 
 def _init_journal_storage():
-    # Trước đây DDL này chạy lại ở mọi request đụng journal — lãng phí dù idempotent.
-    # Giờ chỉ chạy 1 lần cho cả vòng đời process.
     global _journal_storage_ready
     if _journal_storage_ready:
         return
@@ -603,7 +569,6 @@ _price_alert_storage_ready = False
 _price_alert_storage_init_lock = threading.Lock()
 
 def _init_price_alert_storage():
-    # Cùng tối ưu như _init_journal_storage(): DDL chỉ chạy 1 lần/process.
     global _price_alert_storage_ready
     if _price_alert_storage_ready:
         return
@@ -947,8 +912,6 @@ def _compute_rs_scores(force: bool = False) -> dict:
         for rank, (sym, _) in enumerate(sorted(date_scores.items(), key=lambda item: item[1], reverse=True), start=1):
             pct_history[sym].append(100 - 100 * rank / day_count)
 
-    # Không cần _filter_rs_scores lại: sym đã bị loại/lọc theo rs_universe ngay
-    # từ vòng lặp raw_by_sym phía trên, và round() đã trả về int sẵn.
     scores = {
         sym: round(sum(vals) / len(vals))
         for sym, vals in pct_history.items()
@@ -987,9 +950,6 @@ def _attach_rs(row: dict, rs_scores: dict) -> dict:
 
 
 def _attach_rs_payload(payload: dict, symbol: str) -> dict:
-    # Đọc thẳng từ RAM cache — KHÔNG gọi _compute_rs_scores() để tránh block
-    # request chart mỗi lần cache RS trống (vd sau restart). Background task
-    # hoặc /api/signals sẽ tự populate cache khi có dữ liệu.
     with _rs_score_lock:
         rs = _rs_score_cache["scores"].get(str(symbol).upper())
     if rs is not None:
@@ -998,7 +958,6 @@ def _attach_rs_payload(payload: dict, symbol: str) -> dict:
         payload.pop("rs", None)
     return payload
 
-# ── API ──────────────────────────────────────────────────────────────────────
 @app.route("/api/signals")
 def api_signals():
     alerted = _get_alerted_today() if _get_alerted_today else {}
@@ -1011,15 +970,15 @@ def api_signals():
     rs_scores = _compute_rs_scores()
     rs_meta = _rs_cache_meta()
     result = []
-    for sym, entry in alerted.items():
+    for idx, (sym, entry) in enumerate(alerted.items()):
         sig = entry["signal"] if isinstance(entry, dict) else entry
         pct = entry.get("pct") if isinstance(entry, dict) else None
         emoji = _signal_emoji.get(sig, "📌")
         rank  = _signal_rank.get(sig, 0)
         result.append(_attach_rs({"symbol": sym, "signal": sig, "emoji": emoji,
-                                  "rank": rank, "pct": pct,
+                                  "rank": rank, "order": idx, "pct": pct,
                                   "price": entry.get("price") if isinstance(entry, dict) else None}, rs_scores))
-    result.sort(key=lambda x: x["rank"], reverse=True)
+    result.sort(key=lambda x: (x["rank"], x["order"]), reverse=True)
     momentum_result = []
     for sig in ("MACD_W", "MACD_M", "RTM"):
         rows = []
@@ -1062,16 +1021,100 @@ def api_signals():
         "session_stale": session_stale,
     })
 
+def decode_vndirect(raw_str: str) -> list[str]:
+    """Giải mã chuỗi nén Caesar Shift (charCode + (index % 5)) của VNDIRECT bảng giá."""
+    if not raw_str or not isinstance(raw_str, str):
+        return []
+    return ''.join(chr(ord(c) + (i % 5)) for i, c in enumerate(raw_str)).split('|')
+
+def _fetch_vndirect_priceboard_batch(symbols: list[str]) -> list[dict]:
+    if not symbols:
+        return []
+    url_base = "https://price-streaming-api.vndirect.com.vn/v2/stocks/snapshot"
+    results = []
+    for i in range(0, len(symbols), 80):
+        chunk = [s.upper().strip() for s in symbols[i:i + 80] if s.strip()]
+        if not chunk:
+            continue
+        try:
+            url = f"{url_base}?codes={','.join(chunk)}"
+            res = _vndirect_http_session.get(url, timeout=5)
+            if res.status_code == 200:
+                raw_list = res.json()
+                if isinstance(raw_list, list):
+                    for raw in raw_list:
+                        if isinstance(raw, str):
+                            toks = decode_vndirect(raw)
+                            if len(toks) > 53:
+                                sym = toks[1].upper().strip()
+                                ref_p = float(toks[4]) if toks[4] else 0.0
+                                match_p = float(toks[53]) if len(toks) > 53 and toks[53] else ref_p
+                                project_open = float(toks[55]) if len(toks) > 55 and toks[55] else 0.0
+                                display_price = project_open if project_open > 0 else match_p
+                                total_val = float(toks[51]) if len(toks) > 51 and toks[51] else 0.0
+                                total_vol = float(toks[52]) if len(toks) > 52 and toks[52] else 0.0
+                                results.append({
+                                    'stockSymbol': sym,
+                                    'refPrice': ref_p,
+                                    'matchedPrice': display_price,
+                                    'projectOpen': project_open,
+                                    'nmTotalTradedValue': total_val * 1_000_000,
+                                    'stockVol': total_vol
+                                })
+        except Exception:
+            pass
+
+            pass
+    return results
+
+def _default_fetch_heatmap_data():
+    need_symbols = []
+    for col in HMAP_COLS_CONFIG:
+        for g in col.get("groups", []):
+            need_symbols.extend(g.get("syms", []))
+    need_symbols.extend(TS_POOL_CONFIG)
+    need_symbols = list(set(need_symbols))
+    items = _fetch_vndirect_priceboard_batch(need_symbols)
+    result = {}
+    for it in items:
+        sym = it.get('stockSymbol')
+        if not sym:
+            continue
+        matched = float(it.get('matchedPrice') or 0)
+        ref_p = float(it.get('refPrice') or 0)
+        total_value = float(it.get('nmTotalTradedValue') or 0)
+        close = matched if matched > 0 else ref_p
+        pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+        if not math.isfinite(pct):
+            pct = 0.0
+        result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
+    ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
+    return result, ts_str
+
+def _is_market_session() -> bool:
+    now = datetime.now(TZ_VN)
+    if now.weekday() >= 5:
+        return False
+    t = now.time()
+    from datetime import time as _time
+    return (_time(9, 0) <= t <= _time(11, 35)) or (_time(13, 0) <= t <= _time(15, 5))
+
+def _heatmap_poll_interval() -> int:
+    return HEATMAP_LIVE_TTL_SEC if _is_market_session() else HEATMAP_TTL_SEC
+
 @app.route("/api/heatmap")
 def api_heatmap():
     now = time.time()
     with _heatmap_lock:
-        if now - _heatmap_cache["updated_at"] > HEATMAP_TTL_SEC and _fetch_heatmap_fn:
+        fn = _fetch_heatmap_fn or _default_fetch_heatmap_data
+        ttl = _heatmap_poll_interval() / 2.0
+        if now - _heatmap_cache["updated_at"] > ttl:
             try:
-                data, ts_str = _fetch_heatmap_fn()
-                _heatmap_cache["data"] = data
-                _heatmap_cache["ts"]   = ts_str
-                _heatmap_cache["updated_at"] = time.time()
+                data, ts_str = fn()
+                if data:
+                    _heatmap_cache["data"] = data
+                    _heatmap_cache["ts"]   = ts_str
+                    _heatmap_cache["updated_at"] = time.time()
             except Exception as e:
                 print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
         snap_time = _heatmap_cache["updated_at"]
@@ -1091,7 +1134,6 @@ def api_quote_extra():
     syms = []
     for s in raw.split(","):
         s = s.strip().upper()
-        # Chỉ nhận mã dạng chữ/số thuần, độ dài hợp lý — chặn input rác/độc.
         if s and s.isalnum() and 1 <= len(s) <= 10 and s not in syms:
             syms.append(s)
     syms = syms[:EXTRA_QUOTE_MAX_SYMS]
@@ -1130,8 +1172,6 @@ def api_market_health():
     payload = dict(data or {})
     payload["cached_age"] = int(time.time() - snap_time) if snap_time else 0
     payload["ttl_sec"] = MARKET_HEALTH_TTL_SEC
-    # True = số đang hiển thị là số cũ, chờ tính lại — frontend dùng cờ này để
-    # poll nhanh hơn (xem fetchHealth() ở JS) thay vì đợi hết TTL.
     payload["pending_refresh"] = pending_refresh
     return jsonify(_json_safe(payload))
 
@@ -1147,8 +1187,6 @@ def api_vol_forecast(symbol):
     except Exception as exc:
         return jsonify({"symbol": symbol, "error": "exception", "detail": str(exc)}), 500
 
-# ── Connection Pool cho VNDirect DChart API: giữ HTTP Keep-Alive/TLS warm để
-# khỏi handshake SSL lại mỗi request (tiết kiệm ~150-250ms/lần fetch). ─────
 _vndirect_http_session = requests.Session()
 _vndirect_http_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
@@ -1167,7 +1205,9 @@ def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
             return None
         data = res.json()
     except Exception:
+        pass
         return None
+
 
     if not data or data.get("s") != "ok" or not data.get("t"):
         return None
@@ -1198,30 +1238,53 @@ def _get_vpa_flags_from_raw(symbol, raw_bars):
     không cần bắn thêm request HTTP thứ 2 tới VNDirect."""
     if not _calc_vpa_flag_fn or not raw_bars:
         return {}
-    now = time.time()
-    with _vpa_cache_lock:
-        entry = _vpa_flag_cache.get(symbol)
-        if entry and (now - entry["updated_at"]) < _VPA_CACHE_TTL_SEC:
-            return entry["flags_by_date"]
 
     flags_by_date = {}
     try:
-        vdf = pd.DataFrame({
-            "open":   [b["open"] for b in raw_bars],
-            "high":   [b["high"] for b in raw_bars],
-            "low":    [b["low"] for b in raw_bars],
-            "close":  [b["close"] for b in raw_bars],
-            "volume": [b["volume"] for b in raw_bars],
-        })
+        vdf = pd.DataFrame({k: [b[k] for b in raw_bars] for k in ("open","high","low","close","volume")})
         flags = _calc_vpa_flag_fn(vdf).tolist()
         for bar, f in zip(raw_bars, flags):
             dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
             flags_by_date[dt_str] = int(f)
-    except Exception:
-        pass
-    with _vpa_cache_lock:
-        _vpa_flag_cache[symbol] = {"updated_at": now, "computing": False, "flags_by_date": flags_by_date}
+    except Exception as e:
+        print(f"❌ Lỗi tính VPA cho {symbol}: {e}")
+
     return flags_by_date
+
+def _default_calc_signals(df):
+    if df is None or len(df) < 50: return None, []
+    try:
+        C, V = df['close'], df['volume']
+        ma10, vma10, vma50 = C.rolling(10).mean(), V.rolling(10).mean(), V.rolling(50).mean()
+        delta = C.diff()
+        rsi = 100 - (100 / (1 + (delta.clip(lower=0).rolling(14).mean() / (-delta.clip(upper=0)).rolling(14).mean().replace(0, np.nan))))
+        bo = (C >= 1.015 * C.shift(1)) & (C > ma10) & (V > 1.2 * vma50) & (V * C > 2000000) & (C >= 5)
+        pk = (C > ma10) & (C >= 1.015 * C.shift(1)) & (V > vma10) & (V > V.shift(1)) & (V * C > 2000000) & (C >= 5)
+        bb = (rsi >= 29) & (C >= 1.015 * C.shift(1)) & (V > 1.2 * vma50) & (V * C > 2000000) & (C >= 5)
+        any_buy = bo | pk | bb
+        last_sig = ('BREAKOUT' if bo.iloc[-1] else 'POCKET PIVOT' if pk.iloc[-1] else 'BOTTOMBREAKP' if bb.iloc[-1] else None)
+        last_info = {"signal": last_sig, "emoji": "🎯", "label": last_sig} if last_sig else None
+        hist = [dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)[:10] for dt in df.index[any_buy]] if len(df) > 0 and any_buy.any() else []
+        return last_info, hist
+    except Exception:
+        return None, []
+
+        return None, []
+
+_calc_signals_fn = None
+def _get_signals_from_raw(raw_bars):
+    if not raw_bars or len(raw_bars) < 50: return None, []
+    try:
+        fn = _calc_signals_fn or _default_calc_signals
+        df = pd.DataFrame(
+            {k: [b[k] for b in raw_bars] for k in ("open","high","low","close","volume")},
+            index=pd.DatetimeIndex([datetime.fromtimestamp(b["t"]+25200, tz=timezone.utc) for b in raw_bars])
+        )
+        return fn(df)
+    except Exception:
+        return None, []
+
+        return None, []
 
 def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
@@ -1231,20 +1294,20 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """
     symbol = symbol.upper().strip()
     tf_upper = tf.upper().strip()
-    # Lazy-load lịch sử cần tối thiểu 50 bar để có nghĩa; quiet refresh (limit=10) không clamp.
     min_limit = 50 if before_date else 5
     limit = max(min_limit, min(1000, int(limit or 400)))
 
     if before_date:
-        # Lazy load: lấy bar cũ hơn before_date
         try:
             from datetime import date as _date
             bd = _date.fromisoformat(str(before_date))
             to_ts = int(datetime(bd.year, bd.month, bd.day, tzinfo=TZ_VN).timestamp()) - 1
         except Exception:
-            to_ts = int(time.time())
+            now_dt = datetime.now(TZ_VN)
+            to_ts = int(datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=TZ_VN).timestamp()) + 86400
     else:
-        to_ts = int(time.time())
+        now_dt = datetime.now(TZ_VN)
+        to_ts = int(datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=TZ_VN).timestamp()) + 86400
 
     if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
         from_ts = to_ts - (limit * 7 + 60) * 86400
@@ -1253,8 +1316,8 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
         from_ts = to_ts - (limit * 31 + 90) * 86400
         target_tf = "1M"
     else:
-        # ~1.6 ngày lịch/phiên (bù T7,CN,lễ) + buffer nhỏ
-        from_ts = to_ts - int(limit * 1.6 + 30) * 86400
+        fetch_limit = max(150, limit)
+        from_ts = to_ts - int(fetch_limit * 1.6 + 30) * 86400
         target_tf = "1D"
 
     try:
@@ -1318,8 +1381,8 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     if not final_bars:
         return None, "no_data_after_resample"
 
-    # VPA chỉ tính cho khung 1D, trực tiếp từ raw_bars (~1ms)
     vpa_flags_by_date = _get_vpa_flags_from_raw(symbol, raw_bars) if target_tf == "1D" else {}
+    signal_info, history_signals = _get_signals_from_raw(raw_bars) if target_tf == "1D" else (None, [])
 
     candles = []
     volume = []
@@ -1333,7 +1396,6 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
             color = _VPA_FLAG_COLOR.get(flag) or color
         volume.append({"time": t_val, "value": v, "color": color})
 
-    # has_more: lazy-load chunk và số bar trả về = limit → có thể còn lịch sử cũ hơn.
     has_more = before_date is not None and len(final_bars) >= limit
 
     payload = {
@@ -1343,6 +1405,8 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
         "volume": volume,
         "last_date": str(candles[-1]["time"]),
         "has_more": has_more,
+        "signal": signal_info,
+        "history_signals": history_signals,
     }
     return _attach_rs_payload(payload, symbol), None
 
@@ -1358,7 +1422,6 @@ def api_lightweight_chart(symbol):
         limit = 450
     limit = max(5, min(1000, limit))
 
-    # Lazy load: request có `before` → fetch lịch sử cũ, không đọc cache
     if before_date:
         dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit, before_date=before_date)
         if not err and dchart_data and dchart_data.get("candles"):
@@ -1366,7 +1429,6 @@ def api_lightweight_chart(symbol):
         return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
                         "detail": err or "no_data"}), 502
 
-    # Load thường: kiểm tra RAM cache trừ khi nocache=1
     nocache = (request.args.get("nocache") == "1") or (request.args.get("refresh") == "1")
     cache_key = (symbol, tf)
     now_ts = time.time()
@@ -1374,33 +1436,31 @@ def api_lightweight_chart(symbol):
         entry = _lite_chart_cache.get(cache_key)
 
     if not nocache and entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
-        # Cache còn hạn → trả ngay ~0ms
         return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
-    # Cache miss hoặc stale → fetch từ VNDirect
     dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit)
     if not err and dchart_data and dchart_data.get("candles"):
-        # Đánh dấu has_more=True khi load đầu (còn lịch sử cũ phía trước)
         dchart_data["has_more"] = True
-        # Chỉ ghi full data (limit >= 400) vào cache — không đè 50-bar quiet refresh lên cache
         if limit >= 400 and not nocache:
             with _lite_chart_cache_lock:
                 _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
-        elif entry and entry.get("payload") and dchart_data.get("candles"):
-            # Nếu có cache đầy đủ cũ, chỉ vá nến mới nhất vào cache đầy đủ
+        elif entry and entry.get("payload"):
             with _lite_chart_cache_lock:
-                full_payload = entry["payload"]
-                full_candles = full_payload.get("candles", [])
-                latest_bar = dchart_data["candles"][-1]
-                if full_candles:
-                    if full_candles[-1].get("time") == latest_bar.get("time"):
-                        full_candles[-1] = latest_bar
-                    else:
-                        full_candles.append(latest_bar)
+                fp = entry["payload"]
+                fc = fp.get("candles", [])
+                lb = dchart_data["candles"][-1]
+                if fc:
+                    if fc[-1].get("time") == lb.get("time"): fc[-1] = lb
+                    else: fc.append(lb)
+                if limit < 60:
+                    dchart_data["signal"] = fp.get("signal")
+                    dchart_data["history_signals"] = fp.get("history_signals", [])
+                else:
+                    if "signal" in dchart_data: fp["signal"] = dchart_data["signal"]
+                    if "history_signals" in dchart_data: fp["history_signals"] = dchart_data["history_signals"]
                 entry["ts"] = now_ts
         return jsonify(dchart_data)
 
-    # Nếu fetch mới lỗi nhưng có cache cũ → trả cache cũ (stale-while-revalidate)
     if entry and entry.get("payload"):
         return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
@@ -1428,7 +1488,7 @@ def api_status():
 @app.route("/api/config")
 def api_config():
     return jsonify({"signal_ttl_sec": SIGNAL_TTL_SEC,
-                    "heatmap_ttl_sec": HEATMAP_TTL_SEC,
+                    "heatmap_ttl_sec": _heatmap_poll_interval(),
                     "market_health_ttl_sec": MARKET_HEALTH_TTL_SEC})
 
 @app.route("/api/alerts", methods=["GET", "POST"])
@@ -1669,6 +1729,8 @@ def api_journal_warning():
         data = json.loads(raw) if raw.strip().startswith("{") else {"text": raw, "tone": "normal"}
     except Exception:
         data = {"text": raw, "tone": "normal"}
+
+        data = {"text": raw, "tone": "normal"}
     return jsonify({"text": data.get("text", ""), "tone": data.get("tone", "normal"), "admin": _is_admin()})
 
 @app.route("/api/journal/warning", methods=["PUT"])
@@ -1757,6 +1819,8 @@ def api_journal_delete(entry_id):
             (JOURNAL_UPLOAD_DIR / img["filename"]).unlink(missing_ok=True)
         except Exception:
             pass
+
+            pass
     return jsonify({"ok": True})
 
 @app.route("/api/journal/entries/<int:entry_id>/images", methods=["POST"])
@@ -1799,12 +1863,12 @@ def api_journal_delete_image(image_id):
         (JOURNAL_UPLOAD_DIR / img["filename"]).unlink(missing_ok=True)
     except Exception:
         pass
+
+        pass
     return jsonify({"ok": True})
 
 @app.route("/")
 def index():
-    # __HMAP_COLS_CONFIG__/__TS_POOL_CONFIG__ nằm trong DASHBOARD_MAIN_JS (route
-    # /dashboard-main.js), không còn trong DASHBOARD_HTML — trả thẳng HTML nguyên bản.
     return Response(DASHBOARD_HTML, mimetype="text/html")
 
 @app.route("/dashboard-main.js")
@@ -1818,12 +1882,9 @@ def dashboard_main_js():
         .replace("__TS_POOL_CONFIG__", json.dumps(TS_POOL_CONFIG, ensure_ascii=False))
     )
     resp = Response(js, content_type="application/javascript; charset=utf-8")
-    # KHÔNG cache dài hạn — khác lightweight-charts.min.js, file này đổi theo mỗi
-    # lần deploy, no-cache để tránh trình duyệt chạy JS cũ.
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 
-# ── START ────────────────────────────────────────────────────────────────────
 def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     fetch_heatmap_fn, signal_emoji_ref, signal_rank_ref,
                     vol_forecast_fn=None,
@@ -1831,9 +1892,10 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     momentum_today_ref=None, fetch_market_health_fn=None,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None,
-                    extra_quote_fn=None, rs_universe_ref=None):
+                    extra_quote_fn=None, rs_universe_ref=None,
+                    calc_signals_fn=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _get_rs_universe_symbols, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank, _extra_quote_fn
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank, _extra_quote_fn, _calc_signals_fn
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -1849,6 +1911,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _signal_emoji      = signal_emoji_ref
     _signal_rank       = signal_rank_ref
     _extra_quote_fn    = extra_quote_fn
+    _calc_signals_fn   = calc_signals_fn
 
     def _run():
         import logging
@@ -1860,7 +1923,6 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s")
 
 
-# ── TRADE JOURNAL HTML ──────────────────────────────────────────────────────
 JOURNAL_HTML = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -2078,8 +2140,8 @@ function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div 
     </div>
     <div class="card-actions"><button data-edit="${e.id}">✎</button><button class="danger" data-del="${e.id}">✕</button></div>
   </article>`).join('');}
-async function uploadImages(entryId,files){if(!files||!files.length)return;const fd=new FormData();[...files].forEach(f=>fd.append('images',f));await api('/api/journal/entries/'+entryId+'/images',{method:'POST',body:fd});}
-function postSym(sym,type){if(window.parent)window.parent.postMessage({type:type,symbol:sym},'*');}
+const _jSyncCh=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('chart_popout_sync'):null;
+function postSym(sym,type){const s=String(sym||'').toUpperCase().trim();if(s&&_jSyncCh)_jSyncCh.postMessage({type:'CHART_POPOUT_SYNC',symbol:s});if(window.parent)window.parent.postMessage({type:type,symbol:sym},'*');}
 function openViewer(entryId,idx){const entry=S.entries.find(x=>String(x.id)===String(entryId));const imgs=(entry&&entry.images)||[];if(!imgs.length)return;S.viewerImages=imgs;S.viewerIdx=Math.max(0,Math.min(idx,imgs.length-1));viewerShow();$('viewer').classList.add('on');}
 function viewerShow(){if(!S.viewerImages.length)return;$('viewer-img').src=S.viewerImages[S.viewerIdx].url;$('viewer-prev').style.display=S.viewerImages.length>1?'':'none';$('viewer-next').style.display=S.viewerImages.length>1?'':'none';}
 function viewerNav(dir){if(!S.viewerImages.length)return;S.viewerIdx=(S.viewerIdx+dir+S.viewerImages.length)%S.viewerImages.length;viewerShow();}
@@ -2190,8 +2252,8 @@ header h1{
   white-space:nowrap;
 }
 .hdr-right{display:flex;gap:12px;align-items:center;flex-shrink:0}
-.hdr-sound-btn{height:24px;min-width:26px;padding:0 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;user-select:none}
-.hdr-sound-btn:hover{background:var(--surf2);border-color:var(--accent);color:var(--text)}
+.hdr-sound-btn{height:24px;min-width:26px;padding:0 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;user-select:none;outline:none}
+.hdr-sound-btn:hover{background:var(--surf2);color:var(--text)}
 .hdr-sound-btn.on{background:#eef3ff;border-color:var(--accent);color:var(--accent)}
 #clock{color:var(--muted);font-size:11px;white-space:nowrap}
 .dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(14,159,110,.5);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
@@ -2294,18 +2356,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-cell{display:grid;grid-template-columns:56px 48px 1fr;align-items:center;height:24px;border-radius:4px;cursor:pointer;border:1px solid rgba(0,0,0,.1);transition:filter .12s,transform .1s,box-shadow .12s;overflow:hidden}
 .hmap-cell:hover{filter:brightness(.96);transform:scale(1.035);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .hmap-cell>span{display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;white-space:nowrap;font-family:var(--font-mono)}
+@keyframes hmapFlashUp { 0%, 35%{box-shadow:inset 0 0 0 2.5px #16a34a, 0 0 10px rgba(22,163,74,.8);transform:scale(1.04)} 100%{box-shadow:inset 0 0 0 0 transparent;transform:scale(1)} }
+@keyframes hmapFlashDown { 0%, 35%{box-shadow:inset 0 0 0 2.5px #dc2626, 0 0 10px rgba(220,38,38,.8);transform:scale(1.04)} 100%{box-shadow:inset 0 0 0 0 transparent;transform:scale(1)} }
+.hmap-cell.flash-up{animation:hmapFlashUp 1.8s ease-out;z-index:3}
+.hmap-cell.flash-down{animation:hmapFlashDown 1.8s ease-out;z-index:3}
 .hc-sym{font-size:10px}.hc-price{font-size:8.5px;opacity:.82}.hc-pct{font-size:9.5px}
 .hmap-sector-group{width:130px;margin:26px auto 0}
 .hmap-sector-cell{display:grid;grid-template-columns:1fr auto;align-items:center;height:24px;border-radius:4px;border:1px solid rgba(0,0,0,.1);padding:0 8px;gap:2px;overflow:hidden;transition:filter .12s}
 .hmap-sector-cell:hover{filter:brightness(.9)}
 .hsc-name{font-family:var(--font-ui);font-size:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsc-pct{font-family:var(--font-mono);font-size:9px;text-align:right;flex-shrink:0}
-.sankey-wrap{width:calc(100% - 24px);aspect-ratio:16/9;height:auto;margin-left:24px;background:#fff}
-#tri-content-sankey{position:relative}
-.sankey-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
-.sankey-copy-btn:hover{background:#f1f5f9}
-.sankey-svg{width:100%;height:100%;display:block;background:#fff;border:none}
-.sankey-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 .treemap-wrap{width:calc(100% - 48px);aspect-ratio:16/9;height:auto;margin:0 24px;background:#fff}
 .treemap-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .treemap-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
@@ -2534,13 +2594,15 @@ html.chart-popout-mode .lite-chart-frame{
 .lg-group{border-bottom:1px solid var(--border)}
 .lg-ghdr{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:7px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text);user-select:none;background:#f8fafc}
 .lg-ghdr:hover{color:var(--accent)}
+.lg-ghdr.dragging{opacity:.35}
+.lg-ghdr.drag-over{box-shadow:inset 0 2px 0 var(--accent)}
 .lg-ghdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .lg-add-btn{width:16px;height:16px;line-height:14px;text-align:center;padding:0;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--accent);font-size:12px;font-weight:800;cursor:pointer}
 .lg-add-btn:hover{background:#eef3ff;border-color:var(--accent)}
 .lg-caret{font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lg-group.open .lg-caret{transform:rotate(90deg)}
 .lg-symlist{display:flex;flex-direction:column}
-.lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
+.lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9;transition:background .15s}
 .lg-sym-item:hover{background:#eef3ff}
 .lg-sym-item.on{background:#dbe8ff}
 .lg-sym-item.dragging{opacity:.35}
@@ -2551,7 +2613,11 @@ html.chart-popout-mode .lite-chart-frame{
 .lite-fav-btn{color:#d1d5db}
 .lite-fav-btn.on{color:#f59e0b}
 .lg-sym-name{width:36px;flex-shrink:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lg-sym-pct{width:40px;flex-shrink:0;text-align:right}
+.lg-sym-pct{width:40px;flex-shrink:0;text-align:right;border-radius:4px;padding:1px 2px;transition:background .2s}
+@keyframes pctFlashUp { 0%, 35%{background:rgba(34,197,94,.45);box-shadow:0 0 6px rgba(34,197,94,.6)} 100%{background:transparent;box-shadow:none} }
+@keyframes pctFlashDown { 0%, 35%{background:rgba(239,68,68,.45);box-shadow:0 0 6px rgba(239,68,68,.6)} 100%{background:transparent;box-shadow:none} }
+.lg-sym-pct.flash-up{animation:pctFlashUp 1.8s ease-out}
+.lg-sym-pct.flash-down{animation:pctFlashDown 1.8s ease-out}
 .lg-sym-price{width:48px;flex-shrink:0;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lg-empty-hint{padding:14px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-align:center}
 /* Khu vực FOLLOW bên trong FAVORITE: nền xanh mờ nhạt hơn màu nền header, để phân khai rõ với khu vực Favorite thường */
@@ -2723,13 +2789,6 @@ html.chart-popout-mode .lite-chart-frame{
   .vnd-controls{flex-direction:column;align-items:flex-start;gap:8px}
   .vnd-chart-area{height:220px}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .panel-meta{font-size:9px;overflow:hidden;text-overflow:ellipsis;max-width:55%}
-  .sankey-wrap{
-    width:100% !important;
-    margin-left:0 !important;
-    aspect-ratio:16/9;
-    height:auto;
-  }
   .treemap-wrap{
     width:100% !important;
     margin-left:0 !important;
@@ -2990,7 +3049,10 @@ html.chart-popout-mode .lite-chart-frame{
 <header>
   <h1>⚡ Scanner Dashboard</h1>
   <div class="hdr-right">
-    <button class="hdr-sound-btn" id="hdr-sound-btn" title="Bật âm thanh thông báo (đang tắt)">🔕</button>
+    <div style="display:flex;gap:4px;align-items:center">
+      <button class="hdr-sound-btn" id="hdr-sound-btn" title="Bật âm thanh thông báo (đang tắt)">🔕</button>
+      <button class="hdr-sound-btn" id="hdr-desktop-notify-btn" title="Bật thông báo desktop">🖥</button>
+    </div>
     <div class="dot-live"></div>
     <span id="clock">--:--:--</span>
   </div>
@@ -3040,7 +3102,6 @@ html.chart-popout-mode .lite-chart-frame{
       <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
       <span class="hmap-toggle-icon">▶</span>
     </div>
-    <div class="pbar-wrap"><div class="pbar-fill" id="pbar-hmap"></div></div>
     <div class="panel-body" style="padding:8px">
       <div class="hmap-outer">
         <div class="hmap-row" id="hmap-grid">
@@ -3210,6 +3271,7 @@ html.chart-popout-mode .lite-chart-frame{
               <div class="lite-alert-list" id="lite-alert-list"></div>
             </div>
           </div>
+          <button class="lite-draw-btn" id="lite-chart-popout-align-btn" title="Vị trí Popout: Căn PHẢI (Bấm để đổi sang Trái)" aria-label="Đổi vị trí Popout">◨</button>
           <button class="lite-draw-btn" id="lite-chart-popout-btn" title="Mở CHART trong cửa sổ riêng" aria-label="Mở CHART trong cửa sổ riêng">⧉</button>
         </div>
       </div>
@@ -3280,7 +3342,7 @@ html.chart-popout-mode .lite-chart-frame{
     </div>
   </div>
 
-  <!-- MARKET (Fireant / Mrk Health / Sankey — gộp 1 thẻ, chuyển nội dung bằng tab) -->
+  <!-- MARKET (Fireant / Mrk Health / Treemap — gộp 1 thẻ, chuyển nội dung bằng tab) -->
   <div class="panel tri-panel" id="tri-panel">
     <div class="panel-hdr tri-hdr" id="tri-hdr">
       <span class="panel-title">MARKET</span>
@@ -3288,7 +3350,6 @@ html.chart-popout-mode .lite-chart-frame{
         <span class="tri-tab" data-tab="fireant">Fireant</span>
         <span class="tri-tab on" data-tab="health">Mrk Health</span>
         <span class="tri-tab" data-tab="treemap">Treemap</span>
-        <span class="tri-tab" data-tab="sankey">Sankey</span>
       </div>
       <span class="tri-toggle" id="tri-toggle">▶</span>
     </div>
@@ -3410,10 +3471,6 @@ html.chart-popout-mode .lite-chart-frame{
         <button class="lite-draw-btn treemap-copy-btn" id="treemap-copy-btn" title="Sao chép ảnh Treemap vào clipboard" aria-label="Sao chép ảnh Treemap vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="treemap-wrap" id="treemap-wrap"><svg class="treemap-svg" id="treemap-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
-      <div class="tri-content" id="tri-content-sankey">
-        <button class="lite-draw-btn sankey-copy-btn" id="sankey-copy-btn" title="Sao chép ảnh Sankey vào clipboard" aria-label="Sao chép ảnh Sankey vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
-        <div class="sankey-wrap" id="sankey-wrap"><svg class="sankey-svg" id="sankey-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
-      </div>
     </div>
   </div>
 </div>
@@ -3526,7 +3583,7 @@ DASHBOARD_MAIN_JS = r"""
 // DOM CACHE
 const $=id=>document.getElementById(id);
 const DOM={
-  clock:$('clock'),hdrSoundBtn:$('hdr-sound-btn'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
+  clock:$('clock'),hdrSoundBtn:$('hdr-sound-btn'),hdrDesktopNotifyBtn:$('hdr-desktop-notify-btn'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),strengthList:$('strength-list'),
   hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
@@ -3535,13 +3592,11 @@ const DOM={
   healthSvg:$('health-svg'),healthScore:$('health-score'),healthLabel:$('health-label'),
   healthDate:$('health-date'),healthTags:$('health-tags'),
   healthAnalysis:$('health-analysis'),
-  sankeyWrap:$('sankey-wrap'),sankeyCopyBtn:$('sankey-copy-btn'),
   treemapWrap:$('treemap-wrap'),treemapSvg:$('treemap-svg'),treemapCopyBtn:$('treemap-copy-btn'),
   liteChartPanel:$('lite-chart-panel'),liteChartToggle:$('lite-chart-toggle'),
   liteChartTitleLabel:$('lite-chart-title-label'),
   liteFavBtn:$('lite-fav-btn'),
   liteVietstockToggleBtn:$('lite-vietstock-toggle-btn'),liteVietstockIframe:$('lite-vietstock-iframe'),
-  sankeySvg:$('sankey-svg'),
   liteChart:$('lite-chart'),
   liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
   liteRsiChart:$('lite-rsi-chart'),liteMacdChart:$('lite-macd-chart'),
@@ -3580,7 +3635,7 @@ const DOM={
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
   liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
-  pbarSig:$('pbar-sig'),pbarHmap:$('pbar-hmap'),pbarHealth:$('pbar-health'),healthCopyBtn:$('health-copy-btn'),
+  pbarSig:$('pbar-sig'),pbarHealth:$('pbar-health'),healthCopyBtn:$('health-copy-btn'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
@@ -3641,7 +3696,7 @@ let _attentTodayMap=new Map();
 let _breakvolTodayMap=new Map();
 let _lastStrengthRows=[];
 let _liteRsScore=null;
-let SIG_TTL=30,HMAP_TTL=120,HEALTH_TTL=1800;
+let SIG_TTL=30,HMAP_TTL=5,HEALTH_TTL=1800;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
 const FOLLOW_ON_KEY='dashboard_follow_on';
@@ -3901,6 +3956,7 @@ function _liteSyncVisibleRangeFrom(source,range){
   _liteSyncing=false;
 }
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
+const _chartSyncChannel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('chart_popout_sync'):null;
 let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
 // Mũi tên báo mua tự vẽ canvas (không dùng setMarkers()) vì setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart.
 let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price của nến LUÔN đọc live từ _liteData
@@ -3956,7 +4012,7 @@ function initLiteChart(){
   _liteVolume=_liteChart.addHistogramSeries({
     priceFormat:{type:'volume'},priceScaleId:'',lastValueVisible:false,priceLineVisible:false
   });
-  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:0}});
+  _liteVolume.priceScale().applyOptions({scaleMargins:{top:.78,bottom:.007}});
   _liteMainWhite=_liteChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteRsiWhite=_liteRsiChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
   _liteMacdWhite=_liteMacdChart.addLineSeries({lineVisible:false,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false});
@@ -4046,7 +4102,7 @@ function initLiteChart(){
     const _liteDrawLoop=()=>{
       if(!_liteDrawLoopActive)return;
       if(!document.hidden&&!_liteChartLoading&&_liteDrawCtx&&DOM.liteChartFrame&&DOM.liteChartFrame.offsetParent!==null
-         &&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData)){
+         &&(_liteDrawings.length||_liteDrawActive||_liteBBFillData||_liteTrendFillData||_liteBuyArrowData||(_liteHistorySignals&&_liteHistorySignals.length))){
         redrawLiteDrawings();
       }
       requestAnimationFrame(_liteDrawLoop);
@@ -4082,7 +4138,7 @@ function _liteAllIndCheckboxes(){
 function loadLiteIndicatorPrefs(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(LITE_IND_KEY)||'{}')||{};}catch(e){prefs={};}
-  const DEFAULT_ON_INDICATORS=new Set(['macd','signal','volcolor','ma10','ma200','ema20','ema50']);
+  const DEFAULT_ON_INDICATORS=new Set(['macd','signal','signalgrp_on','volcolor','ma10','ma200','ema20','ema50']);
   _liteAllIndCheckboxes().forEach(cb=>{
     cb.checked=DEFAULT_ON_INDICATORS.has(cb.value)?(prefs[cb.value]!==false):(prefs[cb.value]===true);
   });
@@ -4218,26 +4274,24 @@ function updateLiteTitle(bar){
     seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
   ).join('');
 }
-// Mũi tên điểm mua gắn vào nến cuối dựa vào _sigTodayMap đã cache sẵn, không gọi API/tính toán thêm.
-function _liteApplyBuySignal(){
+let _liteHistorySignals=[], _liteCurrentSignal=null;
+function _liteApplyBuySignal(sigOverride){
   if(!_liteCandle||!_liteData.length)return;
-  const sig=(_liteChecked('signalgrp_on')&&_liteChecked('signal'))?_sigTodayMap.get(_liteSymbol):null;
+  if(sigOverride!==undefined)_liteCurrentSignal=sigOverride;
+  const sig=(_liteChecked('signalgrp_on')&&_liteChecked('signal'))?_liteCurrentSignal:null;
   if(sig){
     let arrowColor='#9333ea';
     if(DOM.liteChartSignal){
       DOM.liteChartSignal.innerHTML=`<span class="s-emoji">${sig.emoji||'📌'}</span><span class="s-badge ${BADGE_MAP[sig.signal]||'b-MACROSS'}">${signalLabel(sig.signal)}</span>`;
       DOM.liteChartSignal.classList.add('on');
-      // Màu mũi tên lấy từ màu chữ badge tín hiệu đã render (không định nghĩa bảng màu riêng) để luôn đồng bộ với badge.
       const badgeEl=DOM.liteChartSignal.querySelector('.s-badge');
       if(badgeEl)arrowColor=getComputedStyle(badgeEl).color||arrowColor;
     }
-    // Mũi tên báo mua vẽ tay canvas (không setMarkers, xem lý do ở _liteBuyArrowData); không hiện text để tránh trùng badge tín hiệu phía trên.
-    _liteBuyArrowData={color:arrowColor}; // time/price của nến đọc live ở _liteDrawBuyArrow, không lưu ở đây
+    _liteBuyArrowData={color:arrowColor};
   }else{
     _liteBuyArrowData=null;
     if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
   }
-  // Không tự redrawLiteDrawings() ở đây — nơi gọi hàm tự quyết định redraw để tránh vẽ lại thừa.
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -4565,11 +4619,8 @@ function saveLiteDrawings(){
     }
   }
   _liteLSSet(_liteDrawStoreKey(),JSON.stringify(_liteDrawings));
+  _chartSyncChannel?.postMessage({type:'CHART_DRAW_SYNC',sym:_liteSymbol});
 }
-window.addEventListener('storage',e=>{
-  if(e.key!==_liteDrawStoreKey())return;
-  loadLiteDrawings();redrawLiteDrawings();
-});
 function resizeLiteDrawCanvas(){
   if(!DOM.liteDrawCanvas||!DOM.liteChart)return;
   const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight,dpr=window.devicePixelRatio||1;
@@ -4958,7 +5009,9 @@ function _liteMainPlotWidth(){
 }
 function _liteClipMainPlot(ctx){
   ctx.beginPath();
-  ctx.rect(0,0,_liteMainPlotWidth(),DOM.liteChart.clientHeight||0);
+  const hasVisibleTimeScale=_liteChart?.timeScale()?.options?.()?.visible!==false;
+  const plotH=(DOM.liteChart?.clientHeight||0)-(hasVisibleTimeScale?26:0);
+  ctx.rect(0,0,_liteMainPlotWidth(),plotH);
   ctx.clip();
 }
 function _liteDrawBBBand(ctx){
@@ -5040,6 +5093,24 @@ function _liteDrawBuyArrow(ctx){
   ctx.fillRect(x-SHAFT_HALF_W,yHeadBase,SHAFT_HALF_W*2,SHAFT_H);
   ctx.restore();
 }
+function _liteDrawHistorySignalDots(ctx){
+  if(!_liteHistorySignals||!_liteHistorySignals.length||!_liteChart||!_liteData.length)return;
+  if(!_liteChecked('signalgrp_on')||!_liteChecked('signal'))return;
+  const hasVisibleTimeScale=_liteChart?.timeScale()?.options?.()?.visible!==false;
+  const plotH=(DOM.liteChart?.clientHeight||0)-(hasVisibleTimeScale?26:0);
+  const H_DASH=2;
+  const yDash=Math.max(0,Math.round(plotH-H_DASH));
+  if(yDash<=0)return;
+  ctx.save();
+  _liteClipMainPlot(ctx);
+  ctx.fillStyle='#d946ef';
+  for(let i=0;i<_liteHistorySignals.length;i++){
+    const x=_liteTimeToX(_liteHistorySignals[i]);
+    if(x===null)continue;
+    ctx.fillRect(Math.round(x-2.5),yDash,5,H_DASH);
+  }
+  ctx.restore();
+}
 function redrawLiteDrawings(){
   if(!_liteDrawCtx||!DOM.liteDrawCanvas)return;
   const w=DOM.liteChart.clientWidth,h=DOM.liteChart.clientHeight;
@@ -5051,6 +5122,7 @@ function redrawLiteDrawings(){
   _liteDrawTrendCloud(_liteDrawCtx);
   _liteDrawBBBand(_liteDrawCtx);
   _liteDrawBuyArrow(_liteDrawCtx);
+  _liteDrawHistorySignalDots(_liteDrawCtx);
   for(const d of _liteDrawings)_liteDrawShapeToCanvas(_liteDrawCtx,d);
   if(_liteDrawActive)_liteDrawShapeToCanvas(_liteDrawCtx,_liteDrawActive);
   if(_liteChannelPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteChannelPending);
@@ -5668,7 +5740,7 @@ function _liteDownloadChartImage(blob){
   document.body.appendChild(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-// Copy PNG vào clipboard, dùng chung cho Mrk Health/Sankey/Treemap (dựng ảnh bất đồng bộ qua <img>,
+// Copy PNG vào clipboard, dùng chung cho Mrk Health/Treemap (dựng ảnh bất đồng bộ qua <img>,
 // khác thẻ CHART là canvas đồng bộ). Phải gọi clipboard.write() NGAY trong lượt chạm, truyền thẳng
 // Promise<Blob> chưa resolve — nếu await xong Blob mới gọi thì user-activation đã hết hạn trên mobile.
 async function _liteCopyOrDownloadPng(btn,buildBlob,filename,label){
@@ -6326,11 +6398,8 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     _lgUpdateChartFavBtn();
-    if(_lastChartSyncSymbol===s){
-      _lastChartSyncSymbol=null;
-    }else if(!skipPopoutSync){
-      if(_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
-      if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+    if(!skipPopoutSync){
+      _chartSyncChannel?.postMessage({type:'CHART_POPOUT_SYNC',symbol:s});
       if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
     }
 	    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
@@ -6359,7 +6428,9 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     _liteVolForecast=null;
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(_liteSymbol);
-    _liteApplyBuySignal();
+    _liteHistorySignals=j.history_signals||[];
+    _liteCurrentSignal=j.signal||null;
+    _liteApplyBuySignal(_liteCurrentSignal);
     loadLiteDrawings();resizeLiteDrawCanvas();
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
@@ -6372,42 +6443,36 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   }
 }
 // AUTO-REFRESH CHART — chỉ vá cây nến cuối (series.update(), không setData() lại toàn bộ) nên không nháy màn hình/mất zoom/pan.
-const LITE_CHART_AUTOREFRESH_SEC=10;
+const LITE_CHART_AUTOREFRESH_SEC=5;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
   if(_liteQuietRefreshing)return;                          // lượt trước chưa xong, khỏi chồng lượt
-  if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;       // panel CHART đang thu gọn/ẩn — khỏi tải ngầm phí công
-  if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return; // chart chưa sẵn sàng
-  if(document.hidden)return;                                // tab đang ẩn, khỏi tải ngầm phí công
-  if(_liteDrawTool!=='cursor')return;                        // đang dùng công cụ vẽ tay, khỏi làm gián đoạn
+  if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;
+  if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return;
+  if(document.hidden)return;
+  if(_liteDrawTool!=='cursor')return;
   const sym=_liteSymbol,tf=_liteTf;
   _liteQuietRefreshing=true;
   try{
-    // limit nhỏ vì chỉ cần nến cuối cùng (limit=10 cực nhẹ ~1KB). Bỏ qua cache với nocache=1 để lấy giá realtime mới nhất.
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
-	    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
-	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
+    if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
+    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
     const key=liteTimeKey(rawBar.time);
     const isNewBar=!_liteDataByTime.has(key);
-    const prevBar=isNewBar?_liteData[_liteData.length-1]
-                          :(_liteData.length>1?_liteData[_liteData.length-2]:null);
+    const prevBar=isNewBar?_liteData[_liteData.length-1]:(_liteData.length>1?_liteData[_liteData.length-2]:null);
     rawBar.pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
-    const bar=rawBar;
     const prevRangeBeforeUpdate=_liteGetVisibleLogicalRange();
-    if(isNewBar)_liteData.push(bar);else _liteData[_liteData.length-1]=bar;
-    _liteDataByTime.set(key,bar);
-    _liteCandle.update(bar);
+    if(isNewBar)_liteData.push(rawBar);else _liteData[_liteData.length-1]=rawBar;
+    _liteDataByTime.set(key,rawBar);
+    _liteCandle.update(rawBar);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
-    if(isNewBar)_liteUpdateWhitespace(); // vùng trắng bên phải dịch theo khi có nến mới
-    // Dùng bản nhẹ: chỉ setData() trên series có sẵn, không destroy/recreate toàn bộ.
-    // renderLiteIndicators() đầy đủ chỉ cần khi sang phiên mới (isNewBar) — lúc đó
-    // whitespace + rightOffset đã thay đổi nên cần rebuild để layout khớp lại.
+    if(isNewBar)_liteUpdateWhitespace();
     if(isNewBar){
       renderLiteIndicators(false,prevRangeBeforeUpdate,true);
     }else{
@@ -6415,11 +6480,12 @@ async function _liteQuietRefreshChart(){
       if(!_liteApplyVisibleLogicalRange(prevRangeBeforeUpdate))setLiteRightOffset();
     }
     updateLiteTitle(_liteData[_liteData.length-1]);
-    updateLiteBigPrice(_liteData[_liteData.length-1]); // vẽ lại ngay với dự báo đang có (chưa chờ fetch)
-    _liteFetchVolForecast(sym); // cùng nhịp 20s với refresh nến — lấy lại progress/ratio mới nhất từ server
-    _liteApplyBuySignal();
+    updateLiteBigPrice(_liteData[_liteData.length-1]);
+    _liteFetchVolForecast(sym);
+    if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
+    if(j.signal!==undefined)_liteCurrentSignal=j.signal;
+    _liteApplyBuySignal(_liteCurrentSignal);
   }catch(e){
-    // Lỗi mạng/tạm thời — bỏ qua êm, chờ lượt refresh kế tiếp, không làm phiền người dùng.
   }finally{
     _liteQuietRefreshing=false;
   }
@@ -6430,45 +6496,32 @@ async function _liteFetchMoreHistory(){
   const sym=_liteSymbol,tf=_liteTf,oldestDate=_liteOldestDate;
   _liteLoadingMore=true;
   try{
-    const url='/api/lightweight_chart/'+encodeURIComponent(sym)
-             +'?tf='+encodeURIComponent(tf)
-             +'&limit=300'
-             +'&before='+encodeURIComponent(oldestDate);
+    const url='/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=300&before='+encodeURIComponent(oldestDate);
     const r=await fetch(url);
     if(!r.ok){_liteHasMore=false;return;}
     const j=await r.json();
-    // Giám sát: đã đổi mã/TF trong lúc chờ → bỏ kết quả này, khỏi ghi nhầm
     if(sym!==_liteSymbol||tf!==_liteTf)return;
     if(!j.candles||!j.candles.length){_liteHasMore=false;return;}
     _liteHasMore=j.has_more!==false;
-    // Build các bar mới (cũ hơn) với pct
     const rawNew=j.candles;
-    const newBars=new Array(rawNew.length);
-    for(let i=0;i<rawNew.length;i++){
-      const bar=rawNew[i];
-      bar.pct=i>0?((bar.close-rawNew[i-1].close)/rawNew[i-1].close*100):0;
-      newBars[i]=bar;
-    }
-    // Prepend vào mảng địa phương
-    _liteData=[...newBars,..._liteData];
+    rawNew.forEach((b,i)=>{b.pct=i>0?((b.close-rawNew[i-1].close)/rawNew[i-1].close*100):0;});
+    _liteData=[...rawNew,..._liteData];
     _liteVolumeData=[...(j.volume||[]),..._liteVolumeData];
+    if(j.history_signals&&j.history_signals.length)_liteHistorySignals=Array.from(new Set([...j.history_signals,..._liteHistorySignals]));
     _liteDataByTime=new Map(_liteData.map(b=>[liteTimeKey(b.time),b]));
     _liteOldestDate=liteTimeKey(_liteData[0].time);
-    // Lưu range đang xem để không bị nhảy sau setData()
     const prevRange=_liteChart.timeScale().getVisibleLogicalRange();
-    const prependCount=newBars.length;
+    const prependCount=rawNew.length;
     _liteCandle.setData(_liteData);
-    // Dùng _liteUpdateIndicatorData() thay vì renderLiteIndicators() — chỉ cập nhật dữ liệu, không destroy/recreate → hết giật.
     _liteUpdateIndicatorData();
-    // Dịch lại visible range sau 1 frame GPU: tránh tranh chấp với autoScale của setData() gây hiện tượng giật/nhảy màn hình ở một số mã có biên độ giá lịch sử rộng.
     if(prevRange&&Number.isFinite(prevRange.from)&&Number.isFinite(prevRange.to)){
       const target={from:prevRange.from+prependCount,to:prevRange.to+prependCount};
-      requestAnimationFrame(()=>_liteApplyVisibleLogicalRange(target));
+      requestAnimationFrame(()=>{_liteApplyVisibleLogicalRange(target);redrawLiteDrawings();});
     }else{
       setLiteRightOffset();
+      redrawLiteDrawings();
     }
   }catch(e){
-    // Lỗi mạng: bỏ qua êm, tự retry khi user kéo trái lần nữa
   }finally{
     _liteLoadingMore=false;
   }
@@ -6551,7 +6604,18 @@ function bindLiteChartControls(){
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
-    if(!_litePointerInside)return;
+    if(!_litePointerInside||_liteTextEditPos)return;
+    const tag=(document.activeElement?.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='textarea')return;
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+      const ts=_liteChart?.timeScale(),r=ts?.getVisibleLogicalRange();
+      if(r&&Number.isFinite(r.from)){
+        e.preventDefault();
+        ts.setVisibleLogicalRange({from:r.from+(e.key==='ArrowLeft'?-1:1),to:r.to+(e.key==='ArrowLeft'?-1:1)});
+        redrawLiteDrawings();
+      }
+      return;
+    }
     if(_liteTryDesktopTfShortcut(e))return;
     _liteTryOpenSearchOnKey(e);
   });
@@ -6601,9 +6665,9 @@ function _getPopupViewport(){
   const width=Math.max(960,window.screen.availWidth||window.innerWidth||1280);
   return{left,top,width,height};
 }
-function _openMaximizedWindow(url,name,width,height,offsetLeft,offsetTop,extra=''){
+function _openMaximizedWindow(url,name,width,height,offsetLeft,offsetTop,extra='',align='right'){
   const box=_getPopupViewport();
-  const popupLeft=box.left+Math.max(0,box.width-width-offsetLeft);
+  const popupLeft=align==='left'?(box.left+offsetLeft):(box.left+Math.max(0,box.width-width-offsetLeft));
   const features=[
     `left=${popupLeft}`,`top=${box.top+offsetTop}`,`width=${width}`,`height=${height}`,
     'resizable=yes','scrollbars=yes','menubar=no','toolbar=no','location=no','status=no'
@@ -6707,17 +6771,111 @@ function mkFollowGroup(d){
   const avg=avgPct(FOLLOW,d),sign=avg>=0?'+':'',cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
   return `<div class="hmap-group hmap-follow-overlay"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
-function renderHeatmap(d){
-  if(!d||!Object.keys(d).length){DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';return;}
-  const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
-  const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
-  const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
-  HMAP_COLS.forEach((cd,i)=>{
-    const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
-    const followExtra=i===0?mkFollowGroup(d):'';
-    parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${followExtra}${extra}</div>`);
+function _patchHeatmapCell(sym,price,pct,totalVal,prevPrice){
+  const old=window._lastHmapData?.[sym];
+  const oldPrice=typeof prevPrice==='number'?prevPrice:(typeof old?.price==='number'?old.price:0);
+  window._lastHmapData=window._lastHmapData||{};
+  window._lastHmapData[sym]={price,pct,total_value:totalVal>0?totalVal:(old?.total_value||0)};
+  const sign=pct>=0?'+':'',style=cellStyle(pct),isChanged=oldPrice>0&&price>0&&price!==oldPrice,isUp=price>oldPrice;
+
+  document.querySelectorAll(`.hmap-cell[data-sym="${sym}"]`).forEach(cell=>{
+    const pEl=cell.querySelector('.hc-price'),pctEl=cell.querySelector('.hc-pct');
+    if(pEl&&pEl.textContent!==fmtP(price))pEl.textContent=fmtP(price);
+    if(pctEl)pctEl.textContent=`${sign}${pct.toFixed(1)}%`;
+    cell.style.background=style.bg;cell.style.color=style.fg;
+    cell.title=`${sym}|${fmtP(price)}|${sign}${pct.toFixed(2)}%`;
+    if(isChanged){
+      cell.classList.remove('flash-up','flash-down');
+      void cell.offsetWidth;
+      cell.classList.add(isUp?'flash-up':'flash-down');
+      setTimeout(()=>cell.classList.remove('flash-up','flash-down'),1800);
+    }
   });
-  DOM.hmapGrid.innerHTML=parts.join('');
+
+  document.querySelectorAll(`.lg-sym-item[data-sym="${sym}"]`).forEach(item=>{
+    const pEl=item.querySelector('.lg-sym-price'),pctEl=item.querySelector('.lg-sym-pct');
+    const color=pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
+    if(pEl&&!item.closest('.lg-group')?.dataset.group?.includes('STRENGTH'))pEl.textContent=fmtP(price);
+    if(pctEl){
+      pctEl.textContent=`${sign}${pct.toFixed(1)}%`;
+      pctEl.style.color=color;
+      if(isChanged){
+        pctEl.classList.remove('flash-up','flash-down');
+        void pctEl.offsetWidth;
+        pctEl.classList.add(isUp?'flash-up':'flash-down');
+        setTimeout(()=>pctEl.classList.remove('flash-up','flash-down'),1800);
+      }
+    }
+  });
+}
+function renderHeatmap(d){
+  if(!d||!Object.keys(d).length){
+    if(!DOM.hmapGrid.querySelector('.hmap-cell')){
+      DOM.hmapGrid.innerHTML='<div class="empty"><div class="big">🗺</div><div>Chưa có dữ liệu</div></div>';
+    }
+    return;
+  }
+  if(!DOM.hmapGrid.querySelector('.hmap-cell')){
+    const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
+    const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
+    const parts=[`<div class="hmap-col">${mkGroup('TRADING STOCKS',tsSyms,d)}</div>`];
+    HMAP_COLS.forEach((cd,i)=>{
+      const extra=i===HMAP_COLS.length-1?mkSectorCol(d):'';
+      const followExtra=i===0?mkFollowGroup(d):'';
+      parts.push(`<div class="hmap-col">${cd.groups.map(g=>mkGroup(g.name,g.syms,d)).join('')}${followExtra}${extra}</div>`);
+    });
+    DOM.hmapGrid.innerHTML=parts.join('');
+    window._lastHmapData={...d};
+    return;
+  }
+
+  const old=Object.assign({},window._lastHmapData||{}),changed=[],unchanged=[];
+  Object.keys(d).forEach(s=>{
+    const it=d[s]||{},oldP=old[s]?.price;
+    if(oldP>0&&it.price>0&&it.price!==oldP)changed.push({s,it,oldP});
+    else unchanged.push({s,it,oldP:oldP||0});
+  });
+  unchanged.forEach(({s,it,oldP})=>{_patchHeatmapCell(s,it.price||0,it.pct||0,it.total_value||0,oldP);});
+  if(changed.length){
+    const maxDelay=Math.max(600,(HMAP_TTL-1.2)*1000);
+    changed.sort(()=>Math.random()-0.5).forEach(({s,it,oldP},i)=>{
+      setTimeout(()=>{_patchHeatmapCell(s,it.price||0,it.pct||0,it.total_value||0,oldP);},(i/changed.length)*maxDelay+Math.random()*150);
+    });
+  }
+
+  DOM.hmapGrid.querySelectorAll('.hmap-group').forEach(group=>{
+    const avgEl=group.querySelector('.hmap-gavg');
+    if(avgEl){
+      const cells=group.querySelectorAll('.hmap-cell');
+      let sum=0,count=0;
+      cells.forEach(c=>{
+        const s=c.dataset.sym;
+        if(d[s]&&typeof d[s].pct==='number'){sum+=d[s].pct;count++;}
+      });
+      if(count>0){
+        const avg=sum/count,sign=avg>=0?'+':'';
+        avgEl.className=`hmap-gavg ${avg>0.05?'pos':avg<-0.05?'neg':'zer'}`;
+        avgEl.textContent=`${sign}${avg.toFixed(1)}%`;
+      }
+    }
+  });
+
+  const secGroup=DOM.hmapGrid.querySelector('.hmap-sector-group');
+  if(secGroup){
+    const groups=[];
+    HMAP_COLS.forEach(cd=>cd.groups.forEach(g=>{if(g.name!=='VN30')groups.push({name:g.name,avg:avgPct(g.syms,d)});}));
+    groups.sort((a,b)=>b.avg-a.avg);
+    secGroup.querySelectorAll('.hmap-sector-cell').forEach((cell,i)=>{
+      const g=groups[i];
+      if(g){
+        const nameEl=cell.querySelector('.hsc-name'),pctEl=cell.querySelector('.hsc-pct');
+        if(nameEl)nameEl.textContent=g.name;
+        if(pctEl)pctEl.textContent=`${g.avg>=0?'+':''}${g.avg.toFixed(1)}%`;
+        const st=cellStyle(g.avg);
+        cell.style.background=st.bg;cell.style.color=st.fg;
+      }
+    });
+  }
 }
 // Event delegation heatmap
 DOM.hmapGrid.addEventListener('click',e=>{
@@ -6736,9 +6894,10 @@ DOM.hmapGrid.addEventListener('dblclick',e=>{
 // Gửi mã sang cửa sổ CHART popout ngay khi biết mã, không chờ chart chính tải xong, để 2 chart fetch song song.
 function _syncChartPopoutSymbol(sym){
   const s=String(sym||'').toUpperCase().trim();
-  if(s&&_chartPopoutWin&&!_chartPopoutWin.closed)_chartPopoutWin.postMessage({type:'CHART_POPOUT_SYNC',symbol:s},'*');
+  if(s&&s!==_liteSymbol){
+    _chartSyncChannel?.postMessage({type:'CHART_POPOUT_SYNC',symbol:s});
+  }
 }
-// Nạp chart cửa sổ chính + đồng bộ popout song song (dùng chung cho mọi nơi bấm chọn mã).
 function _jumpLiteChart(sym){
   _syncChartPopoutSymbol(sym);
   loadLiteChart(sym,0,true);
@@ -6750,6 +6909,7 @@ function _hmapDesktopClick(sym){
     _jumpLiteChart(sym);
     if(_isChartPanelOpen)return;
     if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
+    if(_liteLSGet('chart_popout_open','0')==='1')return;
     openChart(sym);
   },220);
 }
@@ -7217,180 +7377,33 @@ async function fetchHealth(){
     _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
   }
 }
-// SANKEY RENDER
-const SANKEY_SECTORS=[];
-HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=='VN30')SANKEY_SECTORS.push(g);}));
-const SANKEY_SVG_NS='http://www.w3.org/2000/svg';
-const SANKEY_COLORS=['#ec8784','#a378e0','#da9672','#d5cc71','#72dacd','#a1e078','#7882e0','#e0b478','#78e0b4','#e078c8','#96c8fa','#b5d67a'];
-const SANKEY_MIN_WEIGHT=10000000;
-function sankeyFmtNum(v){return(!Number.isFinite(v)||v<=0)?'--':(v/1e9).toFixed(1)+'B';}
-function sankeyFmtPct(v){return Number.isFinite(v)?(v>=0?'+':'')+v.toFixed(2)+'%':'--';}
-function sankeyBadgeColor(pct){
-  if(pct>0)return{fill:'#0e9f6e',text:'#fff'};
-  if(pct<0)return{fill:'#e02424',text:'#fff'};
-  return{fill:'#d4a017',text:'#fff'};
-}
-function sankeyWeight(entry){
-  if(!entry||typeof entry!=='object')return 0;
-  const totalValue=Number(entry.total_value);
-  return Number.isFinite(totalValue)&&totalValue>0?totalValue:0;
-}
-function sankeyPath(x1,y1t,y1b,x2,y2t,y2b){
-  const c1=x1+(x2-x1)*0.45,c2=x1+(x2-x1)*0.55;
-  return`M ${x1} ${y1t} C ${c1} ${y1t}, ${c2} ${y2t}, ${x2} ${y2t} L ${x2} ${y2b} C ${c2} ${y2b}, ${c1} ${y1b}, ${x1} ${y1b} Z`;
-}
-function sankeyEl(tag,attrs={},text=''){
-  const el=document.createElementNS(SANKEY_SVG_NS,tag);
+// =============================================================================
+// TREEMAP RENDER
+// =============================================================================
+const TREEMAP_SECTORS=[];
+HMAP_COLS.forEach(col=>col.groups.forEach(g=>{if(g.name!=='VN30')TREEMAP_SECTORS.push(g);}));
+const TREEMAP_SVG_NS='http://www.w3.org/2000/svg';
+const TREEMAP_MIN_WEIGHT=10000000;
+
+function _svgEl(tag,attrs={},text=''){
+  const el=document.createElementNS(TREEMAP_SVG_NS,tag);
   Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));
   if(text)el.textContent=text;
   return el;
 }
-function sankeyLimit(rank){
-  if(rank<=1)return 10;
-  if(rank<=4)return 6;
-  if(rank<=7)return 4;
-  if(rank<=11)return 2;
-  return 1;
+
+function treemapWeight(entry){
+  if(!entry||typeof entry!=='object')return 0;
+  const totalValue=Number(entry.total_value);
+  return Number.isFinite(totalValue)&&totalValue>0?totalValue:0;
 }
-function sankeyDataset(data){
-  const sectors=SANKEY_SECTORS.map(g=>{
-    const stocks=g.syms.map(sym=>{
-      const entry=data[sym],weight=sankeyWeight(entry);
-      return{sym,pct:Number(entry?.pct),weight,sector:g.name};
-    }).filter(x=>x.weight>SANKEY_MIN_WEIGHT);
-    return{name:g.name,stocks,weight:stocks.reduce((sum,s)=>sum+s.weight,0)};
-  }).filter(sec=>sec.weight>0);
-  sectors.sort((a,b)=>b.weight-a.weight);
-  sectors.forEach((sec,idx)=>{sec.rank=idx;sec.limit=sankeyLimit(idx);sec.color=SANKEY_COLORS[idx%SANKEY_COLORS.length];});
-  const globalStocks=sectors.flatMap(sec=>sec.stocks).sort((a,b)=>b.weight-a.weight);
-  sectors.forEach(sec=>{
-    let drawn=0;sec.visibleStocks=[];
-    for(const stock of globalStocks){
-      if(stock.sector!==sec.name)continue;
-      sec.visibleStocks.push(stock);
-      drawn+=1;
-      if(drawn>=sec.limit)break;
-    }
-  });
-  return{sectors,total:sectors.reduce((sum,sec)=>sum+sec.weight,0)};
-}
-function renderSankey(data){
-  const svg=DOM.sankeySvg;if(!svg)return;
-  svg.innerHTML='';
-  const dataset=sankeyDataset(data||{}),sectors=dataset.sectors;
-  if(!sectors.length||dataset.total<=0){
-    const fo=sankeyEl('foreignObject',{x:0,y:0,width:1600,height:900});
-    const div=document.createElement('div');
-    div.className='sankey-empty';div.textContent='Chưa có dữ liệu heatmap để dựng Sankey';
-    fo.appendChild(div);svg.appendChild(fo);return;
-  }
-  const total=dataset.total;
-  const chart={yStart:120,drawH:540,marketX:130,sectorX:555,stockX:1285,marketW:6,barW:10};
-  const gapSector=5,marketH=chart.drawH*0.5,marketY=chart.yStart+(chart.drawH-marketH)/2+30;
-  svg.appendChild(sankeyEl('rect',{x:chart.marketX,y:marketY,width:chart.marketW,height:marketH,rx:2,fill:'#b496fa'}));
-  svg.appendChild(sankeyEl('text',{x:chart.marketX-10,y:marketY+marketH/2-4,'text-anchor':'end',fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':14,'font-weight':700},'MARKET'));
-  let ySector=chart.yStart,yMarket=marketY;
-  const stockLayouts=[];
-  sectors.forEach(sec=>{
-    sec.h=chart.drawH*(sec.weight/total);sec.y=ySector;sec.marketH=marketH*(sec.weight/total);sec.marketY=yMarket;
-    ySector+=sec.h+gapSector;yMarket+=sec.marketH;
-    sec.visibleStocks.forEach(stock=>stockLayouts.push({sec,stock}));
-  });
-  const stockDest=new Map();
-  stockLayouts.forEach(({stock})=>{
-    let dest=stockDest.get(stock.sym);
-    if(!dest){dest={...stock,flows:[],flowWeight:0,destWeight:stock.weight};stockDest.set(stock.sym,dest);}
-    dest.flows.push(stock);dest.flowWeight=Math.max(dest.flowWeight||0,stock.weight);
-    if(stock.weight>dest.weight)Object.assign(dest,{pct:stock.pct,weight:stock.weight,destWeight:stock.weight,sector:stock.sector});
-  });
-  let stockY=chart.yStart-60;
-  const stockNodes=[...stockDest.values()].sort((a,b)=>b.flowWeight-a.flowWeight);
-  stockNodes.forEach(stock=>{stock.nodeH=Math.max(3,chart.drawH*(stock.destWeight/total)*1.6-6);stock.destY=stockY;stockY+=stock.nodeH+3;});
-  sectors.forEach(sec=>svg.appendChild(sankeyEl('path',{d:sankeyPath(chart.marketX+chart.marketW,sec.marketY,sec.marketY+sec.marketH,chart.sectorX,sec.y,sec.y+sec.h),fill:sec.color,'fill-opacity':'0.48',stroke:'none'})));
-  const sectorSourceY=new Map(sectors.map(sec=>[sec.name,sec.y]));
-  stockLayouts.forEach(({sec,stock})=>{
-    const dest=stockDest.get(stock.sym);if(!dest)return;
-    const flowH=chart.drawH*(stock.weight/total),sourceY=sectorSourceY.get(sec.name)||sec.y;
-    sectorSourceY.set(sec.name,sourceY+flowH);
-    svg.appendChild(sankeyEl('path',{d:sankeyPath(chart.sectorX+chart.barW,sourceY,sourceY+flowH,chart.stockX,dest.destY,dest.destY+dest.nodeH),fill:sec.color,'fill-opacity':'0.62',stroke:'none'}));
-  });
-  stockNodes.forEach(stock=>{
-    const h2=stock.nodeH,flows=stock.flows.length?stock.flows:[stock];
-    let segY=stock.destY,flowTotal=flows.reduce((s,f)=>s+f.weight,0);
-    flows.forEach((flow,idx)=>{
-      const sec=sectors.find(s=>s.name===flow.sector),remaining=stock.destY+h2-segY;
-      const segH=idx===flows.length-1?remaining:Math.max(1,h2*(flow.weight/flowTotal));
-      svg.appendChild(sankeyEl('rect',{x:chart.stockX,y:segY,width:chart.barW,height:segH,rx:2,fill:sec?sec.color:'#94a3b8'}));
-      segY+=segH;
-    });
-    if(h2>6){
-      const b=sankeyBadgeColor(stock.pct),badgeX=chart.stockX+chart.barW+8,badgeY=stock.destY+h2/2-10,badgeW=152;
-      const grp=sankeyEl('g',{'data-sym':stock.sym,style:'cursor:pointer'});
-      grp.appendChild(sankeyEl('rect',{x:badgeX,y:badgeY,width:badgeW,height:20,rx:5,fill:b.fill}));
-      grp.appendChild(sankeyEl('text',{x:badgeX+6,y:badgeY+14,fill:b.text,'font-family':'IBM Plex Mono, monospace','font-size':11,'font-weight':600},`${stock.sym} (${sankeyFmtNum(stock.weight)}, ${sankeyFmtPct(stock.pct)})`));
-      svg.appendChild(grp);
-    }
-  });
-  sectors.forEach(sec=>{
-    svg.appendChild(sankeyEl('rect',{x:chart.sectorX,y:sec.y,width:chart.barW,height:sec.h,rx:2,fill:sec.color}));
-    if(sec.h>16){
-      svg.appendChild(sankeyEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2-2,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700},sectorLabel(sec.name)));
-      svg.appendChild(sankeyEl('text',{x:chart.sectorX+chart.barW+8,y:sec.y+sec.h/2+14,fill:'#6b7280','font-family':'IBM Plex Mono, monospace','font-size':10},sankeyFmtNum(sec.weight)));
-    }
-  });
-}
-DOM.sankeySvg.addEventListener('click',e=>{
-  const node=e.target.closest('[data-sym]');if(!node)return;
-  _hmapDesktopClick(node.dataset.sym); // đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên
-});
-DOM.sankeySvg.addEventListener('dblclick',e=>{
-  // Đồng bộ mobile/desktop — xem ghi chú tại hmapGrid ở trên.
-  const node=e.target.closest('[data-sym]');if(!node)return;
-  if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
-  const sym=node.dataset.sym;
-  openChart(sym);
-});
-// ── Nút camera copy ảnh Sankey — cùng cơ chế với Treemap (SVG thuần, rasterize thẳng theo đúng kích thước hiển thị thật của sankey-wrap) ──
-async function copySankeyImage(btn){
-  const svgEl=DOM.sankeySvg;
-  if(!svgEl)return;
-  try{
-    const buildBlob=async()=>{
-    const wrapRect=DOM.sankeyWrap.getBoundingClientRect();
-    const W=Math.max(1,Math.round(wrapRect.width)),H=Math.max(1,Math.round(wrapRect.height));
-    const dpr=window.devicePixelRatio||1;
-    const svgClone=svgEl.cloneNode(true);
-    svgClone.setAttribute('width',W*dpr);
-    svgClone.setAttribute('height',H*dpr);
-    svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
-    const svgXml=new XMLSerializer().serializeToString(svgClone);
-    const img=new Image();
-    await new Promise((res,rej)=>{
-      img.onload=res;img.onerror=rej;
-      img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgXml);
-    });
-    const canvas=document.createElement('canvas');
-    canvas.width=W*dpr;canvas.height=H*dpr;
-    const ctx=canvas.getContext('2d');
-    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    return _litePngBlobFromDataUrl(canvas.toDataURL('image/png'));
-    };
-    await _liteCopyOrDownloadPng(btn,buildBlob,'sankey.png','Sankey');
-  }catch(e){console.error('copySankeyImage lỗi:',e);_liteCopyFeedback(btn,'failed');}
-}
-DOM.sankeyCopyBtn?.addEventListener('click',e=>{
-  e.preventDefault();
-  e.stopPropagation();
-  copySankeyImage(e.currentTarget);
-});
-// TREEMAP RENDER — dùng lại nguồn dữ liệu Sankey/Heatmap (SANKEY_SECTORS, sankeyWeight, cellStyle) để 3 view luôn đồng nhất.
+
 function treemapDataset(data){
-  return SANKEY_SECTORS.map(g=>{
+  return TREEMAP_SECTORS.map(g=>{
     const stocks=g.syms.map(sym=>{
-      const entry=data[sym],weight=sankeyWeight(entry);
+      const entry=data[sym],weight=treemapWeight(entry);
       return{sym,pct:Number(entry?.pct),weight};
-    }).filter(x=>x.weight>SANKEY_MIN_WEIGHT).sort((a,b)=>b.weight-a.weight);
+    }).filter(x=>x.weight>TREEMAP_MIN_WEIGHT).sort((a,b)=>b.weight-a.weight);
     return{name:g.name,stocks,weight:stocks.reduce((s,x)=>s+x.weight,0)};
   }).filter(sec=>sec.weight>0).sort((a,b)=>b.weight-a.weight);
 }
@@ -7430,16 +7443,18 @@ function tmSquarify(items,x,y,w,h,out){
   if(vertical)tmSquarify(rest,x+rowThick,y,w-rowThick,h,out);
   else tmSquarify(rest,x,y+rowThick,w,h-rowThick,out);
 }
-// Định dạng tên ngành dùng CHUNG cho cả Sankey và Treemap — sửa 1 chỗ này, cả 2 view tự động đồng bộ theo (chỉ viết hoa chữ cái đầu, VD "NGÂN HÀNG" -> "Ngân hàng").
+// Định dạng tên ngành dùng cho Treemap (chỉ viết hoa chữ cái đầu, VD "NGÂN HÀNG" -> "Ngân hàng").
 function sectorLabel(name){
   return name?name.charAt(0)+name.slice(1).toLowerCase():name;
 }
+let _lastTreemapRenderTime=0;
 function renderTreemap(data){
+  _lastTreemapRenderTime=Date.now();
   const svg=DOM.treemapSvg;if(!svg)return;
   svg.innerHTML='';
   const sectors=treemapDataset(data||{});
   if(!sectors.length){
-    const fo=sankeyEl('foreignObject',{x:0,y:0,width:1600,height:900});
+    const fo=_svgEl('foreignObject',{x:0,y:0,width:1600,height:900});
     const div=document.createElement('div');
     div.className='treemap-empty';div.textContent='Chưa có dữ liệu heatmap để dựng Treemap';
     fo.appendChild(div);svg.appendChild(fo);return;
@@ -7449,16 +7464,16 @@ function renderTreemap(data){
   secLayout.forEach(sec=>{
     const sx=sec.x+GAP/2,sy=sec.y+GAP/2,sw=Math.max(0,sec.w-GAP),sh=Math.max(0,sec.h-GAP);
     // Nền chung (header+vùng ô mã) 1 màu xám-xanh nhạt, gộp 1 rect vừa tô nền vừa vẽ viền để giảm số node SVG.
-    svg.appendChild(sankeyEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'#f4f6f9',stroke:'#d8d6cc','stroke-width':1}));
+    svg.appendChild(_svgEl('rect',{x:sx,y:sy,width:sw,height:sh,rx:10,ry:10,fill:'#f4f6f9',stroke:'#d8d6cc','stroke-width':1}));
     const headerH=(sw>40&&sh>18)?22:0;
     if(headerH){
       // Đường kẻ phân cách header/vùng ô mã thay cho rect nền riêng (2 vùng đã đồng màu).
-      svg.appendChild(sankeyEl('line',{x1:sx,y1:sy+headerH,x2:sx+sw,y2:sy+headerH,stroke:'#e4e8ec','stroke-width':1}));
+      svg.appendChild(_svgEl('line',{x1:sx,y1:sy+headerH,x2:sx+sw,y2:sy+headerH,stroke:'#e4e8ec','stroke-width':1}));
       // Cắt tên ngành + thêm "…" nếu không đủ chỗ, tránh tràn (~7.3px/ký tự, font-size 12 monospace).
       const label=sectorLabel(sec.item.name);
       const maxChars=Math.max(3,Math.floor((sw-12)/7.3));
       const shown=label.length>maxChars?label.slice(0,Math.max(1,maxChars-1))+'…':label;
-      svg.appendChild(sankeyEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#1f2937'},shown));
+      svg.appendChild(_svgEl('text',{x:sx+6,y:sy+15,'font-family':'IBM Plex Mono, monospace','font-size':12,'font-weight':700,fill:'#1f2937'},shown));
     }
     const stockLayout=[];
     tmSquarify(sec.item.stocks,sx+2,sy+headerH,Math.max(0,sw-4),Math.max(0,sh-headerH-2),stockLayout);
@@ -7467,15 +7482,15 @@ function renderTreemap(data){
       const{bg,fg}=treemapCellStyle(pct);
       const cx=cell.x,cy=cell.y,cw=Math.max(0,cell.w-2),ch=Math.max(0,cell.h-2);
       if(cw<=0||ch<=0)return;
-      const grp=sankeyEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
-      grp.appendChild(sankeyEl('rect',{x:cx,y:cy,width:cw,height:ch,rx:4,ry:4,fill:bg}));
+      const grp=_svgEl('g',{'data-sym':cell.item.sym,style:'cursor:pointer'});
+      grp.appendChild(_svgEl('rect',{x:cx,y:cy,width:cw,height:ch,rx:4,ry:4,fill:bg}));
       if(cw>36&&ch>16){
         const fs=Math.min(26,Math.max(10,Math.min(cw/4.5,ch/3)));
         const fs2=Math.max(11,fs*0.62);
-        grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2-fs*0.25,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
+        grp.appendChild(_svgEl('text',{x:cx+cw/2,y:cy+ch/2-fs*0.25,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs.toFixed(0),'font-weight':700,fill:fg},cell.item.sym));
         if(ch>28){
           const sign=pct>=0?'+':'';
-          grp.appendChild(sankeyEl('text',{x:cx+cw/2,y:cy+ch/2+fs*0.62+4,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs2.toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
+          grp.appendChild(_svgEl('text',{x:cx+cw/2,y:cy+ch/2+fs*0.62+4,'text-anchor':'middle','font-family':'IBM Plex Mono, monospace','font-size':fs2.toFixed(0),fill:fg},`${sign}${pct.toFixed(2)}%`));
         }
       }
       svg.appendChild(grp);
@@ -7858,8 +7873,8 @@ window.addEventListener('resize',()=>{
   _vndResizeTimer=setTimeout(vndRerenderVisible,150);
 });
 
-// ── MARKET (Fireant / Mrk Health / Sankey) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','health','treemap','sankey'];
+// ── MARKET (Fireant / Mrk Health / Treemap) — 1 thẻ, chuyển nội dung bằng tab ──
+const TRI_TABS=['fireant','health','treemap'];
 function triActivateTab(tab){
   if(!TRI_TABS.includes(tab))return;
   DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
@@ -7873,6 +7888,8 @@ function triActivateTab(tab){
     // Khung PE/PB + Phân bổ thị trường: nạp lần đầu (lazy), các lần mở lại sau chỉ cần vẽ lại theo đúng kích thước khung hiện tại (dữ liệu đã có sẵn trong state).
     vndInitOnce();
     requestAnimationFrame(vndRerenderVisible);
+  }else if(tab==='treemap'){
+    requestAnimationFrame(()=>renderTreemap(window._lastHmapData||{}));
   }
 }
 DOM.triTabs.addEventListener('click',e=>{
@@ -7899,7 +7916,7 @@ DOM.hmapToggle.addEventListener('click',e=>{
   DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
-  // Control trong thanh công cụ vẫn bấm bình thường khi thẻ mở, giống SANKEY. #lite-fav-btn (nút ⭐)
+  // Control trong thanh công cụ vẫn bấm bình thường khi thẻ mở. #lite-fav-btn (nút ⭐)
   // phải nằm trong danh sách loại trừ — thiếu nó sẽ bị hiểu nhầm thành bấm header, tự thu gọn thẻ.
   if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-fav-btn,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
@@ -7916,13 +7933,20 @@ DOM.liteChartToggle.addEventListener('click',e=>{
   }
 });
 // CLOCK & CONFIG
+let _hmapCountdown=5,_lastHmapUpdateTs='';
+function _updateHmapTsDisplay(){
+  if(!DOM.hmapTs)return;
+  const cdText=_hmapCountdown>=1?`(${_hmapCountdown}s)`:'';
+  DOM.hmapTs.innerHTML=`<span style="color:#16a34a;font-weight:700">● LIVE</span> <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">${cdText}</span> • Cập nhật: ${_lastHmapUpdateTs||'—'}`;
+}
 function tick(){
   const n=new Date();
   DOM.clock.textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+' '+n.toLocaleDateString('vi-VN');
+  if(_hmapCountdown>1){_hmapCountdown--;_updateHmapTsDisplay();}
 }
 setInterval(tick,1000);tick();
 async function loadConfig(){
-  try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||120;HEALTH_TTL=j.market_health_ttl_sec||1800;}catch(e){}
+  try{const j=await fetch('/api/config').then(r=>r.json());SIG_TTL=j.signal_ttl_sec||30;HMAP_TTL=j.heatmap_ttl_sec||(IS_MOBILE()?10:5);HEALTH_TTL=j.market_health_ttl_sec||1800;_hmapCountdown=HMAP_TTL;_updateHmapTsDisplay();}catch(e){}
   DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • Mrk Health ${Math.round(HEALTH_TTL/60)} phút`;
 }
 // FETCH
@@ -7944,10 +7968,7 @@ async function fetchSigs(){
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
       :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`;
-    // Cache theo mã để chart tra cứu (_liteApplyBuySignal) — dùng chung 1 lần gọi API cho cả panel Tín hiệu lẫn mũi tên.
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
-    _liteApplyBuySignal();
-    redrawLiteDrawings(); // fetchSigs() poll độc lập, không có redraw nào khác kèm theo cho tab CHART
     const momentum=j.momentum||[];
     const strength=j.strength||[];
     _lastStrengthRows=strength;
@@ -7990,15 +8011,21 @@ const _knownSignalsSet=new Set();
 async function fetchHmap(){
   try{
     const j=await fetch('/api/heatmap').then(r=>r.json());
-    const now=new Date().toLocaleTimeString('vi-VN',{hour12:false});
-    DOM.hmapTs.textContent=`Data: ${j.timestamp||'--'} • Cập nhật: ${now}`;
-    window._lastHmapData=j.data||{};
-    renderHeatmap(j.data||{});
-    renderSankey(j.data||{});
-    renderTreemap(j.data||{});
-    if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
+    _lastHmapUpdateTs=new Date().toLocaleTimeString('vi-VN',{hour12:false});
+    _hmapCountdown=HMAP_TTL;
+    _updateHmapTsDisplay();
+    const newData = j.data || {};
+    renderHeatmap(newData);
+
+    // Chỉ render Treemap khi tab đó đang active và sau ít nhất 120s để tiết kiệm CPU tối đa
+    const activeTab = DOM.triTabs?.querySelector('.tri-tab.on')?.dataset.tab;
+    if(activeTab==='treemap'&&Date.now()-_lastTreemapRenderTime>=120000) renderTreemap(newData);
+
     if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
-  }catch(e){console.error('fetchHmap:',e);}
+  }catch(e){
+    _hmapCountdown=HMAP_TTL;_updateHmapTsDisplay();
+    console.error('fetchHmap:',e);
+  }
 }
 function startBar(elOrId,sec){
   const el=typeof elOrId==='string'?$(elOrId):elOrId;if(!el)return;
@@ -8057,10 +8084,12 @@ function desktopNotifyEnabled(){
   return 'Notification' in window&&Notification.permission==='granted'&&_liteLSGet(DESKTOP_NOTIFY_KEY,'0')==='1';
 }
 function syncDesktopNotifyBtn(){
-  if(!DOM.liteAlertDesktopNotify)return;
   const on=desktopNotifyEnabled();
-  DOM.liteAlertDesktopNotify.classList.toggle('on',on);
-  DOM.liteAlertDesktopNotify.title=on?'Tắt thông báo desktop (đang bật)':'Bật thông báo desktop';
+  [DOM.hdrDesktopNotifyBtn,DOM.liteAlertDesktopNotify].forEach(btn=>{
+    if(!btn)return;
+    btn.classList.toggle('on',on);
+    btn.title=on?'Tắt thông báo desktop (đang bật)':'Bật thông báo desktop (đang tắt)';
+  });
 }
 async function toggleDesktopNotify(){
   if(!('Notification' in window)){alert('Trình duyệt không hỗ trợ thông báo desktop');return;}
@@ -8080,10 +8109,12 @@ async function toggleDesktopNotify(){
   syncDesktopNotifyBtn();
 }
 function initDesktopNotifyBtn(){
-  if(!DOM.liteAlertDesktopNotify)return;
-  if(_isChartPopoutWindow){DOM.liteAlertDesktopNotify.style.display='none';return;}
   syncDesktopNotifyBtn();
-  DOM.liteAlertDesktopNotify.addEventListener('click',e=>{e.stopPropagation();toggleDesktopNotify();});
+  [DOM.hdrDesktopNotifyBtn,DOM.liteAlertDesktopNotify].forEach(btn=>{
+    if(!btn)return;
+    if(_isChartPopoutWindow){btn.style.display='none';return;}
+    btn.addEventListener('click',e=>{e.stopPropagation();toggleDesktopNotify();});
+  });
 }
 const SOUND_NOTIFY_KEY='dashboard_sound_notify_on';
 let _audioCtx=null,_lastSoundTime=0;
@@ -8534,7 +8565,10 @@ let LG_FAVORITES=_lgLoadFavorites();
 function _lgLoadFavorites(){
   try{return JSON.parse(localStorage.getItem(LG_FAVORITE_KEY)||'[]').filter(Boolean).map(s=>String(s).toUpperCase());}catch(e){return[];}
 }
-function _lgSaveFavorites(){try{localStorage.setItem(LG_FAVORITE_KEY,JSON.stringify(LG_FAVORITES));}catch(e){}}
+function _lgSaveFavorites(){
+  try{localStorage.setItem(LG_FAVORITE_KEY,JSON.stringify(LG_FAVORITES));}catch(e){}
+  _chartSyncChannel?.postMessage({type:'FAVORITE_SYNC'});
+}
 // Đẩy các mã đang có trong FOLLOW lên đầu, giữ nguyên thứ tự tương đối còn lại
 function _lgFollowFirstOrder(syms){
   const inFollow=syms.filter(s=>FOLLOW.includes(s));
@@ -8578,15 +8612,7 @@ function _lgUpdateChartFavBtn(){
 }
 DOM.liteFavBtn?.addEventListener('click',()=>{
   if(!_liteSymbol)return;
-  _lgToggleFavorite(_liteSymbol); // hàm này tự cập nhật lại nút ⭐ (xem _lgUpdateChartFavBtn ở trên)
-});
-// Đồng bộ FAVORITE giữa cửa sổ CHART chính và popout qua sự kiện 'storage': khi 1 cửa sổ ghi
-// localStorage[LG_FAVORITE_KEY], cửa sổ còn lại nạp lại LG_FAVORITES và vẽ lại sidebar + nút sao.
-window.addEventListener('storage',e=>{
-  if(e.key!==LG_FAVORITE_KEY)return;
-  LG_FAVORITES=_lgLoadFavorites();
-  _lgRenderList();
-  _lgUpdateChartFavBtn();
+  _lgToggleFavorite(_liteSymbol);
 });
 function _lgReorderFavorite(dragSym,targetSym){
   // Không cho kéo-thả qua ranh giới giữa khu vực FOLLOW và khu vực FAVORITE thường — hai khu vực này phải luôn phân khai rõ, chỉ sắp xếp lại được trong cùng khu vực.
@@ -8597,9 +8623,23 @@ function _lgReorderFavorite(dragSym,targetSym){
   LG_FAVORITES.splice(to,0,dragSym);
   _lgSaveFavorites();_lgRenderList();
 }
-let _lgSortModes=new Map(),_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragOverEl=null;
+const LG_GROUP_ORDER_KEY='scanner_lg_group_order_v1';
+function _lgLoadGroupOrder(){try{return JSON.parse(localStorage.getItem(LG_GROUP_ORDER_KEY)||'[]');}catch{return[];}}
+function _lgSaveGroupOrder(o){
+  try{localStorage.setItem(LG_GROUP_ORDER_KEY,JSON.stringify(o));}catch(e){}
+  _chartSyncChannel?.postMessage({type:'FAVORITE_SYNC'});
+}
+function _lgReorderGroup(fromName,toName){
+  const names=_lgGetGroups().map(g=>g.name);
+  const f=names.indexOf(fromName),t=names.indexOf(toName);
+  if(f===-1||t===-1||f===t)return;
+  names.splice(f,1);names.splice(t,0,fromName);
+  _lgSaveGroupOrder(names);
+  _lgRenderList();
+}
+let _lgSortModes=new Map(),_lgActiveGroupName=null,_lgActiveSym='',_lgDragSym=null,_lgDragGroup=null,_lgDragOverEl=null;
 function _lgGetGroups(){
-  return [
+  const all=[
     {name:'FAVORITE',syms:LG_FAVORITES,isFavorite:true},
     {name:'SIGNAL',syms:[..._sigTodayMap.keys()]},
     {name:'MOMENTUM',syms:[..._momentumTodayMap.keys()]},
@@ -8608,6 +8648,12 @@ function _lgGetGroups(){
     {name:'BREAKVOL',syms:[..._breakvolTodayMap.keys()]},
     ..._hvGroups
   ];
+  const ord=_lgLoadGroupOrder();
+  if(!ord.length)return all;
+  const map=new Map(all.map(g=>[g.name,g]));
+  const res=[];
+  ord.forEach(n=>{if(map.has(n)){res.push(map.get(n));map.delete(n);}});
+  return[...res,...map.values()];
 }
 function _lgDefaultSortMode(g){return g&&g.isStrength?'rs':'pct';}
 function _lgSortModeFor(g){return _lgSortModes.get(g.name)||_lgDefaultSortMode(g);}
@@ -8640,14 +8686,12 @@ function _lgRenderList(){
     let body='';
     if(open){
       if(!g.syms.length)body='<div class="lg-empty-hint">Chưa có mã nào</div>';
-      // FAVORITE: giữ nguyên thứ tự lưu (Follow đã ở đầu, mã mới thêm ở cuối, có thể kéo-thả) — không sort
       else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms,g)).map(s=>_lgSymRow(s,!!g.isFavorite,g)).join('');
     }
     const addBtn=(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':'';
-    // Nút sắp xếp đặt ngay sau tên nhóm khi nhóm đó đang mở (trừ FAVORITE, vốn giữ thứ tự thủ công)
     const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle="${g.name}" title="Đổi kiểu sắp xếp">${_lgSortLabel(g)}</button>`:'';
     return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
-      +`<div class="lg-ghdr" data-ghdr="${g.name}"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
+      +`<div class="lg-ghdr" data-ghdr="${g.name}" draggable="true"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
   }).join('');
   _lgFillMissingQuotes();
@@ -8655,7 +8699,7 @@ function _lgRenderList(){
 function _lgQuickAddFavorites(){
   const raw=prompt('Nhập các mã muốn thêm vào FAVORITE, cách nhau bằng dấu phẩy hoặc khoảng trắng:','');
   if(raw===null)return;
-  const syms=parseFollowSymbols(raw); // dùng chung parser với ô nhập FOLLOW (viết hoa, tách theo ký tự không phải chữ/số)
+  const syms=parseFollowSymbols(raw);
   if(!syms.length)return;
   let changed=false;
   syms.forEach(sym=>{
@@ -8674,7 +8718,6 @@ DOM.lgToggleBtn?.addEventListener('click',e=>{
     _lgRenderList();
   }
 });
-// Chart Vietstock nhúng (thay cho chart tự vẽ) — bấm nút VS để bật/tắt, bấm chữ CHART để luôn quay lại mặc định là chart tự vẽ (xem yêu cầu: chữ CHART = reset về mặc định).
 function _updateVietstockIframeIfActive(sym){
   if(!DOM.liteChartFrame.classList.contains('vietstock-mode'))return;
   DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(sym||_liteSymbol||'VNINDEX').toLowerCase();
@@ -8715,8 +8758,14 @@ DOM.lgList?.addEventListener('click',e=>{
     DOM.lgList.querySelectorAll('.lg-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===_lgActiveSym));
   }
 });
-// Kéo-thả để tự sắp xếp thứ tự trong FAVORITE (chỉ áp dụng cho các dòng có draggable="true")
 DOM.lgList?.addEventListener('dragstart',e=>{
+  const ghdr=e.target.closest('.lg-ghdr[draggable="true"]');
+  if(ghdr){
+    _lgDragGroup=ghdr.dataset.ghdr;
+    ghdr.classList.add('dragging');
+    try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',_lgDragGroup);}catch(err){}
+    return;
+  }
   const item=e.target.closest('.lg-sym-item[draggable="true"]');
   if(!item){e.preventDefault();return;}
   _lgDragSym=item.dataset.sym;
@@ -8724,12 +8773,24 @@ DOM.lgList?.addEventListener('dragstart',e=>{
   try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',_lgDragSym);}catch(err){}
 });
 DOM.lgList?.addEventListener('dragend',e=>{
+  const ghdr=e.target.closest('.lg-ghdr');
+  if(ghdr)ghdr.classList.remove('dragging');
   const item=e.target.closest('.lg-sym-item');
   if(item)item.classList.remove('dragging');
   if(_lgDragOverEl){_lgDragOverEl.classList.remove('drag-over');_lgDragOverEl=null;}
-  _lgDragSym=null;
+  _lgDragSym=null;_lgDragGroup=null;
 });
 DOM.lgList?.addEventListener('dragover',e=>{
+  if(_lgDragGroup){
+    const ghdr=e.target.closest('.lg-ghdr[draggable="true"]');
+    if(!ghdr||ghdr.dataset.ghdr===_lgDragGroup)return;
+    e.preventDefault();
+    try{e.dataTransfer.dropEffect='move';}catch(err){}
+    if(_lgDragOverEl&&_lgDragOverEl!==ghdr)_lgDragOverEl.classList.remove('drag-over');
+    ghdr.classList.add('drag-over');
+    _lgDragOverEl=ghdr;
+    return;
+  }
   if(!_lgDragSym)return;
   const item=e.target.closest('.lg-sym-item[draggable="true"]');
   if(!item||item.dataset.sym===_lgDragSym)return;
@@ -8741,9 +8802,19 @@ DOM.lgList?.addEventListener('dragover',e=>{
   _lgDragOverEl=item;
 });
 DOM.lgList?.addEventListener('drop',e=>{
+  if(_lgDragGroup){
+    const ghdr=e.target.closest('.lg-ghdr[draggable="true"]');
+    if(!ghdr)return;
+    e.preventDefault();
+    ghdr.classList.remove('drag-over');
+    if(_lgDragOverEl===ghdr)_lgDragOverEl=null;
+    const target=ghdr.dataset.ghdr;
+    if(target&&target!==_lgDragGroup)_lgReorderGroup(_lgDragGroup,target);
+    return;
+  }
   if(!_lgDragSym)return;
   const item=e.target.closest('.lg-sym-item[draggable="true"]');
-  if(!item){return;}
+  if(!item)return;
   e.preventDefault();
   item.classList.remove('drag-over');
   if(_lgDragOverEl===item)_lgDragOverEl=null;
@@ -8780,83 +8851,115 @@ document.addEventListener('click',e=>{
   if(DOM.lgSidebar.contains(e.target))return;
   DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
 });
-window.addEventListener('message',e=>{
-  if(e.data.type==='JOURNAL_SYM_CLICK'&&e.data.symbol){
-    const sym=String(e.data.symbol).toUpperCase().trim();
-    if(!sym)return;
-    _hmapDesktopClick(sym);
-  }else if(e.data.type==='JOURNAL_SYM_DBLCLICK'&&e.data.symbol){
-    const sym=String(e.data.symbol).toUpperCase().trim();
-    if(!sym)return;
-    openChart(sym);
-  }else if(e.data.type==='JOURNAL_CLOSE'){
-    closeJournal();
-  }
-});
-
 // CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
-let _chartPopoutWin=null,_lastChartSyncSymbol=null;
+let _chartPopoutWin=null;
 // CHART_POPOUT_CONTENT_H tính sẵn từ CSS cố định (720 chart+80 header+18 padding+34 footer); scrollbars=yes dự phòng.
 const CHART_POPOUT_CONTENT_H=720+80+18+34;
 // Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
 const CHART_POPOUT_WIDTH_RATIO=0.855;
+const CHART_POPOUT_ALIGN_KEY='chart_popout_align';
+const getChartPopoutAlign=()=>_liteLSGet(CHART_POPOUT_ALIGN_KEY,'right');
+function updatePopoutAlignBtn(){
+  const a=getChartPopoutAlign(),btn=document.getElementById('lite-chart-popout-align-btn');
+  if(btn){btn.textContent=a==='left'?'◧':'◨';btn.title=a==='left'?'Căn TRÁI (Bấm để đổi sang Phải)':'Căn PHẢI (Bấm để đổi sang Trái)';}
+}
+function togglePopoutAlign(){
+  const next=getChartPopoutAlign()==='left'?'right':'left';
+  _liteLSSet(CHART_POPOUT_ALIGN_KEY,next);
+  updatePopoutAlignBtn();
+  const box=_getPopupViewport(),w=_isChartPopoutWindow?(window.outerWidth||window.innerWidth):(_chartPopoutWin?.outerWidth||Math.min(1600,box.width-40)*CHART_POPOUT_WIDTH_RATIO);
+  const nextLeft=next==='left'?box.left:(box.left+Math.max(0,box.width-w)),targetWin=_isChartPopoutWindow?window:_chartPopoutWin;
+  if(targetWin&&!targetWin.closed){try{targetWin.moveTo(nextLeft,box.top);}catch(e){}}
+  _chartSyncChannel?.postMessage({type:'CHART_POPOUT_ALIGN_SYNC'});
+}
+const CHART_POPOUT_SIZE_KEY='chart_popout_size';
 function openChartPopout(){
   if(_chartPopoutWin&&!_chartPopoutWin.closed){_chartPopoutWin.focus();return;}
-  const sym=_liteSymbol||'VNINDEX';
-  const box=_getPopupViewport();
-  const w=Math.min(1600,box.width-40)*CHART_POPOUT_WIDTH_RATIO,h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
-  const url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
-  _chartPopoutWin=_openMaximizedWindow(url,'ChartPopout',w,h,0,0,'scrollbars=yes');
+  const sym=_liteSymbol||'VNINDEX',box=_getPopupViewport();
+  let w=Math.min(1600,box.width-40)*CHART_POPOUT_WIDTH_RATIO,h=Math.min(box.height,CHART_POPOUT_CONTENT_H);
+  try{const s=JSON.parse(_liteLSGet(CHART_POPOUT_SIZE_KEY,'{}')||'{}');if(s.w>300)w=Math.min(box.width,s.w);if(s.h>200)h=Math.min(box.height,s.h);}catch(e){}
+  const align=getChartPopoutAlign(),url=window.location.origin+window.location.pathname+'?chartPopout=1&sym='+encodeURIComponent(sym);
+  _chartPopoutWin=_openMaximizedWindow(url,'ChartPopout',w,h,0,0,'scrollbars=yes',align);
   if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
 }
+document.getElementById('lite-chart-popout-align-btn')?.addEventListener('click',togglePopoutAlign);
 document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openChartPopout);
-// Đồng bộ 2 chiều dùng chung 1 listener; _lastChartSyncSymbol tránh gửi ngược lại gây lặp vô hạn.
-window.addEventListener('message',e=>{
-  if(e.data&&e.data.type==='CHART_POPOUT_SYNC'&&e.data.symbol){
-    _lastChartSyncSymbol=String(e.data.symbol).toUpperCase().trim();
-    loadLiteChart(_lastChartSyncSymbol,0);
-  }
-  // Iframe tab Chart embedded báo đổi mã → cập nhật _sym + header popup + reload tab active (_sym là biến popup, cần đồng bộ).
-  if(e.data&&e.data.type==='CHART_EMBED_SYM_CHANGE'&&e.data.symbol){
-    const s=String(e.data.symbol).toUpperCase().trim();
+function _onPopoutSyncMessage(e){
+  if(!e||!e.data)return;
+  const d=e.data;
+  if(d.type==='CHART_POPOUT_ALIGN_SYNC'){
+    updatePopoutAlignBtn();
+    if(_isChartPopoutWindow){
+      const a=getChartPopoutAlign(),b=_getPopupViewport(),w=window.outerWidth||window.innerWidth;
+      try{window.moveTo(a==='left'?b.left:(b.left+Math.max(0,b.width-w)),b.top);}catch(err){}
+    }
+  }else if(d.type==='CHART_POPOUT_SYNC'&&d.symbol){
+    const s=String(d.symbol).toUpperCase().trim();
+    if(s&&s!==_liteSymbol){
+      loadLiteChart(s,0,true);
+    }
+  }else if(d.type==='CHART_DRAW_SYNC'&&d.sym===_liteSymbol){
+    loadLiteDrawings();redrawLiteDrawings();
+  }else if(d.type==='FAVORITE_SYNC'){
+    LG_FAVORITES=_lgLoadFavorites();
+    _lgRenderList();
+    _lgUpdateChartFavBtn();
+  }else if(d.type==='JOURNAL_SYM_CLICK'&&d.symbol){
+    const sym=String(d.symbol).toUpperCase().trim();
+    if(sym)_hmapDesktopClick(sym);
+  }else if(d.type==='JOURNAL_SYM_DBLCLICK'&&d.symbol){
+    const sym=String(d.symbol).toUpperCase().trim();
+    if(sym)openChart(sym);
+  }else if(d.type==='JOURNAL_CLOSE'){
+    closeJournal();
+  }else if(d.type==='CHART_EMBED_SYM_CHANGE'&&d.symbol){
+    const s=String(d.symbol).toUpperCase().trim();
     if(!s)return;
     _sym=s;
     _updateSymDisplay(s);
-    // Reload iframe tab VS (Vietstock) nếu đang active — luôn cần cập nhật ngay vì đây là tab phổ biến nhất
     if(_tab==='vs')DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+s.toLowerCase();
-    // Reload các iframe lazy đang active (vnd-cs, vnd-news, vnd-sum, 24h) nếu tab đó đang hiển thị
     ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{
       if(_tab===t&&IFRAME_LAZY[t]){const f=$('iframe-'+t);if(f)f.src=IFRAME_LAZY[t](s);}
     });
   }
-});
-// Trang mở lại với ?chartPopout=1 tự mở panel CHART, ẩn phần còn lại, nạp đúng mã từ cửa sổ chính (đánh dấu _lastChartSyncSymbol để không gửi ngược).
+}
+window.addEventListener('message',_onPopoutSyncMessage);
+_chartSyncChannel?.addEventListener('message',_onPopoutSyncMessage);
 (function(){
   if(!_isChartPopoutWindow)return;
-  // class chart-popout-mode đã gắn vào <html> từ đầu <head> (script inline); dòng dưới chỉ để tương thích ngược.
+  _liteLSSet('chart_popout_open','1');
+  window.addEventListener('beforeunload',()=>{_liteLSSet('chart_popout_open','0');});
   document.documentElement.classList.add('chart-popout-mode');
   DOM.liteChartPanel.classList.remove('collapsed');
   const qsym=(new URLSearchParams(window.location.search).get('sym')||'').trim();
-  if(qsym){_liteSymbol=qsym.toUpperCase();_lastChartSyncSymbol=_liteSymbol;}
+  if(qsym){_liteSymbol=qsym.toUpperCase();}
+  if(!IS_MOBILE()){
+    let _tmr=null;
+    window.addEventListener('resize',()=>{
+      clearTimeout(_tmr);
+      _tmr=setTimeout(()=>{if(window.outerWidth>300)_liteLSSet(CHART_POPOUT_SIZE_KEY,JSON.stringify({w:window.outerWidth,h:window.outerHeight}));},300);
+    });
+  }
 })();
 
 // INIT
 async function init(){
   initSoundNotifyBtn();
   initDesktopNotifyBtn();
+  updatePopoutAlignBtn();
   bindLiteChartControls();
   bindAlertControls();
   if(IS_MOBILE()){
     DOM.liteChartPanel.classList.remove('collapsed');
     _isChartPanelOpen=true;
   }
-  startBar(DOM.pbarSig,SIG_TTL);startBar(DOM.pbarHmap,HMAP_TTL);
   // Tải CHART ngay lập tức, không chờ config/tín hiệu/heatmap/health (chạy song song thay vì tuần tự) để chart không phụ thuộc API khác.
   loadLiteChart(_liteSymbol);
-  await Promise.all([loadConfig(),fetchSigs(),fetchHmap(),fetchHealth()]);
-  await Promise.all([loadAlerts(),pollAlertFeed(false)]);
+  await loadConfig();
+  startBar(DOM.pbarSig,SIG_TTL);
+  await Promise.all([fetchSigs(),fetchHmap(),fetchHealth(),loadAlerts(),pollAlertFeed(false)]);
   setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
-  setInterval(async()=>{startBar(DOM.pbarHmap,HMAP_TTL);await fetchHmap();},HMAP_TTL*1000);
+  setInterval(fetchHmap,HMAP_TTL*1000);
   setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
