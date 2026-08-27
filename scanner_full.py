@@ -264,7 +264,7 @@ def fetch_heatmap_data() -> tuple:
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
     result = {}
     try:
-        items = _fetch_vndirect_priceboard_batch(need)
+        items = _fetch_ssi_priceboard_batch(need)
         for it in items:
             sym = it.get('stockSymbol')
             if not sym:
@@ -278,7 +278,7 @@ def fetch_heatmap_data() -> tuple:
                 pct = 0.0
             result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
     except Exception as e:
-        print(f"  [{ts_log}] ❌ Heatmap VNDirect lỗi: {e}")
+        print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
 
     if not result:
         # Fallback tự động qua Cache/DChart khi mất kết nối
@@ -294,7 +294,7 @@ def fetch_heatmap_data() -> tuple:
                         pct = 0.0
                     total_value = round(close * vol * 1000, 0)
                     result[sym] = {"price": close, "pct": pct, "total_value": total_value}
-        print(f"  [{ts_log}] 🗺  Heatmap: VNDirect Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
+        print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
 
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
@@ -306,7 +306,7 @@ def fetch_extra_quotes(syms: list) -> dict:
         return {}
     result = {}
     try:
-        items = _fetch_vndirect_priceboard_batch(syms)
+        items = _fetch_ssi_priceboard_batch(syms)
         for it in items:
             sym = it.get('stockSymbol')
             if not sym:
@@ -1131,6 +1131,13 @@ _vndirect_session.headers.update({
     "Referer": "https://dstock.vndirect.com.vn/",
 })
 
+_ssi_session = requests.Session()
+_ssi_session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "Accept": "application/json,*/*",
+    "Content-Type": "application/json",
+})
+
 def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
     symbol = symbol.upper().strip()
     to_ts = int(time.time())
@@ -1158,63 +1165,65 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
     df.set_index('time', inplace=True)
     return df
 
-def decode_vndirect(raw_str: str) -> list[str]:
-    """Giải mã chuỗi nén Caesar Shift (charCode + (index % 5)) của VNDIRECT bảng giá."""
-    if not raw_str or not isinstance(raw_str, str):
-        return []
-    return ''.join(chr(ord(c) + (i % 5)) for i, c in enumerate(raw_str)).split('|')
-
-def _fetch_vndirect_priceboard_batch(symbols: list[str]) -> list[dict]:
+def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
+    """Lấy bảng giá real-time từ SSI iBoard API (định dạng chuẩn, có sẵn giá Open)."""
     if not symbols:
         return []
-    url_base = "https://price-streaming-api.vndirect.com.vn/v2/stocks/snapshot"
+    url = "https://iboard-query.ssi.com.vn/stock/multiple"
     results = []
-    # VNDirect hỗ trợ danh sách codes phân cách bởi dấu phẩy, chia chunk 80 mã/request
-    for i in range(0, len(symbols), 80):
-        chunk = [s.upper().strip() for s in symbols[i:i + 80] if s.strip()]
+    for i in range(0, len(symbols), 100):
+        chunk = [s.upper().strip() for s in symbols[i:i + 100] if s.strip()]
         if not chunk:
             continue
         try:
-            url = f"{url_base}?codes={','.join(chunk)}"
-            res = _vndirect_session.get(url, timeout=5)
+            res = _ssi_session.post(url, json={"stocks": chunk}, timeout=5)
             if res.status_code == 200:
-                raw_list = res.json()
-                if isinstance(raw_list, list):
-                    for raw in raw_list:
-                        if isinstance(raw, str):
-                            toks = decode_vndirect(raw)
-                            if len(toks) > 53:
-                                sym = toks[1].upper().strip()
-                                ref_p = float(toks[4]) if toks[4] else 0.0
-                                ceil_p = float(toks[6]) if toks[6] else 0.0
-                                floor_p = float(toks[5]) if toks[5] else 0.0
-                                high_p = float(toks[49]) if len(toks) > 49 and toks[49] else ref_p
-                                low_p = float(toks[50]) if len(toks) > 50 and toks[50] else ref_p
-                                total_val = float(toks[51]) if len(toks) > 51 and toks[51] else 0.0
-                                total_vol = float(toks[52]) if len(toks) > 52 and toks[52] else 0.0
-                                match_p = float(toks[53]) if len(toks) > 53 and toks[53] else ref_p
-                                project_open = float(toks[55]) if len(toks) > 55 and toks[55] else 0.0
-                                display_price = project_open if project_open > 0 else match_p
-                                
-                                results.append({
-                                    'stockSymbol': sym,
-                                    'refPrice': ref_p,
-                                    'floor': floor_p,
-                                    'ceiling': ceil_p,
-                                    'highest': high_p,
-                                    'lowest': low_p,
-                                    'matchedPrice': display_price,
-                                    'projectOpen': project_open,
-                                    'stockVol': total_vol,
-                                    'nmTotalTradedQty': total_vol,
-                                    'nmTotalTradedValue': total_val * 1_000_000, # VNDirect trả về đơn vị triệu VND
-                                    'openPrice': ref_p if display_price == 0 else display_price
-                                })
+                raw_data = res.json().get("data", [])
+                if isinstance(raw_data, list):
+                    for it in raw_data:
+                        if not isinstance(it, dict):
+                            continue
+                        sym = str(it.get("stockSymbol") or "").upper().strip()
+                        if not sym:
+                            continue
+                        
+                        ref_p = float(it.get('refPrice') or 0.0) / 1000.0
+                        ceil_p = float(it.get('ceiling') or 0.0) / 1000.0
+                        floor_p = float(it.get('floor') or 0.0) / 1000.0
+                        high_p = float(it.get('highest') or 0.0) / 1000.0
+                        low_p = float(it.get('lowest') or 0.0) / 1000.0
+                        match_p = float(it.get('matchedPrice') or 0.0) / 1000.0
+                        open_p = float(it.get('openPrice') or 0.0) / 1000.0
+                        project_open = float(it.get('expectedMatchedPrice') or 0.0) / 1000.0
+                        
+                        if high_p <= 0: high_p = ref_p
+                        if low_p <= 0: low_p = ref_p
+                        
+                        display_price = match_p if match_p > 0 else (project_open if project_open > 0 else ref_p)
+                        open_price = open_p if open_p > 0 else display_price
+                        
+                        total_vol = float(it.get('nmTotalTradedQty') or it.get('stockVol') or 0.0)
+                        total_val = float(it.get('nmTotalTradedValue') or 0.0)
+                        
+                        results.append({
+                            'stockSymbol': sym,
+                            'refPrice': ref_p,
+                            'floor': floor_p,
+                            'ceiling': ceil_p,
+                            'highest': high_p,
+                            'lowest': low_p,
+                            'matchedPrice': display_price,
+                            'projectOpen': project_open,
+                            'stockVol': total_vol,
+                            'nmTotalTradedQty': total_vol,
+                            'nmTotalTradedValue': total_val,
+                            'openPrice': open_price
+                        })
         except Exception:
             pass
     return results
 
-def vndirect_item_to_today_bar(item: dict, current_date: date) -> pd.Series | None:
+def ssi_item_to_today_bar(item: dict, current_date: date) -> pd.Series | None:
     try:
         close = float(item.get('matchedPrice') or item.get('refPrice') or 0)
         ref_p = float(item.get('refPrice') or close)
@@ -1234,13 +1243,13 @@ def vndirect_item_to_today_bar(item: dict, current_date: date) -> pd.Series | No
         return None
 
 def fetch_today_bars_batch(symbols: list[str], current_date: date) -> dict[str, pd.Series]:
-    items = _fetch_vndirect_priceboard_batch(symbols)
+    items = _fetch_ssi_priceboard_batch(symbols)
     bars = {}
     for it in items:
         sym = it.get('stockSymbol')
         if not sym:
             continue
-        bar = vndirect_item_to_today_bar(it, current_date)
+        bar = ssi_item_to_today_bar(it, current_date)
         if bar is not None:
             bars[sym.upper().strip()] = bar
     return bars
@@ -1259,7 +1268,7 @@ def load_history_for_symbol(symbol: str):
 
 def build_history_cache(symbols: list, current_date: date):
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã (VNDirect đa luồng)...")
+    print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã (DChart đa luồng)...")
     new_history = {}
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {executor.submit(load_history_for_symbol, s): s for s in symbols}
@@ -1287,7 +1296,7 @@ CACHE_CHECK_SYMBOL = 'HPG'
 SESSION_MORNING_START = 85500
 SESSION_MORNING_END = 113000
 SESSION_AFTERNOON_START = 130000
-SESSION_AFTERNOON_END = 150000
+SESSION_AFTERNOON_END = 233000
 
 def _is_trading_session_time(current_date: date, now_time: int) -> bool:
     if current_date.weekday() >= 5:
@@ -1404,6 +1413,14 @@ def fetch_today_bar(symbol: str, current_date: date):
 def upsert_today_bar(df_hist, today_bar):
     bar_date = pd.Timestamp(today_bar.name).date()
     new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
+    
+    if not df_hist[df_hist.index.date == bar_date].empty:
+        prev_row = df_hist[df_hist.index.date == bar_date].iloc[-1]
+        old_high = prev_row['high']
+        old_low = prev_row['low']
+        new_row['high'] = max(old_high, new_row.iloc[-1]['high'])
+        new_row['low'] = min(old_low, new_row.iloc[-1]['low'])
+
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
     df_hist = df_hist[df_hist.index.date != bar_date][ohlcv_cols]
     merged = pd.concat([df_hist, new_row]).sort_index()
@@ -1674,8 +1691,8 @@ def calc_prebreak_vol(df, now_time):
 def calc_liquidity(df):
     C, V = df['close'], df['volume']
     return (
-        (C>=5)&(C*V>2_000_000)&(df['MA10']*df['VMA10']>2_000_000)&
-        (df['MA15']*df['VMA15']>2_000_000)&(df['RSI14']>=29)&
+        (C>=5)&(C*V>1_000_000)&(df['MA10']*df['VMA10']>1_000_000)&
+        (df['MA15']*df['VMA15']>1_000_000)&(df['RSI14']>=29)&
         (df['VMA10']>=50_000)&(df['VMA20']>=50_000)&
         (df['VMA30']>=50_000)&(df['VMA50']>=50_000)
     )
@@ -1688,10 +1705,10 @@ def calc_dmbuy(df):
         (df['VMA20'] >= 50_000) &
         (df['VMA10'] >= 50_000) &
         (df['VMA50'] >= 50_000) &
-        (V * C > 2_000_000) &
-        (df['VMA5'] * df['MA5'] > 2_000_000) &
-        (df['VMA10'] * df['MA10'] > 2_000_000) &
-        (df['VMA15'] * df['MA15'] > 2_000_000)
+        (V * C > 1_000_000) &
+        (df['VMA5'] * df['MA5'] > 1_000_000) &
+        (df['VMA10'] * df['MA10'] > 1_000_000) &
+        (df['VMA15'] * df['MA15'] > 1_000_000)
     )
 
 def _macd_buy_on_frame(df):
@@ -1774,7 +1791,7 @@ def calc_bottomfish(df):
     range30    = (hhv(H, 30) - llv(L, 30)) / llv(L, 30)
     cond_range = range30 >= 0.2
     liq = (
-        (C >= 5) & (C * V > 2_000_000) &
+        (C >= 5) & (C * V > 1_000_000) &
         (df['MA5']  * df['VMA5']  > 3_000_000) &
         (df['MA10'] * df['VMA10'] > 3_000_000) &
         (df['MA15'] * df['VMA15'] > 3_000_000) &
@@ -1853,10 +1870,10 @@ def calc_attent(df, now_time):
         (C >= 5) &
         (df['VMA30'] >= 50_000) & (df['VMA20'] >= 50_000) &
         (df['VMA10'] >= 50_000) & (df['VMA50'] >= 50_000) &
-        (df['MA5']  * df['VMA5']  > 2_000_000) &
-        (df['MA10'] * df['VMA10'] > 2_000_000) &
-        (df['MA15'] * df['VMA15'] > 2_000_000) &
-        (df['MA20'] * df['VMA20'] > 2_000_000)
+        (df['MA5']  * df['VMA5']  > 1_000_000) &
+        (df['MA10'] * df['VMA10'] > 1_000_000) &
+        (df['MA15'] * df['VMA15'] > 1_000_000) &
+        (df['MA20'] * df['VMA20'] > 1_000_000)
     )
     price_up = (C / ref(C, 1)) > 1.005
     ti2 = _session_time_progress(now_time)
@@ -1898,7 +1915,7 @@ def calc_ma_cross(df):
     )
     price_cond = (C > df['MA30']) & (C <= 1.07 * df['MA30'])
     liq = (
-        (C >= 5) & (C * V > 2_000_000) &
+        (C >= 5) & (C * V > 1_000_000) &
         (df['MA5']  * df['VMA5']  > 3_000_000) &
         (df['MA10'] * df['VMA10'] > 3_000_000) &
         (df['MA15'] * df['VMA15'] > 3_000_000) &
@@ -2113,6 +2130,7 @@ SIGNAL_EMOJI = {
     'MA_CROSS':     '⚪',
 }
 
+
 def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_today: dict,
                     attent_today: dict = None, breakvol_today: dict = None):
     new_signals  = []
@@ -2121,16 +2139,16 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (VNDirect Batch + Fallback)...")
+    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (SSI Priceboard + Fallback)...")
 
     batch_bars = fetch_today_bars_batch(list(cache_symbol_set), current_date)
     missing_symbols = [s for s in cache_symbol_set if s not in batch_bars]
 
     if missing_symbols:
         if len(missing_symbols) == len(cache_symbol_set):
-            print(f"  ⚠️  [{ts}] VNDirect Batch không khả dụng → Toàn bộ {len(missing_symbols)} mã tải song song qua VNDirect DChart (8 luồng)...")
+            print(f"  ⚠️  [{ts}] SSI Priceboard không khả dụng → Toàn bộ {len(missing_symbols)} mã tải song song qua VNDirect DChart (8 luồng)...")
         else:
-            print(f"  [{ts}] VNDirect Batch thiếu {len(missing_symbols)} mã → Tải bổ sung song song qua VNDirect DChart (8 luồng)...")
+            print(f"  [{ts}] SSI Priceboard thiếu {len(missing_symbols)} mã → Tải bổ sung song song qua VNDirect DChart (8 luồng)...")
 
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
@@ -2922,161 +2940,162 @@ try:
 except NameError:
     pass
 
-alerted_today, momentum_today, attent_today, breakvol_today, signal_session_date = _load_signal_state()
-last_run_date = datetime.now(TZ_VN).date()
-if signal_session_date is None:
-    # Lần đầu chạy (chưa từng có file lưu) → coi phiên hiện tại là "phiên của
-    # alerted_today/momentum_today/attent_today/breakvol_today" (rỗng). Vòng lặp
-    # chính bên dưới sẽ tự reset đúng lúc nếu thời điểm khởi động đã là 1 phiên
-    # mới so với lần lưu gần nhất.
-    signal_session_date = last_run_date
-    _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
-_last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
-_last_morning_warmup_date = None
+if __name__ == '__main__':
+    alerted_today, momentum_today, attent_today, breakvol_today, signal_session_date = _load_signal_state()
+    last_run_date = datetime.now(TZ_VN).date()
+    if signal_session_date is None:
+        # Lần đầu chạy (chưa từng có file lưu) → coi phiên hiện tại là "phiên của
+        # alerted_today/momentum_today/attent_today/breakvol_today" (rỗng). Vòng lặp
+        # chính bên dưới sẽ tự reset đúng lúc nếu thời điểm khởi động đã là 1 phiên
+        # mới so với lần lưu gần nhất.
+        signal_session_date = last_run_date
+        _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
+    _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
+    _last_morning_warmup_date = None
 
-_stop_listener  = threading.Event()
-listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
-if ENABLE_TELEGRAM:
-    listener_thread.start()
-    print("🎧 Telegram Listener thread đã khởi chạy.")
+    _stop_listener  = threading.Event()
+    listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
+    if ENABLE_TELEGRAM:
+        listener_thread.start()
+        print("🎧 Telegram Listener thread đã khởi chạy.")
 
-# Khởi động Dashboard trước để các panel phục vụ ngay, sau đó nạp cache lịch sử
-start_dashboard(
-    alerted_today_ref = lambda: alerted_today,
-    history_cache_ref = lambda: history_cache,
-    cache_lock_ref    = cache_lock,
-    fetch_heatmap_fn  = fetch_heatmap_data,
-    signal_emoji_ref  = SIGNAL_EMOJI,
-    signal_rank_ref   = SIGNAL_RANK,
-    vol_forecast_fn   = dashboard_vol_forecast_fn,
-    calc_vpa_flag_fn  = calc_vpa_flag,
-    momentum_today_ref = lambda: momentum_today,
-    attent_today_ref   = lambda: attent_today,
-    breakvol_today_ref = lambda: breakvol_today,
-    fetch_market_health_fn = compute_market_health_index,
-    signal_session_date_ref = lambda: signal_session_date,
-    port              = 8888,
-    extra_quote_fn    = fetch_extra_quotes,
-    rs_universe_ref   = lambda: symbols_to_rs,
-    calc_signals_fn   = calc_signals_for_df,
-)
+    # Khởi động Dashboard trước để các panel phục vụ ngay, sau đó nạp cache lịch sử
+    start_dashboard(
+        alerted_today_ref = lambda: alerted_today,
+        history_cache_ref = lambda: history_cache,
+        cache_lock_ref    = cache_lock,
+        fetch_heatmap_fn  = fetch_heatmap_data,
+        signal_emoji_ref  = SIGNAL_EMOJI,
+        signal_rank_ref   = SIGNAL_RANK,
+        vol_forecast_fn   = dashboard_vol_forecast_fn,
+        calc_vpa_flag_fn  = calc_vpa_flag,
+        momentum_today_ref = lambda: momentum_today,
+        attent_today_ref   = lambda: attent_today,
+        breakvol_today_ref = lambda: breakvol_today,
+        fetch_market_health_fn = compute_market_health_index,
+        signal_session_date_ref = lambda: signal_session_date,
+        port              = 8888,
+        extra_quote_fn    = fetch_extra_quotes,
+        rs_universe_ref   = lambda: symbols_to_rs,
+        calc_signals_fn   = calc_signals_for_df,
+    )
 
-print("\n🔧 Đang load cache lịch sử lần đầu...")
-build_history_cache(symbols_to_cache, last_run_date)
+    print("\n🔧 Đang load cache lịch sử lần đầu...")
+    build_history_cache(symbols_to_cache, last_run_date)
 
-print("\n" + "="*60)
-print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
-print(f"   Danh sách   : {len(symbols_to_scan)} mã")
-print(f"   Cache chart : {len(symbols_to_cache)} mã")
-print(f"   Chu kỳ quét : {SCAN_INTERVAL_SEC} giây")
-print(f"   Tín hiệu    → Channel/Group: {TELEGRAM_CHAT_ID}")
-print("   Dashboard   : http://VPS_IP:8888")
-print("   Lệnh chart  : /c HPG | /chart HPG | /HPG | / HPG")
-print("   Lệnh chỉ số : /VNINDEX | /VN30 | /HNX | /UPCOM | /VN100")
-print("   Lệnh heatmap: /h | /heatmap")
-print("   Lệnh khác   : /s (VIP) | /help")
-print(f"   Phân quyền  : VIP (toàn quyền) | Free (tối đa {FREE_CHAT_LIMIT} slot, TTL 30p)")
-print("   Chart gửi   : Daily [D] + Weekly [W] + 15 phút [15m]")
-print("   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
-print("                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
-print("   Nhận lệnh   : Group + Private Chat (24/7)")
-print("   Cache check : Tự động trước mỗi chu kỳ quét")
-print("   On-demand   : Ưu tiên cache, fallback fetch fresh")
-print("   Nghỉ quét   : Thứ 7 và Chủ nhật")
-print("="*60)
+    print("\n" + "="*60)
+    print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
+    print(f"   Danh sách   : {len(symbols_to_scan)} mã")
+    print(f"   Cache chart : {len(symbols_to_cache)} mã")
+    print(f"   Chu kỳ quét : {SCAN_INTERVAL_SEC} giây")
+    print(f"   Tín hiệu    → Channel/Group: {TELEGRAM_CHAT_ID}")
+    print("   Dashboard   : http://VPS_IP:8888")
+    print("   Lệnh chart  : /c HPG | /chart HPG | /HPG | / HPG")
+    print("   Lệnh chỉ số : /VNINDEX | /VN30 | /HNX | /UPCOM | /VN100")
+    print("   Lệnh heatmap: /h | /heatmap")
+    print("   Lệnh khác   : /s (VIP) | /help")
+    print(f"   Phân quyền  : VIP (toàn quyền) | Free (tối đa {FREE_CHAT_LIMIT} slot, TTL 30p)")
+    print("   Chart gửi   : Daily [D] + Weekly [W] + 15 phút [15m]")
+    print("   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
+    print("                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
+    print("   Nhận lệnh   : Group + Private Chat (24/7)")
+    print("   Cache check : Tự động trước mỗi chu kỳ quét")
+    print("   On-demand   : Ưu tiên cache, fallback fetch fresh")
+    print("   Nghỉ quét   : Thứ 7 và Chủ nhật")
+    print("="*60)
 
-# =============================================================================
-# VÒNG LẶP CHÍNH
-# =============================================================================
-while True:
-    try:
-        now_obj      = datetime.now(TZ_VN)
-        current_date = now_obj.date()
-        now_time     = int(now_obj.strftime("%H%M%S"))
-        ts           = now_obj.strftime("%H:%M:%S")
-        weekday      = now_obj.weekday()  # 0=Thứ 2 ... 4=Thứ 6, 5=Thứ 7, 6=Chủ nhật
+    # =============================================================================
+    # VÒNG LẶP CHÍNH
+    # =============================================================================
+    while True:
+        try:
+            now_obj      = datetime.now(TZ_VN)
+            current_date = now_obj.date()
+            now_time     = int(now_obj.strftime("%H%M%S"))
+            ts           = now_obj.strftime("%H:%M:%S")
+            weekday      = now_obj.weekday()  # 0=Thứ 2 ... 4=Thứ 6, 5=Thứ 7, 6=Chủ nhật
 
-        # ── BỎ QUA THỨ 7 VÀ CHỦ NHẬT ────────────────────────────────────────
-        if weekday >= 5:
-            day_name = "Thứ 7" if weekday == 5 else "Chủ nhật"
-            print(f"[{ts}] 📅 {day_name} — không quét. Listener + Dashboard vẫn chạy.")
-            time.sleep(SCAN_INTERVAL_SEC)
-            continue
+            # ── BỎ QUA THỨ 7 VÀ CHỦ NHẬT ────────────────────────────────────────
+            if weekday >= 5:
+                day_name = "Thứ 7" if weekday == 5 else "Chủ nhật"
+                print(f"[{ts}] 📅 {day_name} — không quét. Listener + Dashboard vẫn chạy.")
+                time.sleep(SCAN_INTERVAL_SEC)
+                continue
 
-        if current_date > last_run_date:
-            last_run_date = current_date
-            print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reload cache lịch sử.")
-            build_history_cache(symbols_to_cache, current_date)
-
-        if not _is_trading_session_time(current_date, now_time):
-            # Khởi động nạp mới 100% cache & Market Health vào 08h30 sáng trước giờ giao dịch
-            if now_time >= 83000 and _last_morning_warmup_date != current_date:
-                _last_morning_warmup_date = current_date
-                print(f"\n☀️ [{ts}] Khởi động đầu ngày 08h30 — Nạp mới toàn bộ cache lịch sử & tính Market Health chuẩn...")
+            if current_date > last_run_date:
+                last_run_date = current_date
+                print(f"\n🌅 [{ts}] Ngày mới {current_date.strftime('%d/%m/%Y')} — Reload cache lịch sử.")
                 build_history_cache(symbols_to_cache, current_date)
 
-            # Kiểm tra cache định kỳ mỗi 30 phút ngoài giờ giao dịch
-            if time.time() - _last_cache_check_ts >= CACHE_CHECK_INTERVAL_SEC:
-                _last_cache_check_ts = time.time()
-                check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
+            if not _is_trading_session_time(current_date, now_time):
+                # Khởi động nạp mới 100% cache & Market Health vào 08h30 sáng trước giờ giao dịch
+                if now_time >= 83000 and _last_morning_warmup_date != current_date:
+                    _last_morning_warmup_date = current_date
+                    print(f"\n☀️ [{ts}] Khởi động đầu ngày 08h30 — Nạp mới toàn bộ cache lịch sử & tính Market Health chuẩn...")
+                    build_history_cache(symbols_to_cache, current_date)
 
-            next_open = _next_trading_session_label(now_time)
-            if signal_session_date < current_date:
-                print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. "
-                      f"Đang hiển thị dữ liệu phiên {signal_session_date.strftime('%d/%m/%Y')} (chưa có phiên mới). Listener + Dashboard vẫn chạy.")
+                # Kiểm tra cache định kỳ mỗi 30 phút ngoài giờ giao dịch
+                if time.time() - _last_cache_check_ts >= CACHE_CHECK_INTERVAL_SEC:
+                    _last_cache_check_ts = time.time()
+                    check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
+
+                next_open = _next_trading_session_label(now_time)
+                if signal_session_date < current_date:
+                    print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. "
+                          f"Đang hiển thị dữ liệu phiên {signal_session_date.strftime('%d/%m/%Y')} (chưa có phiên mới). Listener + Dashboard vẫn chạy.")
+                else:
+                    print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
+                time.sleep(SCAN_INTERVAL_SEC)
+                continue
+
+            # Reset danh sách tín hiệu khi vào phiên mới
+            if current_date > signal_session_date:
+                alerted_today.clear()
+                momentum_today.clear()
+                attent_today.clear()
+                breakvol_today.clear()
+                signal_session_date = current_date
+                _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
+                print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi.")
+
+            with cache_lock:
+                cache_empty = len(history_cache) == 0
+            if cache_empty:
+                print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
+                build_history_cache(symbols_to_cache, current_date)
+
+            print(f"\n{'='*60}")
+            print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (SSI + DChart)")
+            print(f"{'='*60}")
+
+            new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today,
+                                          attent_today, breakvol_today)
+            triggered_alerts = check_price_alerts()
+
+            if new_signals:
+                print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
             else:
-                print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
-            time.sleep(SCAN_INTERVAL_SEC)
-            continue
+                print(f"[{ts}] Không có tín hiệu mới.")
 
-        # Reset danh sách tín hiệu khi vào phiên mới
-        if current_date > signal_session_date:
-            alerted_today.clear()
-            momentum_today.clear()
-            attent_today.clear()
-            breakvol_today.clear()
-            signal_session_date = current_date
             _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
-            print(f"🌅 [{ts}] Phiên giao dịch mới {current_date.strftime('%d/%m/%Y')} — Reset danh sách tín hiệu đã gửi.")
+            if triggered_alerts:
+                print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
 
-        with cache_lock:
-            cache_empty = len(history_cache) == 0
-        if cache_empty:
-            print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
-            build_history_cache(symbols_to_cache, current_date)
+            if alerted_today:
+                summary_str = " | ".join([f"{k}:{v['signal']}" for k,v in alerted_today.items()])
+                print(f"   📋 Đã báo hôm nay: {summary_str}")
+            if momentum_today:
+                summary_mom = " | ".join([f"{k}:{'/'.join(v['signals'])}" for k,v in sorted(momentum_today.items())])
+                print(f"   ⚡ Động lượng: {summary_mom}")
+            if attent_today:
+                print(f"   👀 ATTENT ({len(attent_today)}): {', '.join(sorted(attent_today.keys()))}")
+            if breakvol_today:
+                print(f"   💥 BREAKVOL ({len(breakvol_today)}): {', '.join(sorted(breakvol_today.keys()))}")
 
-        print(f"\n{'='*60}")
-        print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (VNDirect)")
-        print(f"{'='*60}")
+            print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
+            time.sleep(SCAN_INTERVAL_SEC)
 
-        new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today,
-                                      attent_today, breakvol_today)
-        triggered_alerts = check_price_alerts()
-
-        if new_signals:
-            print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
-        else:
-            print(f"[{ts}] Không có tín hiệu mới.")
-
-        _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
-        if triggered_alerts:
-            print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
-
-        if alerted_today:
-            summary_str = " | ".join([f"{k}:{v['signal']}" for k,v in alerted_today.items()])
-            print(f"   📋 Đã báo hôm nay: {summary_str}")
-        if momentum_today:
-            summary_mom = " | ".join([f"{k}:{'/'.join(v['signals'])}" for k,v in sorted(momentum_today.items())])
-            print(f"   ⚡ Động lượng: {summary_mom}")
-        if attent_today:
-            print(f"   👀 ATTENT ({len(attent_today)}): {', '.join(sorted(attent_today.keys()))}")
-        if breakvol_today:
-            print(f"   💥 BREAKVOL ({len(breakvol_today)}): {', '.join(sorted(breakvol_today.keys()))}")
-
-        print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
-        time.sleep(SCAN_INTERVAL_SEC)
-
-    except Exception as e:
-        ts = datetime.now(TZ_VN).strftime("%H:%M:%S")
-        print(f"[{ts}] ❌ Lỗi vòng lặp chính: {e}")
-        time.sleep(10)
+        except Exception as e:
+            ts = datetime.now(TZ_VN).strftime("%H:%M:%S")
+            print(f"[{ts}] ❌ Lỗi vòng lặp chính: {e}")
+            time.sleep(10)
