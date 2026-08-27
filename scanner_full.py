@@ -2,7 +2,7 @@
 =============================================================================
 SCANNER TÍN HIỆU MUA CỔ PHIẾU — PHIÊN BẢN TỐI ƯU
 Pocket Pivot / Breakout / Pre-Break / BottomFish / BottomBreakP / MA_Cross
-Tích hợp: SSI Batch + VNDirect + Telegram + Chart mplfinance + Dashboard
+Tích hợp: VNDirect Batch + VNDirect + Telegram + Chart mplfinance + Dashboard
 + HEATMAP BOT (lệnh /h hoặc /heatmap)
 + CHỈ SỐ: VNINDEX, VN30 (lệnh /VNINDEX, /VN30, /c VNINDEX ...)
 + CHART 15 PHÚT: gửi kèm tín hiệu, on-demand, và khi nhấn nút /s
@@ -264,13 +264,13 @@ def fetch_heatmap_data() -> tuple:
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
     result = {}
     try:
-        items = _fetch_ssi_priceboard_batch(need)
+        items = _fetch_vndirect_priceboard_batch(need)
         for it in items:
             sym = it.get('stockSymbol')
             if not sym:
                 continue
-            matched = float(it.get('matchedPrice') or 0) / 1000.0
-            ref_p = float(it.get('refPrice') or 0) / 1000.0
+            matched = float(it.get('matchedPrice') or 0)
+            ref_p = float(it.get('refPrice') or 0)
             total_value = float(it.get('nmTotalTradedValue') or 0)
             close = matched if matched > 0 else ref_p
             pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
@@ -278,12 +278,10 @@ def fetch_heatmap_data() -> tuple:
                 pct = 0.0
             result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
     except Exception as e:
-        print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
+        print(f"  [{ts_log}] ❌ Heatmap VNDirect lỗi: {e}")
 
-    if result:
-        print(f"  [{ts_log}] 🗺  Heatmap: tải thành công {len(result)}/{len(need)} mã từ [SSI Priceboard]")
-    else:
-        # Fallback tự động qua Cache/VNDirect khi SSI bị chặn (Cloudflare 403 trên VPS nước ngoài)
+    if not result:
+        # Fallback tự động qua Cache/DChart khi mất kết nối
         with cache_lock:
             for sym in need:
                 df = history_cache.get(sym)
@@ -296,7 +294,7 @@ def fetch_heatmap_data() -> tuple:
                         pct = 0.0
                     total_value = round(close * vol * 1000, 0)
                     result[sym] = {"price": close, "pct": pct, "total_value": total_value}
-        print(f"  [{ts_log}] 🗺  Heatmap: SSI không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache VNDirect]")
+        print(f"  [{ts_log}] 🗺  Heatmap: VNDirect Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
 
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
@@ -308,13 +306,13 @@ def fetch_extra_quotes(syms: list) -> dict:
         return {}
     result = {}
     try:
-        items = _fetch_ssi_priceboard_batch(syms)
+        items = _fetch_vndirect_priceboard_batch(syms)
         for it in items:
             sym = it.get('stockSymbol')
             if not sym:
                 continue
-            matched = float(it.get('matchedPrice') or 0) / 1000.0
-            ref_p = float(it.get('refPrice') or 0) / 1000.0
+            matched = float(it.get('matchedPrice') or 0)
+            ref_p = float(it.get('refPrice') or 0)
             close = matched if matched > 0 else ref_p
             pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
             if not math.isfinite(pct):
@@ -323,7 +321,7 @@ def fetch_extra_quotes(syms: list) -> dict:
     except Exception as e:
         print(f"  ❌ fetch_extra_quotes lỗi: {e}")
 
-    # Fallback qua cache nếu SSI bị chặn
+    # Fallback qua cache nếu Priceboard lỗi
     if not result:
         with cache_lock:
             for sym in syms:
@@ -1119,7 +1117,7 @@ def compute_market_health_index(limit: int = 120) -> dict:
     }
 
 # =============================================================================
-# BƯỚC 5B: NẠP DỮ LIỆU & CACHE LỊCH SỬ (VNDIRECT ĐA LUỒNG & SSI BATCH)
+# BƯỚC 5B: NẠP DỮ LIỆU & CACHE LỊCH SỬ (VNDIRECT ĐA LUỒNG & BATCH)
 # =============================================================================
 history_cache: dict = {}
 cache_lock          = threading.Lock()
@@ -1131,13 +1129,6 @@ _vndirect_session.headers.update({
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/json,*/*",
     "Referer": "https://dstock.vndirect.com.vn/",
-})
-
-_ssi_session = requests.Session()
-_ssi_session.headers.update({
-    "User-Agent": "Mozilla/5.0",
-    "Referer": "https://iboard.ssi.com.vn/",
-    "Accept": "application/json, */*"
 })
 
 def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
@@ -1167,35 +1158,74 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
     df.set_index('time', inplace=True)
     return df
 
-def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
+def decode_vndirect(raw_str: str) -> list[str]:
+    """Giải mã chuỗi nén Caesar Shift (charCode + (index % 5)) của VNDIRECT bảng giá."""
+    if not raw_str or not isinstance(raw_str, str):
+        return []
+    return ''.join(chr(ord(c) + (i % 5)) for i, c in enumerate(raw_str)).split('|')
+
+def _fetch_vndirect_priceboard_batch(symbols: list[str]) -> list[dict]:
     if not symbols:
         return []
-    url = "https://iboard-query.ssi.com.vn/stock/multiple"
+    url_base = "https://price-streaming-api.vndirect.com.vn/v2/stocks/snapshot"
     results = []
-    for i in range(0, len(symbols), 100):
-        chunk = [s.upper().strip() for s in symbols[i:i + 100]]
+    # VNDirect hỗ trợ danh sách codes phân cách bởi dấu phẩy, chia chunk 80 mã/request
+    for i in range(0, len(symbols), 80):
+        chunk = [s.upper().strip() for s in symbols[i:i + 80] if s.strip()]
+        if not chunk:
+            continue
         try:
-            res = _ssi_session.post(url, json={"stocks": chunk},
-                                    headers={"Content-Type": "application/json"}, timeout=5)
+            url = f"{url_base}?codes={','.join(chunk)}"
+            res = _vndirect_session.get(url, timeout=5)
             if res.status_code == 200:
-                data = res.json().get("data", [])
-                if isinstance(data, list):
-                    results.extend(data)
+                raw_list = res.json()
+                if isinstance(raw_list, list):
+                    for raw in raw_list:
+                        if isinstance(raw, str):
+                            toks = decode_vndirect(raw)
+                            if len(toks) > 53:
+                                sym = toks[1].upper().strip()
+                                ref_p = float(toks[4]) if toks[4] else 0.0
+                                ceil_p = float(toks[6]) if toks[6] else 0.0
+                                floor_p = float(toks[5]) if toks[5] else 0.0
+                                high_p = float(toks[49]) if len(toks) > 49 and toks[49] else ref_p
+                                low_p = float(toks[50]) if len(toks) > 50 and toks[50] else ref_p
+                                total_val = float(toks[51]) if len(toks) > 51 and toks[51] else 0.0
+                                total_vol = float(toks[52]) if len(toks) > 52 and toks[52] else 0.0
+                                match_p = float(toks[53]) if len(toks) > 53 and toks[53] else ref_p
+                                project_open = float(toks[55]) if len(toks) > 55 and toks[55] else 0.0
+                                display_price = project_open if project_open > 0 else match_p
+                                
+                                results.append({
+                                    'stockSymbol': sym,
+                                    'refPrice': ref_p,
+                                    'floor': floor_p,
+                                    'ceiling': ceil_p,
+                                    'highest': high_p,
+                                    'lowest': low_p,
+                                    'matchedPrice': display_price,
+                                    'projectOpen': project_open,
+                                    'stockVol': total_vol,
+                                    'nmTotalTradedQty': total_vol,
+                                    'nmTotalTradedValue': total_val * 1_000_000, # VNDirect trả về đơn vị triệu VND
+                                    'openPrice': ref_p if display_price == 0 else display_price
+                                })
         except Exception:
             pass
     return results
 
-def ssi_item_to_today_bar(item: dict, current_date: date) -> pd.Series | None:
+def vndirect_item_to_today_bar(item: dict, current_date: date) -> pd.Series | None:
     try:
-        open_ = float(item.get('openPrice') or 0) / 1000.0
-        high = float(item.get('highest') or 0) / 1000.0
-        low = float(item.get('lowest') or 0) / 1000.0
-        close = float(item.get('matchedPrice') or 0) / 1000.0
+        close = float(item.get('matchedPrice') or item.get('refPrice') or 0)
+        ref_p = float(item.get('refPrice') or close)
+        high = float(item.get('highest') or close)
+        low = float(item.get('lowest') or close)
+        open_ = float(item.get('openPrice') or close)
         volume = float(item.get('nmTotalTradedQty') or item.get('stockVol') or 0)
         if volume < 100 or min(open_, high, low, close) <= 0:
             return None
-        high = max(high, open_, close)
-        low = min(low, open_, close)
+        high = max(high, open_, close, ref_p if close > ref_p else high)
+        low = min(low, open_, close, ref_p if close < ref_p else low)
         return pd.Series(
             {'open': open_, 'high': high, 'low': low, 'close': close, 'volume': volume},
             name=pd.Timestamp(current_date)
@@ -1204,13 +1234,13 @@ def ssi_item_to_today_bar(item: dict, current_date: date) -> pd.Series | None:
         return None
 
 def fetch_today_bars_batch(symbols: list[str], current_date: date) -> dict[str, pd.Series]:
-    items = _fetch_ssi_priceboard_batch(symbols)
+    items = _fetch_vndirect_priceboard_batch(symbols)
     bars = {}
     for it in items:
         sym = it.get('stockSymbol')
         if not sym:
             continue
-        bar = ssi_item_to_today_bar(it, current_date)
+        bar = vndirect_item_to_today_bar(it, current_date)
         if bar is not None:
             bars[sym.upper().strip()] = bar
     return bars
@@ -1910,6 +1940,22 @@ def detect_signal(df, now_time):
     if is_bottomfish:   return 'BOTTOMFISH'
     return None
 
+def calc_signals_for_df(df):
+    if df is None or len(df) < 60: return None, []
+    try:
+        df_ind = compute_indicators(df)
+        liq, bp, bv, pp, pv = calc_liquidity(df_ind), calc_break_price(df_ind), calc_break_vol(df_ind), calc_pocket_pivot_price(df_ind), calc_pocket_pivot_vol(df_ind)
+        bo = bp & bv & liq
+        pk = pp & (pv | bv) & liq & (df_ind['MA10'] >= 0.8 * ref(df_ind['MA10'], 1))
+        bb = calc_bottombreakp(df_ind)
+        any_buy = bo | pk | bb
+        last_sig = ('BREAKOUT' if bo.iloc[-1] else 'POCKET PIVOT' if pk.iloc[-1] else 'BOTTOMBREAKP' if bb.iloc[-1] else None)
+        last_info = {"signal": last_sig, "emoji": SIGNAL_EMOJI.get(last_sig, "📌"), "label": last_sig} if last_sig else None
+        hist = [dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)[:10] for dt in df_ind.index[any_buy]] if len(df_ind) > 0 and any_buy.any() else []
+        return last_info, hist
+    except Exception:
+        return None, []
+
 # =============================================================================
 # BƯỚC 7: VẼ BIỂU ĐỒ
 # =============================================================================
@@ -2048,7 +2094,7 @@ def _build_15m_chart(symbol: str, signal_type: str, via: str = "telegram_15m") -
     )
 
 # =============================================================================
-# BƯỚC 8: HÀM QUÉT 1 CHU KỲ (SSI BATCH + VNDIRECT FALLBACK)
+# BƯỚC 8: HÀM QUÉT 1 CHU KỲ (VNDIRECT BATCH + DCHART FALLBACK)
 # =============================================================================
 SIGNAL_RANK  = {
     'PRE-BREAK':    1,
@@ -2075,16 +2121,16 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (SSI Batch + VNDirect)...")
+    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (VNDirect Batch + Fallback)...")
 
     batch_bars = fetch_today_bars_batch(list(cache_symbol_set), current_date)
     missing_symbols = [s for s in cache_symbol_set if s not in batch_bars]
 
     if missing_symbols:
         if len(missing_symbols) == len(cache_symbol_set):
-            print(f"  ⚠️  [{ts}] SSI Batch không khả dụng → Toàn bộ {len(missing_symbols)} mã tải song song qua VNDirect (8 luồng)...")
+            print(f"  ⚠️  [{ts}] VNDirect Batch không khả dụng → Toàn bộ {len(missing_symbols)} mã tải song song qua VNDirect DChart (8 luồng)...")
         else:
-            print(f"  [{ts}] SSI Batch thiếu {len(missing_symbols)} mã → Tải bổ sung song song qua VNDirect (8 luồng)...")
+            print(f"  [{ts}] VNDirect Batch thiếu {len(missing_symbols)} mã → Tải bổ sung song song qua VNDirect DChart (8 luồng)...")
 
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
@@ -2153,6 +2199,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
+            alerted_today.pop(symbol, None)
             alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 1), "price": round(float(today['close']), 2)}
             new_signals.append(symbol)
 
@@ -2911,6 +2958,7 @@ start_dashboard(
     port              = 8888,
     extra_quote_fn    = fetch_extra_quotes,
     rs_universe_ref   = lambda: symbols_to_rs,
+    calc_signals_fn   = calc_signals_for_df,
 )
 
 print("\n🔧 Đang load cache lịch sử lần đầu...")
