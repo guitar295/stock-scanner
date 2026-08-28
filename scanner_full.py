@@ -2325,19 +2325,21 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             dict(alerted_today),
             dict(current_momentum),
             dict(current_attent),
-            dict(current_breakvol)
+            dict(current_breakvol),
+            signal_session_date
         )
-    except Exception:
+    except Exception as e:
         pass
 
     return new_signals
 
-def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_snap):
+def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_snap, session_date_val=None):
     try:
         out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
         charts_dir = os.path.join(out_dir, "charts")
         os.makedirs(charts_dir, exist_ok=True)
         now_dt = datetime.now(TZ_VN)
+        sess_str = session_date_val.strftime("%Y-%m-%d") if hasattr(session_date_val, 'strftime') else (str(session_date_val) if session_date_val else now_dt.strftime("%Y-%m-%d"))
 
         try:
             rs_scores = warm_rs_cache() if 'warm_rs_cache' in globals() else {}
@@ -2375,7 +2377,7 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
         with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
             json.dump({
                 "updated_at": now_dt.strftime("%H:%M:%S"),
-                "session_date": now_dt.strftime("%Y-%m-%d"),
+                "session_date": sess_str,
                 "count": len(sig_list),
                 "momentum_count": len(mom_list),
                 "strength_count": 0,
@@ -3205,7 +3207,7 @@ if __name__ == '__main__':
         print("💾 Đang xuất dữ liệu tĩnh ban đầu cho Cloudflare Pages (static_data)...")
         with cache_lock:
             c_snap = {k: v.copy() for k, v in history_cache.items() if v is not None}
-        _async_export_static_data(c_snap, dict(alerted_today), dict(momentum_today), dict(attent_today or {}), dict(breakvol_today or {}))
+        _async_export_static_data(c_snap, dict(alerted_today), dict(momentum_today), dict(attent_today or {}), dict(breakvol_today or {}), signal_session_date)
     except Exception as e:
         print(f"⚠️ Lỗi xuất dữ liệu ban đầu: {e}")
 
