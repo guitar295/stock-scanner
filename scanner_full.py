@@ -30,11 +30,13 @@ import os
 import re
 import tempfile
 from io import BytesIO
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import pytz
 import json
 import threading
 import math
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 from PIL import Image, ImageDraw, ImageFont
 from dashboard_server import (
     start_dashboard,
@@ -50,8 +52,26 @@ from dashboard_server import (
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
 # =============================================================================
-# BƯỚC 2: CẤU HÌNH
+# BƯỚC 2: CẤU HÌNH & NẠP BIẾN MÔI TRƯỜNG (.ENV)
 # =============================================================================
+def _load_env_file():
+    for p in (os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'), os.path.expanduser('~/scanner/.env')):
+        if os.path.isfile(p):
+            try:
+                with open(p, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            k, v = line.split('=', 1)
+                            k, v = k.strip(), v.strip().strip('"').strip("'")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+                break
+            except Exception:
+                pass
+
+_load_env_file()
+
 TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
@@ -1165,7 +1185,7 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
         try:
             o, h, l, c, v = float(opens[i]), float(highs[i]), float(lows[i]), float(closes[i]), float(vols[i])
             if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
-                dt = datetime.utcfromtimestamp(times[i] + 25200)
+                dt = datetime.fromtimestamp(times[i] + 25200, tz=timezone.utc).replace(tzinfo=None)
                 bars.append({"time": dt, "open": o, "high": h, "low": l, "close": c, "volume": max(0.0, v)})
         except: pass
     if not bars: return None
@@ -2319,15 +2339,36 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
         os.makedirs(charts_dir, exist_ok=True)
         now_dt = datetime.now(TZ_VN)
 
+        try:
+            rs_scores = warm_rs_cache() if 'warm_rs_cache' in globals() else {}
+        except Exception:
+            rs_scores = {}
+
         sig_list = []
         for s, entry in alerted_snap.items():
             stype = entry.get("signal") if isinstance(entry, dict) else entry
             pct = entry.get("pct", 0) if isinstance(entry, dict) else 0
             pr = entry.get("price", 0) if isinstance(entry, dict) else 0
             emoji = SIGNAL_EMOJI.get(stype, "📌")
-            sig_list.append({"symbol": s, "signal": stype, "label": stype, "pct": pct, "price": pr, "emoji": emoji})
+            rs_val = rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None
+            sig_list.append({"symbol": s, "signal": stype, "label": stype, "pct": pct, "price": pr, "emoji": emoji, "rs": rs_val})
 
-        mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY"} for s, d in mom_snap.items()]
+        if not sig_list:
+            for s, df in cache_snap.items():
+                if df is None or len(df) < 60 or s in ("VNINDEX", "VN30"): continue
+                try:
+                    last_sig, _ = calc_signals_for_df(df)
+                    if last_sig:
+                        last_r = df.iloc[-1]
+                        prev_r = df.iloc[-2] if len(df) > 1 else last_r
+                        pct = ((last_r["close"] - prev_r["close"]) / prev_r["close"]) * 100 if prev_r["close"] > 0 else 0
+                        emoji = SIGNAL_EMOJI.get(last_sig, "📌")
+                        rs_val = rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None
+                        sig_list.append({"symbol": s, "signal": last_sig, "label": last_sig, "pct": round(float(pct), 2), "price": round(float(last_r["close"]), 2), "emoji": emoji, "rs": rs_val})
+                except Exception:
+                    pass
+
+        mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY", "rs": rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None} for s, d in mom_snap.items()]
         att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in att_snap.items()]
         brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in brk_snap.items()]
 
@@ -2365,8 +2406,13 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
                 candles.append({"time": t_str, "open": round(o, 2), "high": round(h, 2), "low": round(l, 2), "close": round(c, 2)})
                 volume.append({"time": t_str, "value": v, "color": v_col})
 
+            rs_val = rs_scores.get(sym.upper()) if isinstance(rs_scores, dict) else None
+            chart_dict = {"symbol": sym, "timeframe": "1D", "candles": candles, "volume": volume, "has_more": True}
+            if rs_val is not None:
+                chart_dict["rs"] = rs_val
+
             with open(os.path.join(charts_dir, f"{sym.upper()}.json"), "w", encoding="utf-8") as f:
-                json.dump({"symbol": sym, "timeframe": "1D", "candles": candles, "volume": volume, "has_more": True}, f, ensure_ascii=False)
+                json.dump(chart_dict, f, ensure_ascii=False)
 
         with open(os.path.join(out_dir, "heatmap.json"), "w", encoding="utf-8") as f:
             json.dump({"data": hmap_data, "updated_at": now_dt.strftime("%H:%M:%S")}, f, ensure_ascii=False)
@@ -2378,23 +2424,13 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
                 "session_afternoon_start": "13:00:00", "session_afternoon_end": "15:00:00"
             }, f, ensure_ascii=False)
 
-        vni_df = cache_snap.get("VNINDEX")
-        vni_pct = 0.0
-        if vni_df is not None and len(vni_df) >= 2:
-            try:
-                last_c, prev_c = vni_df["close"].iloc[-1], vni_df["close"].iloc[-2]
-                vni_pct = ((last_c - prev_c) / prev_c) * 100 if prev_c > 0 else 0.0
-            except Exception:
-                pass
-        sc = 75 if vni_pct >= 0 else 45
-        with open(os.path.join(out_dir, "market_health.json"), "w", encoding="utf-8") as f:
-            json.dump({
-                "score": sc,
-                "label": "TÍCH CỰC" if sc >= 60 else "THẬN TRỌNG",
-                "date": now_dt.strftime("%d/%m/%Y"),
-                "analysis": f"VN-Index biến động {vni_pct:+.2f}% trong phiên gần nhất. Dòng tiền ổn định.",
-                "tags": ["Dòng tiền", "VNINDEX", "Cổ phiếu VIP"]
-            }, f, ensure_ascii=False)
+        try:
+            mh_data = compute_market_health_index()
+            if mh_data and isinstance(mh_data, dict):
+                with open(os.path.join(out_dir, "market_health.json"), "w", encoding="utf-8") as f:
+                    json.dump({"ok": True, "updated_at": int(time.time()), **mh_data}, f, ensure_ascii=False)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -3008,9 +3044,20 @@ def telegram_listener(stop_event: threading.Event):
 # =============================================================================
 # BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
 # Lưu/đọc trạng thái tín hiệu đã gửi (alerted_today, momentum...) qua restart
-_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
-if not os.path.isdir(_SIGNAL_STATE_DIR):
-    _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
+_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR")
+if not _SIGNAL_STATE_DIR or not os.path.isdir(_SIGNAL_STATE_DIR):
+    for candidate in (
+        os.path.expanduser("~/scanner/data/trade-journal"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal"),
+        "/data/trade-journal",
+        os.path.dirname(os.path.abspath(__file__))
+    ):
+        if os.path.isdir(candidate):
+            _SIGNAL_STATE_DIR = candidate
+            break
+    if not _SIGNAL_STATE_DIR:
+        _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 _signal_state_lock = threading.Lock()
 
