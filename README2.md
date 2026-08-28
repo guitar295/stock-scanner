@@ -5,12 +5,6 @@
 
 ## 🌟 TỔNG QUAN KIẾN TRÚC VẬN HÀNH
 
-```mermaid
-flowchart LR
-    A["👤 Người dùng (Web/Mobile)"] <-->|Mở web tức thì 0.01s từ CDN VN| B["🌐 Cloudflare Pages (Frontend)"]
-    B <-->|Kéo JSON nạp sẵn qua Tunnel| C["🚇 Cloudflare Tunnel (api.guitar295.xx.kg)"]
-    C <-->|Cổng 8888 kết nối trực tiếp| D["⚡ Con Bot VPS (scanner_full.py 24/7)"]
-```
 
 * **Frontend (Cloudflare Pages):** Phân phối giao diện HTML/JS và thư viện vẽ Chart TradingView từ 300+ máy chủ CDN tại Việt Nam.
 * **Backend (VPS Native Systemd):** Con bot quét 5s liên tục, tính toán VPA, Breakout và nạp sẵn file JSON tĩnh vào bộ đệm.
@@ -128,9 +122,3 @@ sudo systemctl status scanner
 
 ---
 
-## 🌐 CẤU HÌNH CLOUDFLARE ĐỒNG BỘ
-
-| Thành phần | Địa chỉ cấu hình | Mục đích |
-| :--- | :--- | :--- |
-| **Cloudflare Pages** | `https://scanner.guitar295.xx.kg` | Giao diện web chính cho người dùng truy cập |
-| **Cloudflare Tunnel** | `https://api.guitar295.xx.kg` $\rightarrow$ `localhost:8888` | Cổng truyền dữ liệu thời gian thực từ VPS |
