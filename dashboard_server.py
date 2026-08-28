@@ -1283,7 +1283,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                     cache_dict = _get_history_cache() if callable(_get_history_cache) else _get_history_cache
                     df_c = cache_dict.get(symbol) if isinstance(cache_dict, dict) else None
                 if df_c is not None and len(df_c) >= 60:
-                    df_cached = df_c.copy()
+                    df_cached = df_c
                     df_sub = df_cached.tail(limit)
                     raw_bars = []
                     for row in df_sub.itertuples():
@@ -1525,10 +1525,15 @@ def api_lightweight_chart(symbol):
             with _lite_chart_cache_lock:
                 fp = entry["payload"]
                 fc = fp.get("candles", [])
+                fv = fp.get("volume", [])
                 lb = dchart_data["candles"][-1]
+                lv = dchart_data["volume"][-1]
                 if fc:
                     if fc[-1].get("time") == lb.get("time"): fc[-1] = lb
                     else: fc.append(lb)
+                if fv:
+                    if fv[-1].get("time") == lv.get("time"): fv[-1] = lv
+                    else: fv.append(lv)
                 if limit < 60:
                     dchart_data["signal"] = fp.get("signal")
                     dchart_data["history_signals"] = fp.get("history_signals", [])
@@ -6294,8 +6299,20 @@ function _liteTryDesktopTfShortcut(e){
   if(_liteTextEditPos||document.activeElement?.isContentEditable)return false;
   const tag=(document.activeElement?.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea'||tag==='select')return false;
+  
+  const key=String(e.key||'').toLowerCase();
+  if(key==='q'){
+    e.preventDefault();
+    e.stopPropagation();
+    _liteDrawings=[]; _liteSelectedId=null;
+    _liteChannelPending=null; _liteArcPending=null; _liteZigzagPending=null; _liteLinePending=null;
+    saveLiteDrawings(); redrawLiteDrawings();
+    DOM.liteChartFrame?.focus();
+    return true;
+  }
+  
   const tfMap={d:'1D',w:'1W',e:'1M'};
-  const tf=tfMap[String(e.key||'').toLowerCase()];
+  const tf=tfMap[key];
   if(!tf)return false;
   e.preventDefault();
   e.stopPropagation();
