@@ -101,6 +101,7 @@ _extra_quote_fn = None
 _fetch_market_health_fn = None
 _vol_forecast_fn = None
 _calc_vpa_flag_fn = None
+_sync_heatmap_fn = None
 _signal_emoji = {}
 _signal_rank = {}
 
@@ -113,7 +114,7 @@ _extra_quote_cache = {}
 _extra_quote_lock = threading.Lock()
 EXTRA_QUOTE_TTL_SEC = 20
 EXTRA_QUOTE_MAX_SYMS = 15
-MARKET_HEALTH_TTL_SEC = 1800
+MARKET_HEALTH_TTL_SEC = 120
 SIGNAL_TTL_SEC = 10
 
 _market_health_cache = {"data": {}, "updated_at": 0, "pending_refresh": False}
@@ -1107,6 +1108,8 @@ def api_heatmap():
                     _heatmap_cache["data"] = data
                     _heatmap_cache["ts"]   = ts_str
                     _heatmap_cache["updated_at"] = time.time()
+                    if _sync_heatmap_fn:
+                        _sync_heatmap_fn(data)
             except Exception as e:
                 print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
         snap_time = _heatmap_cache["updated_at"]
@@ -1232,39 +1235,10 @@ def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
             continue
     return raw_bars or None
 
-def _get_vpa_flags_from_raw(symbol, raw_bars):
-    """Tính Volume-Signal (VPA) trực tiếp trên `raw_bars` đã có trong RAM (~1ms),
-    không cần bắn thêm request HTTP thứ 2 tới VNDirect."""
-    if not _calc_vpa_flag_fn or not raw_bars:
-        return {}
-
-    flags_by_date = {}
-    try:
-        vdf = pd.DataFrame({k: [b[k] for b in raw_bars] for k in ("open","high","low","close","volume")})
-        flags = _calc_vpa_flag_fn(vdf).tolist()
-        for bar, f in zip(raw_bars, flags):
-            dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
-            flags_by_date[dt_str] = int(f)
-    except Exception as e:
-        print(f"❌ Lỗi tính VPA cho {symbol}: {e}")
-
-    return flags_by_date
-
 def _default_calc_signals(df):
     return None, []
 
 _calc_signals_fn = None
-def _get_signals_from_raw(raw_bars):
-    if not raw_bars or len(raw_bars) < 50: return None, []
-    try:
-        fn = _calc_signals_fn or _default_calc_signals
-        df = pd.DataFrame(
-            {k: [b[k] for b in raw_bars] for k in ("open","high","low","close","volume")},
-            index=pd.DatetimeIndex([datetime.fromtimestamp(b["t"]+25200, tz=timezone.utc) for b in raw_bars])
-        )
-        return fn(df)
-    except Exception:
-        return None, []
 
 def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
@@ -1324,6 +1298,27 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
 
         if not raw_bars:
             raw_bars = _fetch_vndirect_raw_daily(symbol, from_ts, to_ts)
+            
+            # --- TỐI ƯU (LAZY CACHING): Lưu mã lẻ vào history_cache để tránh spam DStock mỗi 5s ---
+            if raw_bars and target_tf == "1D" and not before_date and _get_history_cache:
+                try:
+                    bars_for_df = []
+                    for b in raw_bars:
+                        dt = datetime.utcfromtimestamp(b["t"] + 25200)
+                        bars_for_df.append({
+                            "time": dt, "open": b["open"], "high": b["high"], 
+                            "low": b["low"], "close": b["close"], "volume": b["volume"]
+                        })
+                    if bars_for_df:
+                        df_new = pd.DataFrame(bars_for_df)
+                        df_new.set_index("time", inplace=True)
+                        df_cached = df_new  # Re-use for VPA calculation
+                        with _cache_lock:
+                            cache_dict = _get_history_cache() if callable(_get_history_cache) else _get_history_cache
+                            if isinstance(cache_dict, dict):
+                                cache_dict[symbol] = df_new
+                except Exception as e:
+                    print(f"  [Dashboard] Lỗi Lazy Cache cho mã {symbol}: {e}")
     except Exception as exc:
         return None, str(exc)
     if not raw_bars:
@@ -1423,8 +1418,12 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
         # 1. Ưu tiên 1: Lấy từ _heatmap_cache (siêu tốc, update 5s/lần)
         with _heatmap_lock:
             h_data = _heatmap_cache.get("data", {})
-            if symbol in h_data and "price" in h_data[symbol]:
-                live_data = h_data[symbol]
+            h_updated = _heatmap_cache.get("updated_at", 0)
+            
+            # Chỉ dùng Heatmap nếu dữ liệu vẫn còn tươi (được update trong vòng 60s)
+            if time.time() - h_updated <= 60:
+                if symbol in h_data and "price" in h_data[symbol]:
+                    live_data = h_data[symbol]
         
         # 2. Ưu tiên 2 (Fallback): Lấy qua hàm ngoại vi (cache 5s)
         if live_data is None and _extra_quote_fn:
@@ -1986,9 +1985,9 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
                     signal_session_date_ref=None, port=8888,
                     attent_today_ref=None, breakvol_today_ref=None,
                     extra_quote_fn=None, rs_universe_ref=None,
-                    calc_signals_fn=None):
+                    calc_signals_fn=None, sync_heatmap_fn=None):
     global _get_alerted_today, _get_momentum_today, _get_attent_today, _get_breakvol_today, _get_signal_session_date, _get_history_cache, _get_rs_universe_symbols, _cache_lock
-    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank, _extra_quote_fn, _calc_signals_fn
+    global _fetch_heatmap_fn, _fetch_market_health_fn, _vol_forecast_fn, _calc_vpa_flag_fn, _signal_emoji, _signal_rank, _extra_quote_fn, _calc_signals_fn, _sync_heatmap_fn
     _get_alerted_today = alerted_today_ref
     _get_momentum_today = momentum_today_ref
     _get_attent_today = attent_today_ref
@@ -2005,6 +2004,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _signal_rank       = signal_rank_ref
     _extra_quote_fn    = extra_quote_fn
     _calc_signals_fn   = calc_signals_fn
+    _sync_heatmap_fn   = sync_heatmap_fn
 
     def _run():
         import logging
@@ -2605,7 +2605,6 @@ html.chart-popout-mode .lite-chart-frame{
 .hmap-panel.collapsed .hmap-hdr-row1>*:not(.panel-title){display:none!important}
 .hmap-panel.collapsed .hmap-ts-wrap{display:none!important}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
-.hmap-panel.collapsed>.pbar-wrap,
 .hmap-panel.collapsed>.panel-body{display:none!important}
 .market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .frame-shrink{width:100%;height:720px;overflow:hidden;position:relative;background:#fff}
@@ -3451,7 +3450,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       </div>
       <div class="tri-content on" id="tri-content-health">
         <button class="lite-draw-btn health-copy-btn" id="health-copy-btn" title="Sao chép ảnh Mrk Health vào clipboard" aria-label="Sao chép ảnh Mrk Health vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
-        <div class="pbar-wrap"><div class="pbar-fill" id="pbar-health"></div></div>
+
         <div class="health-body" id="health-body">
           <div class="health-layout">
             <div class="health-chartbox">
@@ -3727,7 +3726,7 @@ const DOM={
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
   liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
-  pbarSig:$('pbar-sig'),pbarHealth:$('pbar-health'),healthCopyBtn:$('health-copy-btn'),
+  pbarSig:$('pbar-sig'),healthCopyBtn:$('health-copy-btn'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
@@ -6948,7 +6947,7 @@ function renderHeatmap(d){
   DOM.hmapGrid.querySelectorAll('.hmap-group').forEach(group=>{
     const avgEl=group.querySelector('.hmap-gavg');
     if(avgEl){
-      const cells=group.querySelectorAll('.hmap-cell');
+      const cells=Array.from(group.querySelectorAll('.hmap-cell'));
       let sum=0,count=0;
       cells.forEach(c=>{
         const s=c.dataset.sym;
@@ -6959,6 +6958,8 @@ function renderHeatmap(d){
         avgEl.className=`hmap-gavg ${avg>0.05?'pos':avg<-0.05?'neg':'zer'}`;
         avgEl.textContent=`${sign}${avg.toFixed(1)}%`;
       }
+      cells.sort((a,b)=>((d[b.dataset.sym]||{}).pct||0)-((d[a.dataset.sym]||{}).pct||0));
+      cells.forEach(c=>group.appendChild(c));
     }
   });
 
@@ -7466,16 +7467,14 @@ async function fetchHealth(){
     renderHealth(j);
     if(_healthRetryTimer){clearTimeout(_healthRetryTimer);_healthRetryTimer=null;}
     if(j.ok&&!j.pending_refresh){
-      startBar(DOM.pbarHealth,HEALTH_TTL);
+      // Không gọi pbarHealth nữa
     }else{
-      startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
       _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
     }
   }catch(e){
     console.error('fetchHealth:',e);
     renderHealth({ok:false,message:'Không tải được dữ liệu Mrk Health'});
     if(_healthRetryTimer)clearTimeout(_healthRetryTimer);
-    startBar(DOM.pbarHealth,HEALTH_RETRY_MS/1000);
     _healthRetryTimer=setTimeout(fetchHealth,HEALTH_RETRY_MS);
   }
 }
