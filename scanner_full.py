@@ -3044,19 +3044,13 @@ def telegram_listener(stop_event: threading.Event):
 # =============================================================================
 # BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
 # Lưu/đọc trạng thái tín hiệu đã gửi (alerted_today, momentum...) qua restart
-_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR")
-if not _SIGNAL_STATE_DIR or not os.path.isdir(_SIGNAL_STATE_DIR):
-    for candidate in (
-        os.path.expanduser("~/scanner/data/trade-journal"),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal"),
-        "/data/trade-journal",
-        os.path.dirname(os.path.abspath(__file__))
-    ):
-        if os.path.isdir(candidate):
-            _SIGNAL_STATE_DIR = candidate
-            break
-    if not _SIGNAL_STATE_DIR:
-        _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal")
+_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
+if _env_data_dir and os.path.isdir(_env_data_dir) and _env_data_dir != "/data/trade-journal":
+    _SIGNAL_STATE_DIR = _env_data_dir
+else:
+    _SIGNAL_STATE_DIR = _DEFAULT_DATA_DIR
+    os.makedirs(_SIGNAL_STATE_DIR, exist_ok=True)
 
 SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 _signal_state_lock = threading.Lock()

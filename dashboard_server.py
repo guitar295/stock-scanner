@@ -145,15 +145,13 @@ _RS_LOOKBACK_WEIGHTS = ((10, 0.5), (20, 0.3), (50, 0.2))
 _RS_REQUIRED_BARS = max(days for days, _ in _RS_LOOKBACK_WEIGHTS) + 1
 _RS_SMOOTH_DAYS = 5
 _RS_RAW_TAIL_DAYS = 10
-_RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR")
-if not _RS_CACHE_DIR or not os.path.isdir(_RS_CACHE_DIR):
-    for _cand in (os.path.expanduser("~/scanner/data/trade-journal"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal"), "/data/trade-journal"):
-        if os.path.isdir(_cand):
-            _RS_CACHE_DIR = _cand
-            break
-    if not _RS_CACHE_DIR:
-        _RS_CACHE_DIR = os.path.expanduser("~/scanner/data/trade-journal")
-        os.makedirs(_RS_CACHE_DIR, exist_ok=True)
+_DEFAULT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal")
+_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
+if _env_data_dir and os.path.isdir(_env_data_dir) and _env_data_dir != "/data/trade-journal":
+    _RS_CACHE_DIR = _env_data_dir
+else:
+    _RS_CACHE_DIR = _DEFAULT_DATA_DIR
+    os.makedirs(_RS_CACHE_DIR, exist_ok=True)
 
 _RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
 _MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "market_health.json"))
