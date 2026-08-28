@@ -2377,6 +2377,24 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
                 "session_morning_start": "09:00:00", "session_morning_end": "11:30:00",
                 "session_afternoon_start": "13:00:00", "session_afternoon_end": "15:00:00"
             }, f, ensure_ascii=False)
+
+        vni_df = cache_snap.get("VNINDEX")
+        vni_pct = 0.0
+        if vni_df is not None and len(vni_df) >= 2:
+            try:
+                last_c, prev_c = vni_df["close"].iloc[-1], vni_df["close"].iloc[-2]
+                vni_pct = ((last_c - prev_c) / prev_c) * 100 if prev_c > 0 else 0.0
+            except Exception:
+                pass
+        sc = 75 if vni_pct >= 0 else 45
+        with open(os.path.join(out_dir, "market_health.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "score": sc,
+                "label": "TÍCH CỰC" if sc >= 60 else "THẬN TRỌNG",
+                "date": now_dt.strftime("%d/%m/%Y"),
+                "analysis": f"VN-Index biến động {vni_pct:+.2f}% trong phiên gần nhất. Dòng tiền ổn định.",
+                "tags": ["Dòng tiền", "VNINDEX", "Cổ phiếu VIP"]
+            }, f, ensure_ascii=False)
     except Exception:
         pass
 
@@ -3093,6 +3111,13 @@ if __name__ == '__main__':
 
     print("\n🔧 Đang load cache lịch sử lần đầu...")
     build_history_cache(symbols_to_cache, last_run_date)
+    try:
+        print("💾 Đang xuất dữ liệu tĩnh ban đầu cho Cloudflare Pages (static_data)...")
+        with cache_lock:
+            c_snap = {k: v.copy() for k, v in history_cache.items() if v is not None}
+        _async_export_static_data(c_snap, dict(alerted_today), dict(momentum_today), dict(attent_today or {}), dict(breakvol_today or {}))
+    except Exception as e:
+        print(f"⚠️ Lỗi xuất dữ liệu ban đầu: {e}")
 
     print("\n" + "="*60)
     print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
