@@ -2357,14 +2357,14 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
             for s, df in cache_snap.items():
                 if df is None or len(df) < 60 or s in ("VNINDEX", "VN30"): continue
                 try:
-                    last_sig, _ = calc_signals_for_df(df)
-                    if last_sig:
+                    sig_name = detect_signal(df, 143000)
+                    if sig_name:
                         last_r = df.iloc[-1]
                         prev_r = df.iloc[-2] if len(df) > 1 else last_r
                         pct = ((last_r["close"] - prev_r["close"]) / prev_r["close"]) * 100 if prev_r["close"] > 0 else 0
-                        emoji = SIGNAL_EMOJI.get(last_sig, "📌")
+                        emoji = SIGNAL_EMOJI.get(sig_name, "📌")
                         rs_val = rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None
-                        sig_list.append({"symbol": s, "signal": last_sig, "label": last_sig, "pct": round(float(pct), 2), "price": round(float(last_r["close"]), 2), "emoji": emoji, "rs": rs_val})
+                        sig_list.append({"symbol": s, "signal": sig_name, "label": sig_name, "pct": round(float(pct), 2), "price": round(float(last_r["close"]), 2), "emoji": emoji, "rs": rs_val})
                 except Exception:
                     pass
 
@@ -3155,6 +3155,55 @@ if __name__ == '__main__':
         calc_signals_fn   = calc_signals_for_df,
         sync_heatmap_fn   = sync_heatmap_to_history,
     )
+
+    try:
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
+        os.makedirs(out_dir, exist_ok=True)
+        from dashboard_server import _rs_score_cache, _market_health_cache
+        rs_disk = _rs_score_cache.get("scores", {}) if isinstance(_rs_score_cache, dict) else {}
+        mh_disk = _market_health_cache.get("data", {}) if isinstance(_market_health_cache, dict) else {}
+
+        now_dt = datetime.now(TZ_VN)
+        sig_list = []
+        for s, entry in (alerted_today or {}).items():
+            stype = entry.get("signal") if isinstance(entry, dict) else entry
+            pct = entry.get("pct", 0) if isinstance(entry, dict) else 0
+            pr = entry.get("price", 0) if isinstance(entry, dict) else 0
+            emoji = SIGNAL_EMOJI.get(stype, "📌")
+            rs_val = rs_disk.get(s.upper())
+            sig_list.append({"symbol": s, "signal": stype, "label": stype, "pct": pct, "price": pr, "emoji": emoji, "rs": rs_val})
+
+        mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY", "rs": rs_disk.get(s.upper())} for s, d in (momentum_today or {}).items()]
+        att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (attent_today or {}).items()]
+        brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (breakvol_today or {}).items()]
+
+        with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "updated_at": now_dt.strftime("%H:%M:%S"),
+                "session_date": signal_session_date.strftime("%Y-%m-%d") if signal_session_date else now_dt.strftime("%Y-%m-%d"),
+                "count": len(sig_list),
+                "momentum_count": len(mom_list),
+                "strength_count": 0,
+                "signals": sig_list,
+                "momentum": mom_list,
+                "strength": [],
+                "attent": att_list,
+                "breakvol": brk_list
+            }, f, ensure_ascii=False)
+
+        if mh_disk and isinstance(mh_disk, dict) and mh_disk.get("ok"):
+            with open(os.path.join(out_dir, "market_health.json"), "w", encoding="utf-8") as f:
+                json.dump({"ok": True, "updated_at": int(time.time()), **mh_disk}, f, ensure_ascii=False)
+
+        with open(os.path.join(out_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "signal_ttl_sec": 30, "market_health_ttl_sec": 1800,
+                "session_morning_start": "09:00:00", "session_morning_end": "11:30:00",
+                "session_afternoon_start": "13:00:00", "session_afternoon_end": "15:00:00"
+            }, f, ensure_ascii=False)
+        print("⚡ [Khởi động] Đã nạp & xuất tức thì dữ liệu có sẵn từ Cache đĩa (Signals, RS, Health)!")
+    except Exception as e:
+        print(f"⚠️ [Khởi động] Lỗi xuất cache ban đầu: {e}")
 
     print("\n🔧 Đang load cache lịch sử lần đầu...")
     build_history_cache(symbols_to_cache, last_run_date)
