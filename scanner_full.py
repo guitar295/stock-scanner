@@ -274,9 +274,13 @@ def fetch_heatmap_data() -> tuple:
             total_value = float(it.get('nmTotalTradedValue') or 0)
             close = matched if matched > 0 else ref_p
             pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-            if not math.isfinite(pct):
-                pct = 0.0
-            result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
+            o = float(it.get('openPrice') or close)
+            result[sym.upper().strip()] = {
+                "price": close, "pct": pct, "total_value": total_value, "open": o,
+                "high": max(float(it.get('highest') or close), o, close),
+                "low":  min(float(it.get('lowest') or close), o, close),
+                "volume": float(it.get('nmTotalTradedQty') or 0)
+            }
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
 
@@ -315,9 +319,13 @@ def fetch_extra_quotes(syms: list) -> dict:
             ref_p = float(it.get('refPrice') or 0)
             close = matched if matched > 0 else ref_p
             pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-            if not math.isfinite(pct):
-                pct = 0.0
-            result[sym.upper().strip()] = {"price": close, "pct": pct}
+            o = float(it.get('openPrice') or close)
+            result[sym.upper().strip()] = {
+                "price": close, "pct": pct, "open": o,
+                "high": max(float(it.get('highest') or close), o, close),
+                "low":  min(float(it.get('lowest') or close), o, close),
+                "volume": float(it.get('nmTotalTradedQty') or 0)
+            }
     except Exception as e:
         print(f"  ❌ fetch_extra_quotes lỗi: {e}")
 
@@ -1935,40 +1943,66 @@ def detect_signal(df, now_time):
     break_vol   = calc_break_vol(df)
     pprice      = calc_pocket_pivot_price(df)
     pvol        = calc_pocket_pivot_vol(df)
-    ma10_ok     = df['MA10'] >= 0.8*ref(df['MA10'],1)
-    pre_vol     = calc_prebreak_vol(df, now_time)
+    ma10_ok = df['MA10'] >= 0.8 * ref(df['MA10'], 1)
 
     is_breakout = (break_price & break_vol & liq).iloc[-1]
     is_pocket   = (pprice & (pvol | break_vol) & liq & ma10_ok).iloc[-1]
-    is_prebreak = (
-        ((break_price | pprice) & pre_vol & liq).iloc[-1] and
-        not is_breakout and not is_pocket and
-        (91700 < now_time < 150000)
-    )
-    is_bottombreakp = calc_bottombreakp(df).iloc[-1]
-    is_bottomfish   = calc_bottomfish(df).iloc[-1]
-    is_ma_cross     = calc_ma_cross(df).iloc[-1]
 
+    if is_breakout and is_pocket: return 'PK-BREAK'
     if is_breakout:     return 'BREAKOUT'
-    if is_pocket:       return 'POCKET PIVOT'
-    if is_prebreak:     return 'PRE-BREAK'
-    if is_bottombreakp: return 'BOTTOMBREAKP'
-    if is_ma_cross:     return 'MA_CROSS'
-    if is_bottomfish:   return 'BOTTOMFISH'
+    if is_pocket:       return 'PK-PIVOT'
+
+    if 91700 < now_time < 150000:
+        if ((break_price | pprice) & calc_prebreak_vol(df, now_time) & liq).iloc[-1]:
+            return 'PRE-BREAK'
+
+    if calc_bottombreakp(df).iloc[-1]: return 'BT-BREAK'
+    if calc_ma_cross(df).iloc[-1]:     return 'MA-CROSS'
+    if calc_bottomfish(df).iloc[-1]:   return 'BOT-FISH'
+    
     return None
 
 def calc_signals_for_df(df):
     if df is None or len(df) < 60: return None, []
     try:
+        now = datetime.now(TZ_VN)
+        now_time = now.hour * 10000 + now.minute * 100 + now.second
+
         df_ind = compute_indicators(df)
         liq, bp, bv, pp, pv = calc_liquidity(df_ind), calc_break_price(df_ind), calc_break_vol(df_ind), calc_pocket_pivot_price(df_ind), calc_pocket_pivot_vol(df_ind)
         bo = bp & bv & liq
         pk = pp & (pv | bv) & liq & (df_ind['MA10'] >= 0.8 * ref(df_ind['MA10'], 1))
         bb = calc_bottombreakp(df_ind)
-        any_buy = bo | pk | bb
-        last_sig = ('BREAKOUT' if bo.iloc[-1] else 'POCKET PIVOT' if pk.iloc[-1] else 'BOTTOMBREAKP' if bb.iloc[-1] else None)
+        
+        # Lịch sử chỉ lấy 4 nấc uy tín
+        any_buy_hist = bo | pk | bb
+        hist = [dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)[:10] for dt in df_ind.index[any_buy_hist]] if len(df_ind) > 0 and any_buy_hist.any() else []
+        
+        # Hôm nay quét trọn bộ 7 nấc
+        last_bo, last_pk = bo.iloc[-1], pk.iloc[-1]
+        last_sig = None
+        
+        if last_bo and last_pk: 
+            last_sig = 'PK-BREAK'
+        elif last_bo: 
+            last_sig = 'BREAKOUT'
+        elif last_pk: 
+            last_sig = 'PK-PIVOT'
+        else:
+            if 91700 < now_time < 150000:
+                if ((bp | pp) & calc_prebreak_vol(df_ind, now_time) & liq).iloc[-1]:
+                    last_sig = 'PRE-BREAK'
+            
+            if not last_sig:
+                if bb.iloc[-1]: 
+                    last_sig = 'BT-BREAK'
+                elif calc_ma_cross(df_ind).iloc[-1]: 
+                    last_sig = 'MA-CROSS'
+                elif calc_bottomfish(df_ind).iloc[-1]: 
+                    last_sig = 'BOT-FISH'
+        
         last_info = {"signal": last_sig, "emoji": SIGNAL_EMOJI.get(last_sig, "📌"), "label": last_sig} if last_sig else None
-        hist = [dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)[:10] for dt in df_ind.index[any_buy]] if len(df_ind) > 0 and any_buy.any() else []
+        
         return last_info, hist
     except Exception:
         return None, []
@@ -2114,20 +2148,22 @@ def _build_15m_chart(symbol: str, signal_type: str, via: str = "telegram_15m") -
 # BƯỚC 8: HÀM QUÉT 1 CHU KỲ (VNDIRECT BATCH + DCHART FALLBACK)
 # =============================================================================
 SIGNAL_RANK  = {
-    'PRE-BREAK':    1,
-    'BOTTOMFISH':   2,
-    'MA_CROSS':     3,
-    'BOTTOMBREAKP': 4,
-    'POCKET PIVOT': 5,
-    'BREAKOUT':     6,
+    'PRE-BREAK': 1,
+    'BOT-FISH':  2,
+    'MA-CROSS':  3,
+    'BT-BREAK':  4,
+    'PK-PIVOT':  5,
+    'BREAKOUT':  6,
+    'PK-BREAK':  7,
 }
 SIGNAL_EMOJI = {
-    'BREAKOUT':     '🟢',
-    'POCKET PIVOT': '🟡',
-    'PRE-BREAK':    '🟣',
-    'BOTTOMFISH':   '🟠',
-    'BOTTOMBREAKP': '🔵',
-    'MA_CROSS':     '⚪',
+    'BREAKOUT':  '🟢',
+    'PK-PIVOT':  '🟡',
+    'PRE-BREAK': '🟣',
+    'BOT-FISH':  '🟠',
+    'BT-BREAK':  '🔵',
+    'MA-CROSS':  '⚪',
+    'PK-BREAK':  '🔥',
 }
 
 
