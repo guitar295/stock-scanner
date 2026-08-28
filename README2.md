@@ -5,7 +5,6 @@
 
 ## 🌟 TỔNG QUAN KIẾN TRÚC VẬN HÀNH
 
-
 * **Frontend (Cloudflare Pages):** Phân phối giao diện HTML/JS và thư viện vẽ Chart TradingView từ 300+ máy chủ CDN tại Việt Nam.
 * **Backend (VPS Native Systemd):** Con bot quét 5s liên tục, tính toán VPA, Breakout và nạp sẵn file JSON tĩnh vào bộ đệm.
 * **Đường truyền (Cloudflare Tunnel):** Kết nối mã hóa HTTP/3, chống DDoS, bảo mật 100% ẩn IP máy chủ.
@@ -24,7 +23,7 @@ Khối lệnh này tự động:
 ```bash
 sudo apt-get update && \
 sudo apt-get install -y python3-pip python3-dev libfreetype6-dev libpng-dev curl tmux && \
-pip3 install pandas requests mplfinance pytz numpy matplotlib pillow flask && \
+pip3 install --break-system-packages pandas requests mplfinance pytz numpy matplotlib pillow flask && \
 \
 echo "🌐 Đang cài đặt và kích hoạt Cloudflare Tunnel..." && \
 curl -s -L --output /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
