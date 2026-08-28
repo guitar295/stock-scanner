@@ -30,8 +30,7 @@ _GZIP_MIN_BYTES = 500
 
 @app.after_request
 def _static_cache_headers(response):
-    """File tĩnh /static cache cứng 7 ngày (đổi version lib thì đổi tên file).
-    Riêng icon/manifest đổi thường xuyên hơn nên dùng no-cache, revalidate qua ETag."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
     if request.path.startswith("/static/"):
         _ICON_STATIC_FILES = (
             "favicon-32.png", "favicon-16.png", "favicon.ico",
@@ -42,7 +41,14 @@ def _static_cache_headers(response):
             response.headers["Cache-Control"] = "no-cache"
         else:
             response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    elif request.path.startswith("/static_data/"):
+        response.headers["Cache-Control"] = "public, max-age=3"
     return response
+
+@app.route("/static_data/<path:filename>")
+def _serve_static_data_files(filename):
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
+    return send_from_directory(data_dir, filename)
 
 @app.route("/favicon.ico")
 def _serve_root_favicon():
