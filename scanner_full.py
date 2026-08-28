@@ -2373,6 +2373,11 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
         mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY", "rs": rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None} for s, d in mom_snap.items()]
         att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in att_snap.items()]
         brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in brk_snap.items()]
+        strength_list = [
+            {"symbol": sym, "rs": rs}
+            for sym, rs in sorted(rs_scores.items(), key=lambda item: item[1], reverse=True)
+            if rs is not None and rs > 80
+        ] if isinstance(rs_scores, dict) else []
 
         with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
             json.dump({
@@ -2380,10 +2385,10 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
                 "session_date": sess_str,
                 "count": len(sig_list),
                 "momentum_count": len(mom_list),
-                "strength_count": 0,
+                "strength_count": len(strength_list),
                 "signals": sig_list,
                 "momentum": mom_list,
-                "strength": [],
+                "strength": strength_list,
                 "attent": att_list,
                 "breakvol": brk_list
             }, f, ensure_ascii=False)
@@ -3172,6 +3177,11 @@ if __name__ == '__main__':
         mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY", "rs": rs_disk.get(s.upper())} for s, d in (momentum_today or {}).items()]
         att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (attent_today or {}).items()]
         brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (breakvol_today or {}).items()]
+        strength_list = [
+            {"symbol": sym, "rs": rs}
+            for sym, rs in sorted(rs_disk.items(), key=lambda item: item[1], reverse=True)
+            if rs is not None and rs > 80
+        ] if isinstance(rs_disk, dict) else []
 
         with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
             json.dump({
@@ -3179,10 +3189,10 @@ if __name__ == '__main__':
                 "session_date": signal_session_date.strftime("%Y-%m-%d") if signal_session_date else now_dt.strftime("%Y-%m-%d"),
                 "count": len(sig_list),
                 "momentum_count": len(mom_list),
-                "strength_count": 0,
+                "strength_count": len(strength_list),
                 "signals": sig_list,
                 "momentum": mom_list,
-                "strength": [],
+                "strength": strength_list,
                 "attent": att_list,
                 "breakvol": brk_list
             }, f, ensure_ascii=False)
