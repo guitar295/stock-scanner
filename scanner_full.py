@@ -57,7 +57,7 @@ TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
 ENABLE_TELEGRAM     = os.environ.get('ENABLE_TELEGRAM', 'false').lower() in ('true', '1', 'yes')
 
-SCAN_INTERVAL_SEC  = 120
+SCAN_INTERVAL_SEC  = 60
 CACHE_CHECK_INTERVAL_SEC = 1800   # nhịp tự dò/sửa history_cache NGOÀI giờ giao dịch — độc lập với SCAN_INTERVAL_SEC
 TZ_VN              = pytz.timezone('Asia/Ho_Chi_Minh')
 
@@ -1231,36 +1231,6 @@ def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
             pass
     return results
 
-def ssi_item_to_today_bar(item: dict, current_date: date) -> pd.Series | None:
-    try:
-        close = float(item.get('matchedPrice') or item.get('refPrice') or 0)
-        ref_p = float(item.get('refPrice') or close)
-        high = float(item.get('highest') or close)
-        low = float(item.get('lowest') or close)
-        open_ = float(item.get('openPrice') or close)
-        volume = float(item.get('nmTotalTradedQty') or item.get('stockVol') or 0)
-        if volume < 100 or min(open_, high, low, close) <= 0:
-            return None
-        high = max(high, open_, close, ref_p if close > ref_p else high)
-        low = min(low, open_, close, ref_p if close < ref_p else low)
-        return pd.Series(
-            {'open': open_, 'high': high, 'low': low, 'close': close, 'volume': volume},
-            name=pd.Timestamp(current_date)
-        )
-    except Exception:
-        return None
-
-def fetch_today_bars_batch(symbols: list[str], current_date: date) -> dict[str, pd.Series]:
-    items = _fetch_ssi_priceboard_batch(symbols)
-    bars = {}
-    for it in items:
-        sym = it.get('stockSymbol')
-        if not sym:
-            continue
-        bar = ssi_item_to_today_bar(it, current_date)
-        if bar is not None:
-            bars[sym.upper().strip()] = bar
-    return bars
 
 def load_history_for_symbol(symbol: str):
     for attempt in range(3):
@@ -1304,7 +1274,7 @@ CACHE_CHECK_SYMBOL = 'HPG'
 SESSION_MORNING_START = 85500
 SESSION_MORNING_END = 113000
 SESSION_AFTERNOON_START = 130000
-SESSION_AFTERNOON_END = 233000
+SESSION_AFTERNOON_END = 150000
 
 def _is_trading_session_time(current_date: date, now_time: int) -> bool:
     if current_date.weekday() >= 5:
@@ -1432,8 +1402,31 @@ def upsert_today_bar(df_hist, today_bar):
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
     df_hist = df_hist[df_hist.index.date != bar_date][ohlcv_cols]
     merged = pd.concat([df_hist, new_row]).sort_index()
-    merged['vpa_flag'] = calc_vpa_flag(merged)
     return merged
+
+def sync_heatmap_to_history(h_data: dict):
+    """Được gọi từ dashboard_server mỗi khi heatmap lấy giá SSI 5s thành công.
+    Ép thẳng giá mới vào history_cache để cập nhật realtime mượt mà."""
+    current_date = datetime.now(TZ_VN).date()
+    now_ts = time.time()
+    for symbol, row in h_data.items():
+        if symbol not in cache_symbol_set:
+            continue
+        try:
+            today_bar = pd.Series({
+                'open': float(row.get('open', 0)),
+                'high': float(row.get('high', 0)),
+                'low': float(row.get('low', 0)),
+                'close': float(row.get('price', 0)),
+                'volume': float(row.get('volume', 0))
+            }, name=pd.Timestamp(current_date))
+            
+            with cache_lock:
+                if symbol in history_cache and history_cache[symbol] is not None and len(history_cache[symbol]) >= 60:
+                    history_cache[symbol] = upsert_today_bar(history_cache[symbol], today_bar)
+            last_bar_update[symbol] = now_ts
+        except Exception as e:
+            pass
 
 def chart_symbol_status(symbol: str) -> dict:
     """Kiểm tra trạng thái cache cho symbol (không gọi mạng)."""
@@ -2163,7 +2156,7 @@ SIGNAL_EMOJI = {
     'BOT-FISH':  '🟠',
     'BT-BREAK':  '🔵',
     'MA-CROSS':  '⚪',
-    'PK-BREAK':  '🔥',
+    'PK-BREAK':  '🟢',
 }
 
 
@@ -2175,17 +2168,18 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu update {len(cache_symbol_set)} mã, quét {len(symbols)} mã (SSI Priceboard + Fallback)...")
+    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (Dữ liệu từ Heatmap 5s + Fallback VNDirect 60s)...")
 
-    batch_bars = fetch_today_bars_batch(list(cache_symbol_set), current_date)
-    missing_symbols = [s for s in cache_symbol_set if s not in batch_bars]
+    now_ts = time.time()
+    missing_symbols = []
+    
+    for symbol in cache_symbol_set:
+        last_upd = last_bar_update.get(symbol, 0)
+        if now_ts - last_upd > 60:
+            missing_symbols.append(symbol)
 
     if missing_symbols:
-        if len(missing_symbols) == len(cache_symbol_set):
-            print(f"  ⚠️  [{ts}] SSI Priceboard không khả dụng → Toàn bộ {len(missing_symbols)} mã tải song song qua VNDirect DChart (8 luồng)...")
-        else:
-            print(f"  [{ts}] SSI Priceboard thiếu {len(missing_symbols)} mã → Tải bổ sung song song qua VNDirect DChart (8 luồng)...")
-
+        print(f"  [{ts}] Heatmap thiếu {len(missing_symbols)} mã quá 60s → Tải bù qua VNDirect (8 luồng)...")
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
             for fut in futures:
@@ -2193,26 +2187,20 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 try:
                     bar = fut.result()
                     if bar is not None:
-                        batch_bars[s] = bar
+                        with cache_lock:
+                            if s in history_cache and history_cache[s] is not None and len(history_cache[s]) >= 60:
+                                history_cache[s] = upsert_today_bar(history_cache[s], bar)
+                        last_bar_update[s] = time.time()
                 except Exception:
                     pass
 
-    for symbol in cache_symbol_set:
+    for symbol in symbols:
         try:
-            with cache_lock: df_hist = history_cache.get(symbol)
-            if df_hist is None or len(df_hist) < 60: continue
-
-            today_bar = batch_bars.get(symbol)
-            if today_bar is None: continue
-
-            with cache_lock:
-                latest = upsert_today_bar(history_cache[symbol], today_bar)
-                history_cache[symbol] = latest
-                df_merged = latest.copy()
-            last_bar_update[symbol] = time.time()
-
-            if symbol not in symbols:
-                continue
+            with cache_lock: 
+                df_merged = history_cache.get(symbol)
+                
+            if df_merged is None or len(df_merged) < 60: continue
+            df_merged = df_merged.copy()
 
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
@@ -3014,6 +3002,7 @@ if __name__ == '__main__':
         extra_quote_fn    = fetch_extra_quotes,
         rs_universe_ref   = lambda: symbols_to_rs,
         calc_signals_fn   = calc_signals_for_df,
+        sync_heatmap_fn   = sync_heatmap_to_history,
     )
 
     print("\n🔧 Đang load cache lịch sử lần đầu...")
