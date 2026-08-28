@@ -2379,6 +2379,10 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
             if rs is not None and rs > 80
         ] if isinstance(rs_scores, dict) else []
 
+        from dashboard_server import _rs_score_cache
+        rs_asof = _rs_score_cache.get("asof") if isinstance(_rs_score_cache, dict) else None
+        rs_count = len(rs_scores) if isinstance(rs_scores, dict) else 0
+
         with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
             json.dump({
                 "updated_at": now_dt.strftime("%H:%M:%S"),
@@ -2386,6 +2390,8 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
                 "count": len(sig_list),
                 "momentum_count": len(mom_list),
                 "strength_count": len(strength_list),
+                "rs_count": rs_count,
+                "rs_asof": rs_asof,
                 "signals": sig_list,
                 "momentum": mom_list,
                 "strength": strength_list,
@@ -3190,6 +3196,8 @@ if __name__ == '__main__':
                 "count": len(sig_list),
                 "momentum_count": len(mom_list),
                 "strength_count": len(strength_list),
+                "rs_count": len(rs_disk) if isinstance(rs_disk, dict) else 0,
+                "rs_asof": _rs_score_cache.get("asof") if isinstance(_rs_score_cache, dict) else None,
                 "signals": sig_list,
                 "momentum": mom_list,
                 "strength": strength_list,
