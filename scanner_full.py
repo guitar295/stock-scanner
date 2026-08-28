@@ -2370,7 +2370,18 @@ def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_
                 except Exception:
                     pass
 
-        mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY", "rs": rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None} for s, d in mom_snap.items()]
+        mom_list = []
+        for sig in ("MACD_W", "MACD_M", "RTM"):
+            rows = []
+            for sym in sorted(mom_snap.keys()):
+                entry = mom_snap[sym]
+                sigs = entry.get("signals", []) if isinstance(entry, dict) else []
+                if sig not in sigs:
+                    continue
+                pct = entry.get("pct") if isinstance(entry, dict) else 0
+                rs_val = rs_scores.get(sym.upper()) if isinstance(rs_scores, dict) else None
+                rows.append({"symbol": sym, "signal": sig, "pct": pct, "rs": rs_val})
+            mom_list.extend(rows)
         att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in att_snap.items()]
         brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in brk_snap.items()]
         strength_list = [
@@ -3180,7 +3191,18 @@ if __name__ == '__main__':
             rs_val = rs_disk.get(s.upper())
             sig_list.append({"symbol": s, "signal": stype, "label": stype, "pct": pct, "price": pr, "emoji": emoji, "rs": rs_val})
 
-        mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY", "rs": rs_disk.get(s.upper())} for s, d in (momentum_today or {}).items()]
+        mom_list = []
+        for sig in ("MACD_W", "MACD_M", "RTM"):
+            rows = []
+            for sym in sorted((momentum_today or {}).keys()):
+                entry = (momentum_today or {})[sym]
+                sigs = entry.get("signals", []) if isinstance(entry, dict) else []
+                if sig not in sigs:
+                    continue
+                pct = entry.get("pct") if isinstance(entry, dict) else 0
+                rs_val = rs_disk.get(sym.upper()) if isinstance(rs_disk, dict) else None
+                rows.append({"symbol": sym, "signal": sig, "pct": pct, "rs": rs_val})
+            mom_list.extend(rows)
         att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (attent_today or {}).items()]
         brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (breakvol_today or {}).items()]
         strength_list = [
