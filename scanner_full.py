@@ -2296,7 +2296,89 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
         breakvol_today.clear()
         breakvol_today.update(current_breakvol)
 
+    try:
+        with cache_lock:
+            cache_snap = {k: v.copy() for k, v in history_cache.items() if v is not None}
+        _draw_pool.submit(
+            _async_export_static_data,
+            cache_snap,
+            dict(alerted_today),
+            dict(current_momentum),
+            dict(current_attent),
+            dict(current_breakvol)
+        )
+    except Exception:
+        pass
+
     return new_signals
+
+def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_snap):
+    try:
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
+        charts_dir = os.path.join(out_dir, "charts")
+        os.makedirs(charts_dir, exist_ok=True)
+        now_dt = datetime.now(TZ_VN)
+
+        sig_list = []
+        for s, entry in alerted_snap.items():
+            stype = entry.get("signal") if isinstance(entry, dict) else entry
+            pct = entry.get("pct", 0) if isinstance(entry, dict) else 0
+            pr = entry.get("price", 0) if isinstance(entry, dict) else 0
+            emoji = SIGNAL_EMOJI.get(stype, "📌")
+            sig_list.append({"symbol": s, "signal": stype, "label": stype, "pct": pct, "price": pr, "emoji": emoji})
+
+        mom_list = [{"symbol": s, "pct": d.get("pct", 0), "signal": "MOM-BUY"} for s, d in mom_snap.items()]
+        att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in att_snap.items()]
+        brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in brk_snap.items()]
+
+        with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "updated_at": now_dt.strftime("%H:%M:%S"),
+                "session_date": now_dt.strftime("%Y-%m-%d"),
+                "count": len(sig_list),
+                "momentum_count": len(mom_list),
+                "strength_count": 0,
+                "signals": sig_list,
+                "momentum": mom_list,
+                "strength": [],
+                "attent": att_list,
+                "breakvol": brk_list
+            }, f, ensure_ascii=False)
+
+        hmap_data = {}
+        for sym, df in cache_snap.items():
+            if df is None or len(df) < 5: continue
+            last_r, prev_r = df.iloc[-1], df.iloc[-2]
+            pct = ((last_r["close"] - prev_r["close"]) / prev_r["close"]) * 100 if prev_r["close"] > 0 else 0
+            hmap_data[sym] = {"price": round(float(last_r["close"]), 2), "pct": round(float(pct), 2), "volume": float(last_r["volume"])}
+
+            df_sub = df.tail(250)
+            candles, volume = [], []
+            v_list = df_sub["volume"].tolist()
+            for idx, r in enumerate(df_sub.itertuples()):
+                t_str = r.Index.strftime("%Y-%m-%d") if hasattr(r.Index, "strftime") else str(r.Index)[:10]
+                o, h, l, c, v = float(r.open), float(r.high), float(r.low), float(r.close), float(r.volume)
+                is_up = c >= o
+                v_slice = v_list[max(0, idx - 20):idx] if idx > 0 else []
+                vma20 = (sum(v_slice) / len(v_slice)) if v_slice else v
+                v_col = "#00e676" if is_up and v >= vma20 * 2 else ("#ff1744" if not is_up and v >= vma20 * 2 else ("#26a69a" if is_up else "#ef5350"))
+                candles.append({"time": t_str, "open": round(o, 2), "high": round(h, 2), "low": round(l, 2), "close": round(c, 2)})
+                volume.append({"time": t_str, "value": v, "color": v_col})
+
+            with open(os.path.join(charts_dir, f"{sym.upper()}.json"), "w", encoding="utf-8") as f:
+                json.dump({"symbol": sym, "timeframe": "1D", "candles": candles, "volume": volume, "has_more": True}, f, ensure_ascii=False)
+
+        with open(os.path.join(out_dir, "heatmap.json"), "w", encoding="utf-8") as f:
+            json.dump({"data": hmap_data, "updated_at": now_dt.strftime("%H:%M:%S")}, f, ensure_ascii=False)
+
+        with open(os.path.join(out_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "signal_ttl_sec": 30, "market_health_ttl_sec": 1800,
+                "session_morning_start": "09:00:00", "session_morning_end": "11:30:00",
+                "session_afternoon_start": "13:00:00", "session_afternoon_end": "15:00:00"
+            }, f, ensure_ascii=False)
+    except Exception:
+        pass
 
 # =============================================================================
 # BƯỚC 8B: PARSE LỆNH CHART
