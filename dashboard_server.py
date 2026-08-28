@@ -28,9 +28,20 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 _GZIP_MIN_BYTES = 500
 
+@app.before_request
+def _handle_cors_preflight():
+    if request.method == "OPTIONS":
+        resp = Response()
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        return resp
+
 @app.after_request
 def _static_cache_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
     if request.path.startswith("/static/"):
         _ICON_STATIC_FILES = (
             "favicon-32.png", "favicon-16.png", "favicon.ico",
@@ -48,6 +59,7 @@ def _static_cache_headers(response):
 @app.route("/static_data/<path:filename>")
 def _serve_static_data_files(filename):
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
+    os.makedirs(data_dir, exist_ok=True)
     return send_from_directory(data_dir, filename)
 
 @app.route("/favicon.ico")
