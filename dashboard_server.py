@@ -1416,6 +1416,54 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
 
     candles = []
     volume = []
+    
+    # --- BẮC CẦU LIVE PRICE (Patch nến cuối cùng) ---
+    live_data = None
+    if target_tf == "1D" and final_bars and not before_date:
+        # 1. Ưu tiên 1: Lấy từ _heatmap_cache (siêu tốc, update 5s/lần)
+        with _heatmap_lock:
+            h_data = _heatmap_cache.get("data", {})
+            if symbol in h_data and "price" in h_data[symbol]:
+                live_data = h_data[symbol]
+        
+        # 2. Ưu tiên 2 (Fallback): Lấy qua hàm ngoại vi (cache 5s)
+        if live_data is None and _extra_quote_fn:
+            now_ts_sec = time.time()
+            need_fetch = False
+            with _extra_quote_lock:
+                cached_eq = _extra_quote_cache.get(symbol)
+                # Dùng 4.5s thay vì 5s để bù trừ độ trễ mạng, khớp nhịp 5s của Frontend
+                if not cached_eq or now_ts_sec - cached_eq.get("ts", 0) > 4.5:
+                    need_fetch = True
+                else:
+                    live_data = cached_eq
+            
+            if need_fetch:
+                try:
+                    fresh = _extra_quote_fn([symbol]) or {}
+                    if symbol in fresh and "price" in fresh[symbol]:
+                        live_data = fresh[symbol]
+                        with _extra_quote_lock:
+                            _extra_quote_cache[symbol] = {
+                                "price": live_data["price"], 
+                                "pct": live_data.get("pct", 0), 
+                                "open": live_data.get("open"),
+                                "high": live_data.get("high"),
+                                "low": live_data.get("low"),
+                                "volume": live_data.get("volume"),
+                                "ts": now_ts_sec
+                            }
+                except Exception as e:
+                    print(f"  [Dashboard] ❌ Fallback live price cho {symbol} lỗi: {e}")
+
+    # Áp dụng dữ liệu live vào cây nến cuối cùng nếu có
+    if live_data:
+        last_b = final_bars[-1]
+        for k in ("open", "high", "low", "volume"):
+            if k in live_data: last_b[k] = live_data[k]
+        if "price" in live_data: last_b["close"] = live_data["price"]
+    # ------------------------------------------------
+    
     for b in final_bars:
         t_val = b["time"]
         o, h, l, c, v = b["open"], b["high"], b["low"], b["close"], b["volume"]
@@ -2350,7 +2398,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .s-emoji{font-size:13px;height:20px;display:inline-flex;align-items:center;justify-content:center;line-height:1}
 .s-sym{font-weight:700;font-size:13px;transition:color .15s;white-space:nowrap;display:inline-flex;align-items:center;line-height:1}
 .s-type{font-size:11px;font-weight:600;text-align:center;white-space:nowrap;display:inline-flex;align-items:center;line-height:1}
-.s-badge{display:inline-flex;align-items:center;justify-content:center;height:20px;box-sizing:border-box;font-size:10px;font-weight:700;line-height:1;padding:0 8px;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui);white-space:nowrap}
+.s-badge{display:inline-flex;align-items:center;justify-content:center;height:20px;width:62px;box-sizing:border-box;font-size:10px;font-weight:700;line-height:1;padding:0;border-radius:4px;text-align:center;letter-spacing:.4px;font-family:var(--font-ui);white-space:nowrap}
 .s-badge-slot{display:flex;align-items:center;justify-content:flex-end}
 .rs-badge{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:10px;font-weight:800;letter-spacing:0;border:1px solid #cbd5e1;background:#f1f5f9;color:#475569;justify-self:center}
 .rs-slot{width:22px;height:22px;display:block;justify-self:center}
@@ -2609,7 +2657,7 @@ html.chart-popout-mode .lite-chart-frame{
 .lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
 .lite-groups-sidebar.on~.lite-vietstock-iframe{left:180px;width:calc(100% - 180px)}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
-.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:6px;line-height:1;background:rgba(255,255,255,.78);padding:3px 6px;border-radius:4px;pointer-events:none;transition:left .15s}
+.lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:6px;line-height:1;background:rgba(255,255,255,.78);padding:4px 8px;border-radius:6px;pointer-events:none;transition:left .15s}
 .lite-chart-signal.on{display:flex}
 /* Khi sidebar nhóm ngành mở, dịch title/tín hiệu sang phải để không bị cột che mất */
 .lite-groups-sidebar.on+.lite-chart-title,
@@ -2646,7 +2694,7 @@ html.chart-popout-mode .lite-chart-frame{
 .lg-caret{font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lg-group.open .lg-caret{transform:rotate(90deg)}
 .lg-symlist{display:flex;flex-direction:column}
-.lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9;transition:background .15s}
+.lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
 body:not(.key-nav) .lg-sym-item:hover,
 .lg-sym-item.on{background:#eef3ff}
 .lg-sym-item.dragging{opacity:.35}
@@ -3705,27 +3753,20 @@ const IFRAME_LAZY={
   '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
 const BADGE_MAP={
-  'BREAKOUT':'b-BREAKOUT','BREAK':'b-BREAKOUT',
-  'POCKET PIVOT':'b-POCKET','POCKET':'b-POCKET',
+  'BREAKOUT':'b-BREAKOUT',
+  'PK-PIVOT':'b-POCKET',
   'PRE-BREAK':'b-PREBREAK',
-  'BOTTOMBREAKP':'b-BBREAKP','BOTTOM BREAK':'b-BBREAKP','BT-BREAK':'b-BBREAKP',
-  'BOTTOMFISH':'b-BFISH','BOT-FISH':'b-BFISH',
-  'MA_CROSS':'b-MACROSS','MA-CROSS':'b-MACROSS',
-  'POCKET BREAK':'b-BREAKOUT','PK-BREAK':'b-BREAKOUT'
+  'BT-BREAK':'b-BBREAKP',
+  'BOT-FISH':'b-BFISH',
+  'MA-CROSS':'b-MACROSS',
+  'PK-BREAK':'b-BREAKOUT'
 };
 const SIGNAL_LABEL_MAP={
   'BREAKOUT':'BREAKOUT',
-  'BREAK':'BREAKOUT',
-  'POCKET PIVOT':'POCKET',
-  'POCKET':'POCKET',
-  'POCKET BREAK':'PK-BREAK',
+  'PK-PIVOT':'PK-PIVOT',
   'PK-BREAK':'PK-BREAK',
-  'BOTTOM BREAK':'BT-BREAK',
   'BT-BREAK':'BT-BREAK',
-  'BOTTOMBREAKP':'BT-BREAK',
-  'BOTTOMFISH':'BOT-FISH',
   'BOT-FISH':'BOT-FISH',
-  'MA_CROSS':'MA-CROSS',
   'MA-CROSS':'MA-CROSS',
   'PRE-BREAK':'PRE-BREAK'
 };
@@ -8652,6 +8693,7 @@ async function _lgFillMissingQuotes(){
   }catch(e){console.error('_lgFillMissingQuotes:',e);}
 }
 function _sortSymsByMode(syms,mode='pct'){
+  if(mode==='custom')return[...syms];
   if(mode==='alpha')return[...syms].sort((a,b)=>a.localeCompare(b));
   if(mode==='rs')return[...syms].sort((a,b)=>(_strengthTodayMap.get(b)?.rs??-1)-(_strengthTodayMap.get(a)?.rs??-1)||a.localeCompare(b));
   const d=window._lastHmapData||{};
@@ -8757,12 +8799,16 @@ function _lgGetGroups(){
   ord.forEach(n=>{if(map.has(n)){res.push(map.get(n));map.delete(n);}});
   return[...res,...map.values()];
 }
-function _lgDefaultSortMode(g){return g&&g.isStrength?'rs':'pct';}
+function _lgDefaultSortMode(g){return g&&g.isFavorite?'custom':(g&&g.isStrength?'rs':'pct');}
 function _lgSortModeFor(g){return _lgSortModes.get(g.name)||_lgDefaultSortMode(g);}
-function _lgSortLabel(g){const m=_lgSortModeFor(g);return m==='alpha'?'A↕Z':m==='rs'?'RS↕':'%↕';}
+function _lgSortLabel(g){const m=_lgSortModeFor(g);return m==='custom'?'≡':(m==='alpha'?'A↕Z':m==='rs'?'RS↕':'%↕');}
 function _lgNextSortMode(g){
   const m=_lgSortModeFor(g);
-  _lgSortModes.set(g.name,m==='pct'?'alpha':m==='alpha'?'rs':'pct');
+  if(g.isFavorite) {
+     _lgSortModes.set(g.name, m==='custom'?'pct':(m==='pct'?'alpha':(m==='alpha'?'rs':'custom')));
+  } else {
+     _lgSortModes.set(g.name, m==='pct'?'alpha':(m==='alpha'?'rs':'pct'));
+  }
 }
 function _lgSortSyms(syms,g){
   return _sortSymsByMode(syms,_lgSortModeFor(g));
@@ -8788,10 +8834,10 @@ function _lgRenderList(){
     let body='';
     if(open){
       if(!g.syms.length)body='<div class="lg-empty-hint">Chưa có mã nào</div>';
-      else body=(g.isFavorite?g.syms:_lgSortSyms(g.syms,g)).map(s=>_lgSymRow(s,!!g.isFavorite,g)).join('');
+      else body=_lgSortSyms(g.syms,g).map(s=>_lgSymRow(s, !!g.isFavorite && _lgSortModeFor(g)==='custom', g)).join('');
     }
     const addBtn=(g.isFavorite&&open)?'<button type="button" class="lg-add-btn" data-add-fav title="Nhập nhanh nhiều mã vào FAVORITE">+</button>':'';
-    const sortBtn=(open&&!g.isFavorite)?`<button type="button" class="lg-sort-btn" data-sort-toggle="${g.name}" title="Đổi kiểu sắp xếp">${_lgSortLabel(g)}</button>`:'';
+    const sortBtn=(open)?`<button type="button" class="lg-sort-btn" data-sort-toggle="${g.name}" title="Đổi kiểu sắp xếp">${_lgSortLabel(g)}</button>`:'';
     return `<div class="lg-group${open?' open':''}" data-group="${g.name}">`
       +`<div class="lg-ghdr" data-ghdr="${g.name}" draggable="true"><span>${g.name}${g.isFavorite?' ('+g.syms.length+')':''}</span><span class="lg-ghdr-right">${addBtn}${sortBtn}<span class="lg-caret">▸</span></span></div>`
       +`<div class="lg-symlist">${body}</div></div>`;
@@ -8860,7 +8906,7 @@ DOM.lgList?.addEventListener('click',e=>{
     DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
   }
 });
-DOM.lgList?.addEventListener('mousemove',e=>{document.body.classList.remove('key-nav');if(e.target.closest('.lg-sym-item'))DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
+DOM.lgList?.addEventListener('mousemove',e=>{if(e.movementX===0&&e.movementY===0)return;document.body.classList.remove('key-nav');if(e.target.closest('.lg-sym-item'))DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
 DOM.lgList?.addEventListener('mouseleave',()=>{DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
 DOM.lgList?.addEventListener('dragstart',e=>{
   const ghdr=e.target.closest('.lg-ghdr[draggable="true"]');
@@ -8944,7 +8990,7 @@ document.addEventListener('keydown',e=>{
   _lgActiveSym=items[next].dataset.sym;
   items.forEach((el,i)=>el.classList.toggle('on',i===next));
   const el=items[next],relTop=el.offsetTop-DOM.lgList.offsetTop,h=el.offsetHeight;
-  if(relTop-h<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h);
+  if(relTop-h*2.5<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h*2.5);
   else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
   // Debounce load (300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại, không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
   clearTimeout(_lgKeyLoadTimer);
