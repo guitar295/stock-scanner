@@ -145,10 +145,18 @@ _RS_LOOKBACK_WEIGHTS = ((10, 0.5), (20, 0.3), (50, 0.2))
 _RS_REQUIRED_BARS = max(days for days, _ in _RS_LOOKBACK_WEIGHTS) + 1
 _RS_SMOOTH_DAYS = 5
 _RS_RAW_TAIL_DAYS = 10
-_RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
-_RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
+_RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR")
+if not _RS_CACHE_DIR or not os.path.isdir(_RS_CACHE_DIR):
+    for _cand in (os.path.expanduser("~/scanner/data/trade-journal"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal"), "/data/trade-journal"):
+        if os.path.isdir(_cand):
+            _RS_CACHE_DIR = _cand
+            break
+    if not _RS_CACHE_DIR:
+        _RS_CACHE_DIR = os.path.expanduser("~/scanner/data/trade-journal")
+        os.makedirs(_RS_CACHE_DIR, exist_ok=True)
 
-_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
+_RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
+_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "market_health.json"))
 
 def _save_market_health_to_disk():
     try:
@@ -491,7 +499,7 @@ _LITE_CHART_CACHE_TTL = 120
 _lite_chart_cache: dict = {}
 _lite_chart_cache_lock = threading.Lock()
 
-JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
+JOURNAL_DATA_DIR = Path(_RS_CACHE_DIR)
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
 JOURNAL_WARNING_PATH = JOURNAL_DATA_DIR / "market_warning.txt"
