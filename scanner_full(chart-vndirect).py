@@ -1391,18 +1391,15 @@ def fetch_today_bar(symbol: str, current_date: date):
 def upsert_today_bar(df_hist, today_bar):
     bar_date = pd.Timestamp(today_bar.name).date()
     new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
-    
-    if not df_hist[df_hist.index.date == bar_date].empty:
-        prev_row = df_hist[df_hist.index.date == bar_date].iloc[-1]
-        old_high = prev_row['high']
-        old_low = prev_row['low']
-        new_row['high'] = max(old_high, new_row.iloc[-1]['high'])
-        new_row['low'] = min(old_low, new_row.iloc[-1]['low'])
-
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
-    df_hist = df_hist[df_hist.index.date != bar_date][ohlcv_cols]
-    merged = pd.concat([df_hist, new_row]).sort_index()
-    return merged
+    
+    if df_hist.index[-1].date() == bar_date:
+        prev_row = df_hist.iloc[-1]
+        new_row['high'] = max(prev_row['high'], new_row.iloc[-1]['high'])
+        new_row['low'] = min(prev_row['low'], new_row.iloc[-1]['low'])
+        return pd.concat([df_hist[ohlcv_cols].iloc[:-1], new_row])
+    
+    return pd.concat([df_hist[ohlcv_cols], new_row])
 
 def sync_heatmap_to_history(h_data: dict):
     """Được gọi từ dashboard_server mỗi khi heatmap lấy giá SSI 5s thành công.
@@ -1730,13 +1727,12 @@ def _expand_signal_to_daily(frame_signal, daily_index, freq):
     daily_periods = daily_index.to_period(freq)
     return pd.Series([signal_by_period.get(period, False) for period in daily_periods], index=daily_index)
 
-def calc_macdbuy_signals(df_daily):
-    df_d = compute_indicators(df_daily)
+def calc_macdbuy_signals(df_d):
     dmbuy = calc_dmbuy(df_d).iloc[-1]
     if not dmbuy:
         return []
-    df_w = build_weekly_df(df_daily)
-    df_m = build_monthly_df(df_daily)
+    df_w = build_weekly_df(df_d)
+    df_m = build_monthly_df(df_d)
     wmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_w), df_d.index, 'W-FRI')
     mmbuy_series = _expand_signal_to_daily(_macd_buy_on_frame(df_m), df_d.index, 'M')
     wmbuy = bool(wmbuy_series.iloc[-1])
@@ -1748,11 +1744,10 @@ def calc_macdbuy_signals(df_daily):
         signals.append("MACD_M")
     return signals
 
-def calc_rtmbuy(df_daily):
-    df_d = compute_indicators(df_daily)
+def calc_rtmbuy(df_d):
     if not bool(calc_dmbuy(df_d).iloc[-1]):
         return False
-    df_w = build_weekly_df(df_daily)
+    df_w = build_weekly_df(df_d)
     if len(df_w) < 6:
         return False
     C, O, H = df_w['close'], df_w['open'], df_w['high']
@@ -2159,6 +2154,24 @@ SIGNAL_EMOJI = {
     'PK-BREAK':  '🟢',
 }
 
+def _async_draw_and_send(df_plot_d, df_merged, symbol, signal_type, today, date_str, msg, notify_text):
+    try:
+        img_daily  = draw_chart(df_plot_d, symbol, signal_type, today, 'Daily', True, date_str)
+        
+        df_weekly  = build_weekly_df(df_merged)
+        df_plot_w  = df_weekly.tail(200).copy()
+        today_w    = df_plot_w.iloc[-1]
+        date_str_w = _date_str_from_df(df_merged)
+        img_weekly = draw_chart(df_plot_w, symbol, signal_type, today_w, 'Weekly', False, date_str_w)
+        
+        img_15m    = _build_15m_chart(symbol, signal_type, "scanner_signal_15m")
+
+        image_paths = [img_daily, img_weekly]
+        if img_15m: image_paths.append(img_15m)
+
+        send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
+    except Exception as e:
+        print(f"  ❌ Lỗi chạy ngầm mã {symbol}: {e}")
 
 def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_today: dict,
                     attent_today: dict = None, breakvol_today: dict = None):
@@ -2201,6 +2214,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 
             if df_merged is None or len(df_merged) < 60: continue
             df_merged = df_merged.copy()
+            df_merged = compute_indicators(df_merged)
 
             try:
                 momentum_signals = detect_momentum_signals(df_merged)
@@ -2211,12 +2225,11 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 print(f"    ⚠️  Momentum {symbol}: {e}")
 
             try:
-                df_ind = compute_indicators(df_merged)
-                if len(df_ind) >= 60:
-                    pct_today = (df_ind['close'].iloc[-1] - df_ind['close'].iloc[-2]) / df_ind['close'].iloc[-2] * 100
-                    if bool(calc_attent(df_ind, now_time).iloc[-1]):
+                if len(df_merged) >= 60:
+                    pct_today = (df_merged['close'].iloc[-1] - df_merged['close'].iloc[-2]) / df_merged['close'].iloc[-2] * 100
+                    if bool(calc_attent(df_merged, now_time).iloc[-1]):
                         current_attent[symbol] = {"pct": round(pct_today, 1)}
-                    if bool(calc_breakvol_signal(df_ind, now_time).iloc[-1]):
+                    if bool(calc_breakvol_signal(df_merged, now_time).iloc[-1]):
                         current_breakvol[symbol] = {"pct": round(pct_today, 1)}
             except Exception as e:
                 print(f"    ⚠️  ATTENT/BREAKVOL {symbol}: {e}")
@@ -2232,13 +2245,12 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             if prev_rank >= current_rank:
                 continue
 
-            df_calc      = compute_indicators(df_merged)
-            today        = df_calc.iloc[-1]
-            date_str     = _date_str_from_df(df_calc)
-            pct          = (today['close']-df_calc['close'].iloc[-2])/df_calc['close'].iloc[-2]*100
-            change       = today['close'] - df_calc['close'].iloc[-2]
+            today        = df_merged.iloc[-1]
+            date_str     = _date_str_from_df(df_merged)
+            pct          = (today['close']-df_merged['close'].iloc[-2])/df_merged['close'].iloc[-2]*100
+            change       = today['close'] - df_merged['close'].iloc[-2]
             emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
-            vol_vs_prev  = (today['volume']-df_calc['volume'].iloc[-2])/df_calc['volume'].iloc[-2]*100
+            vol_vs_prev  = (today['volume']-df_merged['volume'].iloc[-2])/df_merged['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
             alerted_today.pop(symbol, None)
@@ -2263,22 +2275,14 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 f"<a href='{link_24h_money}'>📄</a>"
             )
 
-            df_plot_d  = df_calc.tail(250).copy()
-            img_daily  = _draw_pool.submit(draw_chart, df_plot_d, symbol, signal_type, today,
-                                            'Daily', True, date_str).result()
-            df_weekly  = build_weekly_df(df_merged)
-            df_plot_w  = df_weekly.tail(200).copy()
-            today_w    = df_plot_w.iloc[-1]
-            date_str_w = _date_str_from_df(df_merged)
-            img_weekly = _draw_pool.submit(draw_chart, df_plot_w, symbol, signal_type, today_w,
-                                            'Weekly', False, date_str_w).result()
-            img_15m    = _draw_pool.submit(_build_15m_chart, symbol, signal_type, "scanner_signal_15m").result()
-
-            image_paths = [img_daily, img_weekly]
-            if img_15m: image_paths.append(img_15m)
-
             notify_text = f"{emoji} #{symbol} | {signal_type} | {date_str}"
-            send_telegram_signal(msg, image_paths=image_paths, notify_text=notify_text)
+            _draw_pool.submit(
+                _async_draw_and_send,
+                df_merged.tail(250).copy(),
+                df_merged.copy(),
+                symbol, signal_type,
+                today.copy(), date_str, msg, notify_text
+            )
 
         except Exception as e:
             print(f"  ❌ Lỗi mã {symbol}: {e}")
