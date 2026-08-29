@@ -290,14 +290,15 @@ def fetch_heatmap_data() -> tuple:
             for sym in need:
                 df = history_cache.get(sym)
                 if df is not None and len(df) >= 2:
-                    ref_p = float(df.iloc[-2]['close'])
-                    close = float(df.iloc[-1]['close'])
-                    vol = float(df.iloc[-1]['volume'])
+                    ref_p, close, vol = float(df.iloc[-2]['close']), float(df.iloc[-1]['close']), float(df.iloc[-1]['volume'])
                     pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-                    if not math.isfinite(pct):
-                        pct = 0.0
-                    total_value = round(close * vol * 1000, 0)
-                    result[sym] = {"price": close, "pct": pct, "total_value": total_value}
+                    result[sym] = {
+                        "price": close, "pct": 0.0 if not math.isfinite(pct) else pct,
+                        "total_value": round(close * vol * 1000, 0),
+                        "open": float(df.iloc[-1].get('open', close)),
+                        "high": float(df.iloc[-1].get('high', close)),
+                        "low": float(df.iloc[-1].get('low', close)), "volume": vol
+                    }
         print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
 
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
@@ -335,10 +336,15 @@ def fetch_extra_quotes(syms: list) -> dict:
             for sym in syms:
                 df = history_cache.get(sym)
                 if df is not None and len(df) >= 2:
-                    ref_p = float(df.iloc[-2]['close'])
-                    close = float(df.iloc[-1]['close'])
+                    ref_p, close = float(df.iloc[-2]['close']), float(df.iloc[-1]['close'])
                     pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-                    result[sym] = {"price": close, "pct": pct}
+                    result[sym] = {
+                        "price": close, "pct": 0.0 if not math.isfinite(pct) else pct,
+                        "open": float(df.iloc[-1].get('open', close)),
+                        "high": float(df.iloc[-1].get('high', close)),
+                        "low": float(df.iloc[-1].get('low', close)),
+                        "volume": float(df.iloc[-1]['volume'])
+                    }
     return result
 
 

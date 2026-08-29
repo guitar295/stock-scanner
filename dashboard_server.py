@@ -1459,13 +1459,15 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     if live_data:
         last_b = final_bars[-1]
         for k in ("open", "high", "low", "volume"):
-            if k in live_data: last_b[k] = live_data[k]
-        if "price" in live_data: last_b["close"] = live_data["price"]
+            if live_data.get(k) is not None: last_b[k] = live_data[k]
+        if live_data.get("price") is not None: last_b["close"] = live_data["price"]
     # ------------------------------------------------
     
     for b in final_bars:
         t_val = b["time"]
-        o, h, l, c, v = b["open"], b["high"], b["low"], b["close"], b["volume"]
+        o, c = b.get("open") or b.get("close") or 0.0, b.get("close") or 0.0
+        h, l = b.get("high") or max(o, c), b.get("low") or min(o, c)
+        v = b.get("volume") or 0.0
         candles.append({"time": t_val, "open": o, "high": h, "low": l, "close": c})
         color = "#26a69a" if c >= o else "#ef5350"
         flag = vpa_flags_by_date.get(t_val)
