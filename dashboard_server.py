@@ -4378,10 +4378,25 @@ function updateLiteBigPrice(bar){
   const el=DOM.liteChartBigPrice;
   if(!el)return;
   if(!bar||!_liteChecked('signalgrp_on')||!_liteChecked('bigprice')){el.classList.remove('on');el.innerHTML='';return;}
-  const pct=Number.isFinite(bar.pct)?bar.pct:0;
-  const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)&&pct!==0
-    ?bar.close-bar.close/(1+pct/100):(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close-bar.open:0);
-  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
+  
+  let target = bar;
+  if (_liteSymbol && window._marketBundle && _marketBundle[_liteSymbol] && _marketBundle[_liteSymbol].candles && _marketBundle[_liteSymbol].candles.length > 1) {
+    const c1d = _marketBundle[_liteSymbol].candles;
+    let closePrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][4] : c1d[c1d.length-1].close;
+    let openPrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][1] : c1d[c1d.length-1].open;
+    const prevClose = Array.isArray(c1d[c1d.length-2]) ? c1d[c1d.length-2][4] : c1d[c1d.length-2].close;
+    const liveEntry = (window._lastHmapData||{})[_liteSymbol];
+    if (liveEntry && liveEntry.price) {
+      closePrice = liveEntry.price;
+      if (liveEntry.open) openPrice = liveEntry.open;
+    }
+    target = { close: closePrice, open: openPrice, pct: ((closePrice - prevClose) / prevClose) * 100 };
+  }
+
+  const pct=Number.isFinite(target.pct)?target.pct:0;
+  const change=Number.isFinite(target.close)&&Number.isFinite(target.pct)&&pct!==0
+    ?target.close-target.close/(1+pct/100):(Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close-target.open:0);
+  const up=Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close>=target.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const sign=pct>0?'+':(pct<0?'':'');
   const fc=_liteVolForecast;
@@ -4393,7 +4408,7 @@ function updateLiteBigPrice(bar){
   const ratioMA50=sameSym?fc.ratio_ma50:null;
   el.classList.add('on');
   el.innerHTML=
-    `<span class="bp-price" style="color:${col}">${fmtLiteNum(bar.close)}</span>`+
+    `<span class="bp-price" style="color:${col}">${fmtLiteNum(target.close)}</span>`+
     `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
@@ -6662,7 +6677,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
           }
         }
       }
-      _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:tf==='1D'?(item.history_signals||[]):[],rs:item.rs,vol_forecast:tf==='1D'?(item.vol_forecast||null):null},s,skipPopoutSync);
+      _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:tf==='1D'?(item.history_signals||[]):[],rs:item.rs,vol_forecast:item.vol_forecast||null},s,skipPopoutSync);
       _liteChartLoading=false;redrawLiteDrawings();
       return;
     }

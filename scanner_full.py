@@ -45,6 +45,7 @@ from dashboard_server import (
     warm_rs_cache,
     TS_POOL_CONFIG,
     HMAP_COLS_CONFIG,
+    _rs_score_cache,
 )
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
@@ -2978,7 +2979,7 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
                 bars_1m, vols_1m, df_1m = _resample_bars_tf(df, 'M', skip_vpa=True)
 
             _, hist_sigs = calc_signals_for_df(sub_df)
-            rs_val = float(sub_df['RS'].iloc[-1]) if 'RS' in sub_df.columns and pd.notna(sub_df['RS'].iloc[-1]) else 0
+            rs_val = float(_rs_score_cache["scores"].get(sym, 0)) if _rs_score_cache and "scores" in _rs_score_cache else 0
             
             # Đóng gói sẵn dự báo Vol đa khung (dùng chung tiến độ ngày)
             now_obj = datetime.now(TZ_VN)
