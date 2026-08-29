@@ -1274,8 +1274,9 @@ def build_history_cache(symbols: list, current_date: date):
     invalidate_rs_cache()
     warm_rs_cache()
     warm_market_health_cache()
+    export_market_bundle(history_cache, cache_lock)
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
+    print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu, đã xuất market_bundle.json.")
 
 # =============================================================================
 # BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
@@ -2257,26 +2258,44 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 print(f"    ⚠️  ATTENT/BREAKVOL {symbol}: {e}")
 
             signal_type = detect_signal(df_merged, now_time)
+            first_ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+            today    = df_merged.iloc[-1]
+            pct      = (today['close']-df_merged['close'].iloc[-2])/df_merged['close'].iloc[-2]*100
+
             if not signal_type:
+                if symbol in alerted_today and isinstance(alerted_today[symbol], dict):
+                    alerted_today[symbol]["state"] = "DEAD"
+                    alerted_today[symbol]["pct"] = round(pct, 1)
+                    alerted_today[symbol]["price"] = round(float(today['close']), 2)
                 continue
 
             prev_entry = alerted_today.get(symbol)
             prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
+            prev_first = prev_entry.get("first_seen", first_ts) if isinstance(prev_entry, dict) else first_ts
             prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
+
+            if isinstance(prev_entry, dict):
+                prev_entry["state"] = "ALIVE"
+                prev_entry["pct"] = round(pct, 1)
+                prev_entry["price"] = round(float(today['close']), 2)
+
             if prev_rank >= current_rank:
                 continue
 
-            today        = df_merged.iloc[-1]
             date_str     = _date_str_from_df(df_merged)
-            pct          = (today['close']-df_merged['close'].iloc[-2])/df_merged['close'].iloc[-2]*100
             change       = today['close'] - df_merged['close'].iloc[-2]
             emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
             vol_vs_prev  = (today['volume']-df_merged['volume'].iloc[-2])/df_merged['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
-            alerted_today.pop(symbol, None)
-            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 1), "price": round(float(today['close']), 2)}
+            alerted_today[symbol] = {
+                "signal": signal_type,
+                "state": "ALIVE",
+                "first_seen": prev_first,
+                "pct": round(pct, 1),
+                "price": round(float(today['close']), 2)
+            }
             new_signals.append(symbol)
 
             link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
@@ -2318,6 +2337,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
         breakvol_today.clear()
         breakvol_today.update(current_breakvol)
 
+    export_market_bundle(history_cache, cache_lock)
     return new_signals
 
 # =============================================================================
@@ -2930,11 +2950,51 @@ def telegram_listener(stop_event: threading.Event):
 # =============================================================================
 # BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
 # Lưu/đọc trạng thái tín hiệu đã gửi (alerted_today, momentum...) qua restart
-_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
-if not os.path.isdir(_SIGNAL_STATE_DIR):
-    _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA_DIR = os.path.expanduser("~/scanner/data/trade-journal")
+if not os.path.exists(_DEFAULT_DATA_DIR) and os.path.exists("/data/trade-journal"):
+    _DEFAULT_DATA_DIR = "/data/trade-journal"
+_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", _DEFAULT_DATA_DIR)
+os.makedirs(_SIGNAL_STATE_DIR, exist_ok=True)
 SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
+MARKET_BUNDLE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'market_bundle.json')
 _signal_state_lock = threading.Lock()
+
+def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
+    """Xuất toàn bộ 147 mã thành 1 file bundle JSON nén duy nhất cho Cloudflare Pages & Dashboard."""
+    try:
+        data = {"updated_at": datetime.now(TZ_VN).strftime('%Y-%m-%d %H:%M:%S'), "symbols": {}}
+        with lock:
+            sym_items = list(cache.items())
+        for sym, df in sym_items:
+            if df is None or len(df) < 5:
+                continue
+            sub_df = df.tail(450)
+            bars, vols = [], []
+            for idx, row in sub_df.iterrows():
+                dt_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
+                o = float(row.get('open', row['close']))
+                c = float(row['close'])
+                h = float(row.get('high', max(o, c)))
+                l = float(row.get('low', min(o, c)))
+                v = float(row.get('volume', 0))
+                flag = int(row.get('vpa_flag', 0))
+                color = "#254fcc" if flag == 1 else ("#00ffe5" if flag == 2 else ("#26a69a" if c >= o else "#ef5350"))
+                bars.append([dt_str, o, h, l, c])
+                vols.append([dt_str, v, color])
+            _, hist_sigs = calc_signals_for_df(sub_df)
+            rs_val = float(sub_df['RS'].iloc[-1]) if 'RS' in sub_df.columns and pd.notna(sub_df['RS'].iloc[-1]) else 0
+            data["symbols"][sym] = {
+                "candles": bars,
+                "volume": vols,
+                "history_signals": hist_sigs,
+                "rs": round(rs_val, 1)
+            }
+        tmp = out_path + ".tmp"
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+        os.replace(tmp, out_path)
+    except Exception as e:
+        print(f"  ⚠️ Lỗi xuất market_bundle.json: {e}")
 
 def _load_signal_state():
     """Đọc lại alerted_today + momentum_today + attent_today + breakvol_today đã lưu."""
