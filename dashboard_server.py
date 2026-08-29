@@ -6607,9 +6607,9 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   if(DOM.liteChartInput)DOM.liteChartInput.value='';
   DOM.liteChartEmpty.style.display='none';
   updateLiteTitle(_liteData[_liteData.length-1]);
-  _liteVolForecast=null;
+  _liteVolForecast=j.vol_forecast||null;
   updateLiteBigPrice(_liteData[_liteData.length-1]);
-  _liteFetchVolForecast(_liteSymbol);
+  if(!_liteVolForecast)_liteFetchVolForecast(_liteSymbol);
   _liteHistorySignals=j.history_signals||[];
   const curSig=_sigTodayMap.get(s)||j.signal||null;
   _liteCurrentSignal=curSig&&curSig.state!=='DEAD'?curSig:null;
@@ -6633,28 +6633,39 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   _liteChartLoading=true;
   if(_liteDrawCtx&&DOM.liteChart)_liteDrawCtx.clearRect(0,0,DOM.liteChart.clientWidth,DOM.liteChart.clientHeight);
 
-  if(_marketBundle&&_marketBundle[s]&&_liteTf==='1D'){
+  const tf=_liteTf||'1D';
+  if(_marketBundle&&_marketBundle[s]){
     const item=_marketBundle[s];
-    const rawCandles=[...(item.candles||[])];
-    const rawVolume=[...(item.volume||[])];
-    const liveEntry=(window._lastHmapData||{})[s];
-    if(liveEntry&&liveEntry.price&&rawCandles.length){
-      const last=Array.isArray(rawCandles[rawCandles.length-1])?[...rawCandles[rawCandles.length-1]]:{...rawCandles[rawCandles.length-1]};
-      if(Array.isArray(last)){
-        last[4]=liveEntry.price;if(liveEntry.open)last[1]=liveEntry.open;if(liveEntry.high)last[2]=Math.max(last[2],liveEntry.price);if(liveEntry.low)last[3]=Math.min(last[3],liveEntry.price);
-      }else{
-        last.close=liveEntry.price;if(liveEntry.open)last.open=liveEntry.open;if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
-      }
-      rawCandles[rawCandles.length-1]=last;
-      if(liveEntry.volume&&rawVolume.length){
-        const lastVol=Array.isArray(rawVolume[rawVolume.length-1])?[...rawVolume[rawVolume.length-1]]:{...rawVolume[rawVolume.length-1]};
-        if(Array.isArray(lastVol))lastVol[1]=liveEntry.volume;else lastVol.value=liveEntry.volume;
-        rawVolume[rawVolume.length-1]=lastVol;
-      }
+    let tfData=null;
+    if(item.timeframes&&item.timeframes[tf]){
+      tfData=item.timeframes[tf];
+    }else if(tf==='1D'){
+      tfData={candles:item.candles,volume:item.volume};
     }
-    _liteApplyChartPayload({symbol:s,timeframe:'1D',candles:rawCandles,volume:rawVolume,history_signals:item.history_signals||[],rs:item.rs},s,skipPopoutSync);
-    _liteChartLoading=false;redrawLiteDrawings();
-    return;
+    if(tfData&&tfData.candles&&tfData.candles.length){
+      const rawCandles=[...(tfData.candles||[])];
+      const rawVolume=[...(tfData.volume||[])];
+      if(tf==='1D'){
+        const liveEntry=(window._lastHmapData||{})[s];
+        if(liveEntry&&liveEntry.price&&rawCandles.length){
+          const last=Array.isArray(rawCandles[rawCandles.length-1])?[...rawCandles[rawCandles.length-1]]:{...rawCandles[rawCandles.length-1]};
+          if(Array.isArray(last)){
+            last[4]=liveEntry.price;if(liveEntry.open)last[1]=liveEntry.open;if(liveEntry.high)last[2]=Math.max(last[2],liveEntry.price);if(liveEntry.low)last[3]=Math.min(last[3],liveEntry.price);
+          }else{
+            last.close=liveEntry.price;if(liveEntry.open)last.open=liveEntry.open;if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
+          }
+          rawCandles[rawCandles.length-1]=last;
+          if(liveEntry.volume&&rawVolume.length){
+            const lastVol=Array.isArray(rawVolume[rawVolume.length-1])?[...rawVolume[rawVolume.length-1]]:{...rawVolume[rawVolume.length-1]};
+            if(Array.isArray(lastVol))lastVol[1]=liveEntry.volume;else lastVol.value=liveEntry.volume;
+            rawVolume[rawVolume.length-1]=lastVol;
+          }
+        }
+      }
+      _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:tf==='1D'?(item.history_signals||[]):[],rs:item.rs,vol_forecast:tf==='1D'?(item.vol_forecast||null):null},s,skipPopoutSync);
+      _liteChartLoading=false;redrawLiteDrawings();
+      return;
+    }
   }
 
   try{

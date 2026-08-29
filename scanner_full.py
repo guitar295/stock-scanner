@@ -2767,23 +2767,16 @@ def dashboard_vol_forecast_fn(symbol: str):
 def telegram_listener(stop_event: threading.Event):
     url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
     url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=1, pool_connections=5, pool_maxsize=5)
+    session.mount('https://', adapter)
 
-    try:
-        resp    = requests.get(url_upd, params={'offset':-1,'limit':1}, timeout=10)
-        results = resp.json().get('result', [])
-        offset  = (results[-1]['update_id']+1) if results else 0
-        print(f"🎧 Telegram Listener khởi động — offset={offset}")
-    except Exception as e:
-        offset = 0
-        print(f"🎧 Telegram Listener khởi động — offset=0 (lỗi: {e})")
-
-    processed_ids: dict = {}
-    PROCESSED_TTL = 300
+    offset = 0
     print(f"🎧 Listener sẵn sàng | VIP: {VIP_CHAT_IDS} | Free slot: {FREE_CHAT_LIMIT}")
 
     while not stop_event.is_set():
         try:
-            resp = requests.get(url_upd, params={
+            resp = session.get(url_upd, params={
                 'offset': offset, 'timeout': 30,
                 'allowed_updates': ['message', 'callback_query'],
             }, timeout=35)
@@ -2800,16 +2793,9 @@ def telegram_listener(stop_event: threading.Event):
             updates = resp.json().get('result', [])
             if not updates: continue
 
-            now_ts  = time.time()
-            expired = [uid for uid, ts in processed_ids.items() if now_ts-ts > PROCESSED_TTL]
-            for uid in expired: del processed_ids[uid]
-
             for update in updates:
                 update_id = update['update_id']
                 if update_id >= offset: offset = update_id + 1
-                if update_id in processed_ids:
-                    print(f"  ⚠️ Bỏ qua duplicate update_id={update_id}"); continue
-                processed_ids[update_id] = time.time()
                 print(f"  📨 Xử lý update_id={update_id} | offset mới={offset}")
 
                 callback = update.get('callback_query', {})
@@ -2817,7 +2803,7 @@ def telegram_listener(stop_event: threading.Event):
                     cb_id      = callback.get('id')
                     cb_data    = callback.get('data', '')
                     cb_chat_id = str(callback.get('message', {}).get('chat', {}).get('id', ''))
-                    requests.post(
+                    session.post(
                         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
                         data={'callback_query_id': cb_id}
                     )
@@ -2832,27 +2818,16 @@ def telegram_listener(stop_event: threading.Event):
                         ).start()
                     continue
 
-                msg_obj = update.get('message', {})
-                text    = msg_obj.get('text', '').strip()
-                chat_id = str(msg_obj.get('chat', {}).get('id', ''))
-                if not text or not chat_id: continue
+                message = update.get('message', {})
+                if not message: continue
 
-                text_lower = text.lower().strip()
-
-                if text_lower == '/start':
-                    continue
+                chat_id = str(message.get('chat', {}).get('id', ''))
+                text    = message.get('text', '').strip()
+                if not text: continue
+                text_lower = text.lower()
 
                 allowed, reason = is_allowed(chat_id)
                 if not allowed:
-                    requests.post(url_msg, data={
-                        'chat_id':    chat_id,
-                        'parse_mode': 'HTML',
-                        'text': (
-                            "⚠️ Bot đang phục vụ tối đa <b>20 người</b> cùng lúc.\n"
-                            "Hiện tại đã đầy slot. Vui lòng thử lại sau ít phút.\n"
-                            "Slot tự động giải phóng sau <b>30 phút</b> không hoạt động."
-                        )
-                    })
                     continue
 
                 if text_lower == '/s' or text_lower.startswith('/s '):
@@ -2959,8 +2934,33 @@ SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 MARKET_BUNDLE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'market_bundle.json')
 _signal_state_lock = threading.Lock()
 
+def _format_df_bars_vols(df_in):
+    bars, vols = [], []
+    for idx, row in df_in.iterrows():
+        dt_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
+        o = float(row.get('open', row['close']))
+        c = float(row['close'])
+        h = float(row.get('high', max(o, c)))
+        l = float(row.get('low', min(o, c)))
+        v = float(row.get('volume', 0))
+        flag = int(row.get('vpa_flag', 0))
+        color = "#254fcc" if flag == 1 else ("#00ffe5" if flag == 2 else ("#26a69a" if c >= o else "#ef5350"))
+        bars.append([dt_str, o, h, l, c])
+        vols.append([dt_str, v, color])
+    return bars, vols
+
+def _resample_bars_tf(df_in, freq_rule):
+    try:
+        agg_map = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+        if 'vpa_flag' in df_in.columns:
+            agg_map['vpa_flag'] = 'max'
+        df_res = df_in.resample(freq_rule).agg(agg_map).dropna(subset=['close'])
+        return _format_df_bars_vols(df_res)
+    except Exception:
+        return [], []
+
 def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
-    """Xuất toàn bộ 147 mã thành 1 file bundle JSON nén duy nhất cho Cloudflare Pages & Dashboard."""
+    """Xuất toàn bộ 147 mã thành 1 file bundle JSON nén đa khung thời gian (1D, 1W, 1M) cho Cloudflare Pages & Dashboard."""
     try:
         data = {"updated_at": datetime.now(TZ_VN).strftime('%Y-%m-%d %H:%M:%S'), "symbols": {}}
         with lock:
@@ -2969,25 +2969,45 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
             if df is None or len(df) < 5:
                 continue
             sub_df = df.tail(450)
-            bars, vols = [], []
-            for idx, row in sub_df.iterrows():
-                dt_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
-                o = float(row.get('open', row['close']))
-                c = float(row['close'])
-                h = float(row.get('high', max(o, c)))
-                l = float(row.get('low', min(o, c)))
-                v = float(row.get('volume', 0))
-                flag = int(row.get('vpa_flag', 0))
-                color = "#254fcc" if flag == 1 else ("#00ffe5" if flag == 2 else ("#26a69a" if c >= o else "#ef5350"))
-                bars.append([dt_str, o, h, l, c])
-                vols.append([dt_str, v, color])
+            bars_1d, vols_1d = _format_df_bars_vols(sub_df)
+            bars_1w, vols_1w = _resample_bars_tf(df, 'W-FRI')
+            try:
+                bars_1m, vols_1m = _resample_bars_tf(df, 'ME')
+            except Exception:
+                bars_1m, vols_1m = _resample_bars_tf(df, 'M')
+
             _, hist_sigs = calc_signals_for_df(sub_df)
             rs_val = float(sub_df['RS'].iloc[-1]) if 'RS' in sub_df.columns and pd.notna(sub_df['RS'].iloc[-1]) else 0
+            
+            # Đóng gói sẵn dự báo Vol
+            now_obj = datetime.now(TZ_VN)
+            now_time = int(now_obj.strftime("%H%M%S"))
+            bar_date = pd.Timestamp(sub_df.index[-1]).strftime("%Y-%m-%d")
+            is_today = bar_date == now_obj.strftime("%Y-%m-%d")
+            progress = _session_time_progress(now_time) if is_today else 1.0
+            last_vol = float(sub_df['volume'].iloc[-1]) if len(sub_df) > 0 else 0
+            prev_vol = float(sub_df['volume'].iloc[-2]) if len(sub_df) > 1 else 0
+            vma50_val = float(sub_df['VMA50'].iloc[-1]) if 'VMA50' in sub_df.columns and pd.notna(sub_df['VMA50'].iloc[-1]) else (float(sub_df['volume'].tail(50).mean()) if len(sub_df) >= 10 else 0)
+            ratio_prev = round(last_vol / prev_vol, 4) if prev_vol > 0 else None
+            ratio_ma50 = round(last_vol / vma50_val, 4) if vma50_val > 0 else None
+
             data["symbols"][sym] = {
-                "candles": bars,
-                "volume": vols,
+                "candles": bars_1d,
+                "volume": vols_1d,
+                "timeframes": {
+                    "1D": {"candles": bars_1d, "volume": vols_1d},
+                    "1W": {"candles": bars_1w, "volume": vols_1w},
+                    "1M": {"candles": bars_1m, "volume": vols_1m},
+                },
                 "history_signals": hist_sigs,
-                "rs": round(rs_val, 1)
+                "rs": round(rs_val, 1),
+                "vol_forecast": {
+                    "symbol": sym,
+                    "progress": round(progress, 4),
+                    "ratio_prev": ratio_prev,
+                    "ratio_ma50": ratio_ma50,
+                    "vma50": round(vma50_val, 1) if vma50_val else None
+                }
             }
         tmp = out_path + ".tmp"
         with open(tmp, 'w', encoding='utf-8') as f:
