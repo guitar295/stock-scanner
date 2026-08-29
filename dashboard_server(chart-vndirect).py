@@ -1304,7 +1304,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                 try:
                     bars_for_df = []
                     for b in raw_bars:
-                        dt = datetime.utcfromtimestamp(b["t"] + 25200)
+                        dt = datetime.fromtimestamp(b["t"] + 25200, timezone.utc).replace(tzinfo=None)
                         bars_for_df.append({
                             "time": dt, "open": b["open"], "high": b["high"], 
                             "low": b["low"], "close": b["close"], "volume": b["volume"]
@@ -1378,6 +1378,11 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     if not final_bars:
         return None, "no_data_after_resample"
 
+    if target_tf == "1D" and len(final_bars) >= 2:
+        b1, b2 = final_bars[-2], final_bars[-1]
+        if b1["time"] == b2["time"] or (b1["close"] == b2["close"] and b1["open"] == b2["open"] and b1["volume"] == b2["volume"]):
+            final_bars.pop()
+
     vpa_flags_by_date = {}
     signal_info, history_signals = None, []
     if target_tf == "1D" and raw_bars and len(raw_bars) >= 30:
@@ -1450,6 +1455,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                                 "high": live_data.get("high"),
                                 "low": live_data.get("low"),
                                 "volume": live_data.get("volume"),
+                                "date": live_data.get("date"),
                                 "ts": now_ts_sec
                             }
                 except Exception as e:
@@ -1458,14 +1464,18 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     # Áp dụng dữ liệu live vào cây nến cuối cùng nếu có
     if live_data:
         last_b = final_bars[-1]
-        for k in ("open", "high", "low", "volume"):
-            if k in live_data: last_b[k] = live_data[k]
-        if "price" in live_data: last_b["close"] = live_data["price"]
+        live_d = live_data.get("date")
+        if not live_d or live_d == last_b["time"]:
+            for k in ("open", "high", "low", "volume"):
+                if live_data.get(k) is not None: last_b[k] = live_data[k]
+            if live_data.get("price") is not None: last_b["close"] = live_data["price"]
     # ------------------------------------------------
     
     for b in final_bars:
         t_val = b["time"]
-        o, h, l, c, v = b["open"], b["high"], b["low"], b["close"], b["volume"]
+        o, c = b.get("open") or b.get("close") or 0.0, b.get("close") or 0.0
+        h, l = b.get("high") or max(o, c), b.get("low") or min(o, c)
+        v = b.get("volume") or 0.0
         candles.append({"time": t_val, "open": o, "high": h, "low": l, "close": c})
         color = "#26a69a" if c >= o else "#ef5350"
         flag = vpa_flags_by_date.get(t_val)
@@ -1977,6 +1987,9 @@ def dashboard_main_js():
         DASHBOARD_MAIN_JS
         .replace("__HMAP_COLS_CONFIG__", json.dumps(HMAP_COLS_CONFIG, ensure_ascii=False))
         .replace("__TS_POOL_CONFIG__", json.dumps(TS_POOL_CONFIG, ensure_ascii=False))
+        .replace("__MARKET_HEALTH_TTL_SEC__", str(MARKET_HEALTH_TTL_SEC))
+        .replace("__SIGNAL_TTL_SEC__", str(SIGNAL_TTL_SEC))
+        .replace("__HEATMAP_LIVE_TTL_SEC__", str(HEATMAP_LIVE_TTL_SEC))
     )
     resp = Response(js, content_type="application/javascript; charset=utf-8")
     resp.headers["Cache-Control"] = "no-cache"
@@ -2420,6 +2433,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .signal-header-toggle{cursor:pointer;user-select:none}
 .momentum-box{display:none;border-top:1px solid var(--border);background:#fbfcff;padding:8px 16px}
 .momentum-box.on{display:block}
+.momentum-section + .momentum-section{margin-top:8px}
 .momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
 .momentum-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
 .strength-list{grid-template-columns:repeat(6,minmax(0,1fr))}
@@ -3802,7 +3816,7 @@ let _attentTodayMap=new Map();
 let _breakvolTodayMap=new Map();
 let _lastStrengthRows=[];
 let _liteRsScore=null;
-let SIG_TTL=30,HMAP_TTL=5,HEALTH_TTL=1800;
+let SIG_TTL=__SIGNAL_TTL_SEC__,HMAP_TTL=__HEATMAP_LIVE_TTL_SEC__,HEALTH_TTL=__MARKET_HEALTH_TTL_SEC__;
 let _sym='',_tab='vs';
 const FOLLOW_KEY='dashboard_follow_symbols';
 const FOLLOW_ON_KEY='dashboard_follow_on';
@@ -6491,8 +6505,10 @@ function _liteRefreshVolumeTop(showVpaVol){
 }
 // LITE_CHART_RETRY_MAX/DELAY: số lần và khoảng cách thử lại khi API lightweight_chart lỗi trước khi báo hết dữ liệu.
 const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
+let _liteReqId=0;
 async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
-  const s=(sym||'FPT').toUpperCase().trim();
+  const s=(sym||'FPT').toUpperCase().trim(),reqId=++_liteReqId;
+  _liteSymbol=s;
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
@@ -6512,8 +6528,10 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       ?(window.__liteChartPrefetch=null,await _pf.promise)
       :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
     if(!r.ok)throw new Error('vndirect_unavailable');
+    if(reqId!==_liteReqId)return;
     const j=await r.json();
-    _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    if(reqId!==_liteReqId)return;
+    setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     _lgUpdateChartFavBtn();
     if(!skipPopoutSync){
@@ -6564,7 +6582,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
 const LITE_CHART_AUTOREFRESH_SEC=5;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
-  if(_liteQuietRefreshing)return;                          // lượt trước chưa xong, khỏi chồng lượt
+  if(_liteChartLoading||_liteQuietRefreshing)return;                          // đang load mã mới hoặc lượt trước chưa xong
   if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;
   if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return;
   if(document.hidden)return;
@@ -8082,8 +8100,8 @@ setInterval(tick,1000);tick();
 async function loadConfig(){
   try{
     const j=await fetch('/api/config').then(r=>r.json());
-    SIG_TTL=j.signal_ttl_sec||30;
-    HEALTH_TTL=j.market_health_ttl_sec||1800;
+    if(j.signal_ttl_sec!=null) SIG_TTL=j.signal_ttl_sec;
+    if(j.market_health_ttl_sec!=null) HEALTH_TTL=j.market_health_ttl_sec;
     if(j.session_morning_start!=null)   _sessionConfig.m_start=_hhmmssToMinutes(j.session_morning_start);
     if(j.session_morning_end!=null)     _sessionConfig.m_end=_hhmmssToMinutes(j.session_morning_end)+5;
     if(j.session_afternoon_start!=null) _sessionConfig.a_start=_hhmmssToMinutes(j.session_afternoon_start);
@@ -8836,7 +8854,7 @@ function _lgSymRow(sym,draggable,g=null){
   const rightValue=isStrength&&Number.isFinite(Number(rs))?Math.round(Number(rs)):price;
   const starred=LG_FAVORITES.includes(sym);
   const isFollow=FOLLOW.includes(sym);
-  return `<div class="lg-sym-item${isFollow?' lg-follow':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
+  return `<div class="lg-sym-item${isFollow?' lg-follow':''}${sym===_lgActiveSym?' on':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
     +`<span class="lg-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
     +`<span class="lg-sym-name">${sym}</span>`
     +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
@@ -8919,11 +8937,17 @@ DOM.lgList?.addEventListener('click',e=>{
   if(item){
     _lgActiveSym=item.dataset.sym;
     loadLiteChart(_lgActiveSym);
-    DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
+    DOM.lgList.querySelectorAll('.lg-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===_lgActiveSym));
   }
 });
-DOM.lgList?.addEventListener('mousemove',e=>{if(e.movementX===0&&e.movementY===0)return;document.body.classList.remove('key-nav');if(e.target.closest('.lg-sym-item'))DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
-DOM.lgList?.addEventListener('mouseleave',()=>{DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
+DOM.lgList?.addEventListener('mousemove',e=>{
+  if(e.movementX===0&&e.movementY===0)return;
+  document.body.classList.remove('key-nav');
+  DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
+  const item=e.target.closest('.lg-sym-item');
+  if(item)_lgActiveSym=item.dataset.sym;
+});
+DOM.lgList?.addEventListener('mouseleave',()=>{_lgActiveSym='';DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
 DOM.lgList?.addEventListener('dragstart',e=>{
   const ghdr=e.target.closest('.lg-ghdr[draggable="true"]');
   if(ghdr){
@@ -9011,12 +9035,6 @@ document.addEventListener('keydown',e=>{
   // Debounce load (300ms): lướt nhanh qua nhiều mã chỉ tải đúng mã dừng lại, không tải từng mã đã đi qua — huỷ lịch cũ mỗi lần có phím mới.
   clearTimeout(_lgKeyLoadTimer);
   _lgKeyLoadTimer=setTimeout(()=>loadLiteChart(_lgActiveSym),300);
-});
-// Click ra ngoài khu vực sidebar (ví dụ vào khung chart) sau khi đã lướt mã bằng phím lên/xuống: bỏ nền xanh (bỏ focus) khỏi ô mã cuối cùng đang được tô trong cột danh sách.
-document.addEventListener('click',e=>{
-  if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
-  if(DOM.lgSidebar.contains(e.target))return;
-  DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
 });
 // CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
 let _chartPopoutWin=null;
