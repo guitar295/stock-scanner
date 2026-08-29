@@ -30,7 +30,7 @@ import os
 import re
 import tempfile
 from io import BytesIO
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import pytz
 import json
 import threading
@@ -1165,7 +1165,7 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
         try:
             o, h, l, c, v = float(opens[i]), float(highs[i]), float(lows[i]), float(closes[i]), float(vols[i])
             if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
-                dt = datetime.utcfromtimestamp(times[i] + 25200)
+                dt = datetime.fromtimestamp(times[i] + 25200, timezone.utc).replace(tzinfo=None)
                 bars.append({"time": dt, "open": o, "high": h, "low": l, "close": c, "volume": max(0.0, v)})
         except: pass
     if not bars: return None

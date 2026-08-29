@@ -1304,7 +1304,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                 try:
                     bars_for_df = []
                     for b in raw_bars:
-                        dt = datetime.utcfromtimestamp(b["t"] + 25200)
+                        dt = datetime.fromtimestamp(b["t"] + 25200, timezone.utc).replace(tzinfo=None)
                         bars_for_df.append({
                             "time": dt, "open": b["open"], "high": b["high"], 
                             "low": b["low"], "close": b["close"], "volume": b["volume"]
