@@ -2934,7 +2934,7 @@ SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 MARKET_BUNDLE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'market_bundle.json')
 _signal_state_lock = threading.Lock()
 
-def _format_df_bars_vols(df_in):
+def _format_df_bars_vols(df_in, skip_vpa=False):
     bars, vols = [], []
     for idx, row in df_in.iterrows():
         dt_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
@@ -2943,21 +2943,22 @@ def _format_df_bars_vols(df_in):
         h = float(row.get('high', max(o, c)))
         l = float(row.get('low', min(o, c)))
         v = float(row.get('volume', 0))
-        flag = int(row.get('vpa_flag', 0))
+        flag = int(row.get('vpa_flag', 0)) if not skip_vpa else 0
         color = "#254fcc" if flag == 1 else ("#00ffe5" if flag == 2 else ("#26a69a" if c >= o else "#ef5350"))
         bars.append([dt_str, o, h, l, c])
         vols.append([dt_str, v, color])
     return bars, vols
 
-def _resample_bars_tf(df_in, freq_rule):
+def _resample_bars_tf(df_in, freq_rule, skip_vpa=True):
     try:
         agg_map = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
-        if 'vpa_flag' in df_in.columns:
+        if 'vpa_flag' in df_in.columns and not skip_vpa:
             agg_map['vpa_flag'] = 'max'
         df_res = df_in.resample(freq_rule).agg(agg_map).dropna(subset=['close'])
-        return _format_df_bars_vols(df_res)
+        bars, vols = _format_df_bars_vols(df_res, skip_vpa)
+        return bars, vols, df_res
     except Exception:
-        return [], []
+        return [], [], None
 
 def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
     """Xuất toàn bộ 147 mã thành 1 file bundle JSON nén đa khung thời gian (1D, 1W, 1M) cho Cloudflare Pages & Dashboard."""
@@ -2969,45 +2970,51 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
             if df is None or len(df) < 5:
                 continue
             sub_df = df.tail(450)
-            bars_1d, vols_1d = _format_df_bars_vols(sub_df)
-            bars_1w, vols_1w = _resample_bars_tf(df, 'W-FRI')
+            bars_1d, vols_1d = _format_df_bars_vols(sub_df, skip_vpa=False)
+            bars_1w, vols_1w, df_1w = _resample_bars_tf(df, 'W-FRI', skip_vpa=True)
             try:
-                bars_1m, vols_1m = _resample_bars_tf(df, 'ME')
+                bars_1m, vols_1m, df_1m = _resample_bars_tf(df, 'ME', skip_vpa=True)
             except Exception:
-                bars_1m, vols_1m = _resample_bars_tf(df, 'M')
+                bars_1m, vols_1m, df_1m = _resample_bars_tf(df, 'M', skip_vpa=True)
 
             _, hist_sigs = calc_signals_for_df(sub_df)
             rs_val = float(sub_df['RS'].iloc[-1]) if 'RS' in sub_df.columns and pd.notna(sub_df['RS'].iloc[-1]) else 0
             
-            # Đóng gói sẵn dự báo Vol
+            # Đóng gói sẵn dự báo Vol đa khung (dùng chung tiến độ ngày)
             now_obj = datetime.now(TZ_VN)
             now_time = int(now_obj.strftime("%H%M%S"))
             bar_date = pd.Timestamp(sub_df.index[-1]).strftime("%Y-%m-%d")
             is_today = bar_date == now_obj.strftime("%Y-%m-%d")
             progress = _session_time_progress(now_time) if is_today else 1.0
-            last_vol = float(sub_df['volume'].iloc[-1]) if len(sub_df) > 0 else 0
-            prev_vol = float(sub_df['volume'].iloc[-2]) if len(sub_df) > 1 else 0
-            vma50_val = float(sub_df['VMA50'].iloc[-1]) if 'VMA50' in sub_df.columns and pd.notna(sub_df['VMA50'].iloc[-1]) else (float(sub_df['volume'].tail(50).mean()) if len(sub_df) >= 10 else 0)
-            ratio_prev = round(last_vol / prev_vol, 4) if prev_vol > 0 else None
-            ratio_ma50 = round(last_vol / vma50_val, 4) if vma50_val > 0 else None
+            
+            def _get_vf(df_tf):
+                if df_tf is None or len(df_tf) == 0: return None
+                last_vol = float(df_tf['volume'].iloc[-1])
+                prev_vol = float(df_tf['volume'].iloc[-2]) if len(df_tf) > 1 else 0
+                vma50_val = float(df_tf['VMA50'].iloc[-1]) if 'VMA50' in df_tf.columns and pd.notna(df_tf['VMA50'].iloc[-1]) else (float(df_tf['volume'].tail(50).mean()) if len(df_tf) >= 10 else 0)
+                return {
+                    "symbol": sym,
+                    "progress": round(progress, 4),
+                    "ratio_prev": round(last_vol / prev_vol, 4) if prev_vol > 0 else None,
+                    "ratio_ma50": round(last_vol / vma50_val, 4) if vma50_val > 0 else None,
+                    "vma50": round(vma50_val, 1) if vma50_val else None
+                }
+            
+            vf_1d = _get_vf(sub_df)
+            vf_1w = _get_vf(df_1w)
+            vf_1m = _get_vf(df_1m)
 
             data["symbols"][sym] = {
                 "candles": bars_1d,
                 "volume": vols_1d,
                 "timeframes": {
-                    "1D": {"candles": bars_1d, "volume": vols_1d},
-                    "1W": {"candles": bars_1w, "volume": vols_1w},
-                    "1M": {"candles": bars_1m, "volume": vols_1m},
+                    "1D": {"candles": bars_1d, "volume": vols_1d, "vol_forecast": vf_1d},
+                    "1W": {"candles": bars_1w, "volume": vols_1w, "vol_forecast": vf_1w},
+                    "1M": {"candles": bars_1m, "volume": vols_1m, "vol_forecast": vf_1m},
                 },
                 "history_signals": hist_sigs,
                 "rs": round(rs_val, 1),
-                "vol_forecast": {
-                    "symbol": sym,
-                    "progress": round(progress, 4),
-                    "ratio_prev": ratio_prev,
-                    "ratio_ma50": ratio_ma50,
-                    "vma50": round(vma50_val, 1) if vma50_val else None
-                }
+                "vol_forecast": vf_1d
             }
         tmp = out_path + ".tmp"
         with open(tmp, 'w', encoding='utf-8') as f:
