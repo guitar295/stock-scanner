@@ -6502,8 +6502,10 @@ function _liteRefreshVolumeTop(showVpaVol){
 }
 // LITE_CHART_RETRY_MAX/DELAY: số lần và khoảng cách thử lại khi API lightweight_chart lỗi trước khi báo hết dữ liệu.
 const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
+let _liteReqId=0;
 async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
-  const s=(sym||'FPT').toUpperCase().trim();
+  const s=(sym||'FPT').toUpperCase().trim(),reqId=++_liteReqId;
+  _liteSymbol=s;
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
@@ -6523,8 +6525,10 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       ?(window.__liteChartPrefetch=null,await _pf.promise)
       :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
     if(!r.ok)throw new Error('vndirect_unavailable');
+    if(reqId!==_liteReqId)return;
     const j=await r.json();
-    _liteSymbol=s;setLiteTf(j.timeframe||_liteTf);
+    if(reqId!==_liteReqId)return;
+    setLiteTf(j.timeframe||_liteTf);
     _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
     _lgUpdateChartFavBtn();
     if(!skipPopoutSync){
@@ -6575,7 +6579,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
 const LITE_CHART_AUTOREFRESH_SEC=5;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
-  if(_liteQuietRefreshing)return;                          // lượt trước chưa xong, khỏi chồng lượt
+  if(_liteChartLoading||_liteQuietRefreshing)return;                          // đang load mã mới hoặc lượt trước chưa xong
   if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;
   if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return;
   if(document.hidden)return;
@@ -8840,6 +8844,8 @@ function _lgNextSortMode(g){
 function _lgSortSyms(syms,g){
   return _sortSymsByMode(syms,_lgSortModeFor(g));
 }
+let _lgOffTimer=null;
+function _lgScheduleOffTimer(){clearTimeout(_lgOffTimer);_lgOffTimer=setTimeout(()=>{_lgActiveSym='';DOM.lgList?.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));},5000);}
 function _lgSymRow(sym,draggable,g=null){
   const{price,pctStr,color}=_symDisplayFields(sym);
   const isStrength=!!(g&&g.isStrength);
@@ -8847,7 +8853,7 @@ function _lgSymRow(sym,draggable,g=null){
   const rightValue=isStrength&&Number.isFinite(Number(rs))?Math.round(Number(rs)):price;
   const starred=LG_FAVORITES.includes(sym);
   const isFollow=FOLLOW.includes(sym);
-  return `<div class="lg-sym-item${isFollow?' lg-follow':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
+  return `<div class="lg-sym-item${isFollow?' lg-follow':''}${sym===_lgActiveSym?' on':''}" data-sym="${sym}"${draggable?' draggable="true"':''}>`
     +`<span class="lg-star${starred?' on':''}" data-star="${sym}" title="Thêm/bỏ khỏi Favorite">${starred?'★':'☆'}</span>`
     +`<span class="lg-sym-name">${sym}</span>`
     +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
@@ -8930,10 +8936,11 @@ DOM.lgList?.addEventListener('click',e=>{
   if(item){
     _lgActiveSym=item.dataset.sym;
     loadLiteChart(_lgActiveSym);
-    DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));
+    DOM.lgList.querySelectorAll('.lg-sym-item').forEach(el=>el.classList.toggle('on',el.dataset.sym===_lgActiveSym));
+    _lgScheduleOffTimer();
   }
 });
-DOM.lgList?.addEventListener('mousemove',e=>{if(e.movementX===0&&e.movementY===0)return;document.body.classList.remove('key-nav');if(e.target.closest('.lg-sym-item'))DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
+DOM.lgList?.addEventListener('mousemove',e=>{if(e.movementX===0&&e.movementY===0)return;document.body.classList.remove('key-nav');});
 DOM.lgList?.addEventListener('mouseleave',()=>{DOM.lgList.querySelectorAll('.lg-sym-item.on').forEach(el=>el.classList.remove('on'));});
 DOM.lgList?.addEventListener('dragstart',e=>{
   const ghdr=e.target.closest('.lg-ghdr[draggable="true"]');
@@ -9016,6 +9023,7 @@ document.addEventListener('keydown',e=>{
   if(next===cur&&cur!==-1)return;
   _lgActiveSym=items[next].dataset.sym;
   items.forEach((el,i)=>el.classList.toggle('on',i===next));
+  _lgScheduleOffTimer();
   const el=items[next],relTop=el.offsetTop-DOM.lgList.offsetTop,h=el.offsetHeight;
   if(relTop-h*2.5<DOM.lgList.scrollTop)DOM.lgList.scrollTop=Math.max(0,relTop-h*2.5);
   else if(relTop+h*2>DOM.lgList.scrollTop+DOM.lgList.clientHeight)DOM.lgList.scrollTop=relTop+h*2-DOM.lgList.clientHeight;
