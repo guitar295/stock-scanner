@@ -259,6 +259,12 @@ def _hmap_col_height(groups):
         h += (1 + len(g["syms"])) * HMAP_CELL_H
     return h + HMAP_MARGIN
 
+def _parse_ssi_trade_date(it: dict) -> str:
+    raw = str(it.get('tradingDate') or it.get('date') or '').strip()
+    if len(raw) == 8 and raw.isdigit():
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    return raw[:10] if len(raw) >= 10 else datetime.now(TZ_VN).strftime('%Y-%m-%d')
+
 def fetch_heatmap_data() -> tuple:
     need = _HEATMAP_NEED_SYMBOLS
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
@@ -269,23 +275,20 @@ def fetch_heatmap_data() -> tuple:
             sym = it.get('stockSymbol')
             if not sym:
                 continue
-            matched = float(it.get('matchedPrice') or 0)
-            ref_p = float(it.get('refPrice') or 0)
-            total_value = float(it.get('nmTotalTradedValue') or 0)
+            matched, ref_p = float(it.get('matchedPrice') or 0), float(it.get('refPrice') or 0)
             close = matched if matched > 0 else ref_p
             pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
             o = float(it.get('openPrice') or close)
             result[sym.upper().strip()] = {
-                "price": close, "pct": pct, "total_value": total_value, "open": o,
-                "high": max(float(it.get('highest') or close), o, close),
-                "low":  min(float(it.get('lowest') or close), o, close),
-                "volume": float(it.get('nmTotalTradedQty') or 0)
+                "price": close, "pct": pct, "total_value": float(it.get('nmTotalTradedValue') or 0),
+                "open": o, "high": max(float(it.get('highest') or close), o, close),
+                "low": min(float(it.get('lowest') or close), o, close),
+                "volume": float(it.get('nmTotalTradedQty') or 0), "date": _parse_ssi_trade_date(it)
             }
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
 
     if not result:
-        # Fallback tự động qua Cache/DChart khi mất kết nối
         with cache_lock:
             for sym in need:
                 df = history_cache.get(sym)
@@ -297,12 +300,12 @@ def fetch_heatmap_data() -> tuple:
                         "total_value": round(close * vol * 1000, 0),
                         "open": float(df.iloc[-1].get('open', close)),
                         "high": float(df.iloc[-1].get('high', close)),
-                        "low": float(df.iloc[-1].get('low', close)), "volume": vol
+                        "low": float(df.iloc[-1].get('low', close)), "volume": vol,
+                        "date": df.index[-1].strftime('%Y-%m-%d')
                     }
         print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
 
-    ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
-    return result, ts_str
+    return result, datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
 
 
 def fetch_extra_quotes(syms: list) -> dict:
@@ -316,21 +319,19 @@ def fetch_extra_quotes(syms: list) -> dict:
             sym = it.get('stockSymbol')
             if not sym:
                 continue
-            matched = float(it.get('matchedPrice') or 0)
-            ref_p = float(it.get('refPrice') or 0)
+            matched, ref_p = float(it.get('matchedPrice') or 0), float(it.get('refPrice') or 0)
             close = matched if matched > 0 else ref_p
             pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
             o = float(it.get('openPrice') or close)
             result[sym.upper().strip()] = {
                 "price": close, "pct": pct, "open": o,
                 "high": max(float(it.get('highest') or close), o, close),
-                "low":  min(float(it.get('lowest') or close), o, close),
-                "volume": float(it.get('nmTotalTradedQty') or 0)
+                "low": min(float(it.get('lowest') or close), o, close),
+                "volume": float(it.get('nmTotalTradedQty') or 0), "date": _parse_ssi_trade_date(it)
             }
     except Exception as e:
         print(f"  ❌ fetch_extra_quotes lỗi: {e}")
 
-    # Fallback qua cache nếu Priceboard lỗi
     if not result:
         with cache_lock:
             for sym in syms:
@@ -343,7 +344,8 @@ def fetch_extra_quotes(syms: list) -> dict:
                         "open": float(df.iloc[-1].get('open', close)),
                         "high": float(df.iloc[-1].get('high', close)),
                         "low": float(df.iloc[-1].get('low', close)),
-                        "volume": float(df.iloc[-1]['volume'])
+                        "volume": float(df.iloc[-1]['volume']),
+                        "date": df.index[-1].strftime('%Y-%m-%d')
                     }
     return result
 
@@ -1396,33 +1398,45 @@ def fetch_today_bar(symbol: str, current_date: date):
 
 def upsert_today_bar(df_hist, today_bar):
     bar_date = pd.Timestamp(today_bar.name).date()
-    new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
+    last_hist_date = df_hist.index[-1].date()
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
     
-    if df_hist.index[-1].date() == bar_date:
+    if last_hist_date == bar_date:
+        new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
         prev_row = df_hist.iloc[-1]
         new_row['high'] = max(prev_row['high'], new_row.iloc[-1]['high'])
         new_row['low'] = min(prev_row['low'], new_row.iloc[-1]['low'])
         return pd.concat([df_hist[ohlcv_cols].iloc[:-1], new_row])
     
+    if bar_date < last_hist_date:
+        return df_hist
+    
+    prev = df_hist.iloc[-1]
+    if (float(today_bar.get('close', 0)) == float(prev['close']) and 
+        float(today_bar.get('open', 0)) == float(prev['open']) and 
+        float(today_bar.get('volume', 0)) == float(prev['volume'])):
+        return df_hist
+    
+    new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
     return pd.concat([df_hist[ohlcv_cols], new_row])
 
 def sync_heatmap_to_history(h_data: dict):
     """Được gọi từ dashboard_server mỗi khi heatmap lấy giá SSI 5s thành công.
     Ép thẳng giá mới vào history_cache để cập nhật realtime mượt mà."""
-    current_date = datetime.now(TZ_VN).date()
     now_ts = time.time()
     for symbol, row in h_data.items():
         if symbol not in cache_symbol_set:
             continue
         try:
+            bar_date_str = row.get('date')
+            bar_date = pd.Timestamp(bar_date_str).date() if bar_date_str else datetime.now(TZ_VN).date()
             today_bar = pd.Series({
                 'open': float(row.get('open', 0)),
                 'high': float(row.get('high', 0)),
                 'low': float(row.get('low', 0)),
                 'close': float(row.get('price', 0)),
                 'volume': float(row.get('volume', 0))
-            }, name=pd.Timestamp(current_date))
+            }, name=pd.Timestamp(bar_date))
             
             with cache_lock:
                 if symbol in history_cache and history_cache[symbol] is not None and len(history_cache[symbol]) >= 60:

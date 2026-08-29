@@ -1378,6 +1378,11 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     if not final_bars:
         return None, "no_data_after_resample"
 
+    if target_tf == "1D" and len(final_bars) >= 2:
+        b1, b2 = final_bars[-2], final_bars[-1]
+        if b1["time"] == b2["time"] or (b1["close"] == b2["close"] and b1["open"] == b2["open"] and b1["volume"] == b2["volume"]):
+            final_bars.pop()
+
     vpa_flags_by_date = {}
     signal_info, history_signals = None, []
     if target_tf == "1D" and raw_bars and len(raw_bars) >= 30:
@@ -1450,6 +1455,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                                 "high": live_data.get("high"),
                                 "low": live_data.get("low"),
                                 "volume": live_data.get("volume"),
+                                "date": live_data.get("date"),
                                 "ts": now_ts_sec
                             }
                 except Exception as e:
@@ -1458,9 +1464,11 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     # Áp dụng dữ liệu live vào cây nến cuối cùng nếu có
     if live_data:
         last_b = final_bars[-1]
-        for k in ("open", "high", "low", "volume"):
-            if live_data.get(k) is not None: last_b[k] = live_data[k]
-        if live_data.get("price") is not None: last_b["close"] = live_data["price"]
+        live_d = live_data.get("date")
+        if not live_d or live_d == last_b["time"]:
+            for k in ("open", "high", "low", "volume"):
+                if live_data.get(k) is not None: last_b[k] = live_data[k]
+            if live_data.get("price") is not None: last_b["close"] = live_data["price"]
     # ------------------------------------------------
     
     for b in final_bars:
@@ -2422,6 +2430,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .signal-header-toggle{cursor:pointer;user-select:none}
 .momentum-box{display:none;border-top:1px solid var(--border);background:#fbfcff;padding:8px 16px}
 .momentum-box.on{display:block}
+.momentum-section + .momentum-section{margin-top:8px}
 .momentum-title{font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
 .momentum-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
 .strength-list{grid-template-columns:repeat(6,minmax(0,1fr))}
