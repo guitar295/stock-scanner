@@ -30,13 +30,11 @@ import os
 import re
 import tempfile
 from io import BytesIO
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 import pytz
 import json
 import threading
 import math
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 from PIL import Image, ImageDraw, ImageFont
 from dashboard_server import (
     start_dashboard,
@@ -52,26 +50,8 @@ from dashboard_server import (
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
 # =============================================================================
-# BƯỚC 2: CẤU HÌNH & NẠP BIẾN MÔI TRƯỜNG (.ENV)
+# BƯỚC 2: CẤU HÌNH
 # =============================================================================
-def _load_env_file():
-    for p in (os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'), os.path.expanduser('~/scanner/.env')):
-        if os.path.isfile(p):
-            try:
-                with open(p, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            k, v = line.split('=', 1)
-                            k, v = k.strip(), v.strip().strip('"').strip("'")
-                            if k and k not in os.environ:
-                                os.environ[k] = v
-                break
-            except Exception:
-                pass
-
-_load_env_file()
-
 TELEGRAM_BOT_TOKEN  = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID    = os.environ.get('TELEGRAM_CHAT_ID')
 MY_PERSONAL_CHAT_ID = os.environ.get('MY_PERSONAL_CHAT_ID')
@@ -1185,7 +1165,7 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
         try:
             o, h, l, c, v = float(opens[i]), float(highs[i]), float(lows[i]), float(closes[i]), float(vols[i])
             if all(math.isfinite(x) and x > 0 for x in (o, h, l, c)):
-                dt = datetime.fromtimestamp(times[i] + 25200, tz=timezone.utc).replace(tzinfo=None)
+                dt = datetime.utcfromtimestamp(times[i] + 25200)
                 bars.append({"time": dt, "open": o, "high": h, "low": l, "close": c, "volume": max(0.0, v)})
         except: pass
     if not bars: return None
@@ -2316,147 +2296,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
         breakvol_today.clear()
         breakvol_today.update(current_breakvol)
 
-    try:
-        with cache_lock:
-            cache_snap = {k: v.copy() for k, v in history_cache.items() if v is not None}
-        _draw_pool.submit(
-            _async_export_static_data,
-            cache_snap,
-            dict(alerted_today),
-            dict(current_momentum),
-            dict(current_attent),
-            dict(current_breakvol),
-            signal_session_date
-        )
-    except Exception as e:
-        pass
-
     return new_signals
-
-def _async_export_static_data(cache_snap, alerted_snap, mom_snap, att_snap, brk_snap, session_date_val=None):
-    try:
-        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
-        charts_dir = os.path.join(out_dir, "charts")
-        os.makedirs(charts_dir, exist_ok=True)
-        now_dt = datetime.now(TZ_VN)
-        sess_str = session_date_val.strftime("%Y-%m-%d") if hasattr(session_date_val, 'strftime') else (str(session_date_val) if session_date_val else now_dt.strftime("%Y-%m-%d"))
-
-        try:
-            rs_scores = warm_rs_cache() if 'warm_rs_cache' in globals() else {}
-        except Exception:
-            rs_scores = {}
-
-        sig_list = []
-        for s, entry in alerted_snap.items():
-            stype = entry.get("signal") if isinstance(entry, dict) else entry
-            pct = entry.get("pct", 0) if isinstance(entry, dict) else 0
-            pr = entry.get("price", 0) if isinstance(entry, dict) else 0
-            emoji = SIGNAL_EMOJI.get(stype, "📌")
-            rs_val = rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None
-            sig_list.append({"symbol": s, "signal": stype, "label": stype, "pct": pct, "price": pr, "emoji": emoji, "rs": rs_val})
-
-        if not sig_list:
-            for s, df in cache_snap.items():
-                if df is None or len(df) < 60 or s in ("VNINDEX", "VN30"): continue
-                try:
-                    sig_name = detect_signal(df, 143000)
-                    if sig_name:
-                        last_r = df.iloc[-1]
-                        prev_r = df.iloc[-2] if len(df) > 1 else last_r
-                        pct = ((last_r["close"] - prev_r["close"]) / prev_r["close"]) * 100 if prev_r["close"] > 0 else 0
-                        emoji = SIGNAL_EMOJI.get(sig_name, "📌")
-                        rs_val = rs_scores.get(s.upper()) if isinstance(rs_scores, dict) else None
-                        sig_list.append({"symbol": s, "signal": sig_name, "label": sig_name, "pct": round(float(pct), 2), "price": round(float(last_r["close"]), 2), "emoji": emoji, "rs": rs_val})
-                except Exception:
-                    pass
-
-        mom_list = []
-        for sig in ("MACD_W", "MACD_M", "RTM"):
-            rows = []
-            for sym in sorted(mom_snap.keys()):
-                entry = mom_snap[sym]
-                sigs = entry.get("signals", []) if isinstance(entry, dict) else []
-                if sig not in sigs:
-                    continue
-                pct = entry.get("pct") if isinstance(entry, dict) else 0
-                rs_val = rs_scores.get(sym.upper()) if isinstance(rs_scores, dict) else None
-                rows.append({"symbol": sym, "signal": sig, "pct": pct, "rs": rs_val})
-            mom_list.extend(rows)
-        att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in att_snap.items()]
-        brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in brk_snap.items()]
-        strength_list = [
-            {"symbol": sym, "rs": rs}
-            for sym, rs in sorted(rs_scores.items(), key=lambda item: item[1], reverse=True)
-            if rs is not None and rs > 80
-        ] if isinstance(rs_scores, dict) else []
-
-        from dashboard_server import _rs_score_cache
-        rs_asof = _rs_score_cache.get("asof") if isinstance(_rs_score_cache, dict) else None
-        rs_count = len(rs_scores) if isinstance(rs_scores, dict) else 0
-
-        with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
-            json.dump({
-                "updated_at": now_dt.strftime("%H:%M:%S"),
-                "session_date": sess_str,
-                "count": len(sig_list),
-                "momentum_count": len(mom_list),
-                "strength_count": len(strength_list),
-                "rs_count": rs_count,
-                "rs_asof": rs_asof,
-                "signals": sig_list,
-                "momentum": mom_list,
-                "strength": strength_list,
-                "attent": att_list,
-                "breakvol": brk_list
-            }, f, ensure_ascii=False)
-
-        hmap_data = {}
-        for sym, df in cache_snap.items():
-            if df is None or len(df) < 5: continue
-            last_r, prev_r = df.iloc[-1], df.iloc[-2]
-            pct = ((last_r["close"] - prev_r["close"]) / prev_r["close"]) * 100 if prev_r["close"] > 0 else 0
-            hmap_data[sym] = {"price": round(float(last_r["close"]), 2), "pct": round(float(pct), 2), "volume": float(last_r["volume"])}
-
-            df_sub = df.tail(250)
-            candles, volume = [], []
-            v_list = df_sub["volume"].tolist()
-            for idx, r in enumerate(df_sub.itertuples()):
-                t_str = r.Index.strftime("%Y-%m-%d") if hasattr(r.Index, "strftime") else str(r.Index)[:10]
-                o, h, l, c, v = float(r.open), float(r.high), float(r.low), float(r.close), float(r.volume)
-                is_up = c >= o
-                v_slice = v_list[max(0, idx - 20):idx] if idx > 0 else []
-                vma20 = (sum(v_slice) / len(v_slice)) if v_slice else v
-                v_col = "#00e676" if is_up and v >= vma20 * 2 else ("#ff1744" if not is_up and v >= vma20 * 2 else ("#26a69a" if is_up else "#ef5350"))
-                candles.append({"time": t_str, "open": round(o, 2), "high": round(h, 2), "low": round(l, 2), "close": round(c, 2)})
-                volume.append({"time": t_str, "value": v, "color": v_col})
-
-            rs_val = rs_scores.get(sym.upper()) if isinstance(rs_scores, dict) else None
-            chart_dict = {"symbol": sym, "timeframe": "1D", "candles": candles, "volume": volume, "has_more": True}
-            if rs_val is not None:
-                chart_dict["rs"] = rs_val
-
-            with open(os.path.join(charts_dir, f"{sym.upper()}.json"), "w", encoding="utf-8") as f:
-                json.dump(chart_dict, f, ensure_ascii=False)
-
-        with open(os.path.join(out_dir, "heatmap.json"), "w", encoding="utf-8") as f:
-            json.dump({"data": hmap_data, "updated_at": now_dt.strftime("%H:%M:%S")}, f, ensure_ascii=False)
-
-        with open(os.path.join(out_dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({
-                "signal_ttl_sec": 30, "market_health_ttl_sec": 1800,
-                "session_morning_start": "09:00:00", "session_morning_end": "11:30:00",
-                "session_afternoon_start": "13:00:00", "session_afternoon_end": "15:00:00"
-            }, f, ensure_ascii=False)
-
-        try:
-            mh_data = compute_market_health_index()
-            if mh_data and isinstance(mh_data, dict):
-                with open(os.path.join(out_dir, "market_health.json"), "w", encoding="utf-8") as f:
-                    json.dump({"ok": True, "updated_at": int(time.time()), **mh_data}, f, ensure_ascii=False)
-        except Exception:
-            pass
-    except Exception:
-        pass
 
 # =============================================================================
 # BƯỚC 8B: PARSE LỆNH CHART
@@ -3068,14 +2908,9 @@ def telegram_listener(stop_event: threading.Event):
 # =============================================================================
 # BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
 # Lưu/đọc trạng thái tín hiệu đã gửi (alerted_today, momentum...) qua restart
-_DEFAULT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal")
-_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
-if _env_data_dir and os.path.isdir(_env_data_dir) and _env_data_dir != "/data/trade-journal":
-    _SIGNAL_STATE_DIR = _env_data_dir
-else:
-    _SIGNAL_STATE_DIR = _DEFAULT_DATA_DIR
-    os.makedirs(_SIGNAL_STATE_DIR, exist_ok=True)
-
+_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
+if not os.path.isdir(_SIGNAL_STATE_DIR):
+    _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
 SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 _signal_state_lock = threading.Lock()
 
@@ -3174,82 +3009,8 @@ if __name__ == '__main__':
         sync_heatmap_fn   = sync_heatmap_to_history,
     )
 
-    try:
-        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
-        os.makedirs(out_dir, exist_ok=True)
-        from dashboard_server import _rs_score_cache, _market_health_cache
-        rs_disk = _rs_score_cache.get("scores", {}) if isinstance(_rs_score_cache, dict) else {}
-        mh_disk = _market_health_cache.get("data", {}) if isinstance(_market_health_cache, dict) else {}
-
-        now_dt = datetime.now(TZ_VN)
-        sig_list = []
-        for s, entry in (alerted_today or {}).items():
-            stype = entry.get("signal") if isinstance(entry, dict) else entry
-            pct = entry.get("pct", 0) if isinstance(entry, dict) else 0
-            pr = entry.get("price", 0) if isinstance(entry, dict) else 0
-            emoji = SIGNAL_EMOJI.get(stype, "📌")
-            rs_val = rs_disk.get(s.upper())
-            sig_list.append({"symbol": s, "signal": stype, "label": stype, "pct": pct, "price": pr, "emoji": emoji, "rs": rs_val})
-
-        mom_list = []
-        for sig in ("MACD_W", "MACD_M", "RTM"):
-            rows = []
-            for sym in sorted((momentum_today or {}).keys()):
-                entry = (momentum_today or {})[sym]
-                sigs = entry.get("signals", []) if isinstance(entry, dict) else []
-                if sig not in sigs:
-                    continue
-                pct = entry.get("pct") if isinstance(entry, dict) else 0
-                rs_val = rs_disk.get(sym.upper()) if isinstance(rs_disk, dict) else None
-                rows.append({"symbol": sym, "signal": sig, "pct": pct, "rs": rs_val})
-            mom_list.extend(rows)
-        att_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (attent_today or {}).items()]
-        brk_list = [{"symbol": s, "pct": d.get("pct", 0)} for s, d in (breakvol_today or {}).items()]
-        strength_list = [
-            {"symbol": sym, "rs": rs}
-            for sym, rs in sorted(rs_disk.items(), key=lambda item: item[1], reverse=True)
-            if rs is not None and rs > 80
-        ] if isinstance(rs_disk, dict) else []
-
-        with open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8") as f:
-            json.dump({
-                "updated_at": now_dt.strftime("%H:%M:%S"),
-                "session_date": signal_session_date.strftime("%Y-%m-%d") if signal_session_date else now_dt.strftime("%Y-%m-%d"),
-                "count": len(sig_list),
-                "momentum_count": len(mom_list),
-                "strength_count": len(strength_list),
-                "rs_count": len(rs_disk) if isinstance(rs_disk, dict) else 0,
-                "rs_asof": _rs_score_cache.get("asof") if isinstance(_rs_score_cache, dict) else None,
-                "signals": sig_list,
-                "momentum": mom_list,
-                "strength": strength_list,
-                "attent": att_list,
-                "breakvol": brk_list
-            }, f, ensure_ascii=False)
-
-        if mh_disk and isinstance(mh_disk, dict) and mh_disk.get("ok"):
-            with open(os.path.join(out_dir, "market_health.json"), "w", encoding="utf-8") as f:
-                json.dump({"ok": True, "updated_at": int(time.time()), **mh_disk}, f, ensure_ascii=False)
-
-        with open(os.path.join(out_dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({
-                "signal_ttl_sec": 30, "market_health_ttl_sec": 1800,
-                "session_morning_start": "09:00:00", "session_morning_end": "11:30:00",
-                "session_afternoon_start": "13:00:00", "session_afternoon_end": "15:00:00"
-            }, f, ensure_ascii=False)
-        print("⚡ [Khởi động] Đã nạp & xuất tức thì dữ liệu có sẵn từ Cache đĩa (Signals, RS, Health)!")
-    except Exception as e:
-        print(f"⚠️ [Khởi động] Lỗi xuất cache ban đầu: {e}")
-
     print("\n🔧 Đang load cache lịch sử lần đầu...")
     build_history_cache(symbols_to_cache, last_run_date)
-    try:
-        print("💾 Đang xuất dữ liệu tĩnh ban đầu cho Cloudflare Pages (static_data)...")
-        with cache_lock:
-            c_snap = {k: v.copy() for k, v in history_cache.items() if v is not None}
-        _async_export_static_data(c_snap, dict(alerted_today), dict(momentum_today), dict(attent_today or {}), dict(breakvol_today or {}), signal_session_date)
-    except Exception as e:
-        print(f"⚠️ Lỗi xuất dữ liệu ban đầu: {e}")
 
     print("\n" + "="*60)
     print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")

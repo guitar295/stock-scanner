@@ -28,20 +28,10 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 _GZIP_MIN_BYTES = 500
 
-@app.before_request
-def _handle_cors_preflight():
-    if request.method == "OPTIONS":
-        resp = Response()
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "*"
-        return resp
-
 @app.after_request
 def _static_cache_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
+    """File tĩnh /static cache cứng 7 ngày (đổi version lib thì đổi tên file).
+    Riêng icon/manifest đổi thường xuyên hơn nên dùng no-cache, revalidate qua ETag."""
     if request.path.startswith("/static/"):
         _ICON_STATIC_FILES = (
             "favicon-32.png", "favicon-16.png", "favicon.ico",
@@ -52,15 +42,7 @@ def _static_cache_headers(response):
             response.headers["Cache-Control"] = "no-cache"
         else:
             response.headers["Cache-Control"] = "public, max-age=604800, immutable"
-    elif request.path.startswith("/static_data/"):
-        response.headers["Cache-Control"] = "public, max-age=3"
     return response
-
-@app.route("/static_data/<path:filename>")
-def _serve_static_data_files(filename):
-    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_data")
-    os.makedirs(data_dir, exist_ok=True)
-    return send_from_directory(data_dir, filename)
 
 @app.route("/favicon.ico")
 def _serve_root_favicon():
@@ -145,16 +127,10 @@ _RS_LOOKBACK_WEIGHTS = ((10, 0.5), (20, 0.3), (50, 0.2))
 _RS_REQUIRED_BARS = max(days for days, _ in _RS_LOOKBACK_WEIGHTS) + 1
 _RS_SMOOTH_DAYS = 5
 _RS_RAW_TAIL_DAYS = 10
-_DEFAULT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "trade-journal")
-_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
-if _env_data_dir and os.path.isdir(_env_data_dir) and _env_data_dir != "/data/trade-journal":
-    _RS_CACHE_DIR = _env_data_dir
-else:
-    _RS_CACHE_DIR = _DEFAULT_DATA_DIR
-    os.makedirs(_RS_CACHE_DIR, exist_ok=True)
-
+_RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
 _RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
-_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "market_health.json"))
+
+_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
 
 def _save_market_health_to_disk():
     try:
@@ -497,7 +473,7 @@ _LITE_CHART_CACHE_TTL = 120
 _lite_chart_cache: dict = {}
 _lite_chart_cache_lock = threading.Lock()
 
-JOURNAL_DATA_DIR = Path(_RS_CACHE_DIR)
+JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
 JOURNAL_WARNING_PATH = JOURNAL_DATA_DIR / "market_warning.txt"
@@ -1483,17 +1459,15 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     if live_data:
         last_b = final_bars[-1]
         for k in ("open", "high", "low", "volume"):
-            if live_data.get(k) is not None:
-                last_b[k] = live_data[k]
-        if live_data.get("price") is not None:
-            last_b["close"] = live_data["price"]
+            if k in live_data: last_b[k] = live_data[k]
+        if "price" in live_data: last_b["close"] = live_data["price"]
     # ------------------------------------------------
     
     for b in final_bars:
         t_val = b["time"]
-        o, h, l, c, v = b.get("open"), b.get("high"), b.get("low"), b.get("close"), b.get("volume", 0)
+        o, h, l, c, v = b["open"], b["high"], b["low"], b["close"], b["volume"]
         candles.append({"time": t_val, "open": o, "high": h, "low": l, "close": c})
-        color = "#26a69a" if (c is not None and o is not None and c >= o) else "#ef5350"
+        color = "#26a69a" if c >= o else "#ef5350"
         flag = vpa_flags_by_date.get(t_val)
         if flag:
             color = _VPA_FLAG_COLOR.get(flag) or color
