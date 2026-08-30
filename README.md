@@ -50,10 +50,83 @@ echo "🎉🎉🎉 CÀI ĐẶT HỆ THỐNG VPS BAN ĐẦU HOÀN TẤT 100%!"
 ---
 
 ### 🔹 KHỐI 1B: Cài đặt cho MÁY MAC (macOS Native)
-Trên máy Mac, bạn chỉ cần cài đặt thư viện Python đúng 1 lần duy nhất:
+> [!NOTE]
+> **Thư mục chuẩn trên Mac:** Toàn bộ code đặt tại `~/Desktop/Dashboard_mac`.
+
+Khối lệnh này tự động:
+1. Cài đặt toàn bộ thư viện Python cần thiết trên Mac.
+2. Tạo sẵn cấu trúc thư mục `static/` và `data/trade-journal/` trong `~/Desktop/Dashboard_mac`.
+3. Tải thư viện biểu đồ Lightweight Charts nếu chưa có.
+4. Tạo sẵn ứng dụng **`Scanner Dashboard.app`** và **`Stop Scanner.app`** ngay trong thư mục để bạn kéo vào Dock.
 
 ```bash
-pip3 install pandas requests mplfinance pytz numpy matplotlib pillow flask
+pip3 install pandas requests mplfinance pytz numpy matplotlib pillow flask && \
+mkdir -p ~/Desktop/Dashboard_mac/static ~/Desktop/Dashboard_mac/data/trade-journal && \
+[ -f ~/Desktop/Dashboard_mac/static/lightweight-charts.min.js ] || curl -s -L "https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js" -o ~/Desktop/Dashboard_mac/static/lightweight-charts.min.js && \
+\
+echo "📦 Đang tạo ứng dụng Scanner Dashboard.app trên Mac..." && \
+mkdir -p ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/MacOS" ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/Resources" && \
+cat << 'EOF' > ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>launcher</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.scanner.dashboard</string>
+    <key>CFBundleName</key>
+    <string>Scanner Dashboard</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+EOF
+cat << 'EOF' > ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/MacOS/launcher"
+#!/bin/bash
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+PROJECT_DIR="$HOME/Desktop/Dashboard_mac"
+cd "$PROJECT_DIR" || exit 1
+if ! pgrep -f "python3.*scanner_full.py" > /dev/null; then
+    nohup python3 -u scanner_full.py > "$PROJECT_DIR/scanner.log" 2>&1 &
+    sleep 2
+fi
+open "http://localhost:8888"
+EOF
+chmod +x ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/MacOS/launcher" && \
+\
+mkdir -p ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/MacOS" ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/Resources" && \
+cat << 'EOF' > ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>launcher</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.scanner.stop</string>
+    <key>CFBundleName</key>
+    <string>Stop Scanner</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+EOF
+cat << 'EOF' > ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/MacOS/launcher"
+#!/bin/bash
+pkill -f "python3.*scanner_full.py" 2>/dev/null || true
+osascript -e 'display notification "Bot và Dashboard đã tắt thành công!" with title "Scanner Bot" sound name "Glass"'
+EOF
+chmod +x ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/MacOS/launcher" && \
+echo "🎉🎉🎉 CÀI ĐẶT MÔI TRƯỜNG MAC BAN ĐẦU HOÀN TẤT 100%!"
 ```
 
 ---
@@ -81,18 +154,21 @@ tail -n 25 ~/scanner/scanner.log
 
 ### 🔹 KHỐI 2B: Khởi động lại khi thay đổi code trên MÁY MAC
 
-* **Cách 1 (Chạy trực tiếp có xem Log):**
+* **Cách 1 (Bấm 1 chạm từ thanh Dock - Tiện nhất):**
+  - Chỉ cần click chuột vào biểu tượng **`Scanner Dashboard.app`** trên thanh Dock.
+
+* **Cách 2 (Chạy trực tiếp có xem Log trong Terminal):**
   ```bash
-  cd "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website" && \
+  cd ~/Desktop/Dashboard_mac && \
   pkill -f "python3.*scanner_full.py" 2>/dev/null || true && \
   python3 scanner_full.py
   ```
 
-* **Cách 2 (Chạy ngầm không cần mở Terminal):**
+* **Cách 3 (Chạy ngầm qua Terminal):**
   ```bash
-  cd "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website" && \
+  cd ~/Desktop/Dashboard_mac && \
   pkill -f "python3.*scanner_full.py" 2>/dev/null || true && \
-  nohup python3 scanner_full.py > scanner.log 2>&1 &
+  nohup python3 -u scanner_full.py > scanner.log 2>&1 &
   ```
 
 ---
@@ -107,7 +183,7 @@ Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động 
   ```
 * **Trên Mac:**
   ```bash
-  tail -f "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website/scanner.log"
+  tail -f ~/Desktop/Dashboard_mac/scanner.log
   ```
 > *(Bấm tổ hợp phím `Ctrl + C` để đóng màn hình xem log).*
 
@@ -120,7 +196,7 @@ Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động 
   ```
 * **Trên Mac:**
   ```bash
-  tail -n 50 "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website/scanner.log"
+  tail -n 50 ~/Desktop/Dashboard_mac/scanner.log
   ```
 
 ---
@@ -148,7 +224,8 @@ Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động 
   ```
 * **Trên Mac:**
   ```bash
-  # Tắt bot
+  # Cách 1: Click đúp vào icon "Stop Scanner.app"
+  # Cách 2 (Dòng lệnh):
   pkill -f "python3.*scanner_full.py"
   ```
 
