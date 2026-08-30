@@ -231,3 +231,10 @@ Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động 
 
 ---
 
+## 🌐 CẤU HÌNH CLOUDFLARE ĐỒNG BỘ
+
+| Thành phần | Địa chỉ cấu hình | Mục đích |
+| :--- | :--- | :--- |
+| **Cloudflare Pages** | `https://scanner.guitar295.xx.kg` | Giao diện web chính cho người dùng truy cập |
+| **Cloudflare Tunnel** | `https://api.guitar295.xx.kg` $\rightarrow$ `localhost:8888` | Cổng truyền dữ liệu thời gian thực từ VPS |
+
