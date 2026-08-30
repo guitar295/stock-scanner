@@ -1138,29 +1138,27 @@ def _is_market_session() -> bool:
     from datetime import time as _time
     return (_time(9, 0) <= t <= _time(11, 35)) or (_time(13, 0) <= t <= _time(15, 5))
 
+_heatmap_fetch_lock = threading.Lock()
+
 def _heatmap_poll_interval() -> int:
     return HEATMAP_LIVE_TTL_SEC if _is_market_session() else HEATMAP_TTL_SEC
 
 def _bg_fetch_heatmap():
-    if not _heatmap_lock.acquire(blocking=False):
-        return
+    if not _heatmap_fetch_lock.acquire(blocking=False): return
     try:
-        fn = _fetch_heatmap_fn or _default_fetch_heatmap_data
-        data, ts_str = fn()
-        _heatmap_cache["updated_at"] = time.time()
+        data, ts = (_fetch_heatmap_fn or _default_fetch_heatmap_data)()
+        with _heatmap_lock:
+            _heatmap_cache["updated_at"] = time.time()
+            if data and isinstance(data, dict):
+                _heatmap_cache["data"].update(data)
+                if ts: _heatmap_cache["ts"] = ts
         if data and isinstance(data, dict):
-            if "data" not in _heatmap_cache or not isinstance(_heatmap_cache["data"], dict):
-                _heatmap_cache["data"] = {}
-            _heatmap_cache["data"].update(data)
-            _heatmap_cache["ts"]   = ts_str or _heatmap_cache.get("ts", "")
-            if _sync_heatmap_fn:
-                _sync_heatmap_fn(data)
+            if _sync_heatmap_fn: _sync_heatmap_fn(data)
             _save_heatmap_to_disk()
     except Exception as e:
         print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
     finally:
-        _heatmap_lock.release()
-
+        _heatmap_fetch_lock.release()
 @app.route("/api/heatmap")
 def api_heatmap():
     now = time.time()
