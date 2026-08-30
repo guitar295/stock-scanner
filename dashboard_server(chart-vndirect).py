@@ -1,7 +1,7 @@
 """
 DASHBOARD SERVER
 """
-
+from __future__ import annotations
 from flask import Flask, jsonify, Response, request, session, send_from_directory
 from functools import wraps
 from io import BytesIO
@@ -88,6 +88,22 @@ def _gzip_response(response):
         response.headers["Vary"] = (vary + ", Accept-Encoding").lstrip(", ")
     return response
 
+@app.after_request
+def _cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    return response
+
+@app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
+@app.route("/<path:path>", methods=["OPTIONS"])
+def handle_options(path=""):
+    resp = Response()
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    return resp
+
 _get_alerted_today = None
 _get_momentum_today = None
 _get_attent_today = None
@@ -127,10 +143,20 @@ _RS_LOOKBACK_WEIGHTS = ((10, 0.5), (20, 0.3), (50, 0.2))
 _RS_REQUIRED_BARS = max(days for days, _ in _RS_LOOKBACK_WEIGHTS) + 1
 _RS_SMOOTH_DAYS = 5
 _RS_RAW_TAIL_DAYS = 10
-_RS_CACHE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
-_RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_RS_CACHE_DIR, "rs_score_cache.json"))
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA_DIR = os.path.join(_BASE_DIR, "data", "trade-journal")
+_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
+if _env_data_dir and (_env_data_dir != "/data/trade-journal" or os.path.exists("/data/trade-journal")):
+    _DASHBOARD_DATA_DIR = _env_data_dir
+else:
+    _DASHBOARD_DATA_DIR = _DEFAULT_DATA_DIR
+os.makedirs(_DASHBOARD_DATA_DIR, exist_ok=True)
 
-_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", "/data/trade-journal/market_health.json")
+_RS_CACHE_DIR = _DASHBOARD_DATA_DIR
+_RS_SCORE_CACHE_FILE = os.environ.get("RS_SCORE_CACHE_FILE", os.path.join(_DASHBOARD_DATA_DIR, "rs_score_cache.json"))
+_MARKET_HEALTH_CACHE_FILE = os.environ.get("MARKET_HEALTH_CACHE_FILE", os.path.join(_DASHBOARD_DATA_DIR, "market_health.json"))
+_HEATMAP_CACHE_FILE = os.path.join(_DASHBOARD_DATA_DIR, "heatmap.json")
+_MARKET_BUNDLE_FILE = os.path.join(_DASHBOARD_DATA_DIR, "market_bundle.json")
 
 def _save_market_health_to_disk():
     try:
@@ -158,28 +184,45 @@ def _load_market_health_from_disk():
 
 _load_market_health_from_disk()
 
+def _save_heatmap_to_disk():
+    try:
+        tmp_path = _HEATMAP_CACHE_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(_heatmap_cache, f, ensure_ascii=False, separators=(',', ':'))
+        os.replace(tmp_path, _HEATMAP_CACHE_FILE)
+    except Exception:
+        pass
+
+def _load_heatmap_from_disk():
+    try:
+        if os.path.isfile(_HEATMAP_CACHE_FILE):
+            with open(_HEATMAP_CACHE_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            if isinstance(saved, dict) and saved.get("data"):
+                _heatmap_cache["data"] = saved["data"]
+                _heatmap_cache["updated_at"] = saved.get("updated_at", 0)
+                _heatmap_cache["ts"] = saved.get("ts", "")
+                print(f"  [Dashboard] ✅ Nạp lại HEATMAP cache từ đĩa: {len(saved['data'])} mã.")
+    except Exception:
+        pass
+
+_load_heatmap_from_disk()
+
 
 def _refresh_market_health(force: bool = False) -> dict:
-    """Tính lại HEALTH và ghi vào _market_health_cache."""
-    if not _fetch_market_health_fn:
-        return _market_health_cache["data"]
-    now = time.time()
-    with _market_health_lock:
-        stale = now - _market_health_cache["updated_at"] > MARKET_HEALTH_TTL_SEC
-        if not (force or stale):
-            return _market_health_cache["data"]
+    """Chỉ đọc dữ liệu JSON/RAM trả về tức thì. Nếu force=True thì tính ép buộc."""
+    if force and _fetch_market_health_fn:
         try:
             data = _fetch_market_health_fn()
-            if data.get("ok"):
-                _market_health_cache["data"] = data
-                _market_health_cache["updated_at"] = time.time()
-                _market_health_cache["pending_refresh"] = False
-                _save_market_health_to_disk()
-            else:
-                _market_health_cache["pending_refresh"] = True
-        except Exception as e:
-            print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
-            _market_health_cache["pending_refresh"] = True
+            with _market_health_lock:
+                if data and data.get("ok"):
+                    _market_health_cache["data"] = data
+                    _market_health_cache["updated_at"] = time.time()
+                    _market_health_cache["pending_refresh"] = False
+                    _save_market_health_to_disk()
+        except Exception:
+            pass
+    with _market_health_lock:
         return _market_health_cache["data"]
 
 
@@ -201,7 +244,7 @@ def _rs_universe_set():
         return None
 
 
-def _filter_rs_scores(scores: dict, rs_universe: set | None = None) -> dict:
+def _filter_rs_scores(scores: dict, rs_universe=None) -> dict:
     if not isinstance(scores, dict):
         return {}
     if rs_universe is None:
@@ -473,7 +516,7 @@ _LITE_CHART_CACHE_TTL = 120
 _lite_chart_cache: dict = {}
 _lite_chart_cache_lock = threading.Lock()
 
-JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
+JOURNAL_DATA_DIR = Path(_DASHBOARD_DATA_DIR)
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
 JOURNAL_WARNING_PATH = JOURNAL_DATA_DIR / "market_warning.txt"
@@ -974,10 +1017,13 @@ def api_signals():
     for idx, (sym, entry) in enumerate(alerted.items()):
         sig = entry["signal"] if isinstance(entry, dict) else entry
         pct = entry.get("pct") if isinstance(entry, dict) else None
+        state = entry.get("state", "ALIVE") if isinstance(entry, dict) else "ALIVE"
+        first_seen = entry.get("first_seen") if isinstance(entry, dict) else None
         emoji = _signal_emoji.get(sig, "📌")
         rank  = _signal_rank.get(sig, 0)
         result.append(_attach_rs({"symbol": sym, "signal": sig, "emoji": emoji,
                                   "rank": rank, "order": idx, "pct": pct,
+                                  "state": state, "first_seen": first_seen,
                                   "price": entry.get("price") if isinstance(entry, dict) else None}, rs_scores))
     result.sort(key=lambda x: (x["rank"], x["order"]), reverse=True)
     momentum_result = []
@@ -1092,30 +1138,40 @@ def _is_market_session() -> bool:
     from datetime import time as _time
     return (_time(9, 0) <= t <= _time(11, 35)) or (_time(13, 0) <= t <= _time(15, 5))
 
+_heatmap_fetch_lock = threading.Lock()
+
 def _heatmap_poll_interval() -> int:
     return HEATMAP_LIVE_TTL_SEC if _is_market_session() else HEATMAP_TTL_SEC
 
+def _bg_fetch_heatmap():
+    if not _heatmap_fetch_lock.acquire(blocking=False): return
+    try:
+        data, ts = (_fetch_heatmap_fn or _default_fetch_heatmap_data)()
+        with _heatmap_lock:
+            _heatmap_cache["updated_at"] = time.time()
+            if data and isinstance(data, dict):
+                _heatmap_cache["data"].update(data)
+                if ts: _heatmap_cache["ts"] = ts
+        if data and isinstance(data, dict):
+            if _sync_heatmap_fn: _sync_heatmap_fn(data)
+            _save_heatmap_to_disk()
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
+    finally:
+        _heatmap_fetch_lock.release()
 @app.route("/api/heatmap")
 def api_heatmap():
     now = time.time()
+    ttl = _heatmap_poll_interval() / 2.0
+    if now - _heatmap_cache["updated_at"] > ttl:
+        threading.Thread(target=_bg_fetch_heatmap, daemon=True).start()
     with _heatmap_lock:
-        fn = _fetch_heatmap_fn or _default_fetch_heatmap_data
-        ttl = _heatmap_poll_interval() / 2.0
-        if now - _heatmap_cache["updated_at"] > ttl:
-            try:
-                data, ts_str = fn()
-                if data:
-                    _heatmap_cache["data"] = data
-                    _heatmap_cache["ts"]   = ts_str
-                    _heatmap_cache["updated_at"] = time.time()
-                    if _sync_heatmap_fn:
-                        _sync_heatmap_fn(data)
-            except Exception as e:
-                print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
         snap_time = _heatmap_cache["updated_at"]
+        data = _heatmap_cache["data"]
+        ts = _heatmap_cache["ts"]
     return jsonify({
-        "data":      _json_safe(_heatmap_cache["data"]),
-        "timestamp": _heatmap_cache["ts"],
+        "data":      _json_safe(data),
+        "timestamp": ts,
         "cached_age": int(now - snap_time),
     })
 
@@ -1287,8 +1343,11 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                     df_sub = df_cached.tail(limit)
                     raw_bars = []
                     for row in df_sub.itertuples():
+                        idx_dt = row.Index
+                        t_str = idx_dt.strftime("%Y-%m-%d") if hasattr(idx_dt, 'strftime') else str(idx_dt)[:10]
                         raw_bars.append({
-                            "t": int(row.Index.timestamp()),
+                            "t": int(idx_dt.timestamp()),
+                            "time_str": t_str,
                             "open": float(row.open), "high": float(row.high),
                             "low": float(row.low), "close": float(row.close),
                             "volume": float(row.volume)
@@ -1367,7 +1426,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     else:
         final_bars = []
         for bar in raw_bars:
-            dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
+            dt_str = bar.get("time_str") or time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
             final_bars.append({
                 "time": dt_str,
                 "open": bar["open"], "high": bar["high"], "low": bar["low"],
@@ -1385,7 +1444,8 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
 
     vpa_flags_by_date = {}
     signal_info, history_signals = None, []
-    if target_tf == "1D" and raw_bars and len(raw_bars) >= 30:
+    has_enough_bars = (df_cached is not None and len(df_cached) >= 30) or (raw_bars and len(raw_bars) >= 30)
+    if target_tf == "1D" and has_enough_bars:
         try:
             if df_cached is not None:
                 shared_df = df_cached
@@ -1971,8 +2031,16 @@ def api_journal_delete_image(image_id):
     except Exception:
         pass
 
-        pass
-    return jsonify({"ok": True})
+@app.route("/data/<path:filename>")
+def serve_data_static(filename):
+    """Phục vụ trực tiếp các file JSON tĩnh từ scanner/data/trade-journal/ cho Cloudflare Pages & Dashboard."""
+    file_path = os.path.join(_DASHBOARD_DATA_DIR, filename)
+    if not os.path.isfile(file_path):
+        return jsonify({"error": "not_found"}), 404
+    resp = send_from_directory(_DASHBOARD_DATA_DIR, filename, mimetype="application/json")
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 @app.route("/")
 def index():
@@ -4319,10 +4387,25 @@ function updateLiteBigPrice(bar){
   const el=DOM.liteChartBigPrice;
   if(!el)return;
   if(!bar||!_liteChecked('signalgrp_on')||!_liteChecked('bigprice')){el.classList.remove('on');el.innerHTML='';return;}
-  const pct=Number.isFinite(bar.pct)?bar.pct:0;
-  const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)&&pct!==0
-    ?bar.close-bar.close/(1+pct/100):(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close-bar.open:0);
-  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
+  
+  let target = bar;
+  if (_liteSymbol && window._marketBundle && _marketBundle[_liteSymbol] && _marketBundle[_liteSymbol].candles && _marketBundle[_liteSymbol].candles.length > 1) {
+    const c1d = _marketBundle[_liteSymbol].candles;
+    let closePrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][4] : c1d[c1d.length-1].close;
+    let openPrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][1] : c1d[c1d.length-1].open;
+    const prevClose = Array.isArray(c1d[c1d.length-2]) ? c1d[c1d.length-2][4] : c1d[c1d.length-2].close;
+    const liveEntry = (window._lastHmapData||{})[_liteSymbol];
+    if (liveEntry && liveEntry.price) {
+      closePrice = liveEntry.price;
+      if (liveEntry.open) openPrice = liveEntry.open;
+    }
+    target = { close: closePrice, open: openPrice, pct: ((closePrice - prevClose) / prevClose) * 100 };
+  }
+
+  const pct=Number.isFinite(target.pct)?target.pct:0;
+  const change=Number.isFinite(target.close)&&Number.isFinite(target.pct)&&pct!==0
+    ?target.close-target.close/(1+pct/100):(Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close-target.open:0);
+  const up=Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close>=target.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const sign=pct>0?'+':(pct<0?'':'');
   const fc=_liteVolForecast;
@@ -4334,7 +4417,7 @@ function updateLiteBigPrice(bar){
   const ratioMA50=sameSym?fc.ratio_ma50:null;
   el.classList.add('on');
   el.innerHTML=
-    `<span class="bp-price" style="color:${col}">${fmtLiteNum(bar.close)}</span>`+
+    `<span class="bp-price" style="color:${col}">${fmtLiteNum(target.close)}</span>`+
     `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
 }
 function _liteCleanSym(v){
@@ -4398,7 +4481,8 @@ let _liteHistorySignals=[], _liteCurrentSignal=null;
 function _liteApplyBuySignal(sigOverride){
   if(!_liteCandle||!_liteData.length)return;
   if(sigOverride!==undefined)_liteCurrentSignal=sigOverride;
-  const sig=(_liteChecked('signalgrp_on')&&_liteChecked('signal'))?_liteCurrentSignal:null;
+  const isDead=_liteCurrentSignal&&_liteCurrentSignal.state==='DEAD';
+  const sig=(_liteChecked('signalgrp_on')&&_liteChecked('signal')&&!isDead)?_liteCurrentSignal:null;
   if(sig){
     let arrowColor='#9333ea';
     if(DOM.liteChartSignal){
@@ -4436,8 +4520,6 @@ function setLiteTf(tf){
 function applyLiteTf(tf,force=false){
   if(!tf)return false;
   if(!force&&_liteTf===tf)return true;
-  _liteSessionRange=null;
-  _liteUserInteractedZoom=false;
   setLiteTf(tf);
   loadLiteChart(_liteSymbol,0);
   return true;
@@ -6506,13 +6588,67 @@ function _liteRefreshVolumeTop(showVpaVol){
 // LITE_CHART_RETRY_MAX/DELAY: số lần và khoảng cách thử lại khi API lightweight_chart lỗi trước khi báo hết dữ liệu.
 const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
 let _liteReqId=0;
+let _marketBundle=null;
+async function _loadMarketBundle(retryCount=0){
+  try{
+    const j=await fetch('/data/market_bundle.json?t='+Date.now()).then(r=>r.json()).catch(()=>fetch('/api/market_bundle?t='+Date.now()).then(r=>r.json()));
+    if(j&&j.symbols&&Object.keys(j.symbols).length>0){
+      _marketBundle=j.symbols;
+      if(_liteSymbol&&(!_liteData||!_liteData.length)) loadLiteChart(_liteSymbol);
+      return;
+    }
+  }catch(e){}
+  if(retryCount < 8){
+    setTimeout(()=>_loadMarketBundle(retryCount+1), 600);
+  }
+}
+
+function _liteApplyChartPayload(j,s,skipPopoutSync){
+  setLiteTf(j.timeframe||_liteTf);
+  _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
+  _lgUpdateChartFavBtn();
+  if(!skipPopoutSync){
+    _chartSyncChannel?.postMessage({type:'CHART_POPOUT_SYNC',symbol:s});
+    if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
+  }
+  if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
+  _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
+  const rawCandles=j.candles||[];
+  _liteData=new Array(rawCandles.length);
+  for(let i=0;i<rawCandles.length;i++){
+    const raw=rawCandles[i];
+    const bar=Array.isArray(raw)?{time:raw[0],open:raw[1],high:raw[2],low:raw[3],close:raw[4]}:raw;
+    bar.pct=i>0?((bar.close-_liteData[i-1].close)/_liteData[i-1].close*100):0;
+    _liteData[i]=bar;
+  }
+  _liteDataByTime=new Map();for(let i=0;i<_liteData.length;i++){const b=_liteData[i];_liteDataByTime.set(liteTimeKey(b.time),b);}
+  _liteHasMore=j.has_more!==false;
+  _liteOldestDate=_liteData.length?liteTimeKey(_liteData[0].time):null;
+  _liteLoadingMore=false;
+  _liteVolumeData=(j.volume||[]).map(v=>Array.isArray(v)?{time:v[0],value:v[1],color:v[2]}:v);
+  _liteCandle.setData(_liteData);
+  _liteUpdateWhitespace(true);
+  setLiteRightOffset();
+  renderLiteIndicators(true);
+  if(DOM.liteChartInput)DOM.liteChartInput.value='';
+  DOM.liteChartEmpty.style.display='none';
+  updateLiteTitle(_liteData[_liteData.length-1]);
+  _liteVolForecast=j.vol_forecast||null;
+  updateLiteBigPrice(_liteData[_liteData.length-1]);
+  if(!_liteVolForecast)_liteFetchVolForecast(_liteSymbol);
+  _liteHistorySignals=j.history_signals||[];
+  const curSig=_sigTodayMap.get(s)||j.signal||null;
+  _liteCurrentSignal=curSig&&curSig.state!=='DEAD'?curSig:null;
+  _liteApplyBuySignal(_liteCurrentSignal);
+  loadLiteDrawings();resizeLiteDrawCanvas();
+}
+
 async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim(),reqId=++_liteReqId;
   _liteSymbol=s;
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  // Không xoá DOM.liteChartInput.value ở đây — trình duyệt có thể fire lại 'input'; ô input tự clear sau khi loadLiteChart xong.
   if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
@@ -6522,6 +6658,36 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   }
   _liteChartLoading=true;
   if(_liteDrawCtx&&DOM.liteChart)_liteDrawCtx.clearRect(0,0,DOM.liteChart.clientWidth,DOM.liteChart.clientHeight);
+
+  const tf=_liteTf||'1D';
+  if(_marketBundle&&_marketBundle[s]&&tf==='1D'){
+    const item=_marketBundle[s];
+    if(item.candles&&item.candles.length){
+      const rawCandles=[...(item.candles||[])];
+      const rawVolume=[...(item.volume||[])];
+      if(tf==='1D'){
+        const liveEntry=(window._lastHmapData||{})[s];
+        if(liveEntry&&liveEntry.price&&rawCandles.length){
+          const last=Array.isArray(rawCandles[rawCandles.length-1])?[...rawCandles[rawCandles.length-1]]:{...rawCandles[rawCandles.length-1]};
+          if(Array.isArray(last)){
+            last[4]=liveEntry.price;if(liveEntry.open)last[1]=liveEntry.open;if(liveEntry.high)last[2]=Math.max(last[2],liveEntry.price);if(liveEntry.low)last[3]=Math.min(last[3],liveEntry.price);
+          }else{
+            last.close=liveEntry.price;if(liveEntry.open)last.open=liveEntry.open;if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
+          }
+          rawCandles[rawCandles.length-1]=last;
+          if(liveEntry.volume&&rawVolume.length){
+            const lastVol=Array.isArray(rawVolume[rawVolume.length-1])?[...rawVolume[rawVolume.length-1]]:{...rawVolume[rawVolume.length-1]};
+            if(Array.isArray(lastVol))lastVol[1]=liveEntry.volume;else lastVol.value=liveEntry.volume;
+            rawVolume[rawVolume.length-1]=lastVol;
+          }
+        }
+      }
+      _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:tf==='1D'?(item.history_signals||[]):[],rs:item.rs,vol_forecast:item.vol_forecast||null},s,skipPopoutSync);
+      _liteChartLoading=false;redrawLiteDrawings();
+      return;
+    }
+  }
+
   try{
     const _pf=window.__liteChartPrefetch;
     const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
@@ -6531,43 +6697,11 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(reqId!==_liteReqId)return;
     const j=await r.json();
     if(reqId!==_liteReqId)return;
-    setLiteTf(j.timeframe||_liteTf);
-    _liteLSSet(LITE_LAST_SYMBOL_KEY,s);
-    _lgUpdateChartFavBtn();
-    if(!skipPopoutSync){
-      _chartSyncChannel?.postMessage({type:'CHART_POPOUT_SYNC',symbol:s});
-      if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
+    if(_marketBundle&&_marketBundle[s]){
+      j.vol_forecast=_marketBundle[s].vol_forecast;
+      j.rs=_marketBundle[s].rs;
     }
-	    if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
-	    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
-	    // Tính pct inline, gán trực tiếp — tránh tạo 450 object spread mới
-    const rawCandles=j.candles||[];
-    _liteData=new Array(rawCandles.length);
-    for(let i=0;i<rawCandles.length;i++){
-      const bar=rawCandles[i];
-      bar.pct=i>0?((bar.close-rawCandles[i-1].close)/rawCandles[i-1].close*100):0;
-      _liteData[i]=bar;
-    }
-    _liteDataByTime=new Map();for(let i=0;i<_liteData.length;i++){const b=_liteData[i];_liteDataByTime.set(liteTimeKey(b.time),b);}
-    // Khởi động trạng thái lazy-load: server báo has_more=true khi còn lịch sử cũ có thể load thêm
-    _liteHasMore=j.has_more!==false;
-    _liteOldestDate=_liteData.length?liteTimeKey(_liteData[0].time):null;
-    _liteLoadingMore=false;
-    _liteVolumeData=j.volume||[];
-    _liteCandle.setData(_liteData);
-    _liteUpdateWhitespace(true);
-    setLiteRightOffset();
-    renderLiteIndicators(true);
-    if(DOM.liteChartInput)DOM.liteChartInput.value='';
-    DOM.liteChartEmpty.style.display='none';
-    updateLiteTitle(_liteData[_liteData.length-1]);
-    _liteVolForecast=null;
-    updateLiteBigPrice(_liteData[_liteData.length-1]);
-    _liteFetchVolForecast(_liteSymbol);
-    _liteHistorySignals=j.history_signals||[];
-    _liteCurrentSignal=j.signal||null;
-    _liteApplyBuySignal(_liteCurrentSignal);
-    loadLiteDrawings();resizeLiteDrawCanvas();
+    _liteApplyChartPayload(j,s,skipPopoutSync);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
     updateLiteBigPrice(null);
@@ -6582,7 +6716,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
 const LITE_CHART_AUTOREFRESH_SEC=5;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
-  if(_liteChartLoading||_liteQuietRefreshing)return;                          // đang load mã mới hoặc lượt trước chưa xong
+  if(_liteChartLoading||_liteQuietRefreshing)return;
   if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;
   if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return;
   if(document.hidden)return;
@@ -6590,6 +6724,26 @@ async function _liteQuietRefreshChart(){
   const sym=_liteSymbol,tf=_liteTf;
   _liteQuietRefreshing=true;
   try{
+    const liveEntry=(window._lastHmapData||{})[sym];
+    if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
+      const last=_liteData[_liteData.length-1];
+      last.close=liveEntry.price;
+      if(liveEntry.open)last.open=liveEntry.open;
+      if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);
+      if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
+      _liteCandle.update(last);
+      if(_liteVolumeData&&_liteVolumeData.length){
+        const lastVol=_liteVolumeData[_liteVolumeData.length-1];
+        if(liveEntry.volume)lastVol.value=liveEntry.volume;
+        lastVol.color=_liteVolColorFor(lastVol,_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
+        _liteVolume.update(lastVol);
+      }
+      updateLiteTitle(_liteData[_liteData.length-1]);
+      updateLiteBigPrice(_liteData[_liteData.length-1]);
+    }
+    const curSig=_sigTodayMap.get(sym);
+    _liteApplyBuySignal(curSig&&curSig.state!=='DEAD'?curSig:null);
+
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
     const j=await r.json();
@@ -6597,6 +6751,14 @@ async function _liteQuietRefreshChart(){
     _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
     const key=liteTimeKey(rawBar.time);
+    const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
+    if(tf==='1D'&&liveEntry&&liveEntry.price){
+      rawBar.close=liveEntry.price;
+      if(liveEntry.open)rawBar.open=liveEntry.open;
+      if(liveEntry.high)rawBar.high=Math.max(rawBar.high,liveEntry.price);
+      if(liveEntry.low)rawBar.low=Math.min(rawBar.low,liveEntry.price);
+      if(rawVol&&liveEntry.volume)rawVol.value=liveEntry.volume;
+    }
     const isNewBar=!_liteDataByTime.has(key);
     const prevBar=isNewBar?_liteData[_liteData.length-1]:(_liteData.length>1?_liteData[_liteData.length-2]:null);
     rawBar.pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
@@ -6604,8 +6766,11 @@ async function _liteQuietRefreshChart(){
     if(isNewBar)_liteData.push(rawBar);else _liteData[_liteData.length-1]=rawBar;
     _liteDataByTime.set(key,rawBar);
     _liteCandle.update(rawBar);
-    const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
+      const curLastVol=_liteVolumeData.length?_liteVolumeData[_liteVolumeData.length-1]:null;
+      if(!isNewBar&&curLastVol&&(curLastVol.color==='#254fcc'||curLastVol.color==='#00ffe5')&&rawVol.color!=='#254fcc'&&rawVol.color!=='#00ffe5'){
+        rawVol.color=curLastVol.color;
+      }
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace();
@@ -6619,7 +6784,8 @@ async function _liteQuietRefreshChart(){
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(sym);
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
-    if(j.signal!==undefined)_liteCurrentSignal=j.signal;
+    const sigLive=_sigTodayMap.get(sym)||j.signal||null;
+    _liteCurrentSignal=sigLive&&sigLive.state!=='DEAD'?sigLive:null;
     _liteApplyBuySignal(_liteCurrentSignal);
   }catch(e){
   }finally{
@@ -6963,6 +7129,13 @@ function renderHeatmap(d){
     DOM.hmapGrid.innerHTML=parts.join('');
     window._lastHmapData={...d};
     return;
+  }
+
+  const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
+  const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
+  const tsCol=DOM.hmapGrid.querySelector('.hmap-col');
+  if(tsCol&&tsCol.querySelectorAll('.hmap-cell').length<tsSyms.length){
+    tsCol.innerHTML=mkGroup('TRADING STOCKS',tsSyms,d);
   }
 
   const old=Object.assign({},window._lastHmapData||{}),changed=[],unchanged=[];
@@ -8121,9 +8294,11 @@ function renderStrengthList(strength){
     return `<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${p.color}">${p.txt}</span>${rsBadge(s.rs)}</div>`;
   }).join('');
 }
-async function fetchSigs(){
+async function fetchSigs(retryCount=0){
   try{
-    const j=await fetch('/api/signals').then(r=>r.json());
+    const res=await fetch('/api/signals?t='+Date.now());
+    if(!res.ok) throw new Error('not ok');
+    const j=await res.json();
     const rsMeta=`RS ${j.rs_count||0}${j.rs_asof?' @ '+j.rs_asof:''}`;
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
@@ -8164,13 +8339,19 @@ async function fetchSigs(){
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>${rsBadge(s.rs)}<span class="s-badge-slot"><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></span></div>`).join('');
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
-  }catch(e){console.error('fetchSigs:',e);}
+  }catch(e){
+    if(retryCount < 8){
+      setTimeout(()=>fetchSigs(retryCount+1), 600);
+    }
+  }
 }
 let _isSignalsInitialized=false;
 const _knownSignalsSet=new Set();
-async function fetchHmap(){
+async function fetchHmap(retryCount=0){
   try{
-    const j=await fetch('/api/heatmap').then(r=>r.json());
+    const res=await fetch('/api/heatmap?t='+Date.now());
+    if(!res.ok) throw new Error('not ok');
+    const j=await res.json();
     _lastHmapUpdateTs=new Date().toLocaleTimeString('vi-VN',{hour12:false});
     _hmapCountdown=HMAP_TTL;
     _updateHmapTsDisplay();
@@ -8184,7 +8365,9 @@ async function fetchHmap(){
     if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
   }catch(e){
     _hmapCountdown=HMAP_TTL;_updateHmapTsDisplay();
-    console.error('fetchHmap:',e);
+    if(retryCount < 8){
+      setTimeout(()=>fetchHmap(retryCount+1), 600);
+    }
   }
 }
 function startBar(elOrId,sec){
@@ -9138,7 +9321,9 @@ async function init(){
     DOM.liteChartPanel.classList.remove('collapsed');
     _isChartPanelOpen=true;
   }
-  // Tải CHART ngay lập tức, không chờ config/tín hiệu/heatmap/health (chạy song song thay vì tuần tự) để chart không phụ thuộc API khác.
+  _loadMarketBundle().then(()=>{
+    if(!_liteData||!_liteData.length) loadLiteChart(_liteSymbol);
+  });
   loadLiteChart(_liteSymbol);
   await loadConfig();
   startBar(DOM.pbarSig,SIG_TTL);
@@ -9147,6 +9332,13 @@ async function init(){
   setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
+  let _off=false;
+  setInterval(async()=>{
+    try{
+      const ok=(await fetch('/data/market_health.json?t='+Date.now(),{cache:'no-cache'})).ok;
+      if(ok&&_off){_off=false;window.location.reload();}else if(!ok)_off=true;
+    }catch(e){_off=true;}
+  },2500);
 }
 // Tính lại layout thẻ CHART (main+RSI+MACD+pane+right offset). Tách hàm riêng vì orientationchange
 // gọi lại nhiều lần — trên iOS Safari, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.
