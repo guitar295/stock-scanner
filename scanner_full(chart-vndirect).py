@@ -10,6 +10,7 @@ Tích hợp: VNDirect Batch + VNDirect + Telegram + Chart mplfinance + Dashboard
 + DASHBOARD WEB: http://VPS_IP:8888 — Tín hiệu + Heatmap + Scanner Chart
 =============================================================================
 """
+from __future__ import annotations
 
 # =============================================================================
 # BƯỚC 1: IMPORT
@@ -45,7 +46,39 @@ from dashboard_server import (
     warm_rs_cache,
     TS_POOL_CONFIG,
     HMAP_COLS_CONFIG,
+    _rs_score_cache,
 )
+
+class DailyRotatingStdout:
+    def __init__(self, filename="scanner.log", max_lines=2500):
+        self.filename = filename
+        self.max_lines = max_lines
+        self.terminal = sys.stdout
+        self.file = open(self.filename, "a", encoding="utf-8")
+        self.line_count = 0
+        if os.path.exists(self.filename):
+            with open(self.filename, "r", encoding="utf-8", errors="ignore") as f:
+                self.line_count = sum(1 for _ in f)
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.file.write(message)
+        if '\n' in message:
+            self.line_count += message.count('\n')
+            if self.line_count > self.max_lines + 500:
+                self.file.close()
+                with open(self.filename, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()
+                with open(self.filename, "w", encoding="utf-8") as f:
+                    f.writelines(lines[-self.max_lines:])
+                self.file = open(self.filename, "a", encoding="utf-8")
+                self.line_count = self.max_lines
+
+    def flush(self):
+        self.terminal.flush()
+        self.file.flush()
+
+sys.stdout = DailyRotatingStdout()
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
@@ -263,7 +296,24 @@ def _parse_ssi_trade_date(it: dict) -> str:
     raw = str(it.get('tradingDate') or it.get('date') or '').strip()
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
-    return raw[:10] if len(raw) >= 10 else datetime.now(TZ_VN).strftime('%Y-%m-%d')
+    if len(raw) >= 10 and '-' in raw[:10]:
+        return raw[:10]
+    now_dt = datetime.now(TZ_VN)
+    now_date = now_dt.date()
+    now_time = int(now_dt.strftime("%H%M%S"))
+    return _expected_last_session(now_date, now_time).strftime('%Y-%m-%d')
+
+def _extract_heatmap_fallback(df):
+    ref_p, close, vol = float(df.iloc[-2]['close']), float(df.iloc[-1]['close']), float(df.iloc[-1]['volume'])
+    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+    return {
+        "price": close, "pct": 0.0 if not math.isfinite(pct) else pct,
+        "total_value": round(close * vol * 1000, 0),
+        "open": float(df.iloc[-1].get('open', close)),
+        "high": float(df.iloc[-1].get('high', close)),
+        "low": float(df.iloc[-1].get('low', close)), "volume": vol,
+        "date": df.index[-1].strftime('%Y-%m-%d')
+    }
 
 def fetch_heatmap_data() -> tuple:
     need = _HEATMAP_NEED_SYMBOLS
@@ -272,19 +322,27 @@ def fetch_heatmap_data() -> tuple:
     try:
         items = _fetch_ssi_priceboard_batch(need)
         for it in items:
-            sym = it.get('stockSymbol')
+            sym = str(it.get('stockSymbol') or '').upper().strip()
             if not sym:
                 continue
             matched, ref_p = float(it.get('matchedPrice') or 0), float(it.get('refPrice') or 0)
-            close = matched if matched > 0 else ref_p
-            pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-            o = float(it.get('openPrice') or close)
-            result[sym.upper().strip()] = {
-                "price": close, "pct": pct, "total_value": float(it.get('nmTotalTradedValue') or 0),
-                "open": o, "high": max(float(it.get('highest') or close), o, close),
-                "low": min(float(it.get('lowest') or close), o, close),
-                "volume": float(it.get('nmTotalTradedQty') or 0), "date": _parse_ssi_trade_date(it)
-            }
+            if matched > 0:
+                close = matched
+                pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                o = float(it.get('openPrice') or close)
+                hi = max(float(it.get('highest') or close), o, close)
+                lo = min(float(it.get('lowest') or close), o, close)
+                vol = float(it.get('nmTotalTradedQty') or 0)
+                tot_val = float(it.get('nmTotalTradedValue') or 0)
+                result[sym] = {
+                    "price": close, "pct": 0.0 if not math.isfinite(pct) else pct, "total_value": tot_val,
+                    "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_ssi_trade_date(it)
+                }
+            else:
+                with cache_lock:
+                    df = history_cache.get(sym)
+                if df is not None and len(df) >= 2:
+                    result[sym] = _extract_heatmap_fallback(df)
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
 
@@ -293,19 +351,11 @@ def fetch_heatmap_data() -> tuple:
             for sym in need:
                 df = history_cache.get(sym)
                 if df is not None and len(df) >= 2:
-                    ref_p, close, vol = float(df.iloc[-2]['close']), float(df.iloc[-1]['close']), float(df.iloc[-1]['volume'])
-                    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-                    result[sym] = {
-                        "price": close, "pct": 0.0 if not math.isfinite(pct) else pct,
-                        "total_value": round(close * vol * 1000, 0),
-                        "open": float(df.iloc[-1].get('open', close)),
-                        "high": float(df.iloc[-1].get('high', close)),
-                        "low": float(df.iloc[-1].get('low', close)), "volume": vol,
-                        "date": df.index[-1].strftime('%Y-%m-%d')
-                    }
-        print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
+                    result[sym] = _extract_heatmap_fallback(df)
+        if result:
+            print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
 
-    return result, datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
+    return result, datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y") if result else ""
 
 
 def fetch_extra_quotes(syms: list) -> dict:
@@ -1274,8 +1324,9 @@ def build_history_cache(symbols: list, current_date: date):
     invalidate_rs_cache()
     warm_rs_cache()
     warm_market_health_cache()
+    export_market_bundle(history_cache, cache_lock)
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu.")
+    print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu, đã xuất market_bundle.json.")
 
 # =============================================================================
 # BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
@@ -1408,9 +1459,14 @@ def upsert_today_bar(df_hist, today_bar):
         prev_row = df_hist.iloc[-1]
         new_row['high'] = max(prev_row['high'], new_row.iloc[-1]['high'])
         new_row['low'] = min(prev_row['low'], new_row.iloc[-1]['low'])
+        if prev_row['open'] > 0 and (new_row.iloc[-1]['open'] <= 0 or pd.isna(new_row.iloc[-1]['open'])):
+            new_row['open'] = prev_row['open']
         return pd.concat([df_hist[ohlcv_cols].iloc[:-1], new_row])
     
     if bar_date < last_hist_date:
+        return df_hist
+    
+    if float(today_bar.get('volume', 0)) <= 0:
         return df_hist
     
     prev = df_hist.iloc[-1]
@@ -1426,12 +1482,15 @@ def sync_heatmap_to_history(h_data: dict):
     """Được gọi từ dashboard_server mỗi khi heatmap lấy giá SSI 5s thành công.
     Ép thẳng giá mới vào history_cache để cập nhật realtime mượt mà."""
     now_ts = time.time()
+    now_vn = datetime.now(TZ_VN)
+    now_time = int(now_vn.strftime("%H%M%S"))
+    default_date = _expected_last_session(now_vn.date(), now_time)
     for symbol, row in h_data.items():
         if symbol not in cache_symbol_set:
             continue
         try:
             bar_date_str = row.get('date')
-            bar_date = pd.Timestamp(bar_date_str).date() if bar_date_str else datetime.now(TZ_VN).date()
+            bar_date = pd.Timestamp(bar_date_str).date() if bar_date_str else default_date
             today_bar = pd.Series({
                 'open': float(row.get('open', 0)),
                 'high': float(row.get('high', 0)),
@@ -2257,26 +2316,44 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 print(f"    ⚠️  ATTENT/BREAKVOL {symbol}: {e}")
 
             signal_type = detect_signal(df_merged, now_time)
+            first_ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
+            today    = df_merged.iloc[-1]
+            pct      = (today['close']-df_merged['close'].iloc[-2])/df_merged['close'].iloc[-2]*100
+
             if not signal_type:
+                if symbol in alerted_today and isinstance(alerted_today[symbol], dict):
+                    alerted_today[symbol]["state"] = "DEAD"
+                    alerted_today[symbol]["pct"] = round(pct, 1)
+                    alerted_today[symbol]["price"] = round(float(today['close']), 2)
                 continue
 
             prev_entry = alerted_today.get(symbol)
             prev_sig   = prev_entry["signal"] if isinstance(prev_entry, dict) else prev_entry
+            prev_first = prev_entry.get("first_seen", first_ts) if isinstance(prev_entry, dict) else first_ts
             prev_rank  = SIGNAL_RANK.get(prev_sig, 0)
             current_rank = SIGNAL_RANK.get(signal_type, 0)
+
+            if isinstance(prev_entry, dict):
+                prev_entry["state"] = "ALIVE"
+                prev_entry["pct"] = round(pct, 1)
+                prev_entry["price"] = round(float(today['close']), 2)
+
             if prev_rank >= current_rank:
                 continue
 
-            today        = df_merged.iloc[-1]
             date_str     = _date_str_from_df(df_merged)
-            pct          = (today['close']-df_merged['close'].iloc[-2])/df_merged['close'].iloc[-2]*100
             change       = today['close'] - df_merged['close'].iloc[-2]
             emoji        = SIGNAL_EMOJI.get(signal_type, '📌')
             vol_vs_prev  = (today['volume']-df_merged['volume'].iloc[-2])/df_merged['volume'].iloc[-2]*100
             vol_vs_vma50 = (today['volume']-today['VMA50'])/today['VMA50']*100 if today['VMA50']>0 else 0
 
-            alerted_today.pop(symbol, None)
-            alerted_today[symbol] = {"signal": signal_type, "pct": round(pct, 1), "price": round(float(today['close']), 2)}
+            alerted_today[symbol] = {
+                "signal": signal_type,
+                "state": "ALIVE",
+                "first_seen": prev_first,
+                "pct": round(pct, 1),
+                "price": round(float(today['close']), 2)
+            }
             new_signals.append(symbol)
 
             link_vnd_detail  = f"https://dstock.vndirect.com.vn/tong-quan/{symbol}/diem-nhan-co-ban-popup"
@@ -2318,6 +2395,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
         breakvol_today.clear()
         breakvol_today.update(current_breakvol)
 
+    export_market_bundle(history_cache, cache_lock)
+    warm_market_health_cache()
     return new_signals
 
 # =============================================================================
@@ -2747,23 +2826,16 @@ def dashboard_vol_forecast_fn(symbol: str):
 def telegram_listener(stop_event: threading.Event):
     url_upd = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
     url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=1, pool_connections=5, pool_maxsize=5)
+    session.mount('https://', adapter)
 
-    try:
-        resp    = requests.get(url_upd, params={'offset':-1,'limit':1}, timeout=10)
-        results = resp.json().get('result', [])
-        offset  = (results[-1]['update_id']+1) if results else 0
-        print(f"🎧 Telegram Listener khởi động — offset={offset}")
-    except Exception as e:
-        offset = 0
-        print(f"🎧 Telegram Listener khởi động — offset=0 (lỗi: {e})")
-
-    processed_ids: dict = {}
-    PROCESSED_TTL = 300
+    offset = 0
     print(f"🎧 Listener sẵn sàng | VIP: {VIP_CHAT_IDS} | Free slot: {FREE_CHAT_LIMIT}")
 
     while not stop_event.is_set():
         try:
-            resp = requests.get(url_upd, params={
+            resp = session.get(url_upd, params={
                 'offset': offset, 'timeout': 30,
                 'allowed_updates': ['message', 'callback_query'],
             }, timeout=35)
@@ -2780,16 +2852,9 @@ def telegram_listener(stop_event: threading.Event):
             updates = resp.json().get('result', [])
             if not updates: continue
 
-            now_ts  = time.time()
-            expired = [uid for uid, ts in processed_ids.items() if now_ts-ts > PROCESSED_TTL]
-            for uid in expired: del processed_ids[uid]
-
             for update in updates:
                 update_id = update['update_id']
                 if update_id >= offset: offset = update_id + 1
-                if update_id in processed_ids:
-                    print(f"  ⚠️ Bỏ qua duplicate update_id={update_id}"); continue
-                processed_ids[update_id] = time.time()
                 print(f"  📨 Xử lý update_id={update_id} | offset mới={offset}")
 
                 callback = update.get('callback_query', {})
@@ -2797,7 +2862,7 @@ def telegram_listener(stop_event: threading.Event):
                     cb_id      = callback.get('id')
                     cb_data    = callback.get('data', '')
                     cb_chat_id = str(callback.get('message', {}).get('chat', {}).get('id', ''))
-                    requests.post(
+                    session.post(
                         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
                         data={'callback_query_id': cb_id}
                     )
@@ -2812,27 +2877,16 @@ def telegram_listener(stop_event: threading.Event):
                         ).start()
                     continue
 
-                msg_obj = update.get('message', {})
-                text    = msg_obj.get('text', '').strip()
-                chat_id = str(msg_obj.get('chat', {}).get('id', ''))
-                if not text or not chat_id: continue
+                message = update.get('message', {})
+                if not message: continue
 
-                text_lower = text.lower().strip()
-
-                if text_lower == '/start':
-                    continue
+                chat_id = str(message.get('chat', {}).get('id', ''))
+                text    = message.get('text', '').strip()
+                if not text: continue
+                text_lower = text.lower()
 
                 allowed, reason = is_allowed(chat_id)
                 if not allowed:
-                    requests.post(url_msg, data={
-                        'chat_id':    chat_id,
-                        'parse_mode': 'HTML',
-                        'text': (
-                            "⚠️ Bot đang phục vụ tối đa <b>20 người</b> cùng lúc.\n"
-                            "Hiện tại đã đầy slot. Vui lòng thử lại sau ít phút.\n"
-                            "Slot tự động giải phóng sau <b>30 phút</b> không hoạt động."
-                        )
-                    })
                     continue
 
                 if text_lower == '/s' or text_lower.startswith('/s '):
@@ -2930,11 +2984,83 @@ def telegram_listener(stop_event: threading.Event):
 # =============================================================================
 # BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
 # Lưu/đọc trạng thái tín hiệu đã gửi (alerted_today, momentum...) qua restart
-_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")
-if not os.path.isdir(_SIGNAL_STATE_DIR):
-    _SIGNAL_STATE_DIR = os.path.dirname(os.path.abspath(__file__))
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA_DIR = os.path.join(_BASE_DIR, "data", "trade-journal")
+_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
+if _env_data_dir and (_env_data_dir != "/data/trade-journal" or os.path.exists("/data/trade-journal")):
+    _SIGNAL_STATE_DIR = _env_data_dir
+else:
+    _SIGNAL_STATE_DIR = _DEFAULT_DATA_DIR
+os.makedirs(_SIGNAL_STATE_DIR, exist_ok=True)
 SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
+MARKET_BUNDLE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'market_bundle.json')
 _signal_state_lock = threading.Lock()
+
+def _format_df_bars_vols(df_in):
+    bars, vols = [], []
+    for idx, row in df_in.iterrows():
+        dt_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
+        o = float(row.get('open', row['close']))
+        c = float(row['close'])
+        h = float(row.get('high', max(o, c)))
+        l = float(row.get('low', min(o, c)))
+        v = float(row.get('volume', 0))
+        flag = int(row.get('vpa_flag', 0))
+        color = "#254fcc" if flag == 1 else ("#00ffe5" if flag == 2 else ("#26a69a" if c >= o else "#ef5350"))
+        bars.append([dt_str, o, h, l, c])
+        vols.append([dt_str, v, color])
+    return bars, vols
+
+def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
+    """Xuất toàn bộ 147 mã thành 1 file bundle JSON nén đa khung thời gian (1D, 1W, 1M) cho Cloudflare Pages & Dashboard."""
+    try:
+        data = {"updated_at": datetime.now(TZ_VN).strftime('%Y-%m-%d %H:%M:%S'), "symbols": {}}
+        with lock:
+            sym_items = list(cache.items())
+        for sym, df in sym_items:
+            if df is None or len(df) < 5:
+                continue
+            sub_df = df.tail(450)
+            bars_1d, vols_1d = _format_df_bars_vols(sub_df)
+
+            _, hist_sigs = calc_signals_for_df(sub_df)
+            rs_val = float(_rs_score_cache["scores"].get(sym, 0)) if _rs_score_cache and "scores" in _rs_score_cache else 0
+            
+            # Đóng gói sẵn dự báo Vol đa khung (dùng chung tiến độ ngày)
+            now_obj = datetime.now(TZ_VN)
+            now_time = int(now_obj.strftime("%H%M%S"))
+            bar_date = pd.Timestamp(sub_df.index[-1]).strftime("%Y-%m-%d")
+            is_today = bar_date == now_obj.strftime("%Y-%m-%d")
+            progress = _session_time_progress(now_time) if is_today else 1.0
+            
+            def _get_vf(df_tf):
+                if df_tf is None or len(df_tf) == 0: return None
+                last_vol = float(df_tf['volume'].iloc[-1])
+                prev_vol = float(df_tf['volume'].iloc[-2]) if len(df_tf) > 1 else 0
+                vma50_val = float(df_tf['VMA50'].iloc[-1]) if 'VMA50' in df_tf.columns and pd.notna(df_tf['VMA50'].iloc[-1]) else (float(df_tf['volume'].tail(50).mean()) if len(df_tf) >= 10 else 0)
+                return {
+                    "symbol": sym,
+                    "progress": round(progress, 4),
+                    "ratio_prev": round(last_vol / prev_vol, 4) if prev_vol > 0 else None,
+                    "ratio_ma50": round(last_vol / vma50_val, 4) if vma50_val > 0 else None,
+                    "vma50": round(vma50_val, 1) if vma50_val else None
+                }
+            
+            vf_1d = _get_vf(sub_df)
+
+            data["symbols"][sym] = {
+                "candles": bars_1d,
+                "volume": vols_1d,
+                "history_signals": hist_sigs,
+                "rs": round(rs_val, 1),
+                "vol_forecast": vf_1d
+            }
+        tmp = out_path + ".tmp"
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+        os.replace(tmp, out_path)
+    except Exception as e:
+        print(f"  ⚠️ Lỗi xuất market_bundle.json: {e}")
 
 def _load_signal_state():
     """Đọc lại alerted_today + momentum_today + attent_today + breakvol_today đã lưu."""
