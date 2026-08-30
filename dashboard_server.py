@@ -1,7 +1,7 @@
 """
 DASHBOARD SERVER
 """
-
+from __future__ import annotations
 from flask import Flask, jsonify, Response, request, session, send_from_directory
 from functools import wraps
 from io import BytesIO
@@ -143,10 +143,13 @@ _RS_LOOKBACK_WEIGHTS = ((10, 0.5), (20, 0.3), (50, 0.2))
 _RS_REQUIRED_BARS = max(days for days, _ in _RS_LOOKBACK_WEIGHTS) + 1
 _RS_SMOOTH_DAYS = 5
 _RS_RAW_TAIL_DAYS = 10
-_DEFAULT_DATA_DIR = os.path.expanduser("~/scanner/data/trade-journal")
-if not os.path.exists(_DEFAULT_DATA_DIR) and os.path.exists("/data/trade-journal"):
-    _DEFAULT_DATA_DIR = "/data/trade-journal"
-_DASHBOARD_DATA_DIR = os.environ.get("DASHBOARD_DATA_DIR", _DEFAULT_DATA_DIR)
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA_DIR = os.path.join(_BASE_DIR, "data", "trade-journal")
+_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
+if _env_data_dir and (_env_data_dir != "/data/trade-journal" or os.path.exists("/data/trade-journal")):
+    _DASHBOARD_DATA_DIR = _env_data_dir
+else:
+    _DASHBOARD_DATA_DIR = _DEFAULT_DATA_DIR
 os.makedirs(_DASHBOARD_DATA_DIR, exist_ok=True)
 
 _RS_CACHE_DIR = _DASHBOARD_DATA_DIR
@@ -248,7 +251,7 @@ def _rs_universe_set():
         return None
 
 
-def _filter_rs_scores(scores: dict, rs_universe: set | None = None) -> dict:
+def _filter_rs_scores(scores: dict, rs_universe=None) -> dict:
     if not isinstance(scores, dict):
         return {}
     if rs_universe is None:
@@ -520,7 +523,7 @@ _LITE_CHART_CACHE_TTL = 120
 _lite_chart_cache: dict = {}
 _lite_chart_cache_lock = threading.Lock()
 
-JOURNAL_DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_DIR", "/data/trade-journal")).expanduser()
+JOURNAL_DATA_DIR = Path(_DASHBOARD_DATA_DIR)
 JOURNAL_UPLOAD_DIR = JOURNAL_DATA_DIR / "uploads"
 JOURNAL_DB_PATH = JOURNAL_DATA_DIR / "trade_journal.sqlite"
 JOURNAL_WARNING_PATH = JOURNAL_DATA_DIR / "market_warning.txt"
@@ -1338,8 +1341,11 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                     df_sub = df_cached.tail(limit)
                     raw_bars = []
                     for row in df_sub.itertuples():
+                        idx_dt = row.Index
+                        t_str = idx_dt.strftime("%Y-%m-%d") if hasattr(idx_dt, 'strftime') else str(idx_dt)[:10]
                         raw_bars.append({
-                            "t": int(row.Index.timestamp()),
+                            "t": int(idx_dt.timestamp()),
+                            "time_str": t_str,
                             "open": float(row.open), "high": float(row.high),
                             "low": float(row.low), "close": float(row.close),
                             "volume": float(row.volume)
@@ -1418,7 +1424,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
     else:
         final_bars = []
         for bar in raw_bars:
-            dt_str = time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
+            dt_str = bar.get("time_str") or time.strftime("%Y-%m-%d", time.gmtime(bar["t"] + 25200))
             final_bars.append({
                 "time": dt_str,
                 "open": bar["open"], "high": bar["high"], "low": bar["low"],
@@ -1436,7 +1442,8 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
 
     vpa_flags_by_date = {}
     signal_info, history_signals = None, []
-    if target_tf == "1D" and raw_bars and len(raw_bars) >= 30:
+    has_enough_bars = (df_cached is not None and len(df_cached) >= 30) or (raw_bars and len(raw_bars) >= 30)
+    if target_tf == "1D" and has_enough_bars:
         try:
             if df_cached is not None:
                 shared_df = df_cached
@@ -4511,8 +4518,6 @@ function setLiteTf(tf){
 function applyLiteTf(tf,force=false){
   if(!tf)return false;
   if(!force&&_liteTf===tf)return true;
-  _liteSessionRange=null;
-  _liteUserInteractedZoom=false;
   setLiteTf(tf);
   loadLiteChart(_liteSymbol,0);
   return true;
@@ -6582,14 +6587,18 @@ function _liteRefreshVolumeTop(showVpaVol){
 const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
 let _liteReqId=0;
 let _marketBundle=null;
-async function _loadMarketBundle(){
+async function _loadMarketBundle(retryCount=0){
   try{
-    const j=await fetch('/data/market_bundle.json').then(r=>r.json()).catch(()=>fetch('/api/market_bundle').then(r=>r.json()));
-    if(j&&j.symbols){
+    const j=await fetch('/data/market_bundle.json?t='+Date.now()).then(r=>r.json()).catch(()=>fetch('/api/market_bundle?t='+Date.now()).then(r=>r.json()));
+    if(j&&j.symbols&&Object.keys(j.symbols).length>0){
       _marketBundle=j.symbols;
       if(_liteSymbol&&(!_liteData||!_liteData.length)) loadLiteChart(_liteSymbol);
+      return;
     }
   }catch(e){}
+  if(retryCount < 8){
+    setTimeout(()=>_loadMarketBundle(retryCount+1), 600);
+  }
 }
 
 function _liteApplyChartPayload(j,s,skipPopoutSync){
@@ -6649,17 +6658,11 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   if(_liteDrawCtx&&DOM.liteChart)_liteDrawCtx.clearRect(0,0,DOM.liteChart.clientWidth,DOM.liteChart.clientHeight);
 
   const tf=_liteTf||'1D';
-  if(_marketBundle&&_marketBundle[s]){
+  if(_marketBundle&&_marketBundle[s]&&tf==='1D'){
     const item=_marketBundle[s];
-    let tfData=null;
-    if(item.timeframes&&item.timeframes[tf]){
-      tfData=item.timeframes[tf];
-    }else if(tf==='1D'){
-      tfData={candles:item.candles,volume:item.volume};
-    }
-    if(tfData&&tfData.candles&&tfData.candles.length){
-      const rawCandles=[...(tfData.candles||[])];
-      const rawVolume=[...(tfData.volume||[])];
+    if(item.candles&&item.candles.length){
+      const rawCandles=[...(item.candles||[])];
+      const rawVolume=[...(item.volume||[])];
       if(tf==='1D'){
         const liveEntry=(window._lastHmapData||{})[s];
         if(liveEntry&&liveEntry.price&&rawCandles.length){
@@ -6692,6 +6695,10 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(reqId!==_liteReqId)return;
     const j=await r.json();
     if(reqId!==_liteReqId)return;
+    if(_marketBundle&&_marketBundle[s]){
+      j.vol_forecast=_marketBundle[s].vol_forecast;
+      j.rs=_marketBundle[s].rs;
+    }
     _liteApplyChartPayload(j,s,skipPopoutSync);
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
@@ -6716,7 +6723,7 @@ async function _liteQuietRefreshChart(){
   _liteQuietRefreshing=true;
   try{
     const liveEntry=(window._lastHmapData||{})[sym];
-    if(liveEntry&&liveEntry.price&&_liteData.length){
+    if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
       const last=_liteData[_liteData.length-1];
       last.close=liveEntry.price;
       if(liveEntry.open)last.open=liveEntry.open;
@@ -6742,6 +6749,14 @@ async function _liteQuietRefreshChart(){
     _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
     const key=liteTimeKey(rawBar.time);
+    const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
+    if(tf==='1D'&&liveEntry&&liveEntry.price){
+      rawBar.close=liveEntry.price;
+      if(liveEntry.open)rawBar.open=liveEntry.open;
+      if(liveEntry.high)rawBar.high=Math.max(rawBar.high,liveEntry.price);
+      if(liveEntry.low)rawBar.low=Math.min(rawBar.low,liveEntry.price);
+      if(rawVol&&liveEntry.volume)rawVol.value=liveEntry.volume;
+    }
     const isNewBar=!_liteDataByTime.has(key);
     const prevBar=isNewBar?_liteData[_liteData.length-1]:(_liteData.length>1?_liteData[_liteData.length-2]:null);
     rawBar.pct=prevBar?((rawBar.close-prevBar.close)/prevBar.close*100):0;
@@ -6749,8 +6764,11 @@ async function _liteQuietRefreshChart(){
     if(isNewBar)_liteData.push(rawBar);else _liteData[_liteData.length-1]=rawBar;
     _liteDataByTime.set(key,rawBar);
     _liteCandle.update(rawBar);
-    const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(rawVol){
+      const curLastVol=_liteVolumeData.length?_liteVolumeData[_liteVolumeData.length-1]:null;
+      if(!isNewBar&&curLastVol&&(curLastVol.color==='#254fcc'||curLastVol.color==='#00ffe5')&&rawVol.color!=='#254fcc'&&rawVol.color!=='#00ffe5'){
+        rawVol.color=curLastVol.color;
+      }
       if(isNewBar)_liteVolumeData.push(rawVol);else _liteVolumeData[_liteVolumeData.length-1]=rawVol;
     }
     if(isNewBar)_liteUpdateWhitespace();
@@ -8267,9 +8285,11 @@ function renderStrengthList(strength){
     return `<div class="momentum-row strength-row" data-sym="${s.symbol}"><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${p.color}">${p.txt}</span>${rsBadge(s.rs)}</div>`;
   }).join('');
 }
-async function fetchSigs(){
+async function fetchSigs(retryCount=0){
   try{
-    const j=await fetch('/api/signals').then(r=>r.json());
+    const res=await fetch('/api/signals?t='+Date.now());
+    if(!res.ok) throw new Error('not ok');
+    const j=await res.json();
     const rsMeta=`RS ${j.rs_count||0}${j.rs_asof?' @ '+j.rs_asof:''}`;
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
@@ -8310,13 +8330,19 @@ async function fetchSigs(){
     if(!j.signals.length){DOM.sigList.innerHTML='<div class="empty"><div class="big">💤</div><div>Chưa có tín hiệu nào hôm nay</div></div>';return;}
     DOM.sigList.innerHTML=j.signals.map(s=>`<div class="sig-row" data-sym="${s.symbol}"><span class="s-emoji">${s.emoji}</span><span class="s-sym">${s.symbol}</span><span class="s-type" style="color:${s.pct>=0?'#0e9f6e':'#e02424'}">${s.pct!=null?(s.pct>=0?'+':'')+Number(s.pct).toFixed(1)+'%':'—'}</span>${rsBadge(s.rs)}<span class="s-badge-slot"><span class="s-badge ${BADGE_MAP[s.signal]||'b-MACROSS'}">${signalLabel(s.signal)}</span></span></div>`).join('');
     if(DOM.lgSidebar&&DOM.lgSidebar.classList.contains('on'))_lgRenderList();
-  }catch(e){console.error('fetchSigs:',e);}
+  }catch(e){
+    if(retryCount < 8){
+      setTimeout(()=>fetchSigs(retryCount+1), 600);
+    }
+  }
 }
 let _isSignalsInitialized=false;
 const _knownSignalsSet=new Set();
-async function fetchHmap(){
+async function fetchHmap(retryCount=0){
   try{
-    const j=await fetch('/api/heatmap').then(r=>r.json());
+    const res=await fetch('/api/heatmap?t='+Date.now());
+    if(!res.ok) throw new Error('not ok');
+    const j=await res.json();
     _lastHmapUpdateTs=new Date().toLocaleTimeString('vi-VN',{hour12:false});
     _hmapCountdown=HMAP_TTL;
     _updateHmapTsDisplay();
@@ -8330,7 +8356,9 @@ async function fetchHmap(){
     if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
   }catch(e){
     _hmapCountdown=HMAP_TTL;_updateHmapTsDisplay();
-    console.error('fetchHmap:',e);
+    if(retryCount < 8){
+      setTimeout(()=>fetchHmap(retryCount+1), 600);
+    }
   }
 }
 function startBar(elOrId,sec){
@@ -9295,6 +9323,13 @@ async function init(){
   setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
+  let _off=false;
+  setInterval(async()=>{
+    try{
+      const ok=(await fetch('/data/market_health.json?t='+Date.now(),{cache:'no-cache'})).ok;
+      if(ok&&_off){_off=false;window.location.reload();}else if(!ok)_off=true;
+    }catch(e){_off=true;}
+  },2500);
 }
 // Tính lại layout thẻ CHART (main+RSI+MACD+pane+right offset). Tách hàm riêng vì orientationchange
 // gọi lại nhiều lần — trên iOS Safari, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.

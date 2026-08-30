@@ -10,6 +10,7 @@ Tích hợp: VNDirect Batch + VNDirect + Telegram + Chart mplfinance + Dashboard
 + DASHBOARD WEB: http://VPS_IP:8888 — Tín hiệu + Heatmap + Scanner Chart
 =============================================================================
 """
+from __future__ import annotations
 
 # =============================================================================
 # BƯỚC 1: IMPORT
@@ -264,7 +265,12 @@ def _parse_ssi_trade_date(it: dict) -> str:
     raw = str(it.get('tradingDate') or it.get('date') or '').strip()
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
-    return raw[:10] if len(raw) >= 10 else datetime.now(TZ_VN).strftime('%Y-%m-%d')
+    if len(raw) >= 10 and '-' in raw[:10]:
+        return raw[:10]
+    now_dt = datetime.now(TZ_VN)
+    now_date = now_dt.date()
+    now_time = int(now_dt.strftime("%H%M%S"))
+    return _expected_last_session(now_date, now_time).strftime('%Y-%m-%d')
 
 def fetch_heatmap_data() -> tuple:
     need = _HEATMAP_NEED_SYMBOLS
@@ -1410,9 +1416,14 @@ def upsert_today_bar(df_hist, today_bar):
         prev_row = df_hist.iloc[-1]
         new_row['high'] = max(prev_row['high'], new_row.iloc[-1]['high'])
         new_row['low'] = min(prev_row['low'], new_row.iloc[-1]['low'])
+        if prev_row['open'] > 0 and (new_row.iloc[-1]['open'] <= 0 or pd.isna(new_row.iloc[-1]['open'])):
+            new_row['open'] = prev_row['open']
         return pd.concat([df_hist[ohlcv_cols].iloc[:-1], new_row])
     
     if bar_date < last_hist_date:
+        return df_hist
+    
+    if float(today_bar.get('volume', 0)) <= 0:
         return df_hist
     
     prev = df_hist.iloc[-1]
@@ -1428,12 +1439,15 @@ def sync_heatmap_to_history(h_data: dict):
     """Được gọi từ dashboard_server mỗi khi heatmap lấy giá SSI 5s thành công.
     Ép thẳng giá mới vào history_cache để cập nhật realtime mượt mà."""
     now_ts = time.time()
+    now_vn = datetime.now(TZ_VN)
+    now_time = int(now_vn.strftime("%H%M%S"))
+    default_date = _expected_last_session(now_vn.date(), now_time)
     for symbol, row in h_data.items():
         if symbol not in cache_symbol_set:
             continue
         try:
             bar_date_str = row.get('date')
-            bar_date = pd.Timestamp(bar_date_str).date() if bar_date_str else datetime.now(TZ_VN).date()
+            bar_date = pd.Timestamp(bar_date_str).date() if bar_date_str else default_date
             today_bar = pd.Series({
                 'open': float(row.get('open', 0)),
                 'high': float(row.get('high', 0)),
@@ -2926,16 +2940,19 @@ def telegram_listener(stop_event: threading.Event):
 # =============================================================================
 # BƯỚC 8G: LƯU/ĐỌC TRẠNG THÁI TÍN HIỆU ĐÃ GỬI (PERSIST QUA RESTART)
 # Lưu/đọc trạng thái tín hiệu đã gửi (alerted_today, momentum...) qua restart
-_DEFAULT_DATA_DIR = os.path.expanduser("~/scanner/data/trade-journal")
-if not os.path.exists(_DEFAULT_DATA_DIR) and os.path.exists("/data/trade-journal"):
-    _DEFAULT_DATA_DIR = "/data/trade-journal"
-_SIGNAL_STATE_DIR = os.environ.get("DASHBOARD_DATA_DIR", _DEFAULT_DATA_DIR)
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA_DIR = os.path.join(_BASE_DIR, "data", "trade-journal")
+_env_data_dir = os.environ.get("DASHBOARD_DATA_DIR")
+if _env_data_dir and (_env_data_dir != "/data/trade-journal" or os.path.exists("/data/trade-journal")):
+    _SIGNAL_STATE_DIR = _env_data_dir
+else:
+    _SIGNAL_STATE_DIR = _DEFAULT_DATA_DIR
 os.makedirs(_SIGNAL_STATE_DIR, exist_ok=True)
 SIGNAL_STATE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'signal_state_cache.json')
 MARKET_BUNDLE_FILE = os.path.join(_SIGNAL_STATE_DIR, 'market_bundle.json')
 _signal_state_lock = threading.Lock()
 
-def _format_df_bars_vols(df_in, skip_vpa=False):
+def _format_df_bars_vols(df_in):
     bars, vols = [], []
     for idx, row in df_in.iterrows():
         dt_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
@@ -2944,22 +2961,11 @@ def _format_df_bars_vols(df_in, skip_vpa=False):
         h = float(row.get('high', max(o, c)))
         l = float(row.get('low', min(o, c)))
         v = float(row.get('volume', 0))
-        flag = int(row.get('vpa_flag', 0)) if not skip_vpa else 0
+        flag = int(row.get('vpa_flag', 0))
         color = "#254fcc" if flag == 1 else ("#00ffe5" if flag == 2 else ("#26a69a" if c >= o else "#ef5350"))
         bars.append([dt_str, o, h, l, c])
         vols.append([dt_str, v, color])
     return bars, vols
-
-def _resample_bars_tf(df_in, freq_rule, skip_vpa=True):
-    try:
-        agg_map = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
-        if 'vpa_flag' in df_in.columns and not skip_vpa:
-            agg_map['vpa_flag'] = 'max'
-        df_res = df_in.resample(freq_rule).agg(agg_map).dropna(subset=['close'])
-        bars, vols = _format_df_bars_vols(df_res, skip_vpa)
-        return bars, vols, df_res
-    except Exception:
-        return [], [], None
 
 def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
     """Xuất toàn bộ 147 mã thành 1 file bundle JSON nén đa khung thời gian (1D, 1W, 1M) cho Cloudflare Pages & Dashboard."""
@@ -2971,12 +2977,7 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
             if df is None or len(df) < 5:
                 continue
             sub_df = df.tail(450)
-            bars_1d, vols_1d = _format_df_bars_vols(sub_df, skip_vpa=False)
-            bars_1w, vols_1w, df_1w = _resample_bars_tf(df, 'W-FRI', skip_vpa=True)
-            try:
-                bars_1m, vols_1m, df_1m = _resample_bars_tf(df, 'ME', skip_vpa=True)
-            except Exception:
-                bars_1m, vols_1m, df_1m = _resample_bars_tf(df, 'M', skip_vpa=True)
+            bars_1d, vols_1d = _format_df_bars_vols(sub_df)
 
             _, hist_sigs = calc_signals_for_df(sub_df)
             rs_val = float(_rs_score_cache["scores"].get(sym, 0)) if _rs_score_cache and "scores" in _rs_score_cache else 0
@@ -3002,17 +3003,10 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
                 }
             
             vf_1d = _get_vf(sub_df)
-            vf_1w = _get_vf(df_1w)
-            vf_1m = _get_vf(df_1m)
 
             data["symbols"][sym] = {
                 "candles": bars_1d,
                 "volume": vols_1d,
-                "timeframes": {
-                    "1D": {"candles": bars_1d, "volume": vols_1d, "vol_forecast": vf_1d},
-                    "1W": {"candles": bars_1w, "volume": vols_1w, "vol_forecast": vf_1w},
-                    "1M": {"candles": bars_1m, "volume": vols_1m, "vol_forecast": vf_1m},
-                },
                 "history_signals": hist_sigs,
                 "rs": round(rs_val, 1),
                 "vol_forecast": vf_1d
