@@ -49,6 +49,37 @@ from dashboard_server import (
     _rs_score_cache,
 )
 
+class DailyRotatingStdout:
+    def __init__(self, filename="scanner.log", max_lines=2500):
+        self.filename = filename
+        self.max_lines = max_lines
+        self.terminal = sys.stdout
+        self.file = open(self.filename, "a", encoding="utf-8")
+        self.line_count = 0
+        if os.path.exists(self.filename):
+            with open(self.filename, "r", encoding="utf-8", errors="ignore") as f:
+                self.line_count = sum(1 for _ in f)
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.file.write(message)
+        if '\n' in message:
+            self.line_count += message.count('\n')
+            if self.line_count > self.max_lines + 500:
+                self.file.close()
+                with open(self.filename, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()
+                with open(self.filename, "w", encoding="utf-8") as f:
+                    f.writelines(lines[-self.max_lines:])
+                self.file = open(self.filename, "a", encoding="utf-8")
+                self.line_count = self.max_lines
+
+    def flush(self):
+        self.terminal.flush()
+        self.file.flush()
+
+sys.stdout = DailyRotatingStdout()
+
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
 # =============================================================================
@@ -272,6 +303,18 @@ def _parse_ssi_trade_date(it: dict) -> str:
     now_time = int(now_dt.strftime("%H%M%S"))
     return _expected_last_session(now_date, now_time).strftime('%Y-%m-%d')
 
+def _extract_heatmap_fallback(df):
+    ref_p, close, vol = float(df.iloc[-2]['close']), float(df.iloc[-1]['close']), float(df.iloc[-1]['volume'])
+    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+    return {
+        "price": close, "pct": 0.0 if not math.isfinite(pct) else pct,
+        "total_value": round(close * vol * 1000, 0),
+        "open": float(df.iloc[-1].get('open', close)),
+        "high": float(df.iloc[-1].get('high', close)),
+        "low": float(df.iloc[-1].get('low', close)), "volume": vol,
+        "date": df.index[-1].strftime('%Y-%m-%d')
+    }
+
 def fetch_heatmap_data() -> tuple:
     need = _HEATMAP_NEED_SYMBOLS
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
@@ -279,19 +322,27 @@ def fetch_heatmap_data() -> tuple:
     try:
         items = _fetch_ssi_priceboard_batch(need)
         for it in items:
-            sym = it.get('stockSymbol')
+            sym = str(it.get('stockSymbol') or '').upper().strip()
             if not sym:
                 continue
             matched, ref_p = float(it.get('matchedPrice') or 0), float(it.get('refPrice') or 0)
-            close = matched if matched > 0 else ref_p
-            pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-            o = float(it.get('openPrice') or close)
-            result[sym.upper().strip()] = {
-                "price": close, "pct": pct, "total_value": float(it.get('nmTotalTradedValue') or 0),
-                "open": o, "high": max(float(it.get('highest') or close), o, close),
-                "low": min(float(it.get('lowest') or close), o, close),
-                "volume": float(it.get('nmTotalTradedQty') or 0), "date": _parse_ssi_trade_date(it)
-            }
+            if matched > 0:
+                close = matched
+                pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
+                o = float(it.get('openPrice') or close)
+                hi = max(float(it.get('highest') or close), o, close)
+                lo = min(float(it.get('lowest') or close), o, close)
+                vol = float(it.get('nmTotalTradedQty') or 0)
+                tot_val = float(it.get('nmTotalTradedValue') or 0)
+                result[sym] = {
+                    "price": close, "pct": 0.0 if not math.isfinite(pct) else pct, "total_value": tot_val,
+                    "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_ssi_trade_date(it)
+                }
+            else:
+                with cache_lock:
+                    df = history_cache.get(sym)
+                if df is not None and len(df) >= 2:
+                    result[sym] = _extract_heatmap_fallback(df)
     except Exception as e:
         print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
 
@@ -300,19 +351,11 @@ def fetch_heatmap_data() -> tuple:
             for sym in need:
                 df = history_cache.get(sym)
                 if df is not None and len(df) >= 2:
-                    ref_p, close, vol = float(df.iloc[-2]['close']), float(df.iloc[-1]['close']), float(df.iloc[-1]['volume'])
-                    pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
-                    result[sym] = {
-                        "price": close, "pct": 0.0 if not math.isfinite(pct) else pct,
-                        "total_value": round(close * vol * 1000, 0),
-                        "open": float(df.iloc[-1].get('open', close)),
-                        "high": float(df.iloc[-1].get('high', close)),
-                        "low": float(df.iloc[-1].get('low', close)), "volume": vol,
-                        "date": df.index[-1].strftime('%Y-%m-%d')
-                    }
-        print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
+                    result[sym] = _extract_heatmap_fallback(df)
+        if result:
+            print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
 
-    return result, datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
+    return result, datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y") if result else ""
 
 
 def fetch_extra_quotes(syms: list) -> dict:

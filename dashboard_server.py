@@ -1141,28 +1141,37 @@ def _is_market_session() -> bool:
 def _heatmap_poll_interval() -> int:
     return HEATMAP_LIVE_TTL_SEC if _is_market_session() else HEATMAP_TTL_SEC
 
+def _bg_fetch_heatmap():
+    if not _heatmap_lock.acquire(blocking=False):
+        return
+    try:
+        fn = _fetch_heatmap_fn or _default_fetch_heatmap_data
+        data, ts_str = fn()
+        if data and isinstance(data, dict):
+            _heatmap_cache["data"] = data
+            _heatmap_cache["ts"]   = ts_str or _heatmap_cache["ts"]
+            _heatmap_cache["updated_at"] = time.time()
+            if _sync_heatmap_fn:
+                _sync_heatmap_fn(data)
+            _save_heatmap_to_disk()
+    except Exception as e:
+        print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
+    finally:
+        _heatmap_lock.release()
+
 @app.route("/api/heatmap")
 def api_heatmap():
     now = time.time()
+    ttl = _heatmap_poll_interval() / 2.0
+    if now - _heatmap_cache["updated_at"] > ttl:
+        threading.Thread(target=_bg_fetch_heatmap, daemon=True).start()
     with _heatmap_lock:
-        fn = _fetch_heatmap_fn or _default_fetch_heatmap_data
-        ttl = _heatmap_poll_interval() / 2.0
-        if now - _heatmap_cache["updated_at"] > ttl:
-            try:
-                data, ts_str = fn()
-                if data:
-                    _heatmap_cache["data"] = data
-                    _heatmap_cache["ts"]   = ts_str
-                    _heatmap_cache["updated_at"] = time.time()
-                    if _sync_heatmap_fn:
-                        _sync_heatmap_fn(data)
-                    _save_heatmap_to_disk()
-            except Exception as e:
-                print(f"  [Dashboard] ❌ Fetch heatmap lỗi: {e}")
         snap_time = _heatmap_cache["updated_at"]
+        data = _heatmap_cache["data"]
+        ts = _heatmap_cache["ts"]
     return jsonify({
-        "data":      _json_safe(_heatmap_cache["data"]),
-        "timestamp": _heatmap_cache["ts"],
+        "data":      _json_safe(data),
+        "timestamp": ts,
         "cached_age": int(now - snap_time),
     })
 
@@ -7120,6 +7129,13 @@ function renderHeatmap(d){
     DOM.hmapGrid.innerHTML=parts.join('');
     window._lastHmapData={...d};
     return;
+  }
+
+  const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
+  const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
+  const tsCol=DOM.hmapGrid.querySelector('.hmap-col');
+  if(tsCol&&tsCol.querySelectorAll('.hmap-cell').length<tsSyms.length){
+    tsCol.innerHTML=mkGroup('TRADING STOCKS',tsSyms,d);
   }
 
   const old=Object.assign({},window._lastHmapData||{}),changed=[],unchanged=[];
