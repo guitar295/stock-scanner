@@ -55,78 +55,10 @@ echo "🎉🎉🎉 CÀI ĐẶT HỆ THỐNG VPS BAN ĐẦU HOÀN TẤT 100%!"
 
 Khối lệnh này tự động:
 1. Cài đặt toàn bộ thư viện Python cần thiết trên Mac.
-2. Tạo sẵn cấu trúc thư mục `static/` và `data/trade-journal/` trong `~/Desktop/Dashboard_mac`.
-3. Tải thư viện biểu đồ Lightweight Charts nếu chưa có.
-4. Tạo sẵn ứng dụng **`Scanner Dashboard.app`** và **`Stop Scanner.app`** ngay trong thư mục để bạn kéo vào Dock.
+2. Tạo sẵn cấu trúc thư mục, app điều khiển bot.
 
 ```bash
-pip3 install pandas requests mplfinance pytz numpy matplotlib pillow flask && \
-mkdir -p ~/Desktop/Dashboard_mac/static ~/Desktop/Dashboard_mac/data/trade-journal && \
-[ -f ~/Desktop/Dashboard_mac/static/lightweight-charts.min.js ] || curl -s -L "https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js" -o ~/Desktop/Dashboard_mac/static/lightweight-charts.min.js && \
-\
-echo "📦 Đang tạo ứng dụng Scanner Dashboard.app trên Mac..." && \
-mkdir -p ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/MacOS" ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/Resources" && \
-cat << 'EOF' > ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/Info.plist"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>launcher</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.scanner.dashboard</string>
-    <key>CFBundleName</key>
-    <string>Scanner Dashboard</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>LSUIElement</key>
-    <true/>
-</dict>
-</plist>
-EOF
-cat << 'EOF' > ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/MacOS/launcher"
-#!/bin/bash
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-PROJECT_DIR="$HOME/Desktop/Dashboard_mac"
-cd "$PROJECT_DIR" || exit 1
-if ! pgrep -f "python3.*scanner_full.py" > /dev/null; then
-    nohup python3 -u scanner_full.py > "$PROJECT_DIR/scanner.log" 2>&1 &
-    sleep 2
-fi
-open "http://localhost:8888"
-EOF
-chmod +x ~/Desktop/Dashboard_mac/"Scanner Dashboard.app/Contents/MacOS/launcher" && \
-\
-mkdir -p ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/MacOS" ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/Resources" && \
-cat << 'EOF' > ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/Info.plist"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>launcher</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.scanner.stop</string>
-    <key>CFBundleName</key>
-    <string>Stop Scanner</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>LSUIElement</key>
-    <true/>
-</dict>
-</plist>
-EOF
-cat << 'EOF' > ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/MacOS/launcher"
-#!/bin/bash
-pkill -f "python3.*scanner_full.py" 2>/dev/null || true
-osascript -e 'display notification "Bot và Dashboard đã tắt thành công!" with title "Scanner Bot" sound name "Glass"'
-EOF
-chmod +x ~/Desktop/Dashboard_mac/"Stop Scanner.app/Contents/MacOS/launcher" && \
-echo "🎉🎉🎉 CÀI ĐẶT MÔI TRƯỜNG MAC BAN ĐẦU HOÀN TẤT 100%!"
+python3 setup_mac.py
 ```
 
 ---
