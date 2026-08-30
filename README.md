@@ -58,7 +58,7 @@ Khối lệnh này tự động:
 2. Tạo sẵn cấu trúc thư mục, app điều khiển bot.
 
 ```bash
-python3 setup_mac.py
+cd ~/Desktop/Dashboard_mac && python3 setup_mac.py
 ```
 
 ---
