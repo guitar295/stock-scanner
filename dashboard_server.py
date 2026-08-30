@@ -1147,10 +1147,10 @@ def _bg_fetch_heatmap():
     try:
         fn = _fetch_heatmap_fn or _default_fetch_heatmap_data
         data, ts_str = fn()
+        _heatmap_cache["updated_at"] = time.time()
         if data and isinstance(data, dict):
             _heatmap_cache["data"] = data
             _heatmap_cache["ts"]   = ts_str or _heatmap_cache["ts"]
-            _heatmap_cache["updated_at"] = time.time()
             if _sync_heatmap_fn:
                 _sync_heatmap_fn(data)
             _save_heatmap_to_disk()
