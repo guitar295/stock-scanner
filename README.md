@@ -86,21 +86,22 @@ tail -n 25 ~/scanner/scanner.log
 
 ### 🔹 KHỐI 2B: Khởi động lại khi thay đổi code trên MÁY MAC
 
-* **Cách 1 (Bấm 1 chạm từ thanh Dock - Tiện nhất):**
-  - Chỉ cần click chuột vào biểu tượng **`Scanner Dashboard.app`** trên thanh Dock.
+* **Cách 1 (Click 1 chạm từ icon App hoặc thanh Dock - Tiện nhất):**
+  - Chỉ cần click vào icon **`Scanner Dashboard.app`**.
+  - Tự động bật bot ngầm, phát chuông báo hiệu và mở ngay trang web Dashboard.
 
 * **Cách 2 (Chạy trực tiếp có xem Log trong Terminal):**
   ```bash
   cd ~/Desktop/Dashboard_mac && \
-  pkill -f "python3.*scanner_full.py" 2>/dev/null || true && \
+  pkill -if "scanner_full.py" 2>/dev/null || true && \
   python3 scanner_full.py
   ```
 
-* **Cách 3 (Chạy ngầm qua Terminal):**
+* **Cách 3 (Chạy ngầm qua dòng lệnh Terminal):**
   ```bash
   cd ~/Desktop/Dashboard_mac && \
-  pkill -f "python3.*scanner_full.py" 2>/dev/null || true && \
-  nohup python3 -u scanner_full.py > scanner.log 2>&1 &
+  pkill -if "scanner_full.py" 2>/dev/null || true && \
+  nohup python3 -u scanner_full.py < /dev/null > scanner.log 2>&1 &
   ```
 
 ---
@@ -140,7 +141,7 @@ Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động 
   ```
 * **Trên Mac (Kiểm tra tiến trình):**
   ```bash
-  pgrep -fl "python3.*scanner_full.py"
+  pgrep -fl "scanner_full.py"
   ```
 
 ---
@@ -158,7 +159,7 @@ Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động 
   ```bash
   # Cách 1: Click đúp vào icon "Stop Scanner.app"
   # Cách 2 (Dòng lệnh):
-  pkill -f "python3.*scanner_full.py"
+  pkill -if "scanner_full.py" 2>/dev/null || true
   ```
 
 ---
