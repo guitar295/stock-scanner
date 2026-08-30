@@ -210,36 +210,19 @@ _load_heatmap_from_disk()
 
 
 def _refresh_market_health(force: bool = False) -> dict:
-    """Tính lại HEALTH bất đồng bộ không block HTTP request."""
-    if not _fetch_market_health_fn:
-        return _market_health_cache["data"]
-    now = time.time()
+    """Chỉ đọc dữ liệu JSON/RAM trả về tức thì. Nếu force=True thì tính ép buộc."""
+    if force and _fetch_market_health_fn:
+        try:
+            data = _fetch_market_health_fn()
+            with _market_health_lock:
+                if data and data.get("ok"):
+                    _market_health_cache["data"] = data
+                    _market_health_cache["updated_at"] = time.time()
+                    _market_health_cache["pending_refresh"] = False
+                    _save_market_health_to_disk()
+        except Exception:
+            pass
     with _market_health_lock:
-        stale = now - _market_health_cache["updated_at"] > MARKET_HEALTH_TTL_SEC
-        if (force or stale) and not _market_health_cache.get("_is_refreshing"):
-            _market_health_cache["_is_refreshing"] = True
-            def _bg_calc():
-                try:
-                    data = _fetch_market_health_fn()
-                    with _market_health_lock:
-                        if data.get("ok"):
-                            _market_health_cache["data"] = data
-                            _market_health_cache["updated_at"] = time.time()
-                            _market_health_cache["pending_refresh"] = False
-                            _save_market_health_to_disk()
-                        else:
-                            _market_health_cache["pending_refresh"] = True
-                except Exception as e:
-                    print(f"  [Dashboard] ❌ Fetch market health lỗi: {e}")
-                    with _market_health_lock:
-                        _market_health_cache["pending_refresh"] = True
-                finally:
-                    with _market_health_lock:
-                        _market_health_cache["_is_refreshing"] = False
-            if force:
-                _bg_calc()
-            else:
-                threading.Thread(target=_bg_calc, daemon=True).start()
         return _market_health_cache["data"]
 
 

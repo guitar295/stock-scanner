@@ -2353,6 +2353,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
         breakvol_today.update(current_breakvol)
 
     export_market_bundle(history_cache, cache_lock)
+    warm_market_health_cache()
     return new_signals
 
 # =============================================================================
