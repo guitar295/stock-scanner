@@ -1,9 +1,16 @@
 # 🚀 HƯỚNG DẪN TRIỂN KHAI & QUẢN TRỊ BOT CHỨNG KHOÁN
-> **Kiến trúc Tối tân:** VPS Native Systemd + Cloudflare Tunnel + Cloudflare Pages (Jamstack Siêu Tốc 0.01s)
+> **Kiến trúc Tối tân:** VPS Native Systemd + Cloudflare Tunnel + Cloudflare Pages (Jamstack Siêu Tốc 0.01s) + Hỗ trợ macOS Native
 
 ---
 
 ## 🌟 TỔNG QUAN KIẾN TRÚC VẬN HÀNH
+
+```mermaid
+flowchart LR
+    A["👤 Người dùng (Web/Mobile)"] <-->|Mở web tức thì 0.01s từ CDN VN| B["🌐 Cloudflare Pages (Frontend)"]
+    B <-->|Kéo JSON nạp sẵn qua Tunnel| C["🚇 Cloudflare Tunnel (api.guitar295.xx.kg)"]
+    C <-->|Cổng 8888 kết nối trực tiếp| D["⚡ Con Bot VPS (scanner_full.py 24/7)"]
+```
 
 * **Frontend (Cloudflare Pages):** Phân phối giao diện HTML/JS và thư viện vẽ Chart TradingView từ 300+ máy chủ CDN tại Việt Nam.
 * **Backend (VPS Native Systemd):** Con bot quét 5s liên tục, tính toán VPA, Breakout và nạp sẵn file JSON tĩnh vào bộ đệm.
@@ -11,14 +18,15 @@
 
 ---
 
-## 📦 KHỐI 1: CÀI ĐẶT HỆ THỐNG BAN ĐẦU
+## 📦 PHẦN I: CÀI ĐẶT BAN ĐẦU (CHỈ CHẠY 1 LẦN DUY NHẤT)
 > [!IMPORTANT]
-> **Chỉ chạy đúng 1 lần duy nhất khi thiết lập VPS mới.** Sau này không bao giờ phải chạy lại khối này.
+> **Chỉ chạy đúng 1 lần khi thiết lập máy mới.** Sau này không bao giờ phải chạy lại phần này.
 
+### 🔹 KHỐI 1A: Cài đặt cho MÁY CHỦ VPS (Linux / Ubuntu)
 Khối lệnh này tự động:
-1. Cài đặt toàn bộ môi trường Python và các thư viện cần thiết.
-2. Tải và kích hoạt dịch vụ **Cloudflare Tunnel (`cloudflared`)** chạy ngầm vĩnh viễn.
-3. Tạo dịch vụ **Systemd (`scanner.service`)** tự động bật bot khi VPS khởi động lại (tương đương `--restart unless-stopped`).
+1. Cài đặt môi trường Python và toàn bộ thư viện cần thiết trên Linux.
+2. Tải và kích hoạt dịch vụ **Cloudflare Tunnel (`cloudflared`)** chạy ngầm vĩnh viễn kết nối tên miền `api.guitar295.xx.kg`.
+3. Tạo dịch vụ **Systemd (`scanner.service`)** tự động bật bot khi VPS khởi động lại (chạy ngầm 24/7, tự hồi sinh khi crash).
 
 ```bash
 sudo apt-get update && \
@@ -54,19 +62,26 @@ WantedBy=multi-user.target
 EOF" && \
 sudo systemctl daemon-reload && \
 sudo systemctl enable scanner && \
-echo "🎉🎉🎉 CÀI ĐẶT HỆ THỐNG BAN ĐẦU HOÀN TẤT 100%!"
+echo "🎉🎉🎉 CÀI ĐẶT HỆ THỐNG VPS BAN ĐẦU HOÀN TẤT 100%!"
 ```
 
 ---
 
-## 🚀 KHỐI 2: KHỞI ĐỘNG & CẬP NHẬT CODE (DÙNG THƯỜNG XUYÊN)
-> [!TIP]
-> **Dùng mỗi khi cập nhật code mới từ GitHub hoặc muốn Restart bot.** Lệnh chạy xong trong **đúng 3 giây**!
+### 🔹 KHỐI 1B: Cài đặt cho MÁY MAC (macOS Native)
+Trên máy Mac, bạn chỉ cần cài đặt thư viện Python đúng 1 lần duy nhất:
 
-Khối lệnh này tự động:
-1. Tải bản mới nhất của `scanner_full.py` và `dashboard_server.py` từ GitHub.
-2. Tải thư viện biểu đồ Lightweight Charts nếu chưa có.
-3. Khởi động lại dịch vụ bot và in ngay 25 dòng log đầu tiên ra màn hình.
+```bash
+pip3 install pandas requests mplfinance pytz numpy matplotlib pillow flask
+```
+
+---
+
+## 🚀 PHẦN II: LỆNH THƯỜNG DÙNG (CẬP NHẬT CODE & KHỞI ĐỘNG LẠI)
+> [!TIP]
+> **Sử dụng mỗi khi có thay đổi về code hoặc muốn khởi động lại Bot.**
+
+### 🔹 KHỐI 2A: Cập nhật code & Khởi động lại trên VPS (Chạy trong 3 giây)
+Tự động tải code mới nhất từ GitHub, đồng bộ thư viện và khởi động lại dịch vụ `scanner`:
 
 ```bash
 cd ~/scanner && \
@@ -75,49 +90,91 @@ curl -s -O https://raw.githubusercontent.com/guitar295/stock-scanner/refs/heads/
 [ -f static/lightweight-charts.min.js ] || curl -s -L "https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js" -o static/lightweight-charts.min.js && \
 sync && \
 sudo systemctl restart scanner && \
-echo "✅ CẬP NHẬT CODE MỚI & KHỞI ĐỘNG LẠI HOÀN TẤT TRONG 3 GIÂY!" && \
+echo "✅ CẬP NHẬT CODE MỚI & KHỞI ĐỘNG LẠI VPS HOÀN TẤT!" && \
 sleep 3 && \
 tail -n 25 ~/scanner/scanner.log
 ```
 
 ---
 
-## 🛠️ KHỐI 3: CÁC LỆNH QUẢN LÝ THƯỜNG DÙNG
+### 🔹 KHỐI 2B: Khởi động lại khi thay đổi code trên MÁY MAC
+
+* **Cách 1 (Chạy trực tiếp có xem Log):**
+  ```bash
+  cd "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website" && \
+  pkill -f "python3.*scanner_full.py" 2>/dev/null || true && \
+  python3 scanner_full.py
+  ```
+
+* **Cách 2 (Chạy ngầm không cần mở Terminal):**
+  ```bash
+  cd "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website" && \
+  pkill -f "python3.*scanner_full.py" 2>/dev/null || true && \
+  nohup python3 scanner_full.py > scanner.log 2>&1 &
+  ```
+
+---
+
+## 🛠️ PHẦN III: CÁC LỆNH QUẢN LÝ & THEO DÕI THƯỜNG DÙNG
 
 ### 1. Xem Log Con Bot Đang Quét Trực Tiếp (Live Stream Realtime)
 Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động gửi tin Telegram:
-```bash
-tail -f ~/scanner/scanner.log
-```
+* **Trên VPS:**
+  ```bash
+  tail -f ~/scanner/scanner.log
+  ```
+* **Trên Mac:**
+  ```bash
+  tail -f "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website/scanner.log"
+  ```
 > *(Bấm tổ hợp phím `Ctrl + C` để đóng màn hình xem log).*
 
 ---
 
 ### 2. Xem Nhanh 50 Dòng Log Gần Nhất
-Xem nhanh các thông báo gần nhất rồi thoát ngay ra dòng lệnh:
-```bash
-tail -n 50 ~/scanner/scanner.log
-```
+* **Trên VPS:**
+  ```bash
+  tail -n 50 ~/scanner/scanner.log
+  ```
+* **Trên Mac:**
+  ```bash
+  tail -n 50 "/Users/hoangminhtruong/Desktop/AI-Agents/Code-website/scanner.log"
+  ```
 
 ---
 
 ### 3. Kiểm Tra Trạng Thái Hoạt Động Của Bot
-Kiểm tra xem bot có đang chạy ổn định 24/7 hay không (`active (running)` màu xanh):
-```bash
-sudo systemctl status scanner
-```
+* **Trên VPS (Kiểm tra qua Systemd):**
+  ```bash
+  sudo systemctl status scanner
+  ```
+* **Trên Mac (Kiểm tra tiến trình):**
+  ```bash
+  pgrep -fl "python3.*scanner_full.py"
+  ```
 
 ---
 
 ### 4. Tắt Tạm Thời Hoặc Bật Lại Bot Thủ Công
-* **Tắt bot (Khi cần bảo trì):**
+* **Trên VPS:**
   ```bash
+  # Tắt bot (Khi cần bảo trì)
   sudo systemctl stop scanner
-  ```
-* **Bật lại bot:**
-  ```bash
+
+  # Bật lại bot
   sudo systemctl start scanner
+  ```
+* **Trên Mac:**
+  ```bash
+  # Tắt bot
+  pkill -f "python3.*scanner_full.py"
   ```
 
 ---
 
+## 🌐 CẤU HÌNH CLOUDFLARE ĐỒNG BỘ
+
+| Thành phần | Địa chỉ cấu hình | Mục đích |
+| :--- | :--- | :--- |
+| **Cloudflare Pages** | `https://scanner.guitar295.xx.kg` | Giao diện web chính cho người dùng truy cập |
+| **Cloudflare Tunnel** | `https://api.guitar295.xx.kg` $\rightarrow$ `localhost:8888` | Cổng truyền dữ liệu thời gian thực từ VPS |
