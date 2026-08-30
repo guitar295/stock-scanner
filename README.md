@@ -1,15 +1,4 @@
 # 🚀 HƯỚNG DẪN TRIỂN KHAI & QUẢN TRỊ BOT CHỨNG KHOÁN
-> **Kiến trúc Tối tân:** VPS Native Systemd + Cloudflare Tunnel + Cloudflare Pages (Jamstack Siêu Tốc 0.01s) + Hỗ trợ macOS Native
-
----
-
-## 🌟 TỔNG QUAN KIẾN TRÚC VẬN HÀNH
-
-* **Frontend (Cloudflare Pages):** Phân phối giao diện HTML/JS và thư viện vẽ Chart TradingView từ 300+ máy chủ CDN tại Việt Nam.
-* **Backend (VPS Native Systemd):** Con bot quét 5s liên tục, tính toán VPA, Breakout và nạp sẵn file JSON tĩnh vào bộ đệm.
-* **Đường truyền (Cloudflare Tunnel):** Kết nối mã hóa HTTP/3, chống DDoS, bảo mật 100% ẩn IP máy chủ.
-
----
 
 ## 📦 PHẦN I: CÀI ĐẶT BAN ĐẦU (CHỈ CHẠY 1 LẦN DUY NHẤT)
 > [!IMPORTANT]
