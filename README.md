@@ -13,7 +13,7 @@ Khối lệnh này tự động:
 ```bash
 sudo apt-get update && \
 sudo apt-get install -y python3-pip python3-dev libfreetype6-dev libpng-dev curl tmux && \
-pip3 install --break-system-packages --ignore-installed pandas requests mplfinance pytz numpy matplotlib pillow flask && \
+pip3 install --break-system-packages --ignore-installed pandas requests curl_cffi mplfinance pytz numpy matplotlib pillow flask && \
 \
 echo "🌐 Đang cài đặt và kích hoạt Cloudflare Tunnel..." && \
 curl -s -L --output /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \

@@ -1197,7 +1197,12 @@ _vndirect_session.headers.update({
     "Referer": "https://dstock.vndirect.com.vn/",
 })
 
-_ssi_session = requests.Session()
+try:
+    from curl_cffi import requests as cffi_requests
+    _ssi_session = cffi_requests.Session(impersonate="chrome120")
+except ImportError:
+    _ssi_session = requests.Session()
+
 _ssi_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
