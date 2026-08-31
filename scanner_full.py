@@ -1457,7 +1457,6 @@ def fetch_today_bar(symbol: str, current_date: date):
 def upsert_today_bar(df_hist, today_bar):
     bar_date = pd.Timestamp(today_bar.name).date()
     last_hist_date = df_hist.index[-1].date()
-    ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
     
     if last_hist_date == bar_date:
         new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
@@ -1466,7 +1465,9 @@ def upsert_today_bar(df_hist, today_bar):
         new_row['low'] = min(prev_row['low'], new_row.iloc[-1]['low'])
         if prev_row['open'] > 0 and (new_row.iloc[-1]['open'] <= 0 or pd.isna(new_row.iloc[-1]['open'])):
             new_row['open'] = prev_row['open']
-        return pd.concat([df_hist[ohlcv_cols].iloc[:-1], new_row])
+        if 'vpa_flag' in prev_row and pd.notna(prev_row['vpa_flag']):
+            new_row['vpa_flag'] = prev_row['vpa_flag']
+        return pd.concat([df_hist.iloc[:-1], new_row])
     
     if bar_date < last_hist_date:
         return df_hist
@@ -1481,7 +1482,8 @@ def upsert_today_bar(df_hist, today_bar):
         return df_hist
     
     new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
-    return pd.concat([df_hist[ohlcv_cols], new_row])
+    new_row['vpa_flag'] = 0
+    return pd.concat([df_hist, new_row])
 
 def sync_heatmap_to_history(h_data: dict):
     """Được gọi từ dashboard_server mỗi khi heatmap lấy giá SSI 5s thành công.
@@ -2299,7 +2301,17 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 df_merged = history_cache.get(symbol)
                 
             if df_merged is None or len(df_merged) < 60: continue
+            if df_merged.index[-1].date() != current_date: continue
             df_merged = df_merged.copy()
+            try:
+                if len(df_merged) >= 140:
+                    today_vpa = int(calc_vpa_flag(df_merged.tail(200)).iloc[-1])
+                    df_merged.loc[df_merged.index[-1], 'vpa_flag'] = today_vpa
+                    with cache_lock:
+                        if symbol in history_cache and history_cache[symbol] is not None and len(history_cache[symbol]) > 0:
+                            history_cache[symbol].loc[df_merged.index[-1], 'vpa_flag'] = today_vpa
+            except Exception:
+                pass
             df_merged = compute_indicators(df_merged)
 
             try:
@@ -2744,7 +2756,7 @@ def check_price_alerts():
             with cache_lock:
                 df_raw = history_cache.get(symbol)
                 df_raw = df_raw.copy() if df_raw is not None and len(df_raw) >= 210 else None
-            if df_raw is None or len(df_raw) < 2:
+            if df_raw is None or len(df_raw) < 2 or df_raw.index[-1].date() != datetime.now(TZ_VN).date():
                 continue
             df_calc = compute_indicators(df_raw)
             prev_row = df_calc.iloc[-2]
@@ -3004,13 +3016,14 @@ _signal_state_lock = threading.Lock()
 def _format_df_bars_vols(df_in):
     bars, vols = [], []
     for idx, row in df_in.iterrows():
-        dt_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
+        dt_str = idx.strftime('%Y-%m-%d')
         o = float(row.get('open', row['close']))
         c = float(row['close'])
         h = float(row.get('high', max(o, c)))
         l = float(row.get('low', min(o, c)))
         v = float(row.get('volume', 0))
-        flag = int(row.get('vpa_flag', 0))
+        vpa_val = row.get('vpa_flag', 0)
+        flag = int(vpa_val) if pd.notna(vpa_val) else 0
         color = "#254fcc" if flag == 1 else ("#00ffe5" if flag == 2 else ("#26a69a" if c >= o else "#ef5350"))
         bars.append([dt_str, o, h, l, c])
         vols.append([dt_str, v, color])
@@ -3230,8 +3243,10 @@ if __name__ == '__main__':
                 time.sleep(SCAN_INTERVAL_SEC)
                 continue
 
-            # Reset danh sách tín hiệu khi vào phiên mới
-            if current_date > signal_session_date:
+            # Reset danh sách tín hiệu khi vào phiên mới (chỉ reset khi thực sự có nến giao dịch của hôm nay)
+            with cache_lock:
+                has_today_bar = any(df is not None and len(df) > 0 and df.index[-1].date() == current_date for df in history_cache.values())
+            if has_today_bar and current_date > signal_session_date:
                 alerted_today.clear()
                 momentum_today.clear()
                 attent_today.clear()
