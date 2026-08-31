@@ -1100,7 +1100,8 @@ def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
                             'matchedPrice': display_price,
                             'projectOpen': project_open,
                             'nmTotalTradedValue': total_val,
-                            'stockVol': total_vol
+                            'stockVol': total_vol,
+                            'tradingDate': it.get('tradingDate') or it.get('date') or ''
                         })
         except Exception:
             pass
