@@ -4216,7 +4216,7 @@ function initLiteChart(){
       const last=_liteData.length-1,span=range.to-range.from;
       if(span>5&&span<2000)_liteSessionRange={span,offsetRight:range.to-last};
     }
-    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
+    if(range&&range.from>=0&&range.from<=3&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
   });
