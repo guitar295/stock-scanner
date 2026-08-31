@@ -1371,6 +1371,11 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                     if bars_for_df:
                         df_new = pd.DataFrame(bars_for_df)
                         df_new.set_index("time", inplace=True)
+                        if _calc_vpa_flag_fn:
+                            try:
+                                df_new['vpa_flag'] = _calc_vpa_flag_fn(df_new)
+                            except Exception:
+                                pass
                         df_cached = df_new  # Re-use for VPA calculation
                         with _cache_lock:
                             cache_dict = _get_history_cache() if callable(_get_history_cache) else _get_history_cache
@@ -4211,7 +4216,7 @@ function initLiteChart(){
       const last=_liteData.length-1,span=range.to-range.from;
       if(span>5&&span<2000)_liteSessionRange={span,offsetRight:range.to-last};
     }
-    if(range&&range.from<=100&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
+    if(range&&range.from>=0&&range.from<=3&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
   });
@@ -4510,7 +4515,7 @@ function setLiteRightOffset(){
   const to=last+rightOffset;
   // Mobile portrait (~390px): 80 nến đủ rõ từng cây nến; landscape/desktop: 250 như cũ
   const visibleCount=IS_MOBILE()&&window.innerHeight>window.innerWidth?80:250;
-  const from=Math.max(0,last-visibleCount+1);
+  const from=last-visibleCount+1;
   _liteApplyVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
@@ -6665,24 +6670,22 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(item.candles&&item.candles.length){
       const rawCandles=[...(item.candles||[])];
       const rawVolume=[...(item.volume||[])];
-      if(tf==='1D'){
-        const liveEntry=(window._lastHmapData||{})[s];
-        if(liveEntry&&liveEntry.price&&rawCandles.length){
-          const last=Array.isArray(rawCandles[rawCandles.length-1])?[...rawCandles[rawCandles.length-1]]:{...rawCandles[rawCandles.length-1]};
-          if(Array.isArray(last)){
-            last[4]=liveEntry.price;if(liveEntry.open)last[1]=liveEntry.open;if(liveEntry.high)last[2]=Math.max(last[2],liveEntry.price);if(liveEntry.low)last[3]=Math.min(last[3],liveEntry.price);
-          }else{
-            last.close=liveEntry.price;if(liveEntry.open)last.open=liveEntry.open;if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
-          }
-          rawCandles[rawCandles.length-1]=last;
-          if(liveEntry.volume&&rawVolume.length){
-            const lastVol=Array.isArray(rawVolume[rawVolume.length-1])?[...rawVolume[rawVolume.length-1]]:{...rawVolume[rawVolume.length-1]};
-            if(Array.isArray(lastVol))lastVol[1]=liveEntry.volume;else lastVol.value=liveEntry.volume;
-            rawVolume[rawVolume.length-1]=lastVol;
-          }
+      const liveEntry=(window._lastHmapData||{})[s];
+      if(liveEntry&&liveEntry.price&&rawCandles.length){
+        const last=Array.isArray(rawCandles[rawCandles.length-1])?[...rawCandles[rawCandles.length-1]]:{...rawCandles[rawCandles.length-1]};
+        if(Array.isArray(last)){
+          last[4]=liveEntry.price;if(liveEntry.open)last[1]=liveEntry.open;if(liveEntry.high)last[2]=Math.max(last[2],liveEntry.price);if(liveEntry.low)last[3]=Math.min(last[3],liveEntry.price);
+        }else{
+          last.close=liveEntry.price;if(liveEntry.open)last.open=liveEntry.open;if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
+        }
+        rawCandles[rawCandles.length-1]=last;
+        if(liveEntry.volume&&rawVolume.length){
+          const lastVol=Array.isArray(rawVolume[rawVolume.length-1])?[...rawVolume[rawVolume.length-1]]:{...rawVolume[rawVolume.length-1]};
+          if(Array.isArray(lastVol))lastVol[1]=liveEntry.volume;else lastVol.value=liveEntry.volume;
+          rawVolume[rawVolume.length-1]=lastVol;
         }
       }
-      _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:tf==='1D'?(item.history_signals||[]):[],rs:item.rs,vol_forecast:item.vol_forecast||null},s,skipPopoutSync);
+      _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:item.history_signals||[],rs:item.rs,vol_forecast:item.vol_forecast||null},s,skipPopoutSync);
       _liteChartLoading=false;redrawLiteDrawings();
       return;
     }
@@ -9321,9 +9324,7 @@ async function init(){
     DOM.liteChartPanel.classList.remove('collapsed');
     _isChartPanelOpen=true;
   }
-  _loadMarketBundle().then(()=>{
-    if(!_liteData||!_liteData.length) loadLiteChart(_liteSymbol);
-  });
+  await _loadMarketBundle();
   loadLiteChart(_liteSymbol);
   await loadConfig();
   startBar(DOM.pbarSig,SIG_TTL);
