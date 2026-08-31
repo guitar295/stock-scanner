@@ -4515,7 +4515,7 @@ function setLiteRightOffset(){
   const to=last+rightOffset;
   // Mobile portrait (~390px): 80 nến đủ rõ từng cây nến; landscape/desktop: 250 như cũ
   const visibleCount=IS_MOBILE()&&window.innerHeight>window.innerWidth?80:250;
-  const from=to-visibleCount;
+  const from=last-visibleCount+1;
   _liteApplyVisibleLogicalRange({from,to});
 }
 function setLiteTf(tf){
