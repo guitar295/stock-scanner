@@ -3927,6 +3927,7 @@ function editFollowSymbols(){
   FOLLOW_ON=true;
   saveFollowSymbols(parseFollowSymbols(raw));
   if(typeof _lgSyncFollowIntoFavorites==='function')_lgSyncFollowIntoFavorites();
+  DOM.hmapGrid.innerHTML='';
   renderHeatmap(window._lastHmapData||{});
   return true;
 }
@@ -6601,6 +6602,7 @@ async function _loadMarketBundle(retryCount=0){
     if(j&&j.symbols&&Object.keys(j.symbols).length>0){
       _marketBundle=j.symbols;
       if(_liteSymbol&&(!_liteData||!_liteData.length)) loadLiteChart(_liteSymbol);
+      if(!window._mbRefreshTimer) window._mbRefreshTimer = setInterval(()=>{const d=new Date(),t=d.getHours()*100+d.getMinutes();if(t>=845&&t<=1515&&!document.hidden)_loadMarketBundle();}, 120000);
       return;
     }
   }catch(e){}
@@ -6673,17 +6675,21 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       const rawVolume=[...(item.volume||[])];
       const liveEntry=(window._lastHmapData||{})[s];
       if(liveEntry&&liveEntry.price&&rawCandles.length){
-        const last=Array.isArray(rawCandles[rawCandles.length-1])?[...rawCandles[rawCandles.length-1]]:{...rawCandles[rawCandles.length-1]};
-        if(Array.isArray(last)){
-          last[4]=liveEntry.price;if(liveEntry.open)last[1]=liveEntry.open;if(liveEntry.high)last[2]=Math.max(last[2],liveEntry.price);if(liveEntry.low)last[3]=Math.min(last[3],liveEntry.price);
-        }else{
-          last.close=liveEntry.price;if(liveEntry.open)last.open=liveEntry.open;if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
+        const d=new Date();const ts=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+        const lIdx=rawCandles.length-1, rL=rawCandles[lIdx], lTime=Array.isArray(rL)?rL[0]:rL.time;
+        if(lTime&&lTime.startsWith(ts)){
+          const last=Array.isArray(rL)?[...rL]:{...rL};
+          if(Array.isArray(last)){last[4]=liveEntry.price;if(liveEntry.open)last[1]=liveEntry.open;if(liveEntry.high)last[2]=Math.max(last[2],liveEntry.price);if(liveEntry.low)last[3]=Math.min(last[3],liveEntry.price);}
+          else{last.close=liveEntry.price;if(liveEntry.open)last.open=liveEntry.open;if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);}
+          rawCandles[lIdx]=last;
         }
-        rawCandles[rawCandles.length-1]=last;
         if(liveEntry.volume&&rawVolume.length){
-          const lastVol=Array.isArray(rawVolume[rawVolume.length-1])?[...rawVolume[rawVolume.length-1]]:{...rawVolume[rawVolume.length-1]};
-          if(Array.isArray(lastVol))lastVol[1]=liveEntry.volume;else lastVol.value=liveEntry.volume;
-          rawVolume[rawVolume.length-1]=lastVol;
+          const lVIdx=rawVolume.length-1, rLV=rawVolume[lVIdx], lVTime=Array.isArray(rLV)?rLV[0]:rLV.time;
+          if(lVTime&&lVTime.startsWith(ts)){
+            const lastVol=Array.isArray(rLV)?[...rLV]:{...rLV};
+            if(Array.isArray(lastVol))lastVol[1]=liveEntry.volume;else lastVol.value=liveEntry.volume;
+            rawVolume[lVIdx]=lastVol;
+          }
         }
       }
       _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:item.history_signals||[],rs:item.rs,vol_forecast:item.vol_forecast||null},s,skipPopoutSync);
@@ -8727,6 +8733,7 @@ if(IS_STANDALONE_PWA()){
       if(!FOLLOW.length){editFollowSymbols();el.blur();return;}
       FOLLOW_ON=!FOLLOW_ON;
       saveFollowSymbols(FOLLOW);
+      DOM.hmapGrid.innerHTML='';
       renderHeatmap(window._lastHmapData||{});
       el.blur();
     },400);
@@ -8739,6 +8746,7 @@ if(IS_STANDALONE_PWA()){
       if(!FOLLOW.length){editFollowSymbols();this.blur();return;}
       FOLLOW_ON=!FOLLOW_ON;
       saveFollowSymbols(FOLLOW);
+      DOM.hmapGrid.innerHTML='';
       renderHeatmap(window._lastHmapData||{});
       this.blur();
     },180);
