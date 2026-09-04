@@ -1088,24 +1088,51 @@ def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
                         sym = str(it.get("stockSymbol") or "").upper().strip()
                         if not sym:
                             continue
+                        
                         ref_p = float(it.get('refPrice') or 0.0) / 1000.0
+                        ceil_p = float(it.get('ceiling') or 0.0) / 1000.0
+                        floor_p = float(it.get('floor') or 0.0) / 1000.0
+                        high_p = float(it.get('highest') or 0.0) / 1000.0
+                        low_p = float(it.get('lowest') or 0.0) / 1000.0
                         match_p = float(it.get('matchedPrice') or 0.0) / 1000.0
+                        open_p = float(it.get('openPrice') or 0.0) / 1000.0
                         project_open = float(it.get('expectedMatchedPrice') or 0.0) / 1000.0
+                        
+                        if high_p <= 0: high_p = ref_p
+                        if low_p <= 0: low_p = ref_p
+                        
                         display_price = match_p if match_p > 0 else (project_open if project_open > 0 else ref_p)
+                        open_price = open_p if open_p > 0 else display_price
+                        
                         total_vol = float(it.get('nmTotalTradedQty') or it.get('stockVol') or 0.0)
                         total_val = float(it.get('nmTotalTradedValue') or 0.0)
+                        
                         results.append({
                             'stockSymbol': sym,
                             'refPrice': ref_p,
+                            'floor': floor_p,
+                            'ceiling': ceil_p,
+                            'highest': high_p,
+                            'lowest': low_p,
                             'matchedPrice': display_price,
                             'projectOpen': project_open,
-                            'nmTotalTradedValue': total_val,
                             'stockVol': total_vol,
+                            'nmTotalTradedQty': total_vol,
+                            'nmTotalTradedValue': total_val,
+                            'openPrice': open_price,
                             'tradingDate': it.get('tradingDate') or it.get('date') or ''
                         })
         except Exception:
             pass
     return results
+
+def _parse_ssi_trade_date(it: dict) -> str:
+    raw = str(it.get('tradingDate') or it.get('date') or '').strip()
+    if len(raw) == 8 and raw.isdigit():
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    elif len(raw) >= 10 and '-' in raw[:10]:
+        return raw[:10]
+    return datetime.now(TZ_VN).strftime('%Y-%m-%d')
 
 def _default_fetch_heatmap_data():
     need_symbols = []
@@ -1117,17 +1144,25 @@ def _default_fetch_heatmap_data():
     items = _fetch_ssi_priceboard_batch(need_symbols)
     result = {}
     for it in items:
-        sym = it.get('stockSymbol')
+        sym = str(it.get('stockSymbol') or '').upper().strip()
         if not sym:
             continue
-        matched = float(it.get('matchedPrice') or 0)
-        ref_p = float(it.get('refPrice') or 0)
-        total_value = float(it.get('nmTotalTradedValue') or 0)
+        matched, ref_p = float(it.get('matchedPrice') or 0), float(it.get('refPrice') or 0)
         close = matched if matched > 0 else ref_p
         pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
         if not math.isfinite(pct):
             pct = 0.0
-        result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
+            
+        o = float(it.get('openPrice') or close)
+        hi = max(float(it.get('highest') or close), o, close)
+        lo = min(float(it.get('lowest') or close), o, close)
+        vol = float(it.get('nmTotalTradedQty') or 0)
+        tot_val = float(it.get('nmTotalTradedValue') or 0)
+        
+        result[sym] = {
+            "price": close, "pct": pct, "total_value": tot_val,
+            "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_ssi_trade_date(it)
+        }
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
 
@@ -6675,7 +6710,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       const rawVolume=[...(item.volume||[])];
       const liveEntry=(window._lastHmapData||{})[s];
       if(liveEntry&&liveEntry.price&&rawCandles.length){
-        const d=new Date();const ts=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+        const d=new Date();const ts=liveEntry.date || (d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
         const lIdx=rawCandles.length-1, rL=rawCandles[lIdx], lTime=Array.isArray(rL)?rL[0]:rL.time;
         if(lTime&&lTime.startsWith(ts)){
           const last=Array.isArray(rL)?[...rL]:{...rL};
@@ -6737,11 +6772,13 @@ async function _liteQuietRefreshChart(){
     const liveEntry=(window._lastHmapData||{})[sym];
     if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
       const last=_liteData[_liteData.length-1];
-      last.close=liveEntry.price;
-      if(liveEntry.open)last.open=liveEntry.open;
-      if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);
-      if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
-      _liteCandle.update(last);
+      if(liveEntry.date&&liteTimeKey(last.time).startsWith(liveEntry.date)){
+        last.close=liveEntry.price;
+        if(liveEntry.open)last.open=liveEntry.open;
+        if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);
+        if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
+        _liteCandle.update(last);
+      }
       if(_liteVolumeData&&_liteVolumeData.length){
         const lastVol=_liteVolumeData[_liteVolumeData.length-1];
         if(liveEntry.volume)lastVol.value=liveEntry.volume;
@@ -6763,11 +6800,13 @@ async function _liteQuietRefreshChart(){
     const key=liteTimeKey(rawBar.time);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(tf==='1D'&&liveEntry&&liveEntry.price){
-      rawBar.close=liveEntry.price;
-      if(liveEntry.open)rawBar.open=liveEntry.open;
-      if(liveEntry.high)rawBar.high=Math.max(rawBar.high,liveEntry.price);
-      if(liveEntry.low)rawBar.low=Math.min(rawBar.low,liveEntry.price);
-      if(rawVol&&liveEntry.volume)rawVol.value=liveEntry.volume;
+      if(liveEntry.date&&key.startsWith(liveEntry.date)){
+        rawBar.close=liveEntry.price;
+        if(liveEntry.open)rawBar.open=liveEntry.open;
+        if(liveEntry.high)rawBar.high=Math.max(rawBar.high,liveEntry.price);
+        if(liveEntry.low)rawBar.low=Math.min(rawBar.low,liveEntry.price);
+        if(rawVol&&liveEntry.volume)rawVol.value=liveEntry.volume;
+      }
     }
     const isNewBar=!_liteDataByTime.has(key);
     const prevBar=isNewBar?_liteData[_liteData.length-1]:(_liteData.length>1?_liteData[_liteData.length-2]:null);
