@@ -1088,24 +1088,51 @@ def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
                         sym = str(it.get("stockSymbol") or "").upper().strip()
                         if not sym:
                             continue
+                        
                         ref_p = float(it.get('refPrice') or 0.0) / 1000.0
+                        ceil_p = float(it.get('ceiling') or 0.0) / 1000.0
+                        floor_p = float(it.get('floor') or 0.0) / 1000.0
+                        high_p = float(it.get('highest') or 0.0) / 1000.0
+                        low_p = float(it.get('lowest') or 0.0) / 1000.0
                         match_p = float(it.get('matchedPrice') or 0.0) / 1000.0
+                        open_p = float(it.get('openPrice') or 0.0) / 1000.0
                         project_open = float(it.get('expectedMatchedPrice') or 0.0) / 1000.0
+                        
+                        if high_p <= 0: high_p = ref_p
+                        if low_p <= 0: low_p = ref_p
+                        
                         display_price = match_p if match_p > 0 else (project_open if project_open > 0 else ref_p)
+                        open_price = open_p if open_p > 0 else display_price
+                        
                         total_vol = float(it.get('nmTotalTradedQty') or it.get('stockVol') or 0.0)
                         total_val = float(it.get('nmTotalTradedValue') or 0.0)
+                        
                         results.append({
                             'stockSymbol': sym,
                             'refPrice': ref_p,
+                            'floor': floor_p,
+                            'ceiling': ceil_p,
+                            'highest': high_p,
+                            'lowest': low_p,
                             'matchedPrice': display_price,
                             'projectOpen': project_open,
-                            'nmTotalTradedValue': total_val,
                             'stockVol': total_vol,
+                            'nmTotalTradedQty': total_vol,
+                            'nmTotalTradedValue': total_val,
+                            'openPrice': open_price,
                             'tradingDate': it.get('tradingDate') or it.get('date') or ''
                         })
         except Exception:
             pass
     return results
+
+def _parse_ssi_trade_date(it: dict) -> str:
+    raw = str(it.get('tradingDate') or it.get('date') or '').strip()
+    if len(raw) == 8 and raw.isdigit():
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    elif len(raw) >= 10 and '-' in raw[:10]:
+        return raw[:10]
+    return datetime.now(TZ_VN).strftime('%Y-%m-%d')
 
 def _default_fetch_heatmap_data():
     need_symbols = []
@@ -1117,17 +1144,25 @@ def _default_fetch_heatmap_data():
     items = _fetch_ssi_priceboard_batch(need_symbols)
     result = {}
     for it in items:
-        sym = it.get('stockSymbol')
+        sym = str(it.get('stockSymbol') or '').upper().strip()
         if not sym:
             continue
-        matched = float(it.get('matchedPrice') or 0)
-        ref_p = float(it.get('refPrice') or 0)
-        total_value = float(it.get('nmTotalTradedValue') or 0)
+        matched, ref_p = float(it.get('matchedPrice') or 0), float(it.get('refPrice') or 0)
         close = matched if matched > 0 else ref_p
         pct = round((close - ref_p) / ref_p * 100, 2) if ref_p > 0 else 0.0
         if not math.isfinite(pct):
             pct = 0.0
-        result[sym.upper().strip()] = {"price": close, "pct": pct, "total_value": total_value}
+            
+        o = float(it.get('openPrice') or close)
+        hi = max(float(it.get('highest') or close), o, close)
+        lo = min(float(it.get('lowest') or close), o, close)
+        vol = float(it.get('nmTotalTradedQty') or 0)
+        tot_val = float(it.get('nmTotalTradedValue') or 0)
+        
+        result[sym] = {
+            "price": close, "pct": pct, "total_value": tot_val,
+            "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_ssi_trade_date(it)
+        }
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
 
@@ -4479,10 +4514,16 @@ function liteTimeKey(t){
 }
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
-  DOM.liteChartTitle.innerHTML=_liteTitleSegments(bar).map(seg=>
-    seg.color==='__html'?seg.text:
-    seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
-  ).join('');
+  const t=DOM.liteChartTitle;
+  if(!t.querySelector('.lct-sym')){
+    t.innerHTML=`<span class="lct-sym" style="color:#111827"></span><span class="lct-tf" style="color:#111827"></span><span class="lct-time" style="color:#111827"></span><span style="color:#111827"> |</span><span class="lct-open"><span style="color:#111827"> O:</span><span class="lct-val-o"></span></span><span class="lct-hl"><span style="color:#111827"> H:</span><span class="lct-val-h"></span><span style="color:#111827"> L:</span><span class="lct-val-l"></span></span><span style="color:#111827"> C:</span><span class="lct-val-c"></span><span style="color:#111827"> (</span><span class="lct-val-pct"></span><span style="color:#111827">)</span><span class="lct-val-rs"></span>`;
+  }
+  const tf=(_liteTf||'D').replace(/^1/,''), pct=Number.isFinite(bar.pct)?bar.pct:0;
+  const col=(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0)?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
+  t.querySelector('.lct-sym').textContent=_liteSymbol; t.querySelector('.lct-tf').textContent=` [${tf}] `; t.querySelector('.lct-time').textContent=fmtLiteDate(bar.time);
+  const upd=(cls,val)=>{const e=t.querySelector(cls); if(e){e.textContent=val; e.style.color=col;}};
+  upd('.lct-val-o',fmtLiteNum(bar.open)); upd('.lct-val-h',fmtLiteNum(bar.high)); upd('.lct-val-l',fmtLiteNum(bar.low)); upd('.lct-val-c',fmtLiteNum(bar.close)); upd('.lct-val-pct',`${pct>0?'+':''}${pct.toFixed(2)}%`);
+  const rsEl=t.querySelector('.lct-val-rs'); if(rsEl) rsEl.innerHTML=Number.isFinite(_liteRsScore)?' '+rsBadge(_liteRsScore):'';
 }
 let _liteHistorySignals=[], _liteCurrentSignal=null;
 function _liteApplyBuySignal(sigOverride){
@@ -6657,7 +6698,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
+  if(DOM.liteChartTitle&&!window.LightweightCharts)DOM.liteChartTitle.textContent='Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
   if(!window.LightweightCharts){
@@ -6675,7 +6716,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
       const rawVolume=[...(item.volume||[])];
       const liveEntry=(window._lastHmapData||{})[s];
       if(liveEntry&&liveEntry.price&&rawCandles.length){
-        const d=new Date();const ts=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+        const d=new Date();const ts=liveEntry.date || (d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
         const lIdx=rawCandles.length-1, rL=rawCandles[lIdx], lTime=Array.isArray(rL)?rL[0]:rL.time;
         if(lTime&&lTime.startsWith(ts)){
           const last=Array.isArray(rL)?[...rL]:{...rL};
@@ -6713,7 +6754,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     }
     _liteApplyChartPayload(j,s,skipPopoutSync);
   }catch(e){
-    if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
+    if(DOM.liteChartTitle)DOM.liteChartTitle.innerHTML='Không có dữ liệu';
     updateLiteBigPrice(null);
     DOM.liteChartEmpty.textContent='Không lấy được dữ liệu VNDirect cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
@@ -6737,11 +6778,13 @@ async function _liteQuietRefreshChart(){
     const liveEntry=(window._lastHmapData||{})[sym];
     if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
       const last=_liteData[_liteData.length-1];
-      last.close=liveEntry.price;
-      if(liveEntry.open)last.open=liveEntry.open;
-      if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);
-      if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
-      _liteCandle.update(last);
+      if(liveEntry.date&&liteTimeKey(last.time).startsWith(liveEntry.date)){
+        last.close=liveEntry.price;
+        if(liveEntry.open)last.open=liveEntry.open;
+        if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);
+        if(liveEntry.low)last.low=Math.min(last.low,liveEntry.price);
+        _liteCandle.update(last);
+      }
       if(_liteVolumeData&&_liteVolumeData.length){
         const lastVol=_liteVolumeData[_liteVolumeData.length-1];
         if(liveEntry.volume)lastVol.value=liveEntry.volume;
@@ -6763,11 +6806,13 @@ async function _liteQuietRefreshChart(){
     const key=liteTimeKey(rawBar.time);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(tf==='1D'&&liveEntry&&liveEntry.price){
-      rawBar.close=liveEntry.price;
-      if(liveEntry.open)rawBar.open=liveEntry.open;
-      if(liveEntry.high)rawBar.high=Math.max(rawBar.high,liveEntry.price);
-      if(liveEntry.low)rawBar.low=Math.min(rawBar.low,liveEntry.price);
-      if(rawVol&&liveEntry.volume)rawVol.value=liveEntry.volume;
+      if(liveEntry.date&&key.startsWith(liveEntry.date)){
+        rawBar.close=liveEntry.price;
+        if(liveEntry.open)rawBar.open=liveEntry.open;
+        if(liveEntry.high)rawBar.high=Math.max(rawBar.high,liveEntry.price);
+        if(liveEntry.low)rawBar.low=Math.min(rawBar.low,liveEntry.price);
+        if(rawVol&&liveEntry.volume)rawVol.value=liveEntry.volume;
+      }
     }
     const isNewBar=!_liteDataByTime.has(key);
     const prevBar=isNewBar?_liteData[_liteData.length-1]:(_liteData.length>1?_liteData[_liteData.length-2]:null);
