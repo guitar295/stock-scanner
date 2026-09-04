@@ -4514,10 +4514,16 @@ function liteTimeKey(t){
 }
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
-  DOM.liteChartTitle.innerHTML=_liteTitleSegments(bar).map(seg=>
-    seg.color==='__html'?seg.text:
-    seg.color==='#111827'?seg.text:`<span style="color:${seg.color}">${seg.text}</span>`
-  ).join('');
+  const t=DOM.liteChartTitle;
+  if(!t.querySelector('.lct-sym')){
+    t.innerHTML=`<span class="lct-sym" style="color:#111827"></span><span class="lct-tf" style="color:#111827"></span><span class="lct-time" style="color:#111827"></span><span style="color:#111827"> |</span><span class="lct-open"><span style="color:#111827"> O:</span><span class="lct-val-o"></span></span><span class="lct-hl"><span style="color:#111827"> H:</span><span class="lct-val-h"></span><span style="color:#111827"> L:</span><span class="lct-val-l"></span></span><span style="color:#111827"> C:</span><span class="lct-val-c"></span><span style="color:#111827"> (</span><span class="lct-val-pct"></span><span style="color:#111827">)</span><span class="lct-val-rs"></span>`;
+  }
+  const tf=(_liteTf||'D').replace(/^1/,''), pct=Number.isFinite(bar.pct)?bar.pct:0;
+  const col=(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0)?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
+  t.querySelector('.lct-sym').textContent=_liteSymbol; t.querySelector('.lct-tf').textContent=` [${tf}] `; t.querySelector('.lct-time').textContent=fmtLiteDate(bar.time);
+  const upd=(cls,val)=>{const e=t.querySelector(cls); if(e){e.textContent=val; e.style.color=col;}};
+  upd('.lct-val-o',fmtLiteNum(bar.open)); upd('.lct-val-h',fmtLiteNum(bar.high)); upd('.lct-val-l',fmtLiteNum(bar.low)); upd('.lct-val-c',fmtLiteNum(bar.close)); upd('.lct-val-pct',`${pct>0?'+':''}${pct.toFixed(2)}%`);
+  const rsEl=t.querySelector('.lct-val-rs'); if(rsEl) rsEl.innerHTML=Number.isFinite(_liteRsScore)?' '+rsBadge(_liteRsScore):'';
 }
 let _liteHistorySignals=[], _liteCurrentSignal=null;
 function _liteApplyBuySignal(sigOverride){
@@ -6692,7 +6698,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
   initLiteChart();
-  if(DOM.liteChartTitle)DOM.liteChartTitle.textContent=window.LightweightCharts?'Đang tải...':'Thiếu thư viện chart';
+  if(DOM.liteChartTitle&&!window.LightweightCharts)DOM.liteChartTitle.textContent='Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
   DOM.liteChartEmpty.style.display='flex';
   if(!window.LightweightCharts){
@@ -6748,7 +6754,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     }
     _liteApplyChartPayload(j,s,skipPopoutSync);
   }catch(e){
-    if(DOM.liteChartTitle)DOM.liteChartTitle.textContent='Không có dữ liệu';
+    if(DOM.liteChartTitle)DOM.liteChartTitle.innerHTML='Không có dữ liệu';
     updateLiteBigPrice(null);
     DOM.liteChartEmpty.textContent='Không lấy được dữ liệu VNDirect cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);

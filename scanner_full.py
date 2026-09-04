@@ -3047,7 +3047,8 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
             bars_1d, vols_1d = _format_df_bars_vols(sub_df)
 
             _, hist_sigs = calc_signals_for_df(sub_df)
-            rs_val = float(_rs_score_cache["scores"].get(sym, 0)) if _rs_score_cache and "scores" in _rs_score_cache else 0
+            rs_raw = _rs_score_cache["scores"].get(sym) if _rs_score_cache and "scores" in _rs_score_cache else None
+            rs_val = round(float(rs_raw), 1) if rs_raw is not None else None
             
             # Đóng gói sẵn dự báo Vol đa khung (dùng chung tiến độ ngày)
             now_obj = datetime.now(TZ_VN)
@@ -3071,13 +3072,15 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
             
             vf_1d = _get_vf(sub_df)
 
-            data["symbols"][sym] = {
+            item = {
                 "candles": bars_1d,
                 "volume": vols_1d,
                 "history_signals": hist_sigs,
-                "rs": round(rs_val, 1),
                 "vol_forecast": vf_1d
             }
+            if rs_val is not None:
+                item["rs"] = rs_val
+            data["symbols"][sym] = item
         tmp = out_path + ".tmp"
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
