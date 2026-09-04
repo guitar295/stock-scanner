@@ -1290,7 +1290,8 @@ def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
                             'stockVol': total_vol,
                             'nmTotalTradedQty': total_vol,
                             'nmTotalTradedValue': total_val,
-                            'openPrice': open_price
+                            'openPrice': open_price,
+                            'tradingDate': it.get('tradingDate') or it.get('date') or ''
                         })
         except Exception:
             pass
@@ -1426,20 +1427,20 @@ def fetch_today_bar(symbol: str, current_date: date):
                 prev_low    = float(prev.get('low',    np.nan))
 
                 ohlcv_clone = (
-                    close  == prev_close  and open_  == prev_open  and
-                    high   == prev_high   and low    == prev_low   and
-                    volume == prev_volume
+                    close == prev_close and open_ == prev_open and
+                    high == prev_high and low == prev_low and
+                    (volume == prev_volume or (prev_volume > 0 and abs(volume - prev_volume) / prev_volume < 0.01))
                 )
                 if ohlcv_clone:
-                    print(f"    ⚠️  {symbol}: today_bar OHLCV = phiên trước → bỏ qua")
+                    print(f"    ⚠️  {symbol}: today_bar OHLCV ≈ phiên trước → bỏ qua")
                     return None
 
                 price_vol_clone = (
-                    not pd.isna(prev_close)  and close  == prev_close and
-                    not pd.isna(prev_volume) and volume == prev_volume
+                    not pd.isna(prev_close) and close == prev_close and
+                    not pd.isna(prev_volume) and (volume == prev_volume or (prev_volume > 0 and abs(volume - prev_volume) / prev_volume < 0.01))
                 )
                 if price_vol_clone:
-                    print(f"    ⚠️  {symbol}: close+volume = phiên trước → bỏ qua")
+                    print(f"    ⚠️  {symbol}: close+volume ≈ phiên trước → bỏ qua")
                     return None
 
             high = max(high, open_, close)
@@ -1476,9 +1477,13 @@ def upsert_today_bar(df_hist, today_bar):
         return df_hist
     
     prev = df_hist.iloc[-1]
-    if (float(today_bar.get('close', 0)) == float(prev['close']) and 
-        float(today_bar.get('open', 0)) == float(prev['open']) and 
-        float(today_bar.get('volume', 0)) == float(prev['volume'])):
+    p_c, p_o, p_h, p_l, p_v = float(prev['close']), float(prev['open']), float(prev['high']), float(prev['low']), float(prev['volume'])
+    t_c, t_o, t_h, t_l = float(today_bar.get('close', 0)), float(today_bar.get('open', 0)), float(today_bar.get('high', 0)), float(today_bar.get('low', 0))
+    t_v = float(today_bar.get('volume', 0))
+    
+    # Khớp toàn bộ 4 mức giá O, H, L, C và khối lượng tương đồng (lệch < 1%) -> clone của phiên trước
+    if (t_c == p_c and t_o == p_o and t_h == p_h and t_l == p_l and 
+        (t_v == p_v or (p_v > 0 and abs(t_v - p_v) / p_v < 0.01))):
         return df_hist
     
     new_row = pd.DataFrame([today_bar], index=[pd.Timestamp(today_bar.name)])
@@ -3042,7 +3047,8 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
             bars_1d, vols_1d = _format_df_bars_vols(sub_df)
 
             _, hist_sigs = calc_signals_for_df(sub_df)
-            rs_val = float(_rs_score_cache["scores"].get(sym, 0)) if _rs_score_cache and "scores" in _rs_score_cache else 0
+            rs_raw = _rs_score_cache["scores"].get(sym) if _rs_score_cache and "scores" in _rs_score_cache else None
+            rs_val = round(float(rs_raw), 1) if rs_raw is not None else None
             
             # Đóng gói sẵn dự báo Vol đa khung (dùng chung tiến độ ngày)
             now_obj = datetime.now(TZ_VN)
@@ -3066,13 +3072,15 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
             
             vf_1d = _get_vf(sub_df)
 
-            data["symbols"][sym] = {
+            item = {
                 "candles": bars_1d,
                 "volume": vols_1d,
                 "history_signals": hist_sigs,
-                "rs": round(rs_val, 1),
                 "vol_forecast": vf_1d
             }
+            if rs_val is not None:
+                item["rs"] = rs_val
+            data["symbols"][sym] = item
         tmp = out_path + ".tmp"
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
