@@ -2735,7 +2735,6 @@ html.chart-popout-mode .lite-chart-frame{
 .hmap-panel.collapsed .hmap-ts-wrap{display:none!important}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.panel-body{display:none!important}
-.market-frame{width:100%;height:720px;border:none;display:block;background:#fff}
 .frame-shrink{width:100%;height:720px;overflow:hidden;position:relative;background:#fff}
 .frame-shrink iframe{position:absolute;top:0;left:0;width:125%;height:125%;border:none;background:#fff;transform:scale(.8);transform-origin:0 0}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
@@ -3021,10 +3020,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     aspect-ratio:16/9;
     height:auto;
   }
-  .market-frame{height:70vh}
   .frame-shrink{height:70vh}
-  .tri-tabs [data-tab="fireant"],
-  #tri-content-fireant{display:none !important}
 
   /* Panel CHART trên mobile/iPhone: toolbar cuộn ngang mượt (-webkit-overflow-scrolling:touch),
      input font-size 16px để iOS không tự zoom, hỗ trợ safe-area cho notch/Home bar. Dropdown
@@ -3576,16 +3572,12 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     <div class="panel-hdr tri-hdr" id="tri-hdr">
       <span class="panel-title">MARKET</span>
       <div class="tri-tabs" id="tri-tabs">
-        <span class="tri-tab" data-tab="fireant">Fireant</span>
         <span class="tri-tab on" data-tab="health">Mrk Health</span>
         <span class="tri-tab" data-tab="treemap">Treemap</span>
       </div>
       <span class="tri-toggle" id="tri-toggle">▶</span>
     </div>
     <div class="tri-body" id="tri-body">
-      <div class="tri-content" id="tri-content-fireant">
-        <iframe class="market-frame" id="market-frame" src="https://fireant.vn/dashboard" allowfullscreen></iframe>
-      </div>
       <div class="tri-content on" id="tri-content-health">
         <button class="lite-draw-btn health-copy-btn" id="health-copy-btn" title="Sao chép ảnh Mrk Health vào clipboard" aria-label="Sao chép ảnh Mrk Health vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
 
@@ -8248,8 +8240,8 @@ window.addEventListener('resize',()=>{
   _vndResizeTimer=setTimeout(vndRerenderVisible,150);
 });
 
-// ── MARKET (Fireant / Mrk Health / Treemap) — 1 thẻ, chuyển nội dung bằng tab ──
-const TRI_TABS=['fireant','health','treemap'];
+// ── MARKET (Mrk Health / Treemap) — 1 thẻ, chuyển nội dung bằng tab ──
+const TRI_TABS=['health','treemap'];
 function triActivateTab(tab){
   if(!TRI_TABS.includes(tab))return;
   DOM.triTabs.querySelectorAll('.tri-tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
