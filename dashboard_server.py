@@ -2781,9 +2781,15 @@ html.chart-popout-mode .lite-chart-frame{
 #lite-vietstock-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
 #lite-vietstock-toggle-btn{font-size:10px;font-weight:700;color:var(--muted);background:#f8fafc;border:1px solid var(--border);min-width:28px}
 #lite-vietstock-toggle-btn:hover:not(.on){background:#f8fafc}
+#lite-fireant-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
+#lite-fireant-toggle-btn{font-size:10px;font-weight:700;color:var(--muted);background:#f8fafc;border:1px solid var(--border);min-width:28px}
+#lite-fireant-toggle-btn:hover:not(.on){background:#f8fafc}
 .lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
 .lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
 .lite-groups-sidebar.on~.lite-vietstock-iframe{left:180px;width:calc(100% - 180px)}
+.lite-fireant-iframe{position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:-1;visibility:hidden;opacity:0;pointer-events:none}
+.lite-chart-frame.fireant-mode .lite-fireant-iframe{z-index:6;visibility:visible;opacity:1;pointer-events:auto}
+.lite-groups-sidebar.on~.lite-fireant-iframe{left:180px;width:calc(100% - 180px)}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:6px;line-height:1;background:rgba(255,255,255,.78);padding:4px 8px;border-radius:6px;pointer-events:none;transition:left .15s}
 .lite-chart-signal.on{display:flex}
@@ -3069,6 +3075,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
   .lite-groups-sidebar{width:150px}
   .lite-groups-sidebar.on~.lite-vietstock-iframe{left:150px;width:calc(100% - 150px)}
+  .lite-groups-sidebar.on~.lite-fireant-iframe{left:150px;width:calc(100% - 150px)}
   .lite-groups-sidebar.on+.lite-chart-title,
   .lite-groups-sidebar.on~.lite-chart-signal{left:162px}
   .lite-groups-sidebar.on~.lite-chart-bigprice{left:150px}
@@ -3343,6 +3350,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         <button class="lite-draw-btn lite-fav-btn" id="lite-fav-btn" title="Thêm/bỏ mã đang xem khỏi Favorite" aria-label="Thêm/bỏ mã đang xem khỏi Favorite">☆</button>
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
         <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
+        <button class="lite-draw-btn" id="lite-fireant-toggle-btn" title="Mở chart Fireant (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Fireant">F</button>
         <div class="lite-tf-tabs" id="lite-chart-tf">
           <button class="lite-tf-btn on" data-tf="1D">D</button>
           <button class="lite-tf-btn" data-tf="1W">W</button>
@@ -3554,6 +3562,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
       <div id="lite-macd-chart"></div>
       <iframe id="lite-vietstock-iframe" class="lite-vietstock-iframe" src="about:blank" title="Vietstock chart"></iframe>
+      <iframe id="lite-fireant-iframe" class="lite-fireant-iframe" src="about:blank" title="Fireant chart" allowfullscreen></iframe>
       <div class="lite-xhair-v" id="lite-xhair-v"></div>
       <div class="lite-xhair-h" id="lite-xhair-h"></div>
       <div class="lite-xhair-price" id="lite-xhair-price"></div>
@@ -3817,6 +3826,7 @@ const DOM={
   liteChartTitleLabel:$('lite-chart-title-label'),
   liteFavBtn:$('lite-fav-btn'),
   liteVietstockToggleBtn:$('lite-vietstock-toggle-btn'),liteVietstockIframe:$('lite-vietstock-iframe'),
+  liteFireantToggleBtn:$('lite-fireant-toggle-btn'),liteFireantIframe:$('lite-fireant-iframe'),
   liteChart:$('lite-chart'),
   liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
   liteRsiChart:$('lite-rsi-chart'),liteMacdChart:$('lite-macd-chart'),
@@ -8283,10 +8293,11 @@ DOM.hmapToggle.addEventListener('click',e=>{
 DOM.liteChartToggle.addEventListener('click',e=>{
   // Control trong thanh công cụ vẫn bấm bình thường khi thẻ mở. #lite-fav-btn (nút ⭐)
   // phải nằm trong danh sách loại trừ — thiếu nó sẽ bị hiểu nhầm thành bấm header, tự thu gọn thẻ.
-  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-fav-btn,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,.panel-title'))return;
+  if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-fav-btn,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,#lite-fireant-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
   if(_isChartPanelOpen){
+    if(!DOM.liteFireantIframe.src||DOM.liteFireantIframe.src==='about:blank')DOM.liteFireantIframe.src='https://fireant.vn/charts';
     // Panel vừa mở lại sau khi ẩn cần ép resize canvas (có thể đang mang kích thước 0) và reset visible range, tránh nến bị dồn cụm.
     requestAnimationFrame(()=>{
       if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
@@ -9146,18 +9157,34 @@ function _updateVietstockIframeIfActive(sym){
   DOM.liteVietstockIframe.src='https://ta.vietstock.vn/?stockcode='+(sym||_liteSymbol||'VNINDEX').toLowerCase();
 }
 function _setVietstockMode(on){
+  if(on)_setFireantMode(false);
   DOM.liteChartFrame.classList.toggle('vietstock-mode',on);
   DOM.liteVietstockToggleBtn.classList.toggle('on',on);
   if(on)_updateVietstockIframeIfActive();
   else DOM.liteVietstockIframe.src='about:blank';
 }
+function _setFireantMode(on){
+  if(on)_setVietstockMode(false);
+  DOM.liteChartFrame.classList.toggle('fireant-mode',on);
+  DOM.liteFireantToggleBtn.classList.toggle('on',on);
+  if(on){
+    if(!DOM.liteFireantIframe.src||DOM.liteFireantIframe.src==='about:blank')DOM.liteFireantIframe.src='https://fireant.vn/charts';
+    DOM.liteFireantIframe.style.width='calc(100% - 1px)';
+    setTimeout(()=>{if(DOM.liteFireantIframe)DOM.liteFireantIframe.style.width='';},150);
+  }
+}
 DOM.liteVietstockToggleBtn.addEventListener('click',e=>{
   e.stopPropagation();
   _setVietstockMode(!DOM.liteChartFrame.classList.contains('vietstock-mode'));
 });
+DOM.liteFireantToggleBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  _setFireantMode(!DOM.liteChartFrame.classList.contains('fireant-mode'));
+});
 DOM.liteChartTitleLabel.addEventListener('click',e=>{
   e.stopPropagation();
   _setVietstockMode(false);
+  _setFireantMode(false);
 });
 DOM.lgList?.addEventListener('click',e=>{
   const star=e.target.closest('.lg-star');
@@ -9357,6 +9384,7 @@ _chartSyncChannel?.addEventListener('message',_onPopoutSyncMessage);
   window.addEventListener('beforeunload',()=>{_liteLSSet('chart_popout_open','0');});
   document.documentElement.classList.add('chart-popout-mode');
   DOM.liteChartPanel.classList.remove('collapsed');
+  if(!DOM.liteFireantIframe.src||DOM.liteFireantIframe.src==='about:blank')DOM.liteFireantIframe.src='https://fireant.vn/charts';
   const qsym=(new URLSearchParams(window.location.search).get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();}
   if(!IS_MOBILE()){
