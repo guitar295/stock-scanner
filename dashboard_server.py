@@ -2360,6 +2360,7 @@ function render(){const box=$('list');if(!S.entries.length){box.innerHTML='<div 
     </div>
     <div class="card-actions"><button data-edit="${e.id}">✎</button><button class="danger" data-del="${e.id}">✕</button></div>
   </article>`).join('');}
+async function uploadImages(entryId,files){if(!files||!files.length)return;const fd=new FormData();[...files].forEach(f=>fd.append('images',f));await api('/api/journal/entries/'+entryId+'/images',{method:'POST',body:fd});}
 const _jSyncCh=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('chart_popout_sync'):null;
 function postSym(sym,type){const s=String(sym||'').toUpperCase().trim();if(s&&_jSyncCh)_jSyncCh.postMessage({type:'CHART_POPOUT_SYNC',symbol:s});if(window.parent)window.parent.postMessage({type:type,symbol:sym},'*');}
 function openViewer(entryId,idx){const entry=S.entries.find(x=>String(x.id)===String(entryId));const imgs=(entry&&entry.images)||[];if(!imgs.length)return;S.viewerImages=imgs;S.viewerIdx=Math.max(0,Math.min(idx,imgs.length-1));viewerShow();$('viewer').classList.add('on');}
