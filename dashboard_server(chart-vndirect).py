@@ -4202,7 +4202,7 @@ const LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
 let _liteHasMore=true;         // còn lịch sử cũ phía trước chưa load (server báo)
 let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
 let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
-let _liteChartLoading=false;   // đang load chart lần đầu — block _liteFetchMoreHistory
+let _liteChartLoading=false,_liteLazyDebounce=null;   // đang load chart lần đầu — block _liteFetchMoreHistory
 // Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
 const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
 // Resize khung 3 chart theo clientWidth/Height — dùng chung cho resize listener và _liteRelayoutViewport().
@@ -4257,7 +4257,8 @@ function initLiteChart(){
       if(span>5&&span<2000)_liteSessionRange={span,offsetRight:range.to-last};
     }
     if(range&&Number.isFinite(range.from)&&range.from<=50&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
-      _liteFetchMoreHistory();
+      clearTimeout(_liteLazyDebounce);
+      _liteLazyDebounce=setTimeout(_liteFetchMoreHistory,80);
     }
   });
   _liteRsiChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
@@ -6770,7 +6771,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
 const LITE_CHART_AUTOREFRESH_SEC=5;
 let _liteQuietRefreshing=false;
 async function _liteQuietRefreshChart(){
-  if(_liteChartLoading||_liteQuietRefreshing)return;
+  if(_liteChartLoading||_liteQuietRefreshing||_liteLoadingMore)return;
   if(!_isChartPanelOpen&&!_isChartPopoutWindow)return;
   if(!_liteChart||!_liteCandle||!_liteVolume||!_liteData.length)return;
   if(document.hidden)return;
@@ -6865,13 +6866,17 @@ async function _liteFetchMoreHistory(){
     _liteHasMore=j.has_more!==false;
     const rawNew=j.candles;
     rawNew.forEach((b,i)=>{b.pct=i>0?((b.close-rawNew[i-1].close)/rawNew[i-1].close*100):0;});
-    _liteData=[...rawNew,..._liteData];
-    _liteVolumeData=[...(j.volume||[]),..._liteVolumeData];
+    const prevLen=_liteData.length,cMap=new Map();
+    [...rawNew,..._liteData].forEach(b=>{if(b&&b.time)cMap.set(liteTimeKey(b.time),b);});
+    _liteData=Array.from(cMap.values()).sort((a,b)=>liteTimeKey(a.time).localeCompare(liteTimeKey(b.time)));
+    _liteDataByTime=cMap;
+    const vMap=new Map();
+    [...(j.volume||[]),..._liteVolumeData].forEach(v=>{if(v&&v.time)vMap.set(liteTimeKey(v.time),v);});
+    _liteVolumeData=Array.from(vMap.values()).sort((a,b)=>liteTimeKey(a.time).localeCompare(liteTimeKey(b.time)));
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=Array.from(new Set([...j.history_signals,..._liteHistorySignals]));
-    _liteDataByTime=new Map(_liteData.map(b=>[liteTimeKey(b.time),b]));
-    _liteOldestDate=liteTimeKey(_liteData[0].time);
+    _liteOldestDate=_liteData.length?liteTimeKey(_liteData[0].time):null;
     const prevRange=_liteChart.timeScale().getVisibleLogicalRange();
-    const prependCount=rawNew.length;
+    const prependCount=_liteData.length-prevLen;
     _liteCandle.setData(_liteData);
     _liteUpdateIndicatorData();
     if(prevRange&&Number.isFinite(prevRange.from)&&Number.isFinite(prevRange.to)){
