@@ -3927,6 +3927,7 @@ function pctCellForSym(sym,fallbackPct=null){
   return{txt:(v>=0?'+':'')+v.toFixed(1)+'%',color:v>=0?'#0e9f6e':'#e02424'};
 }
 let _sigTodayMap=new Map();
+window._sigTodayMap=_sigTodayMap;
 let _momentumTodayMap=new Map();
 let _strengthTodayMap=new Map();
 let _attentTodayMap=new Map();
@@ -4441,11 +4442,11 @@ function updateLiteBigPrice(bar){
   
   let target = bar;
   if (_liteSymbol && window._marketBundle && _marketBundle[_liteSymbol] && _marketBundle[_liteSymbol].candles && _marketBundle[_liteSymbol].candles.length > 1) {
-    const c1d = _marketBundle[_liteSymbol].candles;
-    let closePrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][4] : c1d[c1d.length-1].close;
-    let openPrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][1] : c1d[c1d.length-1].open;
-    const prevClose = Array.isArray(c1d[c1d.length-2]) ? c1d[c1d.length-2][4] : c1d[c1d.length-2].close;
-    const liveEntry = (window._lastHmapData||{})[_liteSymbol];
+    const c1d=_marketBundle[_liteSymbol].candles,last=c1d[c1d.length-1],prev=c1d[c1d.length-2];
+    const isArr=Array.isArray(last);
+    let closePrice=isArr?last[4]:last.close, openPrice=isArr?last[1]:last.open;
+    const prevClose=Array.isArray(prev)?prev[4]:prev.close;
+    const liveEntry=_getLiveEntry(_liteSymbol);
     if (liveEntry && liveEntry.price) {
       closePrice = liveEntry.price;
       if (liveEntry.open) openPrice = liveEntry.open;
@@ -4535,6 +4536,8 @@ function updateLiteTitle(bar){
   const rsEl=t.querySelector('.lct-val-rs'); if(rsEl) rsEl.innerHTML=Number.isFinite(_liteRsScore)?' '+rsBadge(_liteRsScore):'';
 }
 let _liteHistorySignals=[], _liteCurrentSignal=null;
+const _getSig=s=>_sigTodayMap.get(s)||(window.parent!==window?window.parent?._sigTodayMap?.get(s):null);
+const _getLiveEntry=s=>((window._lastHmapData||{})[s])||(window.parent!==window?(window.parent?._lastHmapData||{})[s]:null);
 function _liteApplyBuySignal(sigOverride){
   if(!_liteCandle||!_liteData.length)return;
   if(sigOverride!==undefined)_liteCurrentSignal=sigOverride;
@@ -4577,6 +4580,7 @@ function setLiteTf(tf){
 function applyLiteTf(tf,force=false){
   if(!tf)return false;
   if(!force&&_liteTf===tf)return true;
+  _liteBuyArrowData=null;
   setLiteTf(tf);
   loadLiteChart(_liteSymbol,0);
   return true;
@@ -5334,6 +5338,9 @@ function _liteDrawBuyArrow(ctx){
   const{color}=_liteBuyArrowData;
   const x=_liteTimeToX(lastBar.time),yLow=_litePriceToY(lastBar.low);
   if(x===null||yLow===null)return;
+  const yOpen=_litePriceToY(lastBar.open),yClose=_litePriceToY(lastBar.close);
+  if(yOpen===null||yClose===null)return;
+  if(yLow<Math.max(yOpen,yClose))return;
   // GAP: khoảng cách xuống dưới low tới đuôi mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu. SHAFT_*: thân que.
   const GAP=14,HEAD_H=6,HEAD_HALF_W=2.5,SHAFT_H=5,SHAFT_HALF_W=1;
   const yTip=yLow+GAP;              // đỉnh mũi tên, hướng lên phía nến
@@ -6647,10 +6654,16 @@ const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
 let _liteReqId=0;
 let _marketBundle=null;
 async function _loadMarketBundle(retryCount=0){
+  if(!_marketBundle&&window.parent!==window&&window.parent._marketBundle){
+    _marketBundle=window.parent._marketBundle;
+    window._marketBundle=_marketBundle;
+    return;
+  }
   try{
     const j=await fetch('/data/market_bundle.json?t='+Date.now()).then(r=>r.json()).catch(()=>fetch('/api/market_bundle?t='+Date.now()).then(r=>r.json()));
     if(j&&j.symbols&&Object.keys(j.symbols).length>0){
       _marketBundle=j.symbols;
+      window._marketBundle=_marketBundle;
       if(_liteSymbol&&(!_liteData||!_liteData.length)) loadLiteChart(_liteSymbol);
       if(!window._mbRefreshTimer) window._mbRefreshTimer = setInterval(()=>{const d=new Date(),t=d.getHours()*100+d.getMinutes();if(t>=845&&t<=1515&&!document.hidden)_loadMarketBundle();}, 120000);
       return;
@@ -6695,7 +6708,7 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   updateLiteBigPrice(_liteData[_liteData.length-1]);
   if(!_liteVolForecast)_liteFetchVolForecast(_liteSymbol);
   _liteHistorySignals=j.history_signals||[];
-  const curSig=_sigTodayMap.get(s)||j.signal||null;
+  const curSig=_getSig(s)||j.signal||null;
   _liteCurrentSignal=curSig&&curSig.state!=='DEAD'?curSig:null;
   _liteApplyBuySignal(_liteCurrentSignal);
   loadLiteDrawings();resizeLiteDrawCanvas();
@@ -6715,15 +6728,16 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   _liteChartLoading=true;
+  _liteBuyArrowData=null;
   if(_liteDrawCtx&&DOM.liteChart)_liteDrawCtx.clearRect(0,0,DOM.liteChart.clientWidth,DOM.liteChart.clientHeight);
 
-  const tf=_liteTf||'1D';
-  if(_marketBundle&&_marketBundle[s]&&tf==='1D'){
-    const item=_marketBundle[s];
+  const tf=_liteTf||'1D',mb=_marketBundle||(window.parent!==window?window.parent?._marketBundle:null);
+  if(mb&&mb[s]&&tf==='1D'){
+    const item=mb[s];
     if(item.candles&&item.candles.length){
       const rawCandles=[...(item.candles||[])];
       const rawVolume=[...(item.volume||[])];
-      const liveEntry=(window._lastHmapData||{})[s];
+      const liveEntry=_getLiveEntry(s);
       if(liveEntry&&liveEntry.price&&rawCandles.length){
         const d=new Date();const ts=liveEntry.date || (d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
         const lIdx=rawCandles.length-1, rL=rawCandles[lIdx], lTime=Array.isArray(rL)?rL[0]:rL.time;
@@ -6743,7 +6757,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
         }
       }
       _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:item.history_signals||[],rs:item.rs,vol_forecast:item.vol_forecast||null},s,skipPopoutSync);
-      _liteChartLoading=false;redrawLiteDrawings();
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{_liteChartLoading=false;redrawLiteDrawings();}));
       return;
     }
   }
@@ -6768,8 +6782,9 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     DOM.liteChartEmpty.textContent='Không lấy được dữ liệu VNDirect cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }finally{
-    _liteChartLoading=false;
-    redrawLiteDrawings();
+    if(reqId===_liteReqId){
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{_liteChartLoading=false;redrawLiteDrawings();}));
+    }
   }
 }
 // AUTO-REFRESH CHART — chỉ vá cây nến cuối (series.update(), không setData() lại toàn bộ) nên không nháy màn hình/mất zoom/pan.
@@ -6784,7 +6799,7 @@ async function _liteQuietRefreshChart(){
   const sym=_liteSymbol,tf=_liteTf;
   _liteQuietRefreshing=true;
   try{
-    const liveEntry=(window._lastHmapData||{})[sym];
+    const liveEntry=_getLiveEntry(sym);
     if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
       const last=_liteData[_liteData.length-1];
       if(liveEntry.date&&liteTimeKey(last.time).startsWith(liveEntry.date)){
@@ -6803,8 +6818,8 @@ async function _liteQuietRefreshChart(){
       updateLiteTitle(_liteData[_liteData.length-1]);
       updateLiteBigPrice(_liteData[_liteData.length-1]);
     }
-    const curSig=_sigTodayMap.get(sym);
-    _liteApplyBuySignal(curSig&&curSig.state!=='DEAD'?curSig:null);
+    const curSig=_getSig(sym);
+    if(curSig)_liteApplyBuySignal(curSig.state!=='DEAD'?curSig:null);
 
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
@@ -6848,7 +6863,7 @@ async function _liteQuietRefreshChart(){
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(sym);
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
-    const sigLive=_sigTodayMap.get(sym)||j.signal||null;
+    const sigLive=_getSig(sym)||j.signal||null;
     _liteCurrentSignal=sigLive&&sigLive.state!=='DEAD'?sigLive:null;
     _liteApplyBuySignal(_liteCurrentSignal);
   }catch(e){
@@ -6974,7 +6989,7 @@ function bindLiteChartControls(){
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
-    if(!_litePointerInside||_liteTextEditPos)return;
+    if((!_isChartPopoutWindow&&!_litePointerInside)||_liteTextEditPos)return;
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag==='input'||tag==='textarea')return;
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
@@ -6997,6 +7012,7 @@ function bindLiteChartControls(){
       e.preventDefault();
       const raw=_liteApplyChartSearch();
       DOM.liteChartSearch.classList.remove('on');
+      DOM.liteChartFrame?.focus();
       loadLiteChart(raw,0);
     }
   });
@@ -8373,6 +8389,9 @@ async function fetchSigs(retryCount=0){
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
       :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`;
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
+    window._sigTodayMap=_sigTodayMap;
+    const _curSigNow=_getSig(_liteSymbol);
+    if(_curSigNow)_liteApplyBuySignal(_curSigNow.state!=='DEAD'?_curSigNow:null);
     const momentum=j.momentum||[];
     const strength=j.strength||[];
     _lastStrengthRows=strength;
@@ -9410,6 +9429,16 @@ async function init(){
   if(IS_MOBILE()){
     DOM.liteChartPanel.classList.remove('collapsed');
     _isChartPanelOpen=true;
+  }
+  if(_isChartPopoutWindow){
+    await _loadMarketBundle();
+    loadLiteChart(_liteSymbol);
+    DOM.liteChartFrame?.focus();
+    await Promise.all([fetchSigs(),fetchHmap()]);
+    setInterval(fetchSigs,SIG_TTL*1000);
+    setInterval(fetchHmap,HMAP_TTL*1000);
+    setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
+    return;
   }
   await _loadMarketBundle();
   loadLiteChart(_liteSymbol);
