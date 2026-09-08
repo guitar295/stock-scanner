@@ -513,6 +513,7 @@ def api_proprietary_flow():
 _VPA_FLAG_COLOR = {1: "#254fcc", 2: "#00ffe5"}
 
 _LITE_CHART_CACHE_TTL = 120
+_LITE_CHART_CACHE_MAX = 30
 _lite_chart_cache: dict = {}
 _lite_chart_cache_lock = threading.Lock()
 
@@ -1631,6 +1632,9 @@ def api_lightweight_chart(symbol):
         dchart_data["has_more"] = True
         if limit >= 400 and not nocache:
             with _lite_chart_cache_lock:
+                if len(_lite_chart_cache) >= _LITE_CHART_CACHE_MAX and cache_key not in _lite_chart_cache:
+                    oldest_k = min(_lite_chart_cache, key=lambda k: _lite_chart_cache[k].get("ts", 0))
+                    _lite_chart_cache.pop(oldest_k, None)
                 _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
         elif entry and entry.get("payload"):
             with _lite_chart_cache_lock:
@@ -3723,10 +3727,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       </div>
       <div class="phdr-center">
         <div class="ctabs" id="popup-ctabs">
-          <button class="ctab on" data-tab="vs">📈 Vietstock</button>
-          <button class="ctab" data-tab="chart">📊 Chart</button>
+          <button class="ctab on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
+          <button class="ctab" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-          <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
+          <button class="ctab" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
           <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
           <button class="ctab" data-tab="24h">💬 Fireant</button>
         </div>
@@ -3747,10 +3751,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 
     <!-- Mobile portrait header — Row 2: tabs cuộn -->
     <div class="mob-tab-row" id="mob-tab-row" style="display:none">
-      <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
-      <button class="mob-tab-btn" data-tab="chart">📊 Chart</button>
+      <button class="mob-tab-btn on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
+      <button class="mob-tab-btn" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
-      <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
+      <button class="mob-tab-btn" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
       <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
       <button class="mob-tab-btn" data-tab="24h">💬 Fireant</button>
     </div>
@@ -3763,10 +3767,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         <input class="mob-land-search" id="mob-land-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
       </div>
       <div class="mob-land-tabs" id="mob-land-tabs">
-        <button class="mob-land-tab on" data-tab="vs">📈 Vietstock</button>
-        <button class="mob-land-tab" data-tab="chart">📊 Chart</button>
+        <button class="mob-land-tab on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
+        <button class="mob-land-tab" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-        <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
+        <button class="mob-land-tab" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
         <button class="mob-land-tab" data-tab="24h">💬 Fireant</button>
       </div>
@@ -3876,9 +3880,10 @@ const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
 const IS_STANDALONE_PWA=()=>window.navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
 const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
+  'vs':       s=>`https://ta.vietstock.vn/?stockcode=${s.toLowerCase()}`,
   'chart':    s=>`/?chartPopout=1&embedded=1&sym=${encodeURIComponent(s)}`,
   'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
+  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/cong-ty-cung-nganh-popup?theme=light`,
   'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
   '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
@@ -8411,6 +8416,7 @@ async function fetchSigs(retryCount=0){
 }
 let _isSignalsInitialized=false;
 const _knownSignalsSet=new Set();
+let _pendingHmapData=null;
 async function fetchHmap(retryCount=0){
   try{
     const res=await fetch('/api/heatmap?t='+Date.now());
@@ -8420,13 +8426,17 @@ async function fetchHmap(retryCount=0){
     _hmapCountdown=HMAP_TTL;
     _updateHmapTsDisplay();
     const newData = j.data || {};
-    renderHeatmap(newData);
+    if(document.hidden){
+      _pendingHmapData=newData;
+    }else{
+      _pendingHmapData=null;
+      renderHeatmap(newData);
 
-    // Chỉ render Treemap khi tab đó đang active và sau ít nhất 120s để tiết kiệm CPU tối đa
-    const activeTab = DOM.triTabs?.querySelector('.tri-tab.on')?.dataset.tab;
-    if(activeTab==='treemap'&&Date.now()-_lastTreemapRenderTime>=120000) renderTreemap(newData);
-
-    if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
+      // Chỉ render Treemap khi tab đó đang active và sau ít nhất 120s để tiết kiệm CPU tối đa
+      const activeTab = DOM.triTabs?.querySelector('.tri-tab.on')?.dataset.tab;
+      if(activeTab==='treemap'&&Date.now()-_lastTreemapRenderTime>=120000) renderTreemap(newData);
+      if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
+    }
   }catch(e){
     _hmapCountdown=HMAP_TTL;_updateHmapTsDisplay();
     if(retryCount < 8){
@@ -8872,20 +8882,17 @@ function openChart(sym,tab='chart'){
   _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
-  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  TABS_ALL.forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _activateTab(tab);
   _openPopup();
   setTimeout(()=>DOM.pbox.focus(),0);
-  // Clear search inputs
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 function closePopup(){
   const pbox=DOM.pbox;
   _resetPopupChrome();
   pbox.style.visibility='hidden';
-  DOM.ifVs.src='about:blank';
-  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  TABS_ALL.forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   pbox.style.animation='none';
   DOM.overlay.classList.remove('on');
   document.body.style.overflow='';
@@ -9414,12 +9421,26 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
   let _off=false;
-  setInterval(async()=>{
+  const _checkConn=async()=>{
+    if(document.hidden&&!_off)return;
     try{
       const ok=(await fetch('/data/market_health.json?t='+Date.now(),{cache:'no-cache'})).ok;
       if(ok&&_off){_off=false;window.location.reload();}else if(!ok)_off=true;
     }catch(e){_off=true;}
-  },2500);
+  };
+  setInterval(_checkConn,10000);
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden){
+      _checkConn();
+      if(_pendingHmapData){
+        renderHeatmap(_pendingHmapData);
+        const activeTab=DOM.triTabs?.querySelector('.tri-tab.on')?.dataset.tab;
+        if(activeTab==='treemap')renderTreemap(_pendingHmapData);
+        if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
+        _pendingHmapData=null;
+      }
+    }
+  });
 }
 // Tính lại layout thẻ CHART (main+RSI+MACD+pane+right offset). Tách hàm riêng vì orientationchange
 // gọi lại nhiều lần — trên iOS Safari, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.

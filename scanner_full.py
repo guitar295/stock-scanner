@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import logging
 import os
+import gc
 import re
 import tempfile
 from io import BytesIO
@@ -1327,6 +1328,7 @@ def build_history_cache(symbols: list, current_date: date):
     with cache_lock:
         history_cache.clear()
         history_cache.update(new_history)
+    gc.collect()
     invalidate_rs_cache()
     warm_rs_cache()
     warm_market_health_cache()
