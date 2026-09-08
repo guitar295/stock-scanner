@@ -513,6 +513,7 @@ def api_proprietary_flow():
 _VPA_FLAG_COLOR = {1: "#254fcc", 2: "#00ffe5"}
 
 _LITE_CHART_CACHE_TTL = 120
+_LITE_CHART_CACHE_MAX = 30
 _lite_chart_cache: dict = {}
 _lite_chart_cache_lock = threading.Lock()
 
@@ -1631,6 +1632,9 @@ def api_lightweight_chart(symbol):
         dchart_data["has_more"] = True
         if limit >= 400 and not nocache:
             with _lite_chart_cache_lock:
+                if len(_lite_chart_cache) >= _LITE_CHART_CACHE_MAX and cache_key not in _lite_chart_cache:
+                    oldest_k = min(_lite_chart_cache, key=lambda k: _lite_chart_cache[k].get("ts", 0))
+                    _lite_chart_cache.pop(oldest_k, None)
                 _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
         elif entry and entry.get("payload"):
             with _lite_chart_cache_lock:
@@ -3723,10 +3727,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       </div>
       <div class="phdr-center">
         <div class="ctabs" id="popup-ctabs">
-          <button class="ctab on" data-tab="vs">📈 Vietstock</button>
-          <button class="ctab" data-tab="chart">📊 Chart</button>
+          <button class="ctab on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
+          <button class="ctab" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-          <button class="ctab" data-tab="vnd-news">🗞️ Tin tức</button>
+          <button class="ctab" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
           <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
           <button class="ctab" data-tab="24h">💬 Fireant</button>
         </div>
@@ -3747,10 +3751,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 
     <!-- Mobile portrait header — Row 2: tabs cuộn -->
     <div class="mob-tab-row" id="mob-tab-row" style="display:none">
-      <button class="mob-tab-btn on" data-tab="vs">📈 Vietstock</button>
-      <button class="mob-tab-btn" data-tab="chart">📊 Chart</button>
+      <button class="mob-tab-btn on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
+      <button class="mob-tab-btn" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
-      <button class="mob-tab-btn" data-tab="vnd-news">🗞️ Tin tức</button>
+      <button class="mob-tab-btn" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
       <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
       <button class="mob-tab-btn" data-tab="24h">💬 Fireant</button>
     </div>
@@ -3763,10 +3767,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         <input class="mob-land-search" id="mob-land-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
       </div>
       <div class="mob-land-tabs" id="mob-land-tabs">
-        <button class="mob-land-tab on" data-tab="vs">📈 Vietstock</button>
-        <button class="mob-land-tab" data-tab="chart">📊 Chart</button>
+        <button class="mob-land-tab on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
+        <button class="mob-land-tab" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-        <button class="mob-land-tab" data-tab="vnd-news">🗞️ Tin tức</button>
+        <button class="mob-land-tab" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
         <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
         <button class="mob-land-tab" data-tab="24h">💬 Fireant</button>
       </div>
@@ -3876,9 +3880,10 @@ const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
 const IS_STANDALONE_PWA=()=>window.navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
 const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
 const IFRAME_LAZY={
+  'vs':       s=>`https://ta.vietstock.vn/?stockcode=${s.toLowerCase()}`,
   'chart':    s=>`/?chartPopout=1&embedded=1&sym=${encodeURIComponent(s)}`,
   'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/tin-tuc-ma-popup?type=dn&theme=light`,
+  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/cong-ty-cung-nganh-popup?theme=light`,
   'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
   '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
@@ -3922,6 +3927,7 @@ function pctCellForSym(sym,fallbackPct=null){
   return{txt:(v>=0?'+':'')+v.toFixed(1)+'%',color:v>=0?'#0e9f6e':'#e02424'};
 }
 let _sigTodayMap=new Map();
+window._sigTodayMap=_sigTodayMap;
 let _momentumTodayMap=new Map();
 let _strengthTodayMap=new Map();
 let _attentTodayMap=new Map();
@@ -4436,11 +4442,11 @@ function updateLiteBigPrice(bar){
   
   let target = bar;
   if (_liteSymbol && window._marketBundle && _marketBundle[_liteSymbol] && _marketBundle[_liteSymbol].candles && _marketBundle[_liteSymbol].candles.length > 1) {
-    const c1d = _marketBundle[_liteSymbol].candles;
-    let closePrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][4] : c1d[c1d.length-1].close;
-    let openPrice = Array.isArray(c1d[c1d.length-1]) ? c1d[c1d.length-1][1] : c1d[c1d.length-1].open;
-    const prevClose = Array.isArray(c1d[c1d.length-2]) ? c1d[c1d.length-2][4] : c1d[c1d.length-2].close;
-    const liveEntry = (window._lastHmapData||{})[_liteSymbol];
+    const c1d=_marketBundle[_liteSymbol].candles,last=c1d[c1d.length-1],prev=c1d[c1d.length-2];
+    const isArr=Array.isArray(last);
+    let closePrice=isArr?last[4]:last.close, openPrice=isArr?last[1]:last.open;
+    const prevClose=Array.isArray(prev)?prev[4]:prev.close;
+    const liveEntry=_getLiveEntry(_liteSymbol);
     if (liveEntry && liveEntry.price) {
       closePrice = liveEntry.price;
       if (liveEntry.open) openPrice = liveEntry.open;
@@ -4530,6 +4536,8 @@ function updateLiteTitle(bar){
   const rsEl=t.querySelector('.lct-val-rs'); if(rsEl) rsEl.innerHTML=Number.isFinite(_liteRsScore)?' '+rsBadge(_liteRsScore):'';
 }
 let _liteHistorySignals=[], _liteCurrentSignal=null;
+const _getSig=s=>_sigTodayMap.get(s)||(window.parent!==window?window.parent?._sigTodayMap?.get(s):null);
+const _getLiveEntry=s=>((window._lastHmapData||{})[s])||(window.parent!==window?(window.parent?._lastHmapData||{})[s]:null);
 function _liteApplyBuySignal(sigOverride){
   if(!_liteCandle||!_liteData.length)return;
   if(sigOverride!==undefined)_liteCurrentSignal=sigOverride;
@@ -4572,6 +4580,7 @@ function setLiteTf(tf){
 function applyLiteTf(tf,force=false){
   if(!tf)return false;
   if(!force&&_liteTf===tf)return true;
+  _liteBuyArrowData=null;
   setLiteTf(tf);
   loadLiteChart(_liteSymbol,0);
   return true;
@@ -5329,6 +5338,9 @@ function _liteDrawBuyArrow(ctx){
   const{color}=_liteBuyArrowData;
   const x=_liteTimeToX(lastBar.time),yLow=_litePriceToY(lastBar.low);
   if(x===null||yLow===null)return;
+  const yOpen=_litePriceToY(lastBar.open),yClose=_litePriceToY(lastBar.close);
+  if(yOpen===null||yClose===null)return;
+  if(yLow<Math.max(yOpen,yClose))return;
   // GAP: khoảng cách xuống dưới low tới đuôi mũi tên. HEAD_H/HEAD_HALF_W: tam giác đầu. SHAFT_*: thân que.
   const GAP=14,HEAD_H=6,HEAD_HALF_W=2.5,SHAFT_H=5,SHAFT_HALF_W=1;
   const yTip=yLow+GAP;              // đỉnh mũi tên, hướng lên phía nến
@@ -6642,10 +6654,16 @@ const LITE_CHART_RETRY_MAX=6,LITE_CHART_RETRY_DELAY=4000;
 let _liteReqId=0;
 let _marketBundle=null;
 async function _loadMarketBundle(retryCount=0){
+  if(!_marketBundle&&window.parent!==window&&window.parent._marketBundle){
+    _marketBundle=window.parent._marketBundle;
+    window._marketBundle=_marketBundle;
+    return;
+  }
   try{
     const j=await fetch('/data/market_bundle.json?t='+Date.now()).then(r=>r.json()).catch(()=>fetch('/api/market_bundle?t='+Date.now()).then(r=>r.json()));
     if(j&&j.symbols&&Object.keys(j.symbols).length>0){
       _marketBundle=j.symbols;
+      window._marketBundle=_marketBundle;
       if(_liteSymbol&&(!_liteData||!_liteData.length)) loadLiteChart(_liteSymbol);
       if(!window._mbRefreshTimer) window._mbRefreshTimer = setInterval(()=>{const d=new Date(),t=d.getHours()*100+d.getMinutes();if(t>=845&&t<=1515&&!document.hidden)_loadMarketBundle();}, 120000);
       return;
@@ -6690,7 +6708,7 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   updateLiteBigPrice(_liteData[_liteData.length-1]);
   if(!_liteVolForecast)_liteFetchVolForecast(_liteSymbol);
   _liteHistorySignals=j.history_signals||[];
-  const curSig=_sigTodayMap.get(s)||j.signal||null;
+  const curSig=_getSig(s)||j.signal||null;
   _liteCurrentSignal=curSig&&curSig.state!=='DEAD'?curSig:null;
   _liteApplyBuySignal(_liteCurrentSignal);
   loadLiteDrawings();resizeLiteDrawCanvas();
@@ -6710,15 +6728,16 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   _liteChartLoading=true;
+  _liteBuyArrowData=null;
   if(_liteDrawCtx&&DOM.liteChart)_liteDrawCtx.clearRect(0,0,DOM.liteChart.clientWidth,DOM.liteChart.clientHeight);
 
-  const tf=_liteTf||'1D';
-  if(_marketBundle&&_marketBundle[s]&&tf==='1D'){
-    const item=_marketBundle[s];
+  const tf=_liteTf||'1D',mb=_marketBundle||(window.parent!==window?window.parent?._marketBundle:null);
+  if(mb&&mb[s]&&tf==='1D'){
+    const item=mb[s];
     if(item.candles&&item.candles.length){
       const rawCandles=[...(item.candles||[])];
       const rawVolume=[...(item.volume||[])];
-      const liveEntry=(window._lastHmapData||{})[s];
+      const liveEntry=_getLiveEntry(s);
       if(liveEntry&&liveEntry.price&&rawCandles.length){
         const d=new Date();const ts=liveEntry.date || (d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
         const lIdx=rawCandles.length-1, rL=rawCandles[lIdx], lTime=Array.isArray(rL)?rL[0]:rL.time;
@@ -6738,7 +6757,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
         }
       }
       _liteApplyChartPayload({symbol:s,timeframe:tf,candles:rawCandles,volume:rawVolume,history_signals:item.history_signals||[],rs:item.rs,vol_forecast:item.vol_forecast||null},s,skipPopoutSync);
-      _liteChartLoading=false;redrawLiteDrawings();
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{_liteChartLoading=false;redrawLiteDrawings();}));
       return;
     }
   }
@@ -6763,8 +6782,9 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     DOM.liteChartEmpty.textContent='Không lấy được dữ liệu VNDirect cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }finally{
-    _liteChartLoading=false;
-    redrawLiteDrawings();
+    if(reqId===_liteReqId){
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{_liteChartLoading=false;redrawLiteDrawings();}));
+    }
   }
 }
 // AUTO-REFRESH CHART — chỉ vá cây nến cuối (series.update(), không setData() lại toàn bộ) nên không nháy màn hình/mất zoom/pan.
@@ -6779,7 +6799,7 @@ async function _liteQuietRefreshChart(){
   const sym=_liteSymbol,tf=_liteTf;
   _liteQuietRefreshing=true;
   try{
-    const liveEntry=(window._lastHmapData||{})[sym];
+    const liveEntry=_getLiveEntry(sym);
     if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
       const last=_liteData[_liteData.length-1];
       if(liveEntry.date&&liteTimeKey(last.time).startsWith(liveEntry.date)){
@@ -6798,8 +6818,8 @@ async function _liteQuietRefreshChart(){
       updateLiteTitle(_liteData[_liteData.length-1]);
       updateLiteBigPrice(_liteData[_liteData.length-1]);
     }
-    const curSig=_sigTodayMap.get(sym);
-    _liteApplyBuySignal(curSig&&curSig.state!=='DEAD'?curSig:null);
+    const curSig=_getSig(sym);
+    if(curSig)_liteApplyBuySignal(curSig.state!=='DEAD'?curSig:null);
 
     const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=10&nocache=1');
     if(!r.ok)return;
@@ -6843,7 +6863,7 @@ async function _liteQuietRefreshChart(){
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(sym);
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
-    const sigLive=_sigTodayMap.get(sym)||j.signal||null;
+    const sigLive=_getSig(sym)||j.signal||null;
     _liteCurrentSignal=sigLive&&sigLive.state!=='DEAD'?sigLive:null;
     _liteApplyBuySignal(_liteCurrentSignal);
   }catch(e){
@@ -6969,7 +6989,7 @@ function bindLiteChartControls(){
     if(_liteTryOpenSearchOnKey(e))e.stopPropagation();
   });
   document.addEventListener('keydown',e=>{
-    if(!_litePointerInside||_liteTextEditPos)return;
+    if((!_isChartPopoutWindow&&!_litePointerInside)||_liteTextEditPos)return;
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag==='input'||tag==='textarea')return;
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
@@ -6992,6 +7012,7 @@ function bindLiteChartControls(){
       e.preventDefault();
       const raw=_liteApplyChartSearch();
       DOM.liteChartSearch.classList.remove('on');
+      DOM.liteChartFrame?.focus();
       loadLiteChart(raw,0);
     }
   });
@@ -8368,6 +8389,9 @@ async function fetchSigs(retryCount=0){
       ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
       :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`;
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
+    window._sigTodayMap=_sigTodayMap;
+    const _curSigNow=_getSig(_liteSymbol);
+    if(_curSigNow)_liteApplyBuySignal(_curSigNow.state!=='DEAD'?_curSigNow:null);
     const momentum=j.momentum||[];
     const strength=j.strength||[];
     _lastStrengthRows=strength;
@@ -8411,6 +8435,7 @@ async function fetchSigs(retryCount=0){
 }
 let _isSignalsInitialized=false;
 const _knownSignalsSet=new Set();
+let _pendingHmapData=null;
 async function fetchHmap(retryCount=0){
   try{
     const res=await fetch('/api/heatmap?t='+Date.now());
@@ -8420,13 +8445,17 @@ async function fetchHmap(retryCount=0){
     _hmapCountdown=HMAP_TTL;
     _updateHmapTsDisplay();
     const newData = j.data || {};
-    renderHeatmap(newData);
+    if(document.hidden){
+      _pendingHmapData=newData;
+    }else{
+      _pendingHmapData=null;
+      renderHeatmap(newData);
 
-    // Chỉ render Treemap khi tab đó đang active và sau ít nhất 120s để tiết kiệm CPU tối đa
-    const activeTab = DOM.triTabs?.querySelector('.tri-tab.on')?.dataset.tab;
-    if(activeTab==='treemap'&&Date.now()-_lastTreemapRenderTime>=120000) renderTreemap(newData);
-
-    if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
+      // Chỉ render Treemap khi tab đó đang active và sau ít nhất 120s để tiết kiệm CPU tối đa
+      const activeTab = DOM.triTabs?.querySelector('.tri-tab.on')?.dataset.tab;
+      if(activeTab==='treemap'&&Date.now()-_lastTreemapRenderTime>=120000) renderTreemap(newData);
+      if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
+    }
   }catch(e){
     _hmapCountdown=HMAP_TTL;_updateHmapTsDisplay();
     if(retryCount < 8){
@@ -8872,20 +8901,17 @@ function openChart(sym,tab='chart'){
   _resetPopupChrome();
   _sym=sym.toUpperCase().trim();_tab=tab;
   _updateSymDisplay(_sym);
-  DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+_sym.toLowerCase();
-  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  TABS_ALL.forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   _activateTab(tab);
   _openPopup();
   setTimeout(()=>DOM.pbox.focus(),0);
-  // Clear search inputs
   DOM.popupSearch.value='';DOM.mobSearch.value='';DOM.mobLandSearch.value='';
 }
 function closePopup(){
   const pbox=DOM.pbox;
   _resetPopupChrome();
   pbox.style.visibility='hidden';
-  DOM.ifVs.src='about:blank';
-  ['chart','vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
+  TABS_ALL.forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   pbox.style.animation='none';
   DOM.overlay.classList.remove('on');
   document.body.style.overflow='';
@@ -9404,6 +9430,16 @@ async function init(){
     DOM.liteChartPanel.classList.remove('collapsed');
     _isChartPanelOpen=true;
   }
+  if(_isChartPopoutWindow){
+    await _loadMarketBundle();
+    loadLiteChart(_liteSymbol);
+    DOM.liteChartFrame?.focus();
+    await Promise.all([fetchSigs(),fetchHmap()]);
+    setInterval(fetchSigs,SIG_TTL*1000);
+    setInterval(fetchHmap,HMAP_TTL*1000);
+    setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
+    return;
+  }
   await _loadMarketBundle();
   loadLiteChart(_liteSymbol);
   await loadConfig();
@@ -9414,12 +9450,26 @@ async function init(){
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
   let _off=false;
-  setInterval(async()=>{
+  const _checkConn=async()=>{
+    if(document.hidden&&!_off)return;
     try{
       const ok=(await fetch('/data/market_health.json?t='+Date.now(),{cache:'no-cache'})).ok;
       if(ok&&_off){_off=false;window.location.reload();}else if(!ok)_off=true;
     }catch(e){_off=true;}
-  },2500);
+  };
+  setInterval(_checkConn,10000);
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden){
+      _checkConn();
+      if(_pendingHmapData){
+        renderHeatmap(_pendingHmapData);
+        const activeTab=DOM.triTabs?.querySelector('.tri-tab.on')?.dataset.tab;
+        if(activeTab==='treemap')renderTreemap(_pendingHmapData);
+        if(_lastStrengthRows.length)renderStrengthList(_lastStrengthRows);
+        _pendingHmapData=null;
+      }
+    }
+  });
 }
 // Tính lại layout thẻ CHART (main+RSI+MACD+pane+right offset). Tách hàm riêng vì orientationchange
 // gọi lại nhiều lần — trên iOS Safari, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.
