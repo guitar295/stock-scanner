@@ -1584,7 +1584,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
             color = _VPA_FLAG_COLOR.get(flag) or color
         volume.append({"time": t_val, "value": v, "color": color})
 
-    has_more = before_date is not None and len(final_bars) >= limit
+    has_more = before_date is not None and len(final_bars) >= 20
 
     payload = {
         "symbol": symbol,
@@ -4256,7 +4256,7 @@ function initLiteChart(){
       const last=_liteData.length-1,span=range.to-range.from;
       if(span>5&&span<2000)_liteSessionRange={span,offsetRight:range.to-last};
     }
-    if(range&&range.from>=0&&range.from<=3&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
+    if(range&&Number.isFinite(range.from)&&range.from<=50&&_liteHasMore&&!_liteLoadingMore&&!_liteChartLoading){
       _liteFetchMoreHistory();
     }
   });
@@ -6856,9 +6856,9 @@ async function _liteFetchMoreHistory(){
   const sym=_liteSymbol,tf=_liteTf,oldestDate=_liteOldestDate;
   _liteLoadingMore=true;
   try{
-    const url='/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=300&before='+encodeURIComponent(oldestDate);
+    const url='/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=600&before='+encodeURIComponent(oldestDate);
     const r=await fetch(url);
-    if(!r.ok){_liteHasMore=false;return;}
+    if(!r.ok){return;}
     const j=await r.json();
     if(sym!==_liteSymbol||tf!==_liteTf)return;
     if(!j.candles||!j.candles.length){_liteHasMore=false;return;}
