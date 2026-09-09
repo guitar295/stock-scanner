@@ -1246,6 +1246,8 @@ def _fetch_priceboard_batch(symbols: list[str]) -> list[dict]:
     url = "https://iboard-query.ssi.com.vn/stock/multiple"
     results = []
     for i in range(0, len(symbols), 100):
+        if i > 0:
+            time.sleep(0.15)
         chunk = [s.upper().strip() for s in symbols[i:i + 100] if s.strip()]
         if not chunk:
             continue
@@ -1300,6 +1302,7 @@ def _fetch_priceboard_batch(symbols: list[str]) -> list[dict]:
 
 
 def load_history_for_symbol(symbol: str):
+    time.sleep(0.08)
     for attempt in range(3):
         try:
             df = _fetch_history_candles(symbol, limit=1000)
@@ -1315,7 +1318,7 @@ def build_history_cache(symbols: list, current_date: date):
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
     print(f"\n📦 [{ts}] Nạp cache {len(symbols)} mã [DChart đa luồng]...")
     new_history = {}
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(load_history_for_symbol, s): s for s in symbols}
         for fut in futures:
             s = futures[fut]
@@ -2288,7 +2291,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     if missing_symbols:
         ssi_cnt = max(0, len(symbols) - len(missing_symbols))
         print(f"  [{ts}] 🔄 Quét {len(symbols)} mã [SSI: {ssi_cnt} mã | ⚠️ Fallback VNDirect: {len(missing_symbols)} mã]")
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
             for fut in futures:
                 s = futures[fut]
