@@ -182,8 +182,6 @@ def _load_market_health_from_disk():
     except Exception as e:
         print(f"  [Dashboard] ⚠️  Nạp HEALTH cache từ đĩa lỗi: {e}")
 
-_load_market_health_from_disk()
-
 def _save_heatmap_to_disk():
     try:
         tmp_path = _HEATMAP_CACHE_FILE + ".tmp"
@@ -206,8 +204,6 @@ def _load_heatmap_from_disk():
     except Exception:
         pass
 
-_load_heatmap_from_disk()
-
 
 def _refresh_market_health(force: bool = False) -> dict:
     """Chỉ đọc dữ liệu JSON/RAM trả về tức thì. Nếu force=True thì tính ép buộc."""
@@ -226,12 +222,13 @@ def _refresh_market_health(force: bool = False) -> dict:
         return _market_health_cache["data"]
 
 
-def warm_market_health_cache():
+def warm_market_health_cache(verbose: bool = False):
     """Chủ động tính HEALTH ngay sau khi history_cache load xong."""
     data = _refresh_market_health(force=True)
     ok = bool(data.get("ok"))
-    print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
-          f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
+    if verbose or not ok:
+        print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm HEALTH cache: "
+              f"{'OK' if ok else data.get('message', 'lỗi không xác định')}")
     return data
 
 def _rs_universe_set():
@@ -299,7 +296,15 @@ def _load_rs_scores_from_disk():
         print(f"  [Dashboard] ⚠️  Nạp RS cache từ đĩa lỗi (bỏ qua): {e}")
 
 
-_load_rs_scores_from_disk()
+_disk_caches_loaded = False
+def load_persisted_caches():
+    global _disk_caches_loaded
+    if _disk_caches_loaded:
+        return
+    _load_market_health_from_disk()
+    _load_heatmap_from_disk()
+    _load_rs_scores_from_disk()
+    _disk_caches_loaded = True
 
 VND_BASE = "https://api-finfo.vndirect.com.vn/v4"
 VND_RATIO_CODES = {
@@ -979,11 +984,12 @@ def _rs_cache_meta() -> dict:
         return {"count": len(scores), "asof": _rs_score_cache["asof"]}
 
 
-def warm_rs_cache():
+def warm_rs_cache(verbose: bool = False):
     scores = _compute_rs_scores(force=True)
-    meta = _rs_cache_meta()
-    print(f"  [Dashboard] {'✅' if scores else '⚠️ '} Warm RS cache: {len(scores)} mã"
-          f"{' @ ' + str(meta.get('asof')) if meta.get('asof') else ''}.")
+    ok = bool(scores)
+    if verbose or not ok:
+        print(f"  [Dashboard] {'✅' if ok else '⚠️ '} Warm RS cache: "
+              f"{f'{len(scores)} mã' if ok else 'Lỗi hoặc không có dữ liệu RS'}.")
     return scores
 
 
@@ -2145,6 +2151,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _extra_quote_fn    = extra_quote_fn
     _calc_signals_fn   = calc_signals_fn
     _sync_heatmap_fn   = sync_heatmap_fn
+    load_persisted_caches()
 
     def _run():
         import logging
@@ -2152,8 +2159,6 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
         app.run(host="0.0.0.0", port=port, threaded=True, use_reloader=False)
 
     threading.Thread(target=_run, daemon=True).start()
-    print(f"🌐 Dashboard tại http://0.0.0.0:{port}")
-    print(f"   Tín hiệu: {SIGNAL_TTL_SEC}s | Heatmap: {HEATMAP_TTL_SEC}s | HEALTH: {MARKET_HEALTH_TTL_SEC}s")
 
 
 JOURNAL_HTML = r"""<!DOCTYPE html>
