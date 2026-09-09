@@ -2349,8 +2349,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             if not signal_type:
                 if symbol in alerted_today and isinstance(alerted_today[symbol], dict):
                     alerted_today[symbol]["state"] = "DEAD"
-                    alerted_today[symbol]["pct"] = round(pct, 1)
-                    alerted_today[symbol]["price"] = round(float(today['close']), 2)
                 continue
 
             prev_entry = alerted_today.get(symbol)
@@ -2361,8 +2359,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
             if isinstance(prev_entry, dict):
                 prev_entry["state"] = "ALIVE"
-                prev_entry["pct"] = round(pct, 1)
-                prev_entry["price"] = round(float(today['close']), 2)
 
             if prev_rank >= current_rank:
                 continue
