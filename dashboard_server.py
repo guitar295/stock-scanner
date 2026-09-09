@@ -182,8 +182,6 @@ def _load_market_health_from_disk():
     except Exception as e:
         print(f"  [Dashboard] ⚠️  Nạp HEALTH cache từ đĩa lỗi: {e}")
 
-_load_market_health_from_disk()
-
 def _save_heatmap_to_disk():
     try:
         tmp_path = _HEATMAP_CACHE_FILE + ".tmp"
@@ -205,8 +203,6 @@ def _load_heatmap_from_disk():
                 print(f"  [Dashboard] ✅ Nạp lại HEATMAP cache từ đĩa: {len(saved['data'])} mã.")
     except Exception:
         pass
-
-_load_heatmap_from_disk()
 
 
 def _refresh_market_health(force: bool = False) -> dict:
@@ -300,7 +296,15 @@ def _load_rs_scores_from_disk():
         print(f"  [Dashboard] ⚠️  Nạp RS cache từ đĩa lỗi (bỏ qua): {e}")
 
 
-_load_rs_scores_from_disk()
+_disk_caches_loaded = False
+def load_persisted_caches():
+    global _disk_caches_loaded
+    if _disk_caches_loaded:
+        return
+    _load_market_health_from_disk()
+    _load_heatmap_from_disk()
+    _load_rs_scores_from_disk()
+    _disk_caches_loaded = True
 
 VND_BASE = "https://api-finfo.vndirect.com.vn/v4"
 VND_RATIO_CODES = {
@@ -2147,6 +2151,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     _extra_quote_fn    = extra_quote_fn
     _calc_signals_fn   = calc_signals_fn
     _sync_heatmap_fn   = sync_heatmap_fn
+    load_persisted_caches()
 
     def _run():
         import logging

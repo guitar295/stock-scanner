@@ -45,6 +45,7 @@ from dashboard_server import (
     warm_market_health_cache,
     invalidate_rs_cache,
     warm_rs_cache,
+    load_persisted_caches,
     TS_POOL_CONFIG,
     HMAP_COLS_CONFIG,
     _rs_score_cache,
@@ -3149,6 +3150,16 @@ if __name__ == '__main__':
     boot_ts  = boot_now.strftime('%Y-%m-%d %H:%M:%S')
     my_pid   = os.getpid()
 
+    print("\n" + "="*60)
+    print("🚀 [HỆ THỐNG KHỞI ĐỘNG] Auto-Scanner + Dashboard")
+    print(f"⏰ Thời gian : {boot_ts} | PID: {my_pid}")
+    print(f"📊 Cấu hình  : {len(symbols_to_scan)} mã quét | {len(symbols_to_cache)} mã cache | Chu kỳ: {SCAN_INTERVAL_SEC}s")
+    print("🌐 Dashboard : http://0.0.0.0:8888 (Tín hiệu: 10s | Heatmap/Health: 120s)")
+    if ENABLE_TELEGRAM:
+        print(f"🎧 Telegram  : Đang chạy (Channel: {TELEGRAM_CHAT_ID})")
+    print("="*60)
+
+    load_persisted_caches()
     alerted_today, momentum_today, attent_today, breakvol_today, signal_session_date = _load_signal_state()
     last_run_date = boot_now.date()
     if signal_session_date is None:
@@ -3160,17 +3171,6 @@ if __name__ == '__main__':
     _last_afternoon_eod_date = last_run_date if boot_time >= 150000 else None
     _market_closed_logged = False
     _weekend_logged = False
-
-    sess_str = signal_session_date.strftime('%d/%m') if signal_session_date else 'mới'
-    print("\n" + "="*60)
-    print("🚀 [HỆ THỐNG KHỞI ĐỘNG] Auto-Scanner + Dashboard")
-    print(f"⏰ Thời gian : {boot_ts} | PID: {my_pid}")
-    print(f"📊 Cấu hình  : {len(symbols_to_scan)} mã quét | {len(symbols_to_cache)} mã cache | Chu kỳ: {SCAN_INTERVAL_SEC}s")
-    print("🌐 Dashboard : http://0.0.0.0:8888 (Tín hiệu: 10s | Heatmap/Health: 120s)")
-    if ENABLE_TELEGRAM:
-        print(f"🎧 Telegram  : Đang chạy (Channel: {TELEGRAM_CHAT_ID})")
-    print(f"💾 Trạng thái: Nạp lại {len(alerted_today)} tín hiệu, {len(momentum_today)} động lượng, {len(attent_today or {})} ATTENT (phiên {sess_str})")
-    print("="*60)
 
     _stop_listener  = threading.Event()
     listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
