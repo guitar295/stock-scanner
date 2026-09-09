@@ -45,6 +45,7 @@ from dashboard_server import (
     warm_market_health_cache,
     invalidate_rs_cache,
     warm_rs_cache,
+    load_persisted_caches,
     TS_POOL_CONFIG,
     HMAP_COLS_CONFIG,
     _rs_score_cache,
@@ -52,32 +53,36 @@ from dashboard_server import (
 
 class DailyRotatingStdout:
     def __init__(self, filename="scanner.log", max_lines=2500):
-        self.filename = filename
-        self.max_lines = max_lines
-        self.terminal = sys.stdout
-        self.file = open(self.filename, "a", encoding="utf-8")
+        self.filename, self.max_lines, self.terminal = filename, max_lines, sys.stdout
         self.line_count = 0
-        if os.path.exists(self.filename):
-            with open(self.filename, "r", encoding="utf-8", errors="ignore") as f:
+        try:
+            is_dup = (os.fstat(sys.stdout.fileno()).st_ino == os.stat(filename).st_ino)
+        except Exception:
+            is_dup = False
+        self.file = None if is_dup else open(filename, "a", encoding="utf-8")
+        if self.file and os.path.exists(filename):
+            with open(filename, "r", encoding="utf-8", errors="ignore") as f:
                 self.line_count = sum(1 for _ in f)
 
     def write(self, message):
         self.terminal.write(message)
-        self.file.write(message)
-        if '\n' in message:
-            self.line_count += message.count('\n')
-            if self.line_count > self.max_lines + 500:
-                self.file.close()
-                with open(self.filename, "r", encoding="utf-8", errors="ignore") as f:
-                    lines = f.readlines()
-                with open(self.filename, "w", encoding="utf-8") as f:
-                    f.writelines(lines[-self.max_lines:])
-                self.file = open(self.filename, "a", encoding="utf-8")
-                self.line_count = self.max_lines
+        if self.file:
+            self.file.write(message)
+            if '\n' in message:
+                self.line_count += message.count('\n')
+                if self.line_count > self.max_lines + 500:
+                    self.file.close()
+                    with open(self.filename, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                    with open(self.filename, "w", encoding="utf-8") as f:
+                        f.writelines(lines[-self.max_lines:])
+                    self.file = open(self.filename, "a", encoding="utf-8")
+                    self.line_count = self.max_lines
 
     def flush(self):
         self.terminal.flush()
-        self.file.flush()
+        if self.file:
+            self.file.flush()
 
 sys.stdout = DailyRotatingStdout()
 
@@ -574,8 +579,6 @@ _HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
 symbols_to_scan = list(dict.fromkeys(vn30_symbols))
 symbols_to_rs = list(dict.fromkeys(cache_symbol_set))
 symbols_to_cache = list(dict.fromkeys(symbols_to_rs + ["VNINDEX", "VN30"]))
-print(f"🚀 Sẵn sàng quét {len(symbols_to_scan)} mã")
-print(f"📦 Cache lịch sử mở rộng: {len(symbols_to_cache)} mã (gồm cả VNINDEX, VN30)")
 
 # =============================================================================
 # BƯỚC 5: HÀM TÍNH CHỈ BÁO
@@ -1316,7 +1319,7 @@ def load_history_for_symbol(symbol: str):
 
 def build_history_cache(symbols: list, current_date: date):
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"\n📦 [{ts}] Nạp cache {len(symbols)} mã [DChart đa luồng]...")
+    print(f"\n📦 [{ts}] Nạp cache lịch sử {len(symbols)} mã [DChart đa luồng]...")
     new_history = {}
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(load_history_for_symbol, s): s for s in symbols}
@@ -1337,7 +1340,7 @@ def build_history_cache(symbols: list, current_date: date):
     warm_market_health_cache()
     export_market_bundle(history_cache, cache_lock)
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"✅ [{ts}] Cache hoàn tất: {len(new_history)}/{len(symbols)} mã có dữ liệu, đã xuất market_bundle.json.")
+    print(f"✅ [{ts}] Hoàn tất nạp cache: {len(new_history)}/{len(symbols)} mã sẵn sàng.")
 
 # =============================================================================
 # BƯỚC 5B2: KIỂM TRA CACHE NHANH TRƯỚC KHI QUÉT
@@ -1389,18 +1392,12 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
 
     expected = _expected_last_session(current_date, now_time)
     if _cache_is_fresh(sample_df, current_date, now_time):
-        print(f"  [{ts}] ✅ Cache OK [{check_sym}] ({sample_df.index[-1].date()} ≥ {expected})")
+        print(f"🔄 [{ts}] [Kiểm tra định kỳ 30p] Cache OK: {len(symbols)}/{len(symbols)} mã.")
         return True
 
     reason = "không có dữ liệu" if sample_df is None else f"nến cuối = {sample_df.index[-1].date()}"
-    print(f"  [{ts}] ⚠️  Cache STALE ({reason}, kỳ vọng ≥ {expected}) → Rebuild ngay...")
+    print(f"⚠️ [{ts}] [Kiểm tra định kỳ 30p] Cache STALE ({reason}) → Cập nhật lại {len(symbols)} mã...")
     build_history_cache(symbols, current_date)
-    with cache_lock:
-        sample_df2 = history_cache.get(check_sym) if check_sym else None
-    if sample_df2 is not None:
-        new_last = sample_df2.index[-1].date()
-        ts2 = datetime.now(TZ_VN).strftime('%H:%M:%S')
-        print(f"  [{ts2}] ✅ Sau rebuild [{check_sym}]: nến cuối = {new_last}")
     return False
 
 def fetch_today_bar(symbol: str, current_date: date):
@@ -2290,7 +2287,10 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
     if missing_symbols:
         ssi_cnt = max(0, len(symbols) - len(missing_symbols))
-        print(f"  [{ts}] 🔄 Quét {len(symbols)} mã [SSI: {ssi_cnt} mã | ⚠️ Fallback VNDirect: {len(missing_symbols)} mã]")
+        if ssi_cnt == 0:
+            source_tag = "[⚠️ Fallback VND 100%]"
+        else:
+            source_tag = f"[SSI: {ssi_cnt} | ⚠️ Fallback VND: {len(missing_symbols)}]"
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
             for fut in futures:
@@ -2305,7 +2305,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                 except Exception:
                     pass
     else:
-        print(f"  [{ts}] 🔄 Quét {len(symbols)} mã [SSI 100%]")
+        source_tag = "[SSI 100%]"
 
     for symbol in symbols:
         try:
@@ -2422,7 +2422,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
 
     export_market_bundle(history_cache, cache_lock)
     warm_market_health_cache()
-    return new_signals
+    return new_signals, source_tag
 
 # =============================================================================
 # BƯỚC 8B: PARSE LỆNH CHART
@@ -3146,23 +3146,36 @@ except NameError:
     pass
 
 if __name__ == '__main__':
+    boot_now = datetime.now(TZ_VN)
+    boot_ts  = boot_now.strftime('%Y-%m-%d %H:%M:%S')
+    my_pid   = os.getpid()
+
+    print("\n" + "="*60)
+    print("🚀 [HỆ THỐNG KHỞI ĐỘNG] Auto-Scanner + Dashboard")
+    print(f"⏰ Thời gian : {boot_ts} | PID: {my_pid}")
+    print(f"📊 Cấu hình  : {len(symbols_to_scan)} mã quét | {len(symbols_to_cache)} mã cache | Chu kỳ: {SCAN_INTERVAL_SEC}s")
+    print("🌐 Dashboard : http://0.0.0.0:8888 (Tín hiệu: 10s | Heatmap/Health: 120s)")
+    if ENABLE_TELEGRAM:
+        print(f"🎧 Telegram  : Đang chạy (Channel: {TELEGRAM_CHAT_ID})")
+    print("="*60)
+
+    load_persisted_caches()
     alerted_today, momentum_today, attent_today, breakvol_today, signal_session_date = _load_signal_state()
-    last_run_date = datetime.now(TZ_VN).date()
+    last_run_date = boot_now.date()
     if signal_session_date is None:
-        # Lần đầu chạy (chưa từng có file lưu) → coi phiên hiện tại là "phiên của
-        # alerted_today/momentum_today/attent_today/breakvol_today" (rỗng). Vòng lặp
-        # chính bên dưới sẽ tự reset đúng lúc nếu thời điểm khởi động đã là 1 phiên
-        # mới so với lần lưu gần nhất.
         signal_session_date = last_run_date
         _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
-    _last_cache_check_ts = 0.0   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
-    _last_morning_warmup_date = None
+    _last_cache_check_ts = time.time()   # cổng nhịp cho check_and_rebuild_cache_if_stale (ngoài giờ, mỗi CACHE_CHECK_INTERVAL_SEC)
+    boot_time = int(boot_now.strftime("%H%M%S"))
+    _last_morning_warmup_date = last_run_date if boot_time >= 83000 else None
+    _last_afternoon_eod_date = last_run_date if boot_time >= 150000 else None
+    _market_closed_logged = False
+    _weekend_logged = False
 
     _stop_listener  = threading.Event()
     listener_thread = threading.Thread(target=telegram_listener, args=(_stop_listener,), daemon=True)
     if ENABLE_TELEGRAM:
         listener_thread.start()
-        print("🎧 Telegram Listener thread đã khởi chạy.")
 
     # Khởi động Dashboard trước để các panel phục vụ ngay, sau đó nạp cache lịch sử
     start_dashboard(
@@ -3186,29 +3199,8 @@ if __name__ == '__main__':
         sync_heatmap_fn   = sync_heatmap_to_history,
     )
 
-    print("\n🔧 Đang load cache lịch sử lần đầu...")
     build_history_cache(symbols_to_cache, last_run_date)
-
-    print("\n" + "="*60)
-    print("⚙️  AUTO-SCANNER + HEATMAP + TELEGRAM LISTENER + DASHBOARD")
-    print(f"   Danh sách   : {len(symbols_to_scan)} mã")
-    print(f"   Cache chart : {len(symbols_to_cache)} mã")
-    print(f"   Chu kỳ quét : {SCAN_INTERVAL_SEC} giây")
-    print(f"   Tín hiệu    → Channel/Group: {TELEGRAM_CHAT_ID}")
-    print("   Dashboard   : http://VPS_IP:8888")
-    print("   Lệnh chart  : /c HPG | /chart HPG | /HPG | / HPG")
-    print("   Lệnh chỉ số : /VNINDEX | /VN30 | /HNX | /UPCOM | /VN100")
-    print("   Lệnh heatmap: /h | /heatmap")
-    print("   Lệnh khác   : /s (VIP) | /help")
-    print(f"   Phân quyền  : VIP (toàn quyền) | Free (tối đa {FREE_CHAT_LIMIT} slot, TTL 30p)")
-    print("   Chart gửi   : Daily [D] + Weekly [W] + 15 phút [15m]")
-    print("   Tín hiệu    : BREAKOUT / POCKET PIVOT / PRE-BREAK")
-    print("                 BOTTOMBREAKP / MA_CROSS / BOTTOMFISH")
-    print("   Nhận lệnh   : Group + Private Chat (24/7)")
-    print("   Cache check : Tự động trước mỗi chu kỳ quét")
-    print("   On-demand   : Ưu tiên cache, fallback fetch fresh")
-    print("   Nghỉ quét   : Thứ 7 và Chủ nhật")
-    print("="*60)
+    print("🚀 Bắt đầu vòng lặp quét tự động...\n")
 
     # =============================================================================
     # VÒNG LẶP CHÍNH
@@ -3224,9 +3216,13 @@ if __name__ == '__main__':
             # ── BỎ QUA THỨ 7 VÀ CHỦ NHẬT ────────────────────────────────────────
             if weekday >= 5:
                 day_name = "Thứ 7" if weekday == 5 else "Chủ nhật"
-                print(f"[{ts}] 📅 {day_name} — không quét. Listener + Dashboard vẫn chạy.")
+                if not _weekend_logged:
+                    print(f"[{ts}] 📅 {day_name} — không quét. Listener + Dashboard vẫn chạy 24/7.")
+                    _weekend_logged = True
                 time.sleep(SCAN_INTERVAL_SEC)
                 continue
+            else:
+                _weekend_logged = False
 
             if current_date > last_run_date:
                 last_run_date = current_date
@@ -3234,25 +3230,33 @@ if __name__ == '__main__':
                 build_history_cache(symbols_to_cache, current_date)
 
             if not _is_trading_session_time(current_date, now_time):
-                # Khởi động nạp mới 100% cache & Market Health vào 08h30 sáng trước giờ giao dịch
-                if now_time >= 83000 and _last_morning_warmup_date != current_date:
+                # 1. Khởi động nạp mới cache vào 08h30 sáng trước giờ giao dịch
+                if 83000 <= now_time < SESSION_MORNING_START and _last_morning_warmup_date != current_date:
                     _last_morning_warmup_date = current_date
-                    print(f"\n☀️ [{ts}] Khởi động đầu ngày 08h30 — Nạp mới toàn bộ cache lịch sử & tính Market Health chuẩn...")
+                    print(f"\n☀️ [{ts}] [Đầu ngày 08h30] Chuẩn bị phiên mới — Nạp mới dữ liệu lịch sử.")
                     build_history_cache(symbols_to_cache, current_date)
 
-                # Kiểm tra cache định kỳ mỗi 30 phút ngoài giờ giao dịch
+                # 2. Chốt nến phiên hôm nay sau 15h00
+                if now_time >= 150000 and _last_afternoon_eod_date != current_date:
+                    _last_afternoon_eod_date = current_date
+                    print(f"\n🌆 [{ts}] [Chốt phiên 15h00] Cập nhật nến đóng cửa {len(symbols_to_cache)} mã.")
+                    build_history_cache(symbols_to_cache, current_date)
+
+                # 3. Kiểm tra cache định kỳ mỗi 30 phút ngoài giờ giao dịch
                 if time.time() - _last_cache_check_ts >= CACHE_CHECK_INTERVAL_SEC:
                     _last_cache_check_ts = time.time()
                     check_and_rebuild_cache_if_stale(symbols_to_cache, current_date)
 
                 next_open = _next_trading_session_label(now_time)
-                if signal_session_date < current_date:
-                    print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. "
-                          f"Đang hiển thị dữ liệu phiên {signal_session_date.strftime('%d/%m/%Y')} (chưa có phiên mới). Listener + Dashboard vẫn chạy.")
-                else:
-                    print(f"[{ts}] ⏸  Ngoài giờ giao dịch → Đợi đến {next_open}. Listener + Dashboard vẫn chạy.")
+                if not _market_closed_logged:
+                    sess_str = signal_session_date.strftime('%d/%m') if signal_session_date else current_date.strftime('%d/%m')
+                    print(f"[{ts}] ⏸ Thị trường đóng cửa phiên {sess_str} → Đợi phiên {next_open} (Dashboard & Bot chạy 24/7).")
+                    _market_closed_logged = True
+
                 time.sleep(SCAN_INTERVAL_SEC)
                 continue
+            else:
+                _market_closed_logged = False
 
             # Reset danh sách tín hiệu khi vào phiên mới (chỉ reset khi thực sự có nến giao dịch của hôm nay)
             with cache_lock:
@@ -3272,33 +3276,26 @@ if __name__ == '__main__':
                 print(f"[{ts}] ⚠️  Cache trống — bắt buộc load trước khi quét...")
                 build_history_cache(symbols_to_cache, current_date)
 
-            print(f"\n{'='*60}")
-            print(f"🔄 [{ts}] BẮT ĐẦU CHU KỲ QUÉT (SSI + DChart)")
-            print(f"{'='*60}")
-
-            new_signals = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today,
-                                          attent_today, breakvol_today)
+            new_signals, source_tag = run_scan_cycle(symbols_to_scan, now_time, alerted_today, momentum_today,
+                                                      attent_today, breakvol_today)
             triggered_alerts = check_price_alerts()
 
             if new_signals:
-                print(f"✅ [{ts}] {len(new_signals)} tín hiệu MỚI: {', '.join(new_signals)}")
+                print(f"\n🔔 [{ts}] PHÁT HIỆN TÍN HIỆU MỚI ({len(new_signals)} mã):")
+                for s in new_signals:
+                    info = alerted_today.get(s, {})
+                    sig = info.get("signal", "SIGNAL")
+                    p = info.get("price", 0.0)
+                    pct = info.get("pct", 0.0)
+                    pct_sign = "+" if pct >= 0 else ""
+                    print(f"   👉 {s}: {sig} (Giá: {p:.1f}, {pct_sign}{pct:.1f}%)")
             else:
-                print(f"[{ts}] Không có tín hiệu mới.")
+                att_cnt = len(attent_today) if attent_today else 0
+                print(f"[{ts}] 🔄 Quét {len(symbols_to_scan)} mã {source_tag} — 0 tín hiệu mới | Theo dõi: {len(alerted_today)} tín hiệu, {len(momentum_today)} động lượng, {att_cnt} ATTENT.")
 
             _save_signal_state(alerted_today, momentum_today, signal_session_date, attent_today, breakvol_today)
             if triggered_alerts:
-                print(f"🔔 [{ts}] {len(triggered_alerts)} cảnh báo khớp: {', '.join(triggered_alerts)}")
-
-            if alerted_today:
-                summary_str = " | ".join([f"{k}:{v['signal']}" for k,v in alerted_today.items()])
-                print(f"   📋 Đã báo hôm nay: {summary_str}")
-            if momentum_today:
-                summary_mom = " | ".join([f"{k}:{'/'.join(v['signals'])}" for k,v in sorted(momentum_today.items())])
-                print(f"   ⚡ Động lượng: {summary_mom}")
-            if attent_today:
-                print(f"   👀 ATTENT ({len(attent_today)}): {', '.join(sorted(attent_today.keys()))}")
-            if breakvol_today:
-                print(f"   💥 BREAKVOL ({len(breakvol_today)}): {', '.join(sorted(breakvol_today.keys()))}")
+                print(f"🎯 [{ts}] Cảnh báo khớp: {', '.join(triggered_alerts)}")
 
             print(f"⏳ Đợi {SCAN_INTERVAL_SEC}s cho chu kỳ tiếp theo...")
             time.sleep(SCAN_INTERVAL_SEC)
