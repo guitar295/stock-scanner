@@ -3736,11 +3736,9 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       </div>
       <div class="phdr-center">
         <div class="ctabs" id="popup-ctabs">
-          <button class="ctab on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
-          <button class="ctab" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
+          <button class="ctab on" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
           <button class="ctab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-          <button class="ctab" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
-          <button class="ctab" data-tab="vnd-sum">📄 Tổng quan</button>
+          <button class="ctab" data-tab="vnd-sum"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Tổng quan</button>
           <button class="ctab" data-tab="24h">💬 Fireant</button>
         </div>
       </div>
@@ -3760,11 +3758,9 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 
     <!-- Mobile portrait header — Row 2: tabs cuộn -->
     <div class="mob-tab-row" id="mob-tab-row" style="display:none">
-      <button class="mob-tab-btn on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
-      <button class="mob-tab-btn" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
+      <button class="mob-tab-btn on" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
       <button class="mob-tab-btn" data-tab="vnd-cs">⚖️ Cơ bản</button>
-      <button class="mob-tab-btn" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
-      <button class="mob-tab-btn" data-tab="vnd-sum">📄 Tổng quan</button>
+      <button class="mob-tab-btn" data-tab="vnd-sum"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Tổng quan</button>
       <button class="mob-tab-btn" data-tab="24h">💬 Fireant</button>
     </div>
 
@@ -3776,11 +3772,9 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         <input class="mob-land-search" id="mob-land-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
       </div>
       <div class="mob-land-tabs" id="mob-land-tabs">
-        <button class="mob-land-tab on" data-tab="vs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Vietstock</button>
-        <button class="mob-land-tab" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
+        <button class="mob-land-tab on" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
         <button class="mob-land-tab" data-tab="vnd-cs">⚖️ Cơ bản</button>
-        <button class="mob-land-tab" data-tab="vnd-news"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Cùng ngành</button>
-        <button class="mob-land-tab" data-tab="vnd-sum">📄 Tổng quan</button>
+        <button class="mob-land-tab" data-tab="vnd-sum"><span style="filter:grayscale(1) brightness(1.25);display:inline-block;font-size:0.9em;vertical-align:-0.5px;margin-right:4px">🏆</span>Tổng quan</button>
         <button class="mob-land-tab" data-tab="24h">💬 Fireant</button>
       </div>
       <!-- X vuông cố định phải -->
@@ -3788,10 +3782,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     </div>
 
     <div class="pbody">
-      <div class="tpanel on" id="panel-vs"><iframe id="iframe-vs" src="about:blank" allowfullscreen></iframe></div>
-      <div class="tpanel" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
+      <div class="tpanel on" id="panel-chart"><iframe id="iframe-chart" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-cs"><iframe id="iframe-vnd-cs" src="about:blank" allowfullscreen></iframe></div>
-      <div class="tpanel" id="panel-vnd-news"><iframe id="iframe-vnd-news" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-vnd-sum"><iframe id="iframe-vnd-sum" src="about:blank" allowfullscreen></iframe></div>
       <div class="tpanel" id="panel-24h"><iframe id="iframe-24h" src="about:blank" allowfullscreen></iframe></div>
     </div>
@@ -3878,7 +3870,6 @@ const DOM={
   mobTabRow:$('mob-tab-row'),
   mobHdrLand:$('mob-hdr-landscape'),mobLandSym:$('mob-land-sym'),
   mobLandSearch:$('mob-land-search'),mobLandTabs:$('mob-land-tabs'),
-  ifVs:$('iframe-vs'),
   edgeZone:$('edge-swipe-zone'),mobClose:$('mob-close-float'),
   footer:$('footer-txt'),
   lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
@@ -3887,12 +3878,10 @@ const DOM={
 const IS_MOBILE=()=>window.innerWidth<=768;
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
 const IS_STANDALONE_PWA=()=>window.navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
-const TABS_ALL=['vs','chart','vnd-cs','vnd-news','vnd-sum','24h'];
+const TABS_ALL=['chart','vnd-cs','vnd-sum','24h'];
 const IFRAME_LAZY={
-  'vs':       s=>`https://ta.vietstock.vn/?stockcode=${s.toLowerCase()}`,
   'chart':    s=>`/?chartPopout=1&embedded=1&sym=${encodeURIComponent(s)}`,
   'vnd-cs':   s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/diem-nhan-co-ban-popup?theme=light`,
-  'vnd-news': s=>`https://dstock.vndirect.com.vn/tong-quan/${s}/cong-ty-cung-nganh-popup?theme=light`,
   'vnd-sum':  s=>`https://dstock.vndirect.com.vn/tong-quan/${s}?theme=light`,
   '24h':      s=>`https://fireant.vn/ma-chung-khoan/${s}`,
 };
@@ -3944,7 +3933,7 @@ let _breakvolTodayMap=new Map();
 let _lastStrengthRows=[];
 let _liteRsScore=null;
 let SIG_TTL=__SIGNAL_TTL_SEC__,HMAP_TTL=__HEATMAP_LIVE_TTL_SEC__,HEALTH_TTL=__MARKET_HEALTH_TTL_SEC__;
-let _sym='',_tab='vs';
+let _sym='',_tab='chart';
 const FOLLOW_KEY='dashboard_follow_symbols';
 const FOLLOW_ON_KEY='dashboard_follow_on';
 let FOLLOW=loadFollowSymbols();
@@ -6184,7 +6173,7 @@ function bindLiteDrawToolbar(){
     e.preventDefault();
     e.stopPropagation();
     const sym=_liteSymbol||_sym||'VNINDEX';
-    openChart(sym,'24h'); // chỉ nút này mở thẳng tab Fireant; các nơi khác gọi openChart(sym) vẫn mặc định Vietstock
+    openChart(sym,'24h'); // chỉ nút này mở thẳng tab Fireant; các nơi khác gọi openChart(sym) vẫn mặc định Chart
   });
   if(DOM.liteTextInput){
     DOM.liteTextInput.addEventListener('keydown',e=>{
@@ -9402,8 +9391,7 @@ function _onPopoutSyncMessage(e){
     if(!s)return;
     _sym=s;
     _updateSymDisplay(s);
-    if(_tab==='vs')DOM.ifVs.src='https://ta.vietstock.vn/?stockcode='+s.toLowerCase();
-    ['vnd-cs','vnd-news','vnd-sum','24h'].forEach(t=>{
+    ['vnd-cs','vnd-sum','24h'].forEach(t=>{
       if(_tab===t&&IFRAME_LAZY[t]){const f=$('iframe-'+t);if(f)f.src=IFRAME_LAZY[t](s);}
     });
   }
