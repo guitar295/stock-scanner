@@ -293,7 +293,7 @@ def _hmap_col_height(groups):
         h += (1 + len(g["syms"])) * HMAP_CELL_H
     return h + HMAP_MARGIN
 
-def _parse_ssi_trade_date(it: dict) -> str:
+def _parse_trade_date(it: dict) -> str:
     raw = str(it.get('tradingDate') or it.get('date') or '').strip()
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
@@ -321,7 +321,7 @@ def fetch_heatmap_data() -> tuple:
     ts_log = datetime.now(TZ_VN).strftime('%H:%M:%S')
     result = {}
     try:
-        items = _fetch_ssi_priceboard_batch(need)
+        items = _fetch_priceboard_batch(need)
         for it in items:
             sym = str(it.get('stockSymbol') or '').upper().strip()
             if not sym:
@@ -337,7 +337,7 @@ def fetch_heatmap_data() -> tuple:
                 tot_val = float(it.get('nmTotalTradedValue') or 0)
                 result[sym] = {
                     "price": close, "pct": 0.0 if not math.isfinite(pct) else pct, "total_value": tot_val,
-                    "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_ssi_trade_date(it)
+                    "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_trade_date(it)
                 }
             else:
                 with cache_lock:
@@ -345,7 +345,7 @@ def fetch_heatmap_data() -> tuple:
                 if df is not None and len(df) >= 2:
                     result[sym] = _extract_heatmap_fallback(df)
     except Exception as e:
-        print(f"  [{ts_log}] ❌ Heatmap SSI lỗi: {e}")
+        print(f"  [{ts_log}] ❌ Bảng giá SSI lỗi: {e}")
 
     if not result:
         with cache_lock:
@@ -354,7 +354,7 @@ def fetch_heatmap_data() -> tuple:
                 if df is not None and len(df) >= 2:
                     result[sym] = _extract_heatmap_fallback(df)
         if result:
-            print(f"  [{ts_log}] 🗺  Heatmap: SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ [Cache DChart]")
+            print(f"  [{ts_log}] 🗺 SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ Cache VNDirect")
 
     return result, datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y") if result else ""
 
@@ -365,7 +365,7 @@ def fetch_extra_quotes(syms: list) -> dict:
         return {}
     result = {}
     try:
-        items = _fetch_ssi_priceboard_batch(syms)
+        items = _fetch_priceboard_batch(syms)
         for it in items:
             sym = it.get('stockSymbol')
             if not sym:
@@ -378,7 +378,7 @@ def fetch_extra_quotes(syms: list) -> dict:
                 "price": close, "pct": pct, "open": o,
                 "high": max(float(it.get('highest') or close), o, close),
                 "low": min(float(it.get('lowest') or close), o, close),
-                "volume": float(it.get('nmTotalTradedQty') or 0), "date": _parse_ssi_trade_date(it)
+                "volume": float(it.get('nmTotalTradedQty') or 0), "date": _parse_trade_date(it)
             }
     except Exception as e:
         print(f"  ❌ fetch_extra_quotes lỗi: {e}")
@@ -1212,7 +1212,7 @@ _ssi_session.headers.update({
     "Referer": "https://iboard.ssi.com.vn/",
 })
 
-def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
+def _fetch_history_candles(symbol: str, limit: int, resolution: str = "D"):
     symbol = symbol.upper().strip()
     to_ts = int(time.time())
     if resolution == "15":
@@ -1239,7 +1239,7 @@ def _fetch_vnd(symbol: str, limit: int, resolution: str = "D"):
     df.set_index('time', inplace=True)
     return df
 
-def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
+def _fetch_priceboard_batch(symbols: list[str]) -> list[dict]:
     """Lấy bảng giá real-time từ SSI iBoard API (định dạng chuẩn, có sẵn giá Open)."""
     if not symbols:
         return []
@@ -1302,7 +1302,7 @@ def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
 def load_history_for_symbol(symbol: str):
     for attempt in range(3):
         try:
-            df = _fetch_vnd(symbol, limit=1000)
+            df = _fetch_history_candles(symbol, limit=1000)
             if df is None or len(df) < 60: return None
             df['vpa_flag'] = calc_vpa_flag(df)
             return df
@@ -1313,7 +1313,7 @@ def load_history_for_symbol(symbol: str):
 
 def build_history_cache(symbols: list, current_date: date):
     ts = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"\n📦 [{ts}] Bắt đầu load cache lịch sử cho {len(symbols)} mã (DChart đa luồng)...")
+    print(f"\n📦 [{ts}] Nạp cache {len(symbols)} mã [DChart đa luồng]...")
     new_history = {}
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {executor.submit(load_history_for_symbol, s): s for s in symbols}
@@ -1403,7 +1403,7 @@ def check_and_rebuild_cache_if_stale(symbols: list, current_date: date) -> bool:
 def fetch_today_bar(symbol: str, current_date: date):
     for attempt in range(3):
         try:
-            df_raw = _fetch_vnd(symbol, limit=5)
+            df_raw = _fetch_history_candles(symbol, limit=5)
             if df_raw is None or df_raw.empty: return None
             
             today_rows = df_raw[df_raw.index.date == current_date]
@@ -1614,7 +1614,7 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
 def fetch_index_history(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
-            df_raw = _fetch_vnd(symbol, limit=1000)
+            df_raw = _fetch_history_candles(symbol, limit=1000)
             if df_raw is None or df_raw.empty: return None
             df_raw = df_raw.dropna(subset=['close'])
             if len(df_raw) < 10: return None
@@ -1630,7 +1630,7 @@ def fetch_index_history(symbol: str) -> pd.DataFrame | None:
 def fetch_intraday_15m(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
-            df_raw = _fetch_vnd(symbol, limit=200, resolution="15")
+            df_raw = _fetch_history_candles(symbol, limit=200, resolution="15")
             if df_raw is None or df_raw.empty: return None
             df_raw = df_raw.dropna(subset=['close'])
             if len(df_raw) < 10: return None
@@ -1647,7 +1647,7 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
     """Fetch dữ liệu tươi từ server (không qua cache)."""
     for attempt in range(3):
         try:
-            df_raw = _fetch_vnd(symbol, limit=1000)
+            df_raw = _fetch_history_candles(symbol, limit=1000)
             if df_raw is None or len(df_raw) < 60: return None
 
             today_rows = df_raw[df_raw.index.date == current_date]
@@ -2276,7 +2276,6 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     current_breakvol = {}
     current_date = datetime.now(TZ_VN).date()
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
-    print(f"  [{ts}] Bắt đầu quét {len(symbols)} mã (Dữ liệu từ Heatmap 5s + Fallback VNDirect 60s)...")
 
     now_ts = time.time()
     missing_symbols = []
@@ -2287,7 +2286,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
             missing_symbols.append(symbol)
 
     if missing_symbols:
-        print(f"  [{ts}] Heatmap thiếu {len(missing_symbols)} mã quá 60s → Tải bù qua VNDirect (8 luồng)...")
+        ssi_cnt = max(0, len(symbols) - len(missing_symbols))
+        print(f"  [{ts}] 🔄 Quét {len(symbols)} mã [SSI: {ssi_cnt} mã | ⚠️ Fallback VNDirect: {len(missing_symbols)} mã]")
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
             for fut in futures:
@@ -2301,6 +2301,8 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                         last_bar_update[s] = time.time()
                 except Exception:
                     pass
+    else:
+        print(f"  [{ts}] 🔄 Quét {len(symbols)} mã [SSI 100%]")
 
     for symbol in symbols:
         try:

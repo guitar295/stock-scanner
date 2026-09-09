@@ -1069,7 +1069,7 @@ def api_signals():
         "session_stale": session_stale,
     })
 
-def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
+def _fetch_priceboard_batch(symbols: list[str]) -> list[dict]:
     if not symbols:
         return []
     url = "https://iboard-query.ssi.com.vn/stock/multiple"
@@ -1127,7 +1127,7 @@ def _fetch_ssi_priceboard_batch(symbols: list[str]) -> list[dict]:
             pass
     return results
 
-def _parse_ssi_trade_date(it: dict) -> str:
+def _parse_trade_date(it: dict) -> str:
     raw = str(it.get('tradingDate') or it.get('date') or '').strip()
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
@@ -1142,7 +1142,7 @@ def _default_fetch_heatmap_data():
             need_symbols.extend(g.get("syms", []))
     need_symbols.extend(TS_POOL_CONFIG)
     need_symbols = list(set(need_symbols))
-    items = _fetch_ssi_priceboard_batch(need_symbols)
+    items = _fetch_priceboard_batch(need_symbols)
     result = {}
     for it in items:
         sym = str(it.get('stockSymbol') or '').upper().strip()
@@ -1162,7 +1162,7 @@ def _default_fetch_heatmap_data():
         
         result[sym] = {
             "price": close, "pct": pct, "total_value": tot_val,
-            "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_ssi_trade_date(it)
+            "open": o, "high": hi, "low": lo, "volume": vol, "date": _parse_trade_date(it)
         }
     ts_str = datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y")
     return result, ts_str
@@ -1282,14 +1282,21 @@ _vndirect_http_session.headers.update({
     "Referer": "https://dstock.vndirect.com.vn/",
 })
 
-_ssi_http_session = requests.Session()
+try:
+    from curl_cffi import requests as cffi_requests
+    _ssi_http_session = cffi_requests.Session(impersonate="chrome120")
+except ImportError:
+    _ssi_http_session = requests.Session()
+
 _ssi_http_session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "application/json,*/*",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
     "Content-Type": "application/json",
+    "Origin": "https://iboard.ssi.com.vn",
+    "Referer": "https://iboard.ssi.com.vn/",
 })
 
-def _fetch_vndirect_raw_daily(symbol, from_ts, to_ts):
+def _fetch_candle_raw_daily(symbol, from_ts, to_ts):
     """Gọi thẳng VNDirect DChart API (resolution=D) dùng HTTP Keep-Alive Session,
     trả về list bar thô đã lọc hợp lệ, sort tăng dần theo thời gian."""
     symbol = symbol.upper().strip()
@@ -1333,7 +1340,7 @@ def _default_calc_signals(df):
 
 _calc_signals_fn = None
 
-def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
+def fetch_chart_candles(symbol, tf="1D", limit=450, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
     - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
@@ -1393,7 +1400,7 @@ def fetch_vndirect_dchart(symbol, tf="1D", limit=450, before_date=None):
                 raw_bars = None
 
         if not raw_bars:
-            raw_bars = _fetch_vndirect_raw_daily(symbol, from_ts, to_ts)
+            raw_bars = _fetch_candle_raw_daily(symbol, from_ts, to_ts)
             
             # --- TỐI ƯU (LAZY CACHING): Lưu mã lẻ vào history_cache để tránh spam DStock mỗi 5s ---
             if raw_bars and target_tf == "1D" and not before_date and _get_history_cache:
@@ -1612,7 +1619,7 @@ def api_lightweight_chart(symbol):
     limit = max(5, min(1000, limit))
 
     if before_date:
-        dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit, before_date=before_date)
+        dchart_data, err = fetch_chart_candles(symbol, tf, limit, before_date=before_date)
         if not err and dchart_data and dchart_data.get("candles"):
             return jsonify(dchart_data)
         return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
@@ -1627,7 +1634,7 @@ def api_lightweight_chart(symbol):
     if not nocache and entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
         return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
-    dchart_data, err = fetch_vndirect_dchart(symbol, tf, limit)
+    dchart_data, err = fetch_chart_candles(symbol, tf, limit)
     if not err and dchart_data and dchart_data.get("candles"):
         dchart_data["has_more"] = True
         if limit >= 400 and not nocache:
