@@ -2278,32 +2278,42 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
 
     now_ts = time.time()
-    missing_symbols = []
-    
-    for symbol in cache_symbol_set:
-        last_upd = last_bar_update.get(symbol, 0)
-        if now_ts - last_upd > 60:
-            missing_symbols.append(symbol)
+    ssi_updated = set()
+    for it in (_fetch_priceboard_batch(symbols_to_rs) or []):
+        sym = str(it.get('stockSymbol') or '').upper().strip()
+        close = float(it.get('matchedPrice') or it.get('refPrice') or 0)
+        if not sym or close <= 0: continue
+        o, hi, lo = float(it.get('openPrice') or close), float(it.get('highest') or close), float(it.get('lowest') or close)
+        bar = pd.Series({'open': o, 'high': max(hi, o, close), 'low': min(lo, o, close), 'close': close,
+                         'volume': float(it.get('nmTotalTradedQty') or 0)}, name=pd.Timestamp(current_date))
+        with cache_lock:
+            if sym in history_cache and history_cache[sym] is not None and len(history_cache[sym]) >= 60:
+                history_cache[sym] = upsert_today_bar(history_cache[sym], bar)
+        last_bar_update[sym] = now_ts
+        ssi_updated.add(sym)
 
-    if missing_symbols:
-        ssi_cnt = max(0, len(symbols) - len(missing_symbols))
-        if ssi_cnt == 0:
-            source_tag = "[⚠️ Fallback VND 100%]"
-        else:
-            source_tag = f"[SSI: {ssi_cnt} | ⚠️ Fallback VND: {len(missing_symbols)}]"
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(fetch_today_bar, s, current_date): s for s in missing_symbols}
-            for fut in futures:
-                s = futures[fut]
+    missing_scan = [s for s in symbols if s not in ssi_updated]
+    missing_extra = [s for s in symbols_to_rs if s not in ssi_updated and s not in symbols]
+
+    def _fallback_fetch(sym_list):
+        if not sym_list: return
+        with ThreadPoolExecutor(max_workers=min(4, len(sym_list))) as exc:
+            for s, fut in {s: exc.submit(fetch_today_bar, s, current_date) for s in sym_list}.items():
                 try:
-                    bar = fut.result()
-                    if bar is not None:
+                    b = fut.result()
+                    if b is not None:
                         with cache_lock:
                             if s in history_cache and history_cache[s] is not None and len(history_cache[s]) >= 60:
-                                history_cache[s] = upsert_today_bar(history_cache[s], bar)
-                        last_bar_update[s] = time.time()
-                except Exception:
-                    pass
+                                history_cache[s] = upsert_today_bar(history_cache[s], b)
+                    last_bar_update[s] = time.time()
+                except Exception: pass
+
+    threading.Thread(target=lambda: (_fallback_fetch(missing_extra), [ensure_symbol_live_in_cache(i) for i in ("VNINDEX", "VN30")]), daemon=True).start()
+
+    if missing_scan:
+        _fallback_fetch(missing_scan)
+        ssi_cnt = len(symbols) - len(missing_scan)
+        source_tag = "[⚠️ Fallback VND 100%]" if ssi_cnt == 0 else f"[SSI: {ssi_cnt} | ⚠️ Fallback VND: {len(missing_scan)}]"
     else:
         source_tag = "[SSI 100%]"
 
