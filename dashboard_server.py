@@ -3340,7 +3340,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         </div>
         <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
       </div>
-      <div style="margin-left:auto;display:inline-flex;align-items:center;gap:3px"><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;line-height:1" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span class="panel-meta hmap-ts-wrap" id="hmap-ts" style="margin-left:0">Đang tải...</span></div>
+      <div class="panel-meta hmap-ts-wrap" style="display:inline-flex;align-items:center;gap:3px"><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;line-height:1" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span id="hmap-ts">Đang tải...</span></div>
       <span class="hmap-toggle-icon">▶</span>
     </div>
     <div class="panel-body" style="padding:8px">
@@ -7166,7 +7166,7 @@ function _patchHeatmapCell(sym,price,pct,totalVal,prevPrice){
   const oldPrice=typeof prevPrice==='number'?prevPrice:(typeof old?.price==='number'?old.price:0);
   window._lastHmapData=window._lastHmapData||{};
   window._lastHmapData[sym]={price,pct,total_value:totalVal>0?totalVal:(old?.total_value||0)};
-  const sign=pct>=0?'+':'',style=cellStyle(pct),isChanged=oldPrice>0&&price>0&&price!==oldPrice&&_hmapFlashEnabled&&Date.now()>_suppressFlashUntil,isUp=price>oldPrice;
+  const sign=pct>=0?'+':'',style=cellStyle(pct),hasChanged=oldPrice>0&&price>0&&price!==oldPrice,isChanged=hasChanged&&_hmapFlashEnabled&&Date.now()>_suppressFlashUntil,isUp=price>oldPrice;
 
   document.querySelectorAll(`.hmap-cell[data-sym="${sym}"]`).forEach(cell=>{
     const pEl=cell.querySelector('.hc-price'),pctEl=cell.querySelector('.hc-pct');
@@ -7189,7 +7189,7 @@ function _patchHeatmapCell(sym,price,pct,totalVal,prevPrice){
     if(pctEl){
       pctEl.textContent=`${sign}${pct.toFixed(1)}%`;
       pctEl.style.color=color;
-      if(isChanged){
+      if(hasChanged){
         pctEl.classList.remove('flash-up','flash-down');
         void pctEl.offsetWidth;
         pctEl.classList.add(isUp?'flash-up':'flash-down');
