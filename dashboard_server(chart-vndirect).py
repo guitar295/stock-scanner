@@ -9463,7 +9463,7 @@ async function init(){
   setInterval(_checkConn,10000);
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
-      _suppressFlashUntil=Date.now()+5000;
+      _suppressFlashUntil=Date.now()+10000;
       _checkConn();
       if(_pendingHmapData){
         renderHeatmap(_pendingHmapData);
@@ -9474,7 +9474,7 @@ async function init(){
       }
     }
   });
-  window.addEventListener('focus',()=>{_suppressFlashUntil=Date.now()+5000;});
+  window.addEventListener('focus',()=>{_suppressFlashUntil=Date.now()+10000;});
 }
 // Tính lại layout thẻ CHART (main+RSI+MACD+pane+right offset). Tách hàm riêng vì orientationchange
 // gọi lại nhiều lần — trên iOS Safari, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.
