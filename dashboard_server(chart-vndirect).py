@@ -7160,12 +7160,13 @@ function mkFollowGroup(d){
   const avg=avgPct(FOLLOW,d),sign=avg>=0?'+':'',cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
   return `<div class="hmap-group hmap-follow-overlay"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
+let _suppressFlashUntil=0;
 function _patchHeatmapCell(sym,price,pct,totalVal,prevPrice){
   const old=window._lastHmapData?.[sym];
   const oldPrice=typeof prevPrice==='number'?prevPrice:(typeof old?.price==='number'?old.price:0);
   window._lastHmapData=window._lastHmapData||{};
   window._lastHmapData[sym]={price,pct,total_value:totalVal>0?totalVal:(old?.total_value||0)};
-  const sign=pct>=0?'+':'',style=cellStyle(pct),isChanged=oldPrice>0&&price>0&&price!==oldPrice,isUp=price>oldPrice;
+  const sign=pct>=0?'+':'',style=cellStyle(pct),isChanged=oldPrice>0&&price>0&&price!==oldPrice&&Date.now()>_suppressFlashUntil,isUp=price>oldPrice;
 
   document.querySelectorAll(`.hmap-cell[data-sym="${sym}"]`).forEach(cell=>{
     const pEl=cell.querySelector('.hc-price'),pctEl=cell.querySelector('.hc-pct');
@@ -9462,6 +9463,7 @@ async function init(){
   setInterval(_checkConn,10000);
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
+      _suppressFlashUntil=Date.now()+5000;
       _checkConn();
       if(_pendingHmapData){
         renderHeatmap(_pendingHmapData);
@@ -9472,6 +9474,7 @@ async function init(){
       }
     }
   });
+  window.addEventListener('focus',()=>{_suppressFlashUntil=Date.now()+5000;});
 }
 // Tính lại layout thẻ CHART (main+RSI+MACD+pane+right offset). Tách hàm riêng vì orientationchange
 // gọi lại nhiều lần — trên iOS Safari, đo 1 lần dễ kẹt kích thước cũ khiến chart lệch vị trí.
