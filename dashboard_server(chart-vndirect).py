@@ -3340,7 +3340,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         </div>
         <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
       </div>
-      <span class="panel-meta hmap-ts-wrap" id="hmap-ts">Đang tải...</span>
+      <div style="margin-left:auto;display:inline-flex;align-items:center;gap:3px"><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;line-height:1" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span class="panel-meta hmap-ts-wrap" id="hmap-ts" style="margin-left:0">Đang tải...</span></div>
       <span class="hmap-toggle-icon">▶</span>
     </div>
     <div class="panel-body" style="padding:8px">
@@ -7160,13 +7160,13 @@ function mkFollowGroup(d){
   const avg=avgPct(FOLLOW,d),sign=avg>=0?'+':'',cls=avg>0.05?'pos':avg<-0.05?'neg':'zer';
   return `<div class="hmap-group hmap-follow-overlay"><div class="hmap-ghdr"><span class="hmap-gname">FOLLOW</span><span class="hmap-gavg ${cls}">${sign}${avg.toFixed(1)}%</span></div>${sortByPct(FOLLOW,d).map(s=>mkCell(s,d)).join('')}</div>`;
 }
-let _suppressFlashUntil=0;
+let _suppressFlashUntil=0,_hmapFlashEnabled=localStorage.getItem('hmap_flash_enabled')!=='0';
 function _patchHeatmapCell(sym,price,pct,totalVal,prevPrice){
   const old=window._lastHmapData?.[sym];
   const oldPrice=typeof prevPrice==='number'?prevPrice:(typeof old?.price==='number'?old.price:0);
   window._lastHmapData=window._lastHmapData||{};
   window._lastHmapData[sym]={price,pct,total_value:totalVal>0?totalVal:(old?.total_value||0)};
-  const sign=pct>=0?'+':'',style=cellStyle(pct),isChanged=oldPrice>0&&price>0&&price!==oldPrice&&Date.now()>_suppressFlashUntil,isUp=price>oldPrice;
+  const sign=pct>=0?'+':'',style=cellStyle(pct),isChanged=oldPrice>0&&price>0&&price!==oldPrice&&_hmapFlashEnabled&&Date.now()>_suppressFlashUntil,isUp=price>oldPrice;
 
   document.querySelectorAll(`.hmap-cell[data-sym="${sym}"]`).forEach(cell=>{
     const pEl=cell.querySelector('.hc-price'),pctEl=cell.querySelector('.hc-pct');
@@ -8350,6 +8350,9 @@ function _updateHmapTsDisplay(){
   const live=_isLiveMarket(),tag=live?'<span style="color:#16a34a;font-weight:700">● LIVE</span>':'<span style="color:#ca8a04;font-weight:700">⏸ NGHỈ PHIÊN</span>';
   DOM.hmapTs.innerHTML=`${tag} `+(live && _hmapCountdown>=1 ? `<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">(${_hmapCountdown}s)</span> ` : '')+`• Cập nhật: ${_lastHmapUpdateTs||'—'}`;
 }
+const _syncFlashBtn=()=>{const b=$('hmap-flash-btn');if(b){b.style.opacity=_hmapFlashEnabled?'1':'0.35';b.title=_hmapFlashEnabled?'Nháy giá: Đang Bật (Click để Tắt)':'Nháy giá: Đã Tắt (Click để Bật)';}};
+$('hmap-flash-btn')?.addEventListener('click',e=>{e.stopPropagation();_hmapFlashEnabled=!_hmapFlashEnabled;localStorage.setItem('hmap_flash_enabled',_hmapFlashEnabled?'1':'0');_syncFlashBtn();});
+_syncFlashBtn();
 function tick(){
   const n=new Date();
   DOM.clock.textContent=n.toLocaleTimeString('vi-VN',{hour12:false})+' '+n.toLocaleDateString('vi-VN');
