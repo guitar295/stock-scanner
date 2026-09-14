@@ -6628,6 +6628,7 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   }
   _liteRefreshVolumeTop(showVpaVol);
   if(!_liteApplyVisibleLogicalRange(prevRange))setLiteRightOffset();
+  _liteApplyBuySignal();
   redrawLiteDrawings();
   // Dữ liệu 3 trục vừa đổi — applyLitePaneLayout() đã reset minimumWidth, phải đo+đồng bộ lại sau khi setData xong.
   _liteSyncPriceScaleWidths();
@@ -6691,6 +6692,7 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   _liteLoadingMore=false;
   _liteVolumeData=(j.volume||[]).map(v=>Array.isArray(v)?{time:v[0],value:v[1],color:v[2]}:v);
   _liteCandle.setData(_liteData);
+  _liteChart.priceScale('right').applyOptions({autoScale:true});
   _liteUpdateWhitespace(true);
   setLiteRightOffset();
   renderLiteIndicators(true);
@@ -8395,7 +8397,7 @@ async function fetchSigs(retryCount=0){
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     window._sigTodayMap=_sigTodayMap;
     const _curSigNow=_getSig(_liteSymbol);
-    if(_curSigNow)_liteApplyBuySignal(_curSigNow.state!=='DEAD'?_curSigNow:null);
+    if(_curSigNow){_liteApplyBuySignal(_curSigNow.state!=='DEAD'?_curSigNow:null);redrawLiteDrawings();}
     const momentum=j.momentum||[];
     const strength=j.strength||[];
     _lastStrengthRows=strength;
@@ -9426,6 +9428,7 @@ _chartSyncChannel?.addEventListener('message',_onPopoutSyncMessage);
 
 // INIT
 async function init(){
+  if(location.search.includes('r='))history.replaceState(null,'',location.pathname);
   initSoundNotifyBtn();
   initDesktopNotifyBtn();
   updatePopoutAlignBtn();
@@ -9462,7 +9465,7 @@ async function init(){
       if(ok&&_off){_off=false;window.location.reload();}else if(!ok)_off=true;
     }catch(e){_off=true;}
   };
-  setInterval(_checkConn,10000);
+  setInterval(_checkConn,2500);
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
       _suppressFlashUntil=Date.now()+10000;
