@@ -4790,12 +4790,12 @@ function applyLitePaneLayout(skipWidthSync){
     _liteChart.applyOptions({
       width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight,
       timeScale:{visible:showMainTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{...LITE_PRICE_SCALE_BASE,autoScale:true,scaleMargins:{top:.12,bottom:.18}}
+      rightPriceScale:{...LITE_PRICE_SCALE_BASE,scaleMargins:{top:.12,bottom:.18}}
     });
     if(_liteRsiChart)_liteRsiChart.applyOptions({
       width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight,
       timeScale:{visible:showRsiTimeScale,rightOffset:LITE_RIGHT_OFFSET},
-      rightPriceScale:{...LITE_PRICE_SCALE_BASE,autoScale:true,scaleMargins:{top:.04,bottom:.06}}
+      rightPriceScale:{...LITE_PRICE_SCALE_BASE,scaleMargins:{top:.04,bottom:.06}}
     });
     if(_liteMacdChart)_liteMacdChart.applyOptions({
       width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight,
@@ -5282,7 +5282,7 @@ function _liteClipMainPlot(ctx){
 }
 function _liteDrawBBBand(ctx){
   if(!_liteBBFillData||!_liteChart)return;
-  const{upper,lower,color}=_liteBBFillData;
+  const{upper,mid,lower,color}=_liteBBFillData;
   if(!upper||!lower||!upper.length||!lower.length)return;
   ctx.save();
   _liteClipMainPlot(ctx);
@@ -5299,6 +5299,20 @@ function _liteDrawBBBand(ctx){
     ctx.lineTo(x,y);
   }
   if(started){ctx.closePath();ctx.fillStyle=_liteHexAlpha(color,.075);ctx.fill();}
+  const _drawBBLine=(pts,dash,alpha)=>{
+    ctx.beginPath();if(dash)ctx.setLineDash(dash);else ctx.setLineDash([]);
+    ctx.strokeStyle=_liteHexToRgba(color,alpha);ctx.lineWidth=1;
+    let st=false;
+    for(let i=0;i<pts.length;i++){
+      const x=_liteTimeToX(pts[i].time),y=_litePriceToY(pts[i].value);
+      if(x===null||y===null)continue;
+      if(!st){ctx.moveTo(x,y);st=true;}else ctx.lineTo(x,y);
+    }
+    if(st)ctx.stroke();
+  };
+  _drawBBLine(upper,null,.85);
+  _drawBBLine(lower,null,.85);
+  if(mid&&mid.length)_drawBBLine(mid,[4,4],.4);
   ctx.restore();
 }
 function _liteDrawTrendCloud(ctx){
@@ -6489,16 +6503,11 @@ function _liteUpdateIndicatorData(){
   _liteIndicatorSeries.forEach(s=>{
     if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
     else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
-    else if(s.kind==='bb-upper'||s.kind==='bb-mid'||s.kind==='bb-lower'){/* handled below */}
   });
-  // BB: tính 1 lần, cập nhật 3 series
-  const bbEntry=_liteIndicatorSeries.find(s=>s.kind==='bb-upper');
-  if(bbEntry){
+  // BB
+  if(_liteBBFillData){
     const bb=_bbands(_liteData,20,2);
-    _liteIndicatorSeries.find(s=>s.kind==='bb-upper').series.setData(bb.upper);
-    _liteIndicatorSeries.find(s=>s.kind==='bb-mid').series.setData(bb.mid);
-    _liteIndicatorSeries.find(s=>s.kind==='bb-lower').series.setData(bb.lower);
-    _liteBBFillData={upper:bb.upper,lower:bb.lower,color:_liteIndColors.bb};
+    _liteBBFillData={upper:bb.upper,mid:bb.mid,lower:bb.lower,color:_liteIndColors.bb};
   }
   // Trend cloud
   if(_liteTrendFillData){
@@ -6551,32 +6560,13 @@ function renderLiteIndicators(skipRangeRestore,explicitRange,skipPaneLayout){
   emaOn.forEach(p=>{
     _liteIndicatorSeries.push({chart:_liteChart,kind:'ema',period:p,series:_liteChart.addLineSeries({color:_liteIndColors['ema'+p],lineWidth:1,title:'',priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false})});
   });
-  if(bbOn){
-    // Chỉ vẽ 3 đường BB bằng series thật; phần tô màu giữa 2 đường vẽ riêng bằng canvas (_liteDrawBBBand) để clip chính xác.
-    const bbCol=_liteIndColors.bb;
-    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-upper',series:_liteChart.addLineSeries({
-      color:_liteHexToRgba(bbCol,.85),lineWidth:1,
-      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
-    })});
-    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-mid',series:_liteChart.addLineSeries({
-      color:_liteHexToRgba(bbCol,.4),lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,
-      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
-    })});
-    _liteIndicatorSeries.push({chart:_liteChart,kind:'bb-lower',series:_liteChart.addLineSeries({
-      color:_liteHexToRgba(bbCol,.85),lineWidth:1,
-      title:'',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false
-    })});
-  }
   _liteIndicatorSeries.forEach(s=>{
     if(s.kind==='ma')s.series.setData(_sma(_liteData,s.period));
     else if(s.kind==='ema')s.series.setData(_ema(_liteData,s.period));
   });
   if(bbOn){
     const bb=_bbands(_liteData,20,2);
-    _liteIndicatorSeries.find(s=>s.kind==='bb-upper').series.setData(bb.upper);
-    _liteIndicatorSeries.find(s=>s.kind==='bb-mid').series.setData(bb.mid);
-    _liteIndicatorSeries.find(s=>s.kind==='bb-lower').series.setData(bb.lower);
-    _liteBBFillData={upper:bb.upper,lower:bb.lower,color:_liteIndColors.bb};
+    _liteBBFillData={upper:bb.upper,mid:bb.mid,lower:bb.lower,color:_liteIndColors.bb};
   }else{
     _liteBBFillData=null;
   }
@@ -6939,6 +6929,7 @@ function bindLiteChartControls(){
     saveLiteIndicatorPrefs();saveLiteTrendMode();updateLiteIndGroupCounts();
     // 4 checkbox nhóm Signal chỉ ảnh hưởng mũi tên/badge/màu volume/giá phóng to — không cần renderLiteIndicators() đầy đủ.
     const val=e.target?.value;
+    const name=e.target?.name;
     if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
       if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
       if(val==='bigprice'||val==='signalgrp_on')updateLiteBigPrice(_liteData&&_liteData.length?_liteData[_liteData.length-1]:null);
@@ -6946,6 +6937,17 @@ function bindLiteChartControls(){
         _liteApplyBuySignal();
         redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
       }
+    }else if(val==='trend'||name==='trend-mode'){
+      _liteTrendFillData=_liteChecked('trend')?_trendCloudData(_liteData,LITE_TREND_PERIOD,LITE_TREND_MULT,_liteTrendMode()):null;
+      redrawLiteDrawings();
+    }else if(val==='bb'){
+      if(_liteChecked('bb')){
+        const bb=_bbands(_liteData,20,2);
+        _liteBBFillData={upper:bb.upper,mid:bb.mid,lower:bb.lower,color:_liteIndColors.bb};
+      }else{
+        _liteBBFillData=null;
+      }
+      redrawLiteDrawings();
     }else{
       renderLiteIndicators();
       _liteApplyBuySignal();
@@ -7306,9 +7308,7 @@ function _hmapDesktopClick(sym){
   if(_hmapClickTimer)clearTimeout(_hmapClickTimer);
   _hmapClickTimer=setTimeout(()=>{
     _jumpLiteChart(sym);
-    if(_isChartPanelOpen)return;
-    if(_chartPopoutWin&&!_chartPopoutWin.closed)return;
-    if(_liteLSGet('chart_popout_open','0')==='1')return;
+    if(_isChartPanelOpen||(_chartPopoutWin&&!_chartPopoutWin.closed)||(Date.now()-_popoutPulse<2500))return;
     openChart(sym);
   },220);
 }
@@ -8322,11 +8322,8 @@ DOM.liteChartToggle.addEventListener('click',e=>{
     if(!DOM.liteFireantIframe.src||DOM.liteFireantIframe.src==='about:blank')DOM.liteFireantIframe.src='https://fireant.vn/charts';
     // Panel vừa mở lại sau khi ẩn cần ép resize canvas (có thể đang mang kích thước 0) và reset visible range, tránh nến bị dồn cụm.
     requestAnimationFrame(()=>{
-      if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
-      if(_liteRsiChart&&DOM.liteRsiChart)_liteRsiChart.applyOptions({width:DOM.liteRsiChart.clientWidth,height:DOM.liteRsiChart.clientHeight});
-      if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
-      if(_liteData.length)setLiteRightOffset();
-      resizeLiteDrawCanvas();redrawLiteDrawings();
+      applyLitePaneLayout();
+      if(_liteData.length){renderLiteIndicators(false);setLiteRightOffset();}
     });
   }
 });
@@ -9335,7 +9332,7 @@ document.addEventListener('keydown',e=>{
   _lgKeyLoadTimer=setTimeout(()=>loadLiteChart(_lgActiveSym),300);
 });
 // CHART POPOUT (mở panel CHART trong cửa sổ riêng, đồng bộ mã 2 chiều)
-let _chartPopoutWin=null;
+let _chartPopoutWin=null,_popoutPulse=0;
 // CHART_POPOUT_CONTENT_H tính sẵn từ CSS cố định (720 chart+80 header+18 padding+34 footer); scrollbars=yes dự phòng.
 const CHART_POPOUT_CONTENT_H=720+80+18+34;
 // Hệ số thu hẹp bề rộng cửa sổ popout so với bề rộng tối đa ban đầu — 2 lần giảm dồn lại (giảm 10% rồi giảm thêm 5% nữa): 0.9 * 0.95 = 0.855.
@@ -9370,6 +9367,7 @@ document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openC
 function _onPopoutSyncMessage(e){
   if(!e||!e.data)return;
   const d=e.data;
+  if(d.type==='POPOUT_PULSE'){_popoutPulse=Date.now();return;}
   if(d.type==='CHART_POPOUT_ALIGN_SYNC'){
     updatePopoutAlignBtn();
     if(_isChartPopoutWindow){
@@ -9409,6 +9407,7 @@ window.addEventListener('message',_onPopoutSyncMessage);
 _chartSyncChannel?.addEventListener('message',_onPopoutSyncMessage);
 (function(){
   if(!_isChartPopoutWindow)return;
+  if(!location.search.includes('embedded=1'))setInterval(()=>_chartSyncChannel?.postMessage({type:'POPOUT_PULSE'}),1000);
   _liteLSSet('chart_popout_open','1');
   window.addEventListener('beforeunload',()=>{_liteLSSet('chart_popout_open','0');});
   document.documentElement.classList.add('chart-popout-mode');
