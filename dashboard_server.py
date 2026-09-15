@@ -2942,7 +2942,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 .ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
 .ctab:hover:not(.on){color:var(--accent);background:#eef3ff}
-.closebtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.closebtn{width:28px;height:28px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .closebtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .pbody{flex:1;overflow:hidden;position:relative}
 .tpanel{position:absolute;inset:0;display:none}
@@ -3095,7 +3095,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 @media screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape){
   .pbox{width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;animation:none!important}
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
-  html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}
+  html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
   html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   .lite-ind-dropdown{
     position:absolute !important;
@@ -3222,7 +3222,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 }
 /* Tabs cuộn giữa */
 .mob-land-tabs{
-  display:flex;flex-direction:row;flex-wrap:nowrap;
+  display:flex;flex-direction:row;flex-wrap:nowrap;justify-content:center;
   overflow-x:auto;overflow-y:hidden;
   -webkit-overflow-scrolling:touch;
   scrollbar-width:none;-ms-overflow-style:none;
