@@ -2474,7 +2474,7 @@ try{
   --sab:env(safe-area-inset-bottom,0px);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 
 /* ═══════════════════════════════════════════
    HEADER — desktop
@@ -2529,8 +2529,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-link-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
-.hmap-search-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
-.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
+.hmap-search-input{width:64px;padding:5px 8px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s}
+.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 #hmap-follow-btn{color:var(--muted)}
 #hmap-follow-btn.on{background:#fef3c7;color:#92400e;border-color:#f59e0b}
 
@@ -2686,7 +2686,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
-.lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:none!important}
+.lite-chart-panel.collapsed .lite-chart-top-row>*:not(.panel-title),
+.lite-chart-panel.collapsed .lite-draw-toolbar{display:none!important}
 .lite-chart-panel.collapsed .lite-chart-frame{display:none!important}
 /* Cửa sổ CHART popout: ẩn hết dashboard, chỉ hiện panel CHART. Dùng html.chart-popout-mode
    (gắn ở <head>, không phải body) để có hiệu lực ngay lần vẽ đầu, không đợi JS cuối trang. */
@@ -2698,7 +2699,8 @@ html.chart-popout-mode #lite-chart-popout-btn{display:none}
    ẩn của .collapsed ngay khi html.chart-popout-mode có mặt để panel luôn hiện mở sẵn, khỏi nháy
    thu/mở khi JS/mạng chậm. Dùng display:flex (không dùng revert) vì các con trực tiếp của
    .lite-chart-toolbar đều tự cần display:flex cho layout riêng. */
-html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-toolbar>*:not(.panel-title){display:flex!important}
+html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-top-row>*:not(.panel-title),
+html.chart-popout-mode .lite-chart-panel.collapsed .lite-draw-toolbar{display:flex!important}
 html.chart-popout-mode .lite-chart-panel.collapsed .lite-chart-frame{display:block!important}
 /* Popout mọi kích thước: cho #lite-chart-panel cao bằng viewport còn lại, .lite-chart-frame
    tự giãn lấp phần sau toolbar bằng flexbox (thay vì height:720px cố định) — applyLitePaneLayout()
@@ -2765,11 +2767,11 @@ html.chart-popout-mode .lite-chart-frame{
 #lite-macd-chart.hide-tv-logo a[href*="tradingview"],#lite-macd-chart.hide-tv-logo [class*="logo"],#lite-macd-chart.hide-tv-logo [class*="attribution"]{display:none!important}
 .lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
 .lite-macd-resizer.on{display:block}
-.lite-macd-resizer:hover{background:rgba(26,86,219,.12)}
-.lite-chart-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.lite-chart-input{width:100px;padding:5px 10px 5px 30px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none;transition:border-color .15s,width .2s}
+.lite-chart-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;min-width:0}
+.lite-chart-top-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lite-chart-input{width:64px;padding:5px 8px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none;transition:border-color .15s}
 .lite-chart-input::placeholder{color:var(--muted);text-transform:none}
-.lite-chart-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:120px}
+.lite-chart-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 .lite-chart-search-wrap{position:relative;display:flex;align-items:center}
 .lite-chart-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .lite-tf-tabs{display:flex;align-items:center;gap:3px}
@@ -2872,7 +2874,6 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 .lite-xhair-v{position:absolute;top:0;bottom:0;left:0;width:0;border-left:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
 .lite-xhair-h{position:absolute;left:0;right:0;top:0;height:0;border-top:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
 .lite-xhair-price{position:absolute;right:1px;top:0;transform:translateY(-50%);min-width:54px;padding:2px 6px;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;text-align:center;white-space:nowrap}
-.lite-xhair-time{position:absolute;left:0;bottom:2px;transform:translateX(-50%);padding:2px 6px;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;white-space:nowrap}
 .lite-draw-toolbar{display:flex;align-items:center;gap:3px;flex-wrap:wrap;padding-left:6px;border-left:1px solid var(--border)}
 .lite-draw-btn{width:24px;height:24px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lite-draw-btn:hover{background:#f1f5f9}
@@ -2949,8 +2950,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 .ptitle{font-family:var(--font-ui);font-size:17px;font-weight:800;color:var(--accent);letter-spacing:1.5px;flex-shrink:0;white-space:nowrap}
 .popup-search-wrap{position:relative;display:flex;align-items:center}
 .popup-search-wrap .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
-.popup-search-input{width:100px;padding:5px 10px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s,width .2s}
-.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12);width:200px}
+.popup-search-input{width:60px;padding:5px 8px 5px 26px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s}
+.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 .ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
 .ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
@@ -2961,6 +2962,30 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 .tpanel{position:absolute;inset:0;display:none}
 .tpanel.on{display:block}
 .tpanel iframe{width:100%;height:100%;border:none;display:block}
+
+/* ═══════════════════════════════════════════
+   MOBILE CHUNG (PORTRAIT + LANDSCAPE)
+   ═══════════════════════════════════════════ */
+@media (max-width:768px), screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape){
+  .lite-chart-toolbar{flex-direction:column;gap:4px}
+  .lite-chart-top-row{width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .lite-chart-top-row::-webkit-scrollbar{display:none}
+  .lite-chart-top-row>*{flex-shrink:0}
+  .lite-draw-toolbar{width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-left:none;padding-left:0}
+  .lite-draw-toolbar::-webkit-scrollbar{display:none}
+  .lite-draw-toolbar>*{flex-shrink:0}
+  .mob-search-input, .mob-land-search, .hmap-search-input, .lite-chart-input{
+    font-size:11px !important;
+    height:25px !important;
+    width:52px !important;
+    padding:2px 4px 2px 18px !important;
+    border-radius:13px !important;
+  }
+  .mob-search-wrap .s-icon, .hmap-search-wrap .s-icon, .lite-chart-search-wrap .s-icon{
+    font-size:10px !important;
+    left:5px !important;
+  }
+}
 
 /* ═══════════════════════════════════════════
    MOBILE PORTRAIT
@@ -2996,8 +3021,6 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
   .hmap-hdr-row1>*{flex-shrink:0}
   .hmap-toggle-icon{grid-column:2;grid-row:1;justify-self:end;margin-left:0}
-  .hmap-search-input{width:90px !important}
-  .hmap-search-input:focus{width:90px !important}
   .hmap-ts-wrap{
     grid-column:1/-1;
     grid-row:2;
@@ -3045,23 +3068,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
      chỉ báo được portal ra <body> + neo động bằng JS (_litePositionIndDropdown/
      syncLiteIndDropdownPortal) — CSS ở đây chỉ giữ khung (bo góc/đổ bóng/cuộn), không định vị cứng. */
   #lite-chart-panel{display:block}
-  .lite-chart-toolbar{
-    flex-wrap:nowrap;
-    overflow-x:auto;
-    overflow-y:hidden;
-    -webkit-overflow-scrolling:touch;
-    scrollbar-width:none;
-    padding-bottom:2px;
-  }
-  .lite-chart-toolbar::-webkit-scrollbar{display:none}
-  .lite-chart-toolbar>*{flex-shrink:0}
   .lite-indicators{flex-wrap:nowrap}
-  .lite-draw-toolbar{flex-wrap:nowrap}
-  .lite-chart-input{width:90px !important}
-  .lite-chart-input:focus{width:90px !important}
-  .mob-search-input, .mob-land-search, .popup-search-input, .hmap-search-input, .lite-chart-input {
-    font-size: 16px !important;
-  }
   button, input, select, .ctab, .mob-tab-btn, .mob-land-tab, .lite-draw-btn, .lite-tf-btn, .lite-ind-group-btn {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
@@ -3096,13 +3103,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-chart-bigprice .bp-price{font-size:16px}
   .lite-alert-panel{width:calc(100vw - 28px)}
 }
-@media screen and (max-width:768px) and (orientation:landscape){
+@media screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape){
   /* Xoay ngang: rộng hơn portrait nên khung chart có thể cao hơn 1 chút mà
      vẫn còn chỗ cho toolbar + phần dashboard phía trên. */
   .lite-chart-frame{height:72vh;max-height:640px}
-  /* Landscape giữ dropdown theo cơ chế absolute trong .lite-ind-group như desktop.
-     Rule mobile chung phía trên dùng fixed cho portrait portal; override này tránh
-     các thiết bị landscape hẹp bị rơi về góc viewport. */
   .lite-ind-dropdown{
     position:absolute !important;
     top:calc(100% + 4px) !important;
@@ -3111,6 +3115,38 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     max-width:min(260px, 92vw) !important;
     max-height:55vh !important;
     z-index:20 !important;
+  }
+  /* 1. Ô tín hiệu cuộn ngang như Heatmap */
+  .sig-list{
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    overflow-x:auto !important;
+    overflow-y:hidden !important;
+    gap:6px !important;
+    -webkit-overflow-scrolling:touch !important;
+    scrollbar-width:none !important;
+    padding-bottom:2px !important;
+  }
+  .sig-list::-webkit-scrollbar{display:none !important}
+  .sig-row{flex-shrink:0 !important;min-width:max-content !important}
+  /* 2. Cỡ chữ Cập nhật ... tín hiệu nhỏ gọn như portrait */
+  #signal-header{
+    flex-direction:row !important;
+    align-items:center !important;
+    gap:8px !important;
+    padding:6px 12px !important;
+    overflow-x:auto !important;
+    scrollbar-width:none !important;
+  }
+  #signal-header::-webkit-scrollbar{display:none !important}
+  #signal-header .panel-hdr-left{flex-shrink:0 !important}
+  #signal-header #sig-meta{
+    font-size:10px !important;
+    white-space:nowrap !important;
+    color:var(--muted) !important;
+    line-height:1.2 !important;
+    flex-shrink:0 !important;
   }
 }
 
@@ -3336,7 +3372,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         <span class="panel-title">Heatmap</span>
         <div class="hmap-search-wrap">
           <span class="s-icon">🔍</span>
-          <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+          <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
         <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
       </div>
@@ -3356,11 +3392,12 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   <div class="panel lite-chart-panel collapsed" id="lite-chart-panel">
     <div class="panel-hdr" id="lite-chart-toggle">
       <div class="lite-chart-toolbar">
-        <span class="panel-title" id="lite-chart-title-label" title="Bấm để quay lại chart tự vẽ mặc định">CHART</span>
-        <div class="lite-chart-search-wrap">
-          <span class="s-icon">🔍</span>
-          <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm mã" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
-        </div>
+        <div class="lite-chart-top-row">
+          <span class="panel-title" id="lite-chart-title-label" title="Bấm để quay lại chart tự vẽ mặc định">CHART</span>
+          <div class="lite-chart-search-wrap">
+            <span class="s-icon">🔍</span>
+            <input class="lite-chart-input" id="lite-chart-input" placeholder="Tìm" maxlength="10" spellcheck="false" lang="en" autocapitalize="characters" autocorrect="off" autocomplete="off" inputmode="text" translate="no">
+          </div>
         <button class="lite-draw-btn lite-fav-btn" id="lite-fav-btn" title="Thêm/bỏ mã đang xem khỏi Favorite" aria-label="Thêm/bỏ mã đang xem khỏi Favorite">☆</button>
         <button class="lite-draw-btn" id="lite-groups-toggle-btn" title="Danh sách nhóm ngành / mã" aria-label="Danh sách nhóm ngành / mã">☰</button>
         <button class="lite-draw-btn" id="lite-vietstock-toggle-btn" title="Mở chart Vietstock (thay cho chart tự vẽ) — bấm chữ CHART để quay lại chart tự vẽ" aria-label="Mở chart Vietstock">V</button>
@@ -3417,6 +3454,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
           <label class="lite-ind-simple"><input type="checkbox" value="bb"><span class="lite-ind-label" data-ind="bb" title="Bấm để đổi màu">BB</span><input type="color" class="lite-ind-color" data-ind="bb" value="#9333ea"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="rsi"><span class="lite-ind-label" data-ind="rsi" title="Bấm để đổi màu">RSI</span><input type="color" class="lite-ind-color" data-ind="rsi" value="#7c6ee6"></label>
           <label class="lite-ind-simple"><input type="checkbox" value="macd">MACD</label>
+        </div>
         </div>
         <div class="lite-draw-toolbar" id="lite-draw-toolbar">
           <button class="lite-draw-btn on" data-tool="cursor" title="Con trỏ / chọn / di chuyển">▲</button>
@@ -3736,7 +3774,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         <span class="ptitle" id="ptitle">Chart</span>
         <div class="popup-search-wrap">
           <span class="s-icon">🔍</span>
-          <input class="popup-search-input" id="popup-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+          <input class="popup-search-input" id="popup-search" type="text" placeholder="Tìm" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
       </div>
       <div class="phdr-center">
@@ -3757,7 +3795,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       <span class="mob-sym-title" id="mob-ptitle">Chart</span>
       <div class="mob-search-wrap">
         <span class="s-icon">🔍</span>
-        <input class="mob-search-input" id="mob-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+        <input class="mob-search-input" id="mob-search" type="text" placeholder="Tìm" maxlength="10" autocomplete="off" spellcheck="false">
       </div>
     </div>
 
@@ -3774,7 +3812,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       <span class="mob-land-sym" id="mob-land-sym">Chart</span>
       <div class="mob-land-search-wrap">
         <span class="s-icon">🔍</span>
-        <input class="mob-land-search" id="mob-land-search" type="text" placeholder="Tìm mã" maxlength="10" autocomplete="off" spellcheck="false">
+        <input class="mob-land-search" id="mob-land-search" type="text" placeholder="Tìm" maxlength="10" autocomplete="off" spellcheck="false">
       </div>
       <div class="mob-land-tabs" id="mob-land-tabs">
         <button class="mob-land-tab on" data-tab="chart"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><line x1="7" y1="2" x2="7" y2="6" stroke="#64748b" stroke-width="2"/><rect x="4.5" y="6" width="5" height="11" rx="1" fill="#94a3b8" stroke="#475569" stroke-width="0.8"/><line x1="7" y1="17" x2="7" y2="22" stroke="#64748b" stroke-width="2"/><line x1="16" y1="5" x2="16" y2="9" stroke="#64748b" stroke-width="2"/><rect x="13.5" y="9" width="5" height="7" rx="1" fill="#cbd5e1" stroke="#64748b" stroke-width="1"/><line x1="16" y1="16" x2="16" y2="20" stroke="#64748b" stroke-width="2"/></svg>Chart</button>
@@ -4155,6 +4193,7 @@ function bindLiteIndGroupDropdowns(){
   window.addEventListener('orientationchange',()=>closeAllLiteIndDropdowns());
   // Đăng ký lắng nghe cuộn/resize duy nhất 1 lần — hàm tự kiểm tra dropdown nào đang mở.
   document.querySelector('.lite-chart-toolbar')?.addEventListener('scroll',_liteRepositionOpenDropdown,{passive:true});
+  document.querySelector('.lite-chart-top-row')?.addEventListener('scroll',_liteRepositionOpenDropdown,{passive:true});
   window.addEventListener('resize',_liteRepositionOpenDropdown);
   window.visualViewport?.addEventListener('resize',_liteRepositionOpenDropdown);
   updateLiteIndGroupCounts();
