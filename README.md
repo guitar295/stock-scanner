@@ -101,7 +101,7 @@ tail -n 25 ~/scanner/scanner.log
   ```bash
   cd ~/Desktop/Dashboard_mac && \
   pkill -if "scanner_full.py" 2>/dev/null || true && \
-  nohup python3 -u scanner_full.py < /dev/null > scanner.log 2>&1 &
+  nohup python3 -u scanner_full.py < /dev/null >> scanner.log 2>&1 &
   ```
 
 ---
@@ -112,7 +112,7 @@ tail -n 25 ~/scanner/scanner.log
 Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động gửi tin Telegram:
 * **Trên VPS:**
   ```bash
-  tail -n 50 -f ~/scanner/scanner.log
+  tail -f ~/scanner/scanner.log
   ```
 * **Trên Mac:**
   ```bash
