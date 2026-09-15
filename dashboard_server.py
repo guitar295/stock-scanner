@@ -3261,7 +3261,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 @media screen and (max-width:768px) and (orientation:portrait){
   .mob-hdr-row1{display:none !important}
   .mob-tab-row{display:none !important}
-  .mob-hdr-landscape{display:flex !important}
+  .mob-hdr-landscape{display:flex !important}.mob-land-tabs{justify-content:flex-start}
 
   /* FIX #4: nút X gần như hoàn toàn trong suốt */
   #mob-close-float{
