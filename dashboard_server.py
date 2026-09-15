@@ -2960,14 +2960,17 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-draw-toolbar{width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-left:none;padding-left:0}
   .lite-draw-toolbar::-webkit-scrollbar{display:none}
   .lite-draw-toolbar>*{flex-shrink:0}
-  .mob-land-search,.hmap-search-input,.lite-chart-input,.mob-search-input{
+  .mob-land-search,.hmap-search-input,.lite-chart-input,.mob-search-input,.popup-search-input{
     font-size:11px !important;
     height:25px !important;
+    line-height:23px !important;
     width:60px !important;
-    padding:2px 6px 2px 20px !important;
+    padding:0 6px 0 20px !important;
     border-radius:13px !important;
+    -webkit-appearance:none !important;
+    box-sizing:border-box !important;
   }
-  .mob-land-search-wrap .s-icon,.hmap-search-wrap .s-icon,.lite-chart-search-wrap .s-icon,.mob-search-wrap .s-icon{
+  .mob-land-search-wrap .s-icon,.hmap-search-wrap .s-icon,.lite-chart-search-wrap .s-icon,.mob-search-wrap .s-icon,.popup-search-wrap .s-icon{
     font-size:10px !important;
     left:6px !important;
   }
@@ -3203,12 +3206,13 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   color:var(--accent);white-space:nowrap;flex-shrink:0;letter-spacing:.8px;
 }
 .mob-land-search-wrap{position:relative;flex-shrink:0}
-.mob-land-search-wrap .s-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}
+.mob-land-search-wrap .s-icon{position:absolute;left:6px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px;pointer-events:none}
 .mob-land-search{
-  width:68px;height:30px;padding:4px 6px 4px 22px;
-  border-radius:16px;border:1px solid var(--border);
+  width:60px;height:25px;line-height:23px;padding:0 6px 0 20px;
+  border-radius:13px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);
-  font-family:var(--font-mono);font-size:10px;outline:none;
+  font-family:var(--font-mono);font-size:11px;outline:none;
+  -webkit-appearance:none;box-sizing:border-box;
   transition:border-color .15s; 
 }
 .mob-land-search:focus{
@@ -3284,17 +3288,12 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   }
 }
 
-@media screen and (max-width:768px) and (orientation:landscape){
-  /* Ẩn portrait rows */
+@media screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape), screen and (max-width:768px) and (orientation:landscape){
+  .phdr-left,.phdr-center,.phdr-right{display:none !important}
   .mob-hdr-row1{display:none !important}
   .mob-tab-row{display:none !important}
-  /* Hiện landscape row */
   .mob-hdr-landscape{display:flex !important}
-
-  #mob-close-float{
-    display:none !important;
-  }
-
+  #mob-close-float{display:none !important}
 }
 
 #edge-swipe-zone{position:fixed;left:0;top:0;width:30px;height:100%;z-index:10000;display:none;touch-action:pan-y}
