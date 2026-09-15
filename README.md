@@ -112,7 +112,7 @@ tail -n 25 ~/scanner/scanner.log
 Theo dõi từng chu kỳ quét 5s, tín hiệu phát hiện và hoạt động gửi tin Telegram:
 * **Trên VPS:**
   ```bash
-  tail -f ~/scanner/scanner.log
+  tail -n 50 -f ~/scanner/scanner.log
   ```
 * **Trên Mac:**
   ```bash
