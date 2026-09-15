@@ -3359,9 +3359,9 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
           <span class="s-icon">🔍</span>
           <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
-        <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button>
+        <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;line-height:1" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span id="hmap-status" style="font-size:10px;line-height:1;display:inline-flex;align-items:center"></span>
       </div>
-      <div class="panel-meta hmap-ts-wrap" style="display:inline-flex;align-items:center;gap:3px"><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;line-height:1" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span id="hmap-ts">Đang tải...</span></div>
+      <div class="panel-meta hmap-ts-wrap"><span id="hmap-ts">Đang tải...</span></div>
       <span class="hmap-toggle-icon">▶</span>
     </div>
     <div class="panel-body" style="padding:8px">
@@ -3839,7 +3839,7 @@ const $=id=>document.getElementById(id);
 const DOM={
   clock:$('clock'),hdrSoundBtn:$('hdr-sound-btn'),hdrDesktopNotifyBtn:$('hdr-desktop-notify-btn'),sigMeta:$('sig-meta'),sigList:$('sig-list'),
   signalHeader:$('signal-header'),momentumBox:$('momentum-box'),momentumList:$('momentum-list'),strengthList:$('strength-list'),
-  hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
+  hmapStatus:$('hmap-status'),hmapTs:$('hmap-ts'),hmapGrid:$('hmap-grid'),hmapSearch:$('hmap-search'),
   hmapPanel:$('hmap-panel'),hmapToggle:$('hmap-toggle'),
   triPanel:$('tri-panel'),triHdr:$('tri-hdr'),triTabs:$('tri-tabs'),
   healthVniCheckbox:$('health-vni-checkbox'),healthVniToggle:$('health-vni-toggle'),healthPeriodTabs:$('health-period-tabs'),
@@ -8334,7 +8334,7 @@ DOM.triHdr.addEventListener('click',e=>{
 triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
   // Control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, popout...) vẫn bấm bình thường — chỉ coi là bấm để thu/mở khi không trúng control.
-  if(e.target.closest('button,input,.hmap-search-wrap'))return;
+  if(e.target.closest('button,input,.hmap-search-wrap,#hmap-status'))return;
   DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
@@ -8370,7 +8370,7 @@ const _isLiveMarket=()=>{
 function _updateHmapTsDisplay(){
   if(!DOM.hmapTs)return;
   const live=_isLiveMarket(),tag=live?'<span style="color:#16a34a;font-weight:700">● LIVE</span>':'<span style="color:#ca8a04;font-weight:700">⏸ NGHỈ PHIÊN</span>';
-  DOM.hmapTs.innerHTML=`${tag} `+(live && _hmapCountdown>=1 ? `<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">(${_hmapCountdown}s)</span> ` : '')+`• Cập nhật: ${_lastHmapUpdateTs||'—'}`;
+  if(DOM.hmapStatus)DOM.hmapStatus.innerHTML=`${tag}`+(live && _hmapCountdown>=1 ? ` <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">(${_hmapCountdown}s)</span>` : '');DOM.hmapTs.textContent=`Cập nhật: ${_lastHmapUpdateTs||'—'}`;
 }
 const _syncFlashBtn=()=>{const b=$('hmap-flash-btn');if(b){b.style.opacity=_hmapFlashEnabled?'1':'0.35';b.title=_hmapFlashEnabled?'Nháy giá: Đang Bật (Click để Tắt)':'Nháy giá: Đã Tắt (Click để Bật)';}};
 $('hmap-flash-btn')?.addEventListener('click',e=>{e.stopPropagation();_hmapFlashEnabled=!_hmapFlashEnabled;localStorage.setItem('hmap_flash_enabled',_hmapFlashEnabled?'1':'0');_syncFlashBtn();});
