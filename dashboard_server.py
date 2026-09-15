@@ -2723,19 +2723,6 @@ html.chart-popout-mode .lite-chart-frame{
   html.chart-popout-mode #lite-chart-panel{
     height:calc(100dvh - 8px - var(--sab));
   }
-  /* Thu nhỏ ô Tìm mã bằng scale (font-size giữ 16px để iOS không auto-zoom khi focus);
-     áp dụng đồng bộ cho cả ô Tìm mã HEATMAP và CHART để 2 ô cùng kích thước trên mobile. */
-  .hmap-search-wrap,
-  .lite-chart-search-wrap{
-    transform:scale(0.72);
-    transform-origin:left center;
-    margin-right:calc((0.72 - 1) * 90px);
-  }
-  .mob-search-wrap{
-    transform:scale(0.72);
-    transform-origin:right center;
-    margin-left:calc((0.72 - 1) * 72px);
-  }
   /* Title chart portrait: ẩn O, H, L để vừa 1 dòng (chỉ còn C và %). */
   .lite-chart-title .lct-open,.lite-chart-title .lct-hl{display:none}
   /* Portrait mobile: lite-chart-frame tự giãn theo nội dung khi thêm RSI/MACD panel. */
@@ -2974,16 +2961,16 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-draw-toolbar{width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-left:none;padding-left:0}
   .lite-draw-toolbar::-webkit-scrollbar{display:none}
   .lite-draw-toolbar>*{flex-shrink:0}
-  .mob-search-input, .mob-land-search, .hmap-search-input, .lite-chart-input{
+  .mob-land-search{
     font-size:11px !important;
     height:25px !important;
-    width:52px !important;
-    padding:2px 4px 2px 18px !important;
+    width:60px !important;
+    padding:2px 6px 2px 20px !important;
     border-radius:13px !important;
   }
-  .mob-search-wrap .s-icon, .hmap-search-wrap .s-icon, .lite-chart-search-wrap .s-icon{
+  .mob-land-search-wrap .s-icon{
     font-size:10px !important;
-    left:5px !important;
+    left:6px !important;
   }
 }
 
@@ -3093,7 +3080,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     padding: 8px 10px !important;
     -webkit-overflow-scrolling: touch;
   }
-  .lite-chart-frame{height:56vh;min-height:300px;max-height:520px}
+  .lite-chart-frame{height:auto!important;max-height:none!important;min-height:300px!important}
   .lite-groups-sidebar{width:150px}
   .lite-groups-sidebar.on~.lite-vietstock-iframe{left:150px;width:calc(100% - 150px)}
   .lite-groups-sidebar.on~.lite-fireant-iframe{left:150px;width:calc(100% - 150px)}
@@ -3104,9 +3091,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-alert-panel{width:calc(100vw - 28px)}
 }
 @media screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape){
-  /* Xoay ngang: rộng hơn portrait nên khung chart có thể cao hơn 1 chút mà
-     vẫn còn chỗ cho toolbar + phần dashboard phía trên. */
-  .lite-chart-frame{height:72vh;max-height:640px}
+  .lite-chart-frame{height:auto!important;max-height:none!important;min-height:300px!important}
   .lite-ind-dropdown{
     position:absolute !important;
     top:calc(100% + 4px) !important;
@@ -3116,20 +3101,19 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     max-height:55vh !important;
     z-index:20 !important;
   }
-  /* 1. Ô tín hiệu cuộn ngang như Heatmap */
+  /* 1. Tín hiệu hôm nay 4 cột cuộn ngang như Heatmap */
   .sig-list{
-    display:flex !important;
-    flex-direction:row !important;
-    flex-wrap:nowrap !important;
+    display:grid !important;
+    grid-template-columns:repeat(4, minmax(235px, 1fr)) !important;
     overflow-x:auto !important;
     overflow-y:hidden !important;
-    gap:6px !important;
     -webkit-overflow-scrolling:touch !important;
     scrollbar-width:none !important;
-    padding-bottom:2px !important;
+    gap:3px !important;
+    padding-bottom:4px !important;
   }
   .sig-list::-webkit-scrollbar{display:none !important}
-  .sig-row{flex-shrink:0 !important;min-width:max-content !important}
+  .sig-row{min-width:235px !important}
   /* 2. Cỡ chữ Cập nhật ... tín hiệu nhỏ gọn như portrait */
   #signal-header{
     flex-direction:row !important;
