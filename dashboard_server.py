@@ -2530,7 +2530,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .hmap-search-wrap{position:relative;display:flex;align-items:center}
 .hmap-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .hmap-search-input{width:64px;padding:5px 8px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s}
-.hmap-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
+.hmap-search-input:focus,.lite-chart-input:focus,.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 #hmap-follow-btn{color:var(--muted)}
 #hmap-follow-btn.on{background:#fef3c7;color:#92400e;border-color:#f59e0b}
 
@@ -2721,8 +2721,9 @@ html.chart-popout-mode .lite-chart-frame{
 @media screen and (max-width:768px) and (orientation:portrait){
   html.chart-popout-mode #main-wrap{padding:8px 8px var(--sab) 8px}
   html.chart-popout-mode #lite-chart-panel{
-    height:calc(100dvh - 8px - var(--sab));
+    height:auto!important;min-height:calc(100dvh - 8px - var(--sab))!important;
   }
+  html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   /* Title chart portrait: ẩn O, H, L để vừa 1 dòng (chỉ còn C và %). */
   .lite-chart-title .lct-open,.lite-chart-title .lct-hl{display:none}
   /* Portrait mobile: lite-chart-frame tự giãn theo nội dung khi thêm RSI/MACD panel. */
@@ -2758,7 +2759,6 @@ html.chart-popout-mode .lite-chart-frame{
 .lite-chart-top-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .lite-chart-input{width:64px;padding:5px 8px 5px 28px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none;transition:border-color .15s}
 .lite-chart-input::placeholder{color:var(--muted);text-transform:none}
-.lite-chart-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 .lite-chart-search-wrap{position:relative;display:flex;align-items:center}
 .lite-chart-search-wrap .s-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
 .lite-tf-tabs{display:flex;align-items:center;gap:3px}
@@ -2938,7 +2938,6 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 .popup-search-wrap{position:relative;display:flex;align-items:center}
 .popup-search-wrap .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
 .popup-search-input{width:60px;padding:5px 8px 5px 26px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;transition:border-color .15s}
-.popup-search-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,86,219,.12)}
 .ctabs{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
 .ctab{height:30px;line-height:1;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:600;padding:0 11px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .ctab.on{background:var(--surface);color:var(--accent);border-color:var(--border);box-shadow:inset 0 -2px 0 var(--accent);font-weight:700}
@@ -2961,14 +2960,14 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-draw-toolbar{width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-left:none;padding-left:0}
   .lite-draw-toolbar::-webkit-scrollbar{display:none}
   .lite-draw-toolbar>*{flex-shrink:0}
-  .mob-land-search{
+  .mob-land-search,.hmap-search-input,.lite-chart-input,.mob-search-input{
     font-size:11px !important;
     height:25px !important;
     width:60px !important;
     padding:2px 6px 2px 20px !important;
     border-radius:13px !important;
   }
-  .mob-land-search-wrap .s-icon{
+  .mob-land-search-wrap .s-icon,.hmap-search-wrap .s-icon,.lite-chart-search-wrap .s-icon,.mob-search-wrap .s-icon{
     font-size:10px !important;
     left:6px !important;
   }
@@ -3091,7 +3090,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-alert-panel{width:calc(100vw - 28px)}
 }
 @media screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape){
-  .lite-chart-frame{height:auto!important;max-height:none!important;min-height:300px!important}
+  .pbox{width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;animation:none!important}
+  .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
+  html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}
+  html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   .lite-ind-dropdown{
     position:absolute !important;
     top:calc(100% + 4px) !important;
@@ -3902,7 +3904,7 @@ const DOM={
   lgToggleBtn:$('lite-groups-toggle-btn'),lgSidebar:$('lite-groups-sidebar'),
   lgList:$('lite-groups-list'),
 };
-const IS_MOBILE=()=>window.innerWidth<=768;
+const IS_MOBILE=()=>window.innerWidth<=768||(window.innerHeight<=550&&window.innerWidth>window.innerHeight);
 const IS_LANDSCAPE=()=>window.innerWidth>window.innerHeight;
 const IS_STANDALONE_PWA=()=>window.navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
 const TABS_ALL=['chart','vnd-cs','vnd-sum','24h'];
@@ -4176,7 +4178,6 @@ function bindLiteIndGroupDropdowns(){
   document.addEventListener('click',()=>closeAllLiteIndDropdowns());
   window.addEventListener('orientationchange',()=>closeAllLiteIndDropdowns());
   // Đăng ký lắng nghe cuộn/resize duy nhất 1 lần — hàm tự kiểm tra dropdown nào đang mở.
-  document.querySelector('.lite-chart-toolbar')?.addEventListener('scroll',_liteRepositionOpenDropdown,{passive:true});
   document.querySelector('.lite-chart-top-row')?.addEventListener('scroll',_liteRepositionOpenDropdown,{passive:true});
   window.addEventListener('resize',_liteRepositionOpenDropdown);
   window.visualViewport?.addEventListener('resize',_liteRepositionOpenDropdown);
@@ -4782,6 +4783,7 @@ function applyLitePaneLayout(skipWidthSync){
   const showRsi=_liteChecked('rsi');
   const showMacd=_liteChecked('macd');
   const isPortraitMobile=IS_MOBILE()&&window.innerHeight>window.innerWidth;
+  const isMobile=IS_MOBILE();
   const totalH=Math.max(300,(DOM.liteChartFrame&&DOM.liteChartFrame.clientHeight)||720);
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
@@ -4789,9 +4791,8 @@ function applyLitePaneLayout(skipWidthSync){
   const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
-  const mobilePortrait=isPortraitMobile&&!_isChartPopoutWindow;
-  const mainH=mobilePortrait
-    ?Math.max(300,Math.round(window.innerHeight*0.56))
+  const mainH=isMobile
+    ?(isPortraitMobile?Math.max(300,Math.round(window.innerHeight*0.56)):Math.max(280,Math.round(window.innerHeight*0.72)))
     :(showRsi||showMacd?Math.max(300,totalH-lowerH):totalH);
   const showMainTimeScale=!showRsi&&!showMacd;
   const showRsiTimeScale=showRsi&&!showMacd;
@@ -4805,7 +4806,7 @@ function applyLitePaneLayout(skipWidthSync){
     DOM.liteChart.classList.toggle('hide-tv-logo',showRsi||showMacd);
     DOM.liteRsiChart.classList.toggle('hide-tv-logo',showRsi&&showMacd);
     DOM.liteMacdChart.classList.remove('hide-tv-logo');
-    if(mobilePortrait&&DOM.liteChartFrame)DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
+    if(isMobile&&DOM.liteChartFrame)DOM.liteChartFrame.style.height=`${mainH+lowerH}px`;
     else if(DOM.liteChartFrame)DOM.liteChartFrame.style.height='';
     DOM.liteChart.style.height=`${mainH}px`;
     if(showRsi)DOM.liteRsiChart.style.height=`${rsiH}px`;
