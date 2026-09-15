@@ -3096,6 +3096,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .pbox{width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;animation:none!important}
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
   html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
+  .health-body{height:auto;padding-top:24px}.health-layout{grid-template-columns:1.2fr 1fr}.health-vni-toggle{left:auto;right:8px}.health-period-tabs{left:5.8%}
   html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   .lite-ind-dropdown{
     position:absolute !important;
@@ -7420,7 +7421,7 @@ function _healthRenderWindow(){
   const W=900,H=Math.round(Math.min(720,Math.max(320,W*aspect)));
   const scale=H/360;
   // Lề trái/phải (L/R) giữ cố định, không co theo scale (tỉ lệ cao/rộng) để tránh ăn vào dải màu và giữ đúng vị trí checkbox VNINDEX.
-  const L=52,R=112,T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
+  const L=52,R=128,T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
   const fs=Math.max(9,Math.round(10*scale));
   // Chừa khoảng đệm 2 bên để đường line không chạm sát mép trái/phải của khung.
   const padX=16;
