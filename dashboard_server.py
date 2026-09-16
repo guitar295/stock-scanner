@@ -19,7 +19,6 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import pytz
 import pandas as pd
-import numpy as np
 
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 app = Flask(__name__)
@@ -1956,8 +1955,6 @@ def api_journal_warning():
         data = json.loads(raw) if raw.strip().startswith("{") else {"text": raw, "tone": "normal"}
     except Exception:
         data = {"text": raw, "tone": "normal"}
-
-        data = {"text": raw, "tone": "normal"}
     return jsonify({"text": data.get("text", ""), "tone": data.get("tone", "normal"), "admin": _is_admin()})
 
 @app.route("/api/journal/warning", methods=["PUT"])
@@ -2045,8 +2042,6 @@ def api_journal_delete(entry_id):
         try:
             (JOURNAL_UPLOAD_DIR / img["filename"]).unlink(missing_ok=True)
         except Exception:
-            pass
-
             pass
     return jsonify({"ok": True})
 
@@ -2609,8 +2604,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .treemap-svg{width:100%;height:100%;display:block;background:#fff;border:none}
 .treemap-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
 #tri-content-treemap{position:relative}
-.treemap-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
-.treemap-copy-btn:hover{background:#f1f5f9}
 .tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
 .tri-tabs{display:flex;align-items:center;gap:4px}
 .tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;padding:3px 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
@@ -2634,10 +2627,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-period-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .health-body{padding:12px 14px;background:#fff;height:720px;display:flex;align-items:center;overflow:auto}
 #tri-content-health{position:relative}
-.health-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
-.health-copy-btn:hover{background:#f1f5f9}
-.chart-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
-.chart-copy-btn:hover{background:#f1f5f9}
+.treemap-copy-btn,.health-copy-btn,.chart-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
+.treemap-copy-btn:hover,.health-copy-btn:hover,.chart-copy-btn:hover{background:#f1f5f9}
 .health-layout{width:100%;display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
@@ -2784,18 +2775,14 @@ html.chart-popout-mode .lite-chart-frame{
 .lite-ind-group.open .lite-ind-dropdown{display:flex}
 .lite-ind-dropdown label{font-size:10px}
 .lite-ind-simple{display:flex}
-#lite-vietstock-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
-#lite-vietstock-toggle-btn{font-size:10px;font-weight:700;color:var(--muted);background:#f8fafc;border:1px solid var(--border);min-width:28px}
-#lite-vietstock-toggle-btn:hover:not(.on){background:#f8fafc}
-#lite-fireant-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
-#lite-fireant-toggle-btn{font-size:10px;font-weight:700;color:var(--muted);background:#f8fafc;border:1px solid var(--border);min-width:28px}
-#lite-fireant-toggle-btn:hover:not(.on){background:#f8fafc}
+#lite-vietstock-toggle-btn.on,#lite-fireant-toggle-btn.on{background:#eef3ff;color:var(--accent);border-color:var(--accent)}
+#lite-vietstock-toggle-btn,#lite-fireant-toggle-btn{font-size:10px;font-weight:700;color:var(--muted);background:#f8fafc;border:1px solid var(--border);min-width:28px}
+#lite-vietstock-toggle-btn:hover:not(.on),#lite-fireant-toggle-btn:hover:not(.on){background:#f8fafc}
 .lite-vietstock-iframe{display:none;position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:6}
 .lite-chart-frame.vietstock-mode .lite-vietstock-iframe{display:block}
-.lite-groups-sidebar.on~.lite-vietstock-iframe{left:180px;width:calc(100% - 180px)}
 .lite-fireant-iframe{position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;z-index:-1;visibility:hidden;opacity:0;pointer-events:none}
 .lite-chart-frame.fireant-mode .lite-fireant-iframe{z-index:6;visibility:visible;opacity:1;pointer-events:auto}
-.lite-groups-sidebar.on~.lite-fireant-iframe{left:180px;width:calc(100% - 180px)}
+.lite-groups-sidebar.on~.lite-vietstock-iframe,.lite-groups-sidebar.on~.lite-fireant-iframe{left:180px;width:calc(100% - 180px)}
 .lite-chart-title{position:absolute;top:8px;left:10px;z-index:3;font-family:var(--font-mono);font-size:11px;color:#111827;white-space:nowrap;background:rgba(255,255,255,.78);padding:2px 5px;border-radius:4px;pointer-events:none;transition:left .15s}
 .lite-chart-signal{position:absolute;top:29px;left:10px;z-index:3;display:none;align-items:center;gap:6px;line-height:1;background:rgba(255,255,255,.78);padding:4px 8px;border-radius:6px;pointer-events:none;transition:left .15s}
 .lite-chart-signal.on{display:flex}
@@ -3084,8 +3071,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   }
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:300px!important}
   .lite-groups-sidebar{width:150px}
-  .lite-groups-sidebar.on~.lite-vietstock-iframe{left:150px;width:calc(100% - 150px)}
-  .lite-groups-sidebar.on~.lite-fireant-iframe{left:150px;width:calc(100% - 150px)}
+  .lite-groups-sidebar.on~.lite-vietstock-iframe,.lite-groups-sidebar.on~.lite-fireant-iframe{left:150px;width:calc(100% - 150px)}
   .lite-groups-sidebar.on+.lite-chart-title,
   .lite-groups-sidebar.on~.lite-chart-signal{left:162px}
   .lite-groups-sidebar.on~.lite-chart-bigprice{left:150px}
