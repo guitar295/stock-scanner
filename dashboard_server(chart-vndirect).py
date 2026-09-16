@@ -2522,7 +2522,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
    HEATMAP HEADER
    ═══════════════════════════════════════════ */
 .hmap-panel-hdr{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
-.hmap-hdr-row1{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.hmap-hdr-row1{display:flex;align-items:center;gap:8px;flex:1}#hmap-flash-btn{margin-left:auto}
 .hmap-ts-wrap{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted)}
 .hmap-link-btn{display:inline-flex;align-items:center;padding:4px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .15s}
 .hmap-link-btn:hover:not(.on){background:#eef3ff;color:var(--accent);border-color:var(--accent)}
@@ -2822,7 +2822,7 @@ html.chart-popout-mode .lite-chart-frame{
 .lg-sort-btn{height:22px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer}
 .lg-sort-btn:hover{color:var(--accent);border-color:var(--accent)}
 .lg-ghdr .lg-sort-btn{height:18px;padding:0 6px;font-size:9.5px}
-.lite-groups-list{flex:1;overflow-y:auto;scrollbar-width:thin}
+.lite-groups-list{flex:1;overflow-y:auto;scrollbar-width:none}.lite-groups-list::-webkit-scrollbar{display:none}
 .lg-group{border-bottom:1px solid var(--border)}
 .lg-ghdr{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:7px 10px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text);user-select:none;background:#f8fafc}
 .lg-ghdr:hover{color:var(--accent)}
@@ -3008,7 +3008,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   }
   .hmap-hdr-row1{grid-column:1;grid-row:1;min-width:0;width:100%;overflow-x:auto;scrollbar-width:none;gap:6px}
   .hmap-hdr-row1::-webkit-scrollbar{display:none}
-  .hmap-hdr-row1>*{flex-shrink:0}
+  .hmap-hdr-row1>*{flex-shrink:0}#hmap-flash-btn{margin-left:0}
   .hmap-toggle-icon{grid-column:2;grid-row:1;justify-self:end;margin-left:0}
   .hmap-ts-wrap{
     grid-column:1/-1;
