@@ -6088,6 +6088,8 @@ async function copyLiteChartImage(btn){
     }
     // Title/badge/giá phóng to nằm đè trên pane main nên phải vẽ SAU khi drawImage pane main, theo
     // đúng thứ tự DOM thật. Đo khung #lite-chart 1 lần, dùng chung cho cả 3 lần vẽ overlay bên dưới.
+    const _sbOn=DOM.lgSidebar?.classList.contains('on'),_els=[DOM.liteChartTitle,DOM.liteChartSignal,DOM.liteChartBigPrice].filter(Boolean);
+    if(_sbOn){_els.forEach(e=>e.style.transition='none');DOM.lgSidebar.classList.remove('on');}
     const frameRect=DOM.liteChart.getBoundingClientRect();
     if(finalTitleSegments.length){
       _liteDrawTitleOverlay(ctx,finalTitleSegments,frameRect,dpr);
@@ -6096,6 +6098,7 @@ async function copyLiteChartImage(btn){
       _liteDrawSignalBadge(ctx,frameRect,dpr);
     }
     _liteDrawBigPrice(ctx,panes[0].canvas.width/2,frameRect,dpr);
+    if(_sbOn){DOM.lgSidebar.classList.add('on');void DOM.lgSidebar.offsetHeight;_els.forEach(e=>e.style.transition='');}
     // Mã hoá đồng bộ trong cùng lượt click để ClipboardItem nhận Blob PNG thật (không phải Promise), giữ user-gesture.
     const pngBlob=_litePngBlobFromDataUrl(out.toDataURL('image/png'));
     if(typeof navigator.clipboard?.write==='function'&&window.ClipboardItem){
