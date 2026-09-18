@@ -2651,10 +2651,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .cafef-split-panel { display: flex; gap: 14px; margin: 14px 14px 14px; align-items: stretch; }
 .cafef-split-panel > .vnd-panel { margin: 0; }
 .cafef-liquidity { flex: 1; min-width: 0; }
-.cafef-liquidity .vnd-chart-area { margin: 0 32px; }
+.cafef-liquidity .vnd-chart-area { margin: 0 16px; }
 .cafef-impact { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .cafef-y-label { fill: var(--muted); font-size: 9px; font-weight: 600; }
-.cafef-chart-container { position: relative; margin: 20px 32px 0; }
+.cafef-chart-container { position: relative; margin: 20px 16px 0; }
 .cafef-impact .cafef-chart-container { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .cafef-col-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
 .cafef-labels-wrap { display: flex; height: 28px; align-items: center; flex-shrink: 0; padding: 0 4px; min-width: 0; }
