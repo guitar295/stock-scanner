@@ -2623,7 +2623,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-vni-toggle{position:absolute;top:6px;right:12px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
-.health-period-tabs{position:absolute;top:6px;left:8px;z-index:2;display:flex;gap:4px}
+.health-period-tabs{position:absolute;top:6px;left:5.8%;z-index:2;display:flex;gap:4px}
 .health-period-tab{font-size:11px;color:#334155;background:#fff;border:1px solid var(--border);border-radius:4px;padding:1px 7px;cursor:pointer;user-select:none}
 .health-period-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .health-body{padding:12px 14px 0;background:#fff;display:block}
@@ -3035,12 +3035,6 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .health-layout{grid-template-columns:1fr}
   
   .health-chartbox{height:280px}
-
-  /* Trục dọc health-svg L=52,R=112,W=900 cố định (xem comment tại hàm vẽ chart) → nhãn "100"
-     luôn nằm ~1.3-4.7% bề rộng khung, dải màu bắt đầu ~5.78%. .health-period-tabs mặc định
-     left:8px sẽ đè lên nhãn "100" khi khung giãn hết bề ngang ở mobile — dùng % để nhóm nút
-     luôn bắt đầu đúng mép dải màu trên mọi bề rộng máy. */
-  .health-period-tabs{left:5.8%}
   .health-score{font-size:36px}
   .vnd-panel{margin:0 10px;padding:12px 12px 10px}
     .vnd-chart-area{height:220px}
@@ -3096,7 +3090,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .pbox{width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;animation:none!important}
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
   html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
-  .health-body{height:auto}.health-layout{grid-template-columns:1fr 1fr}.health-period-tabs{left:5.8%}
+  .health-layout{grid-template-columns:1fr 1fr}
   html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   .lite-ind-dropdown{
     position:absolute !important;
@@ -3109,13 +3103,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   }
   /* 1. Tín hiệu hôm nay 4 cột cuộn ngang như Heatmap */
   .sig-list{
-    display:grid !important;
-    grid-template-columns:repeat(4, minmax(235px, 1fr)) !important;
-    overflow-x:auto !important;
-    overflow-y:hidden !important;
     -webkit-overflow-scrolling:touch !important;
     scrollbar-width:none !important;
-    gap:3px !important;
     padding-bottom:4px !important;
   }
   .sig-list::-webkit-scrollbar{display:none !important}
