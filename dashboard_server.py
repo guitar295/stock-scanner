@@ -2661,7 +2661,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .cafef-col-item { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
 .cafef-col-bar { position: absolute; width: 60%; max-width: 25px; border-radius: 2px; z-index: 2; }
 .cafef-lbl-item { flex: 1; text-align: center; font-size: 10px; color: var(--muted); font-weight: 700; white-space: nowrap; overflow: hidden; min-width: 0; -webkit-tap-highlight-color: transparent; }
-@media (max-width: 768px) { .cafef-split-panel { flex-direction: column; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
+@media (max-width: 768px) { .cafef-split-panel { flex-direction: column; margin: 12px 10px; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
 .cafef-liq-legend { position:absolute; top:6px; left:0; right:0; display:flex; justify-content:center; gap:14px; font-size:10px; color:var(--muted); pointer-events:none; font-weight:700; }
 .cafef-liq-xaxis { position:absolute; bottom:0; left:0; right:0; display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-weight:600; pointer-events:none; }
 .cafef-dot { display:inline-block; width:8px; height:8px; border-radius:50%; border:2px solid; margin-right:4px; vertical-align:-1px; }
