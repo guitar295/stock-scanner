@@ -2164,7 +2164,7 @@ JOURNAL_HTML = r"""<!DOCTYPE html>
 <title>Note</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#0e9f6e;--red:#e02424;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
+:root{--bg:#f6f7fb;--surface:#fff;--surf2:#eef2f7;--border:#dbe2ec;--text:#111827;--muted:#6b7280;--accent:#1a56db;--green:#27a892;--red:#e02424;--font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
 header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:0 1px 5px rgba(0,0,0,.06)}
@@ -2463,7 +2463,7 @@ try{
    ═══════════════════════════════════════════ */
 :root{
   --bg:#f4f6fb;--surface:#fff;--surf2:#f0f3f9;--border:#dde3ee;
-  --accent:#1a56db;--green:#0e9f6e;--red:#e02424;
+  --accent:#1a56db;--green:#27a892;--red:#e02424;
   --text:#111827;--muted:#6b7280;--shadow:rgba(0,0,0,.07);
   --font-mono:'IBM Plex Mono',monospace;--font-ui:'Barlow Condensed',sans-serif;
   --sab:env(safe-area-inset-bottom,0px);
@@ -2532,7 +2532,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 /* ═══════════════════════════════════════════
    SIGNALS
    ═══════════════════════════════════════════ */
-.sig-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.sig-list::-webkit-scrollbar{height:4px}.sig-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sig-list{display:grid;grid-template-columns:repeat(4,minmax(235px,1fr));gap:3px;overflow-x:auto;overflow-y:hidden}
 .sig-row{display:grid;grid-template-columns:24px max-content max-content max-content max-content;align-items:center;justify-content:space-between;column-gap:8px;padding:7px 8px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .sig-row:hover .s-sym{color:var(--accent)}
@@ -2617,21 +2618,21 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tri-panel.collapsed .tri-tabs,
 .tri-panel.collapsed>.tri-body{display:none!important}
 .tri-content{display:none}
-.tri-content.on{display:block}
-.health-svg{cursor:crosshair;display:block;width:100%;height:100%}
-.health-vni-toggle{position:absolute;top:6px;left:88.4%;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
+.tri-content.on{display:flex;flex-direction:column;gap:14px;padding-bottom:14px}
+.health-svg{cursor:crosshair;display:block;width:100%;height:100%;position:absolute;top:0;left:0}
+.health-vni-toggle{position:absolute;top:6px;right:12px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
 .health-vni-swatch{display:inline-block;width:12px;height:2px;background:#f97316;border-radius:1px}
-.health-period-tabs{position:absolute;top:6px;left:8px;z-index:2;display:flex;gap:4px}
+.health-period-tabs{position:absolute;top:6px;left:5.8%;z-index:2;display:flex;gap:4px}
 .health-period-tab{font-size:11px;color:#334155;background:#fff;border:1px solid var(--border);border-radius:4px;padding:1px 7px;cursor:pointer;user-select:none}
 .health-period-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.health-body{padding:12px 14px;background:#fff;height:720px;display:flex;align-items:center;overflow:auto}
+.health-body{padding:12px 14px 0;background:#fff;display:block}
 #tri-content-health{position:relative}
 .treemap-copy-btn,.health-copy-btn,.chart-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
 .treemap-copy-btn:hover,.health-copy-btn:hover,.chart-copy-btn:hover{background:#f1f5f9}
-.health-layout{width:100%;display:grid;grid-template-columns:minmax(520px,1.45fr) minmax(320px,.85fr);gap:14px;align-items:stretch}
+.health-layout{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
-.health-side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
+.health-side{display:flex;flex-direction:column;gap:12px;min-width:0}
 .health-score-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:#fbfcff}
 .health-score-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .health-score{font-family:var(--font-ui);font-size:56px;line-height:.9;font-weight:800;color:var(--accent);letter-spacing:0}
@@ -2639,19 +2640,36 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-meta{margin-top:6px;font-size:13px;color:var(--muted)}
 .health-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .health-tag{font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;border-radius:4px;border:1px solid #cbd5e1;padding:4px 8px;color:#334155;background:#f8fafc}
-.health-analysis{border:1px solid var(--border);border-radius:8px;padding:18px 20px;background:#fff;min-height:120px;display:flex;flex-direction:column;justify-content:center}
+.health-analysis{border:1px solid var(--border);border-radius:8px;padding:18px 20px;background:#fff;min-height:120px;display:flex;flex-direction:column;justify-content:flex-start;flex-grow:1}
 .health-analysis-title{font-family:var(--font-ui);font-size:15px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
 .health-analysis p{font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:1.65;margin:0 0 12px;color:#1f2937}
 .health-analysis ul{margin:0 0 12px 20px;color:#374151;font-size:14.5px;line-height:1.65;font-family:'IBM Plex Sans',sans-serif}
 .health-analysis li{margin-bottom:5px}
 .health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
-.vnd-panel{margin:14px 14px 0;border:1px solid var(--border);border-radius:8px;padding:14px 16px 12px;background:#fff}
-.vnd-panel:last-child{margin-bottom:14px}
+.vnd-panel{margin:0 14px;border:1px solid var(--border);border-radius:8px;padding:14px 16px 12px;background:#fff}
+
+.cafef-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
+.cafef-split-panel > .vnd-panel { margin: 0; }
+.cafef-liquidity { flex: 1; min-width: 0; }
+.cafef-liquidity .vnd-chart-area { margin: 0 12px; }
+.cafef-impact { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.cafef-chart-container { position: relative; margin: 20px 12px 0; }
+.cafef-impact .cafef-chart-container { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.cafef-col-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
+.cafef-labels-wrap { display: flex; height: 28px; align-items: center; flex-shrink: 0; padding: 0 4px; min-width: 0; }
+.cafef-zero-line { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); z-index: 1; }
+.cafef-col-item { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
+.cafef-col-bar { position: absolute; width: 60%; max-width: 25px; border-radius: 2px; z-index: 2; }
+.cafef-lbl-item { flex: 1; text-align: center; font-size: 10px; color: var(--muted); font-weight: 700; white-space: nowrap; overflow: hidden; min-width: 0; -webkit-tap-highlight-color: transparent; }
+@media (max-width: 768px) { .tri-content.on { gap: 12px; padding-bottom: 12px; } .cafef-split-panel { flex-direction: column; margin: 0 10px; gap: 12px; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
+.cafef-liq-legend { position:absolute; top:6px; left:0; right:0; display:flex; justify-content:center; gap:14px; font-size:10px; color:var(--muted); pointer-events:none; font-weight:700; }
+.cafef-liq-xaxis { position:absolute; bottom:0; left:0; right:0; display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-weight:600; pointer-events:none; }
+.cafef-dot { display:inline-block; width:8px; height:8px; border-radius:50%; border:2px solid; margin-right:4px; vertical-align:-1px; }
 .vnd-panel-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
 .vnd-panel-title{font-family:var(--font-ui);font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px;color:var(--accent)}
 .vnd-status{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
-.vnd-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0}
-.vnd-tabs{display:inline-flex;gap:6px;position:relative;top:8px}
+.vnd-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0 6px}
+.vnd-tabs{display:inline-flex;gap:6px}
 .vnd-tab{height:26px;padding:0 12px;display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;user-select:none}
 .vnd-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
 .vnd-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -3015,21 +3033,11 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   }
   .hmap-ts-wrap::-webkit-scrollbar{display:none}
   .health-layout{grid-template-columns:1fr}
-  .health-body{height:auto;display:block;overflow:visible}
+  
   .health-chartbox{height:280px}
-  /* Neo theo right thay vì left:% — trên mobile .health-chartbox giãn hết màn hình khiến
-     left:88.4% (đúng cho desktop 2 cột) rơi sát mép phải, chữ "VNINDEX" bị overflow:hidden cắt mất. */
-  .health-vni-toggle{left:auto;right:8px}
-  /* Trục dọc health-svg L=52,R=112,W=900 cố định (xem comment tại hàm vẽ chart) → nhãn "100"
-     luôn nằm ~1.3-4.7% bề rộng khung, dải màu bắt đầu ~5.78%. .health-period-tabs mặc định
-     left:8px sẽ đè lên nhãn "100" khi khung giãn hết bề ngang ở mobile — dùng % để nhóm nút
-     luôn bắt đầu đúng mép dải màu trên mọi bề rộng máy. */
-  .health-period-tabs{left:5.8%}
   .health-score{font-size:36px}
-  .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
-  .vnd-panel:last-child{margin-bottom:12px}
-  .vnd-controls{flex-direction:column;align-items:flex-start;gap:8px}
-  .vnd-chart-area{height:220px}
+  .vnd-panel{margin:0 10px;padding:12px 12px 10px}
+    .vnd-chart-area{height:220px}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   .treemap-wrap{
     width:100% !important;
@@ -3082,7 +3090,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .pbox{width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;animation:none!important}
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
   html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
-  .health-body{height:auto;padding-top:24px}.health-layout{grid-template-columns:1.2fr 1fr}.health-vni-toggle{left:auto;right:8px}.health-period-tabs{left:5.8%}
+  .health-layout{grid-template-columns:1fr 1fr}
   html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   .lite-ind-dropdown{
     position:absolute !important;
@@ -3095,13 +3103,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   }
   /* 1. Tín hiệu hôm nay 4 cột cuộn ngang như Heatmap */
   .sig-list{
-    display:grid !important;
-    grid-template-columns:repeat(4, minmax(235px, 1fr)) !important;
-    overflow-x:auto !important;
-    overflow-y:hidden !important;
     -webkit-overflow-scrolling:touch !important;
     scrollbar-width:none !important;
-    gap:3px !important;
     padding-bottom:4px !important;
   }
   .sig-list::-webkit-scrollbar{display:none !important}
@@ -3640,6 +3643,29 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
             </div>
           </div>
         </div>
+        <div class="cafef-split-panel">
+          <div class="vnd-panel cafef-liquidity">
+            <div class="vnd-panel-hdr">
+              <span class="vnd-panel-title">THANH KHOẢN</span>
+              <span class="vnd-status" id="cafef-liq-status">Đang tải...</span>
+            </div>
+            <div class="vnd-chart-area" style="position:relative">
+              <svg class="vnd-svg" id="cafef-liq-svg" preserveAspectRatio="none"></svg>
+              <div class="cafef-liq-legend">
+                <span><span class="cafef-dot" style="border-color:#4a75f0"></span>Hôm qua</span>
+                <span><span class="cafef-dot" style="border-color:#f59b00"></span>Hôm nay</span>
+              </div>
+              <div class="cafef-liq-xaxis"><span>09:00</span><span>11:30</span><span>14:45</span></div>
+            </div>
+          </div>
+          <div class="vnd-panel cafef-impact">
+            <div class="vnd-panel-hdr">
+              <span class="vnd-panel-title">TÁC ĐỘNG CHỈ SỐ</span>
+              <span class="vnd-status" id="cafef-imp-status">Đang tải...</span>
+            </div>
+            <div class="cafef-chart-container" id="cafef-imp-container"></div>
+          </div>
+        </div>
         <div class="vnd-panel" id="vnd-valuation-panel">
           <div class="vnd-panel-hdr">
             <span class="vnd-panel-title">Định giá thị trường</span>
@@ -3715,6 +3741,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
           </div>
           <div class="vnd-error" id="vnd-proprietary-error"></div>
         </div>
+        </div>
+
       </div>
       <div class="tri-content" id="tri-content-treemap">
         <button class="lite-draw-btn treemap-copy-btn" id="treemap-copy-btn" title="Sao chép ảnh Treemap vào clipboard" aria-label="Sao chép ảnh Treemap vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
@@ -7735,12 +7763,10 @@ DOM.healthPeriodTabs?.addEventListener('click',e=>{
   if(btn)setHealthPeriod(Number(btn.dataset.days));
 });
 // viewBox tính theo kích thước khung thật nên cần vẽ lại khi resize; debounce nhẹ để không vẽ liên tục lúc đang kéo.
-let _healthResizeTimer=null;
-window.addEventListener('resize',()=>{
-  if(!_healthFullHistory.length)return;
-  clearTimeout(_healthResizeTimer);
-  _healthResizeTimer=setTimeout(_healthRenderWindow,150);
+let _healthRO = new ResizeObserver(()=>{
+  if(_healthFullHistory.length) requestAnimationFrame(_healthRenderWindow);
 });
+if(DOM.healthSvg) _healthRO.observe(DOM.healthSvg);
 function renderHealth(data){
   const d=data||{};
   if(!d.ok){
@@ -8033,6 +8059,119 @@ async function loadVndForeignFlow(){
     renderVndForeignFlow();
   }catch(e){vndShowError('vnd-foreign-status','vnd-foreign-error',e);}
 }
+// CAFEF LIQUIDITY & IMPACT
+function drawCafefLiq(liqRes) {
+  const svg = $('cafef-liq-svg');
+  const W = 400, H = 270;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  let maxVal = 0;
+  liqRes.forEach(d => {
+    if (d.gtgD1 > maxVal) maxVal = d.gtgD1;
+    if (d.gtgD2 > maxVal) maxVal = d.gtgD2;
+  });
+  maxVal = maxVal * 1.05 || 1;
+  const padL = 0, padB = 25, padT = 22, padR = 0;
+  const chartW = W - padL - padR, chartH = H - padB - padT;
+  const getX = (i) => padL + (i / (liqRes.length - 1)) * chartW;
+  const getY = (val) => padT + chartH - (val / maxVal) * chartH;
+  let cutoff = 0;
+  for (let i = liqRes.length - 1; i >= 0; i--) { if (liqRes[i].gtgD1 > 0) { cutoff = i; break; } }
+  let p1 = '', p2 = '', a1 = '', a2 = '', lastX1 = padL, lastX2 = padL;
+  liqRes.forEach((d, i) => {
+    const x = getX(i), y1 = getY(d.gtgD1), y2 = getY(d.gtgD2);
+    if (i === 0) {
+      p1 += `M${x},${y1}`; p2 += `M${x},${y2}`;
+      a1 += `M${x},${padT+chartH} L${x},${y1}`;
+      a2 += `M${x},${padT+chartH} L${x},${y2}`;
+    } else {
+      if (i <= cutoff) { p1 += ` L${x},${y1}`; a1 += ` L${x},${y1}`; lastX1 = x; }
+      p2 += ` L${x},${y2}`; a2 += ` L${x},${y2}`; lastX2 = x;
+    }
+  });
+  a1 += ` L${lastX1},${padT+chartH} Z`; a2 += ` L${lastX2},${padT+chartH} Z`;
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="fillD1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#f59b00" stop-opacity="0.7"/>
+        <stop offset="100%" stop-color="#f59b00" stop-opacity="0.2"/>
+      </linearGradient>
+      <linearGradient id="fillD2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#4a75f0" stop-opacity="0.2"/>
+        <stop offset="100%" stop-color="#4a75f0" stop-opacity="0.05"/>
+      </linearGradient>
+    </defs>
+    <path d="${a2}" fill="url(#fillD2)" />
+    <path d="${p2}" fill="none" stroke="#4a75f0" stroke-width="1.5" />
+    <path d="${a1}" fill="url(#fillD1)" />
+    <path d="${p1}" fill="none" stroke="#f59b00" stroke-width="2" />
+  `;
+}
+async function loadCafefMarket() {
+  try {
+    const [liqRes, impRes] = await Promise.all([
+      fetch('https://msh-appdata.cafef.vn/rest-api/api/v1/Liquidity/HOSE').then(r => r.json()),
+      fetch('https://msh-appdata.cafef.vn/rest-api/api/v1/MarketLeaderGroup?centerId=1&take=8').then(r => r.json())
+    ]);
+    // 1. Vẽ Thanh Khoản
+    if (liqRes && liqRes.length > 0) {
+      drawCafefLiq(liqRes);
+      $('cafef-liq-status').textContent = '';
+    }
+    
+    // 2. Vẽ Tác Động (Column Chart) - Không số, margin thoáng
+    if (impRes && impRes.data) {
+      const container = $('cafef-imp-container');
+      const uniqueData = [];
+      const seen = new Set();
+      impRes.data.forEach(d => {
+        if (!seen.has(d.symbol)) {
+          seen.add(d.symbol);
+          uniqueData.push(d);
+        }
+      });
+      uniqueData.sort((a, b) => b.score - a.score);
+      
+      let maxPos = 0, minNeg = 0;
+      uniqueData.forEach(d => {
+        if (d.score > maxPos) maxPos = d.score;
+        if (d.score < minNeg) minNeg = d.score;
+      });
+      maxPos = maxPos * 1.1 || 1;
+      minNeg = minNeg * 1.1 || -1;
+      const SCALE = 0.65;
+      const scaledMax = maxPos * SCALE;
+      const scaledMin = minNeg * SCALE;
+      const topPad = (1 - SCALE) / 2 * 100;  // equal padding top & bottom
+      const zeroTopPct = topPad + (scaledMax / (scaledMax - scaledMin)) * SCALE * 100;
+      
+      let barHtml = `<div class="cafef-col-wrap">`;
+      barHtml += `<div class="cafef-zero-line" style="top: ${zeroTopPct}%"></div>`;
+      let lblHtml = `<div class="cafef-labels-wrap">`;
+      
+      uniqueData.forEach(d => {
+        const isUp = d.score >= 0;
+        const hPct = (Math.abs(d.score) / (maxPos - minNeg)) * SCALE * 100;
+        
+        let barStyle = isUp 
+          ? `bottom: ${100 - zeroTopPct}%; height: ${hPct}%; background: #27a892;` 
+          : `top: ${zeroTopPct}%; height: ${hPct}%; background: #e64b4b;`;
+          
+        barHtml += `<div class="cafef-col-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')"><div class="cafef-col-bar" style="${barStyle}"></div></div>`;
+        lblHtml += `<div class="cafef-lbl-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')">${d.symbol}</div>`;
+      });
+      barHtml += `</div>`;
+      lblHtml += `</div>`;
+      
+      container.innerHTML = barHtml + lblHtml;
+      $('cafef-imp-status').textContent = '';
+    }
+  } catch(e) {
+    if($('cafef-liq-status')) $('cafef-liq-status').textContent = 'Lỗi';
+    if($('cafef-imp-status')) $('cafef-imp-status').textContent = 'Lỗi';
+  }
+}
+
 async function loadVndProprietaryFlow(){
   $('vnd-proprietary-status').textContent='Đang tải...';
   $('vnd-proprietary-error').style.display='none';
@@ -8247,7 +8386,8 @@ function renderVndChart(config){
   });
 }
 
-function vndRefreshAll(){loadVndValuation();loadVndAllocation();loadVndForeignFlow();loadVndProprietaryFlow();}
+function vndRefreshAll(){loadVndValuation();loadVndAllocation();loadVndForeignFlow();loadVndProprietaryFlow();
+  loadCafefMarket();}
 function vndRerenderVisible(){
   if(vndValuationState.rows.length)renderVndValuation();
   if(vndAllocationState.rows.length)renderVndAllocation();
