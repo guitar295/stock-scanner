@@ -2532,7 +2532,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 /* ═══════════════════════════════════════════
    SIGNALS
    ═══════════════════════════════════════════ */
-.sig-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.sig-list::-webkit-scrollbar{height:4px}.sig-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sig-list{display:grid;grid-template-columns:repeat(4,minmax(235px,1fr));gap:3px;overflow-x:auto;overflow-y:hidden}
 .sig-row{display:grid;grid-template-columns:24px max-content max-content max-content max-content;align-items:center;justify-content:space-between;column-gap:8px;padding:7px 8px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
 .sig-row:hover .s-sym{color:var(--accent)}
@@ -2617,7 +2618,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .tri-panel.collapsed .tri-tabs,
 .tri-panel.collapsed>.tri-body{display:none!important}
 .tri-content{display:none}
-.tri-content.on{display:block}
+.tri-content.on{display:flex;flex-direction:column;gap:14px;padding-bottom:14px}
 .health-svg{cursor:crosshair;display:block;width:100%;height:100%;position:absolute;top:0;left:0}
 .health-vni-toggle{position:absolute;top:6px;right:12px;z-index:2;display:flex;align-items:center;gap:5px;font-size:11px;color:#334155;background:transparent;padding:0;border-radius:0;border:none;cursor:pointer;user-select:none}
 .health-vni-toggle input{margin:0;cursor:pointer}
@@ -2645,10 +2646,9 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-analysis ul{margin:0 0 12px 20px;color:#374151;font-size:14.5px;line-height:1.65;font-family:'IBM Plex Sans',sans-serif}
 .health-analysis li{margin-bottom:5px}
 .health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
-.vnd-panel{margin:14px 14px 0;border:1px solid var(--border);border-radius:8px;padding:14px 16px 12px;background:#fff}
-.vnd-panel:last-child{margin-bottom:14px}
+.vnd-panel{margin:0 14px;border:1px solid var(--border);border-radius:8px;padding:14px 16px 12px;background:#fff}
 
-.cafef-split-panel { display: flex; gap: 14px; margin: 14px 14px 14px; align-items: stretch; }
+.cafef-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
 .cafef-split-panel > .vnd-panel { margin: 0; }
 .cafef-liquidity { flex: 1; min-width: 0; }
 .cafef-liquidity .vnd-chart-area { margin: 0 12px; }
@@ -2661,7 +2661,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .cafef-col-item { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
 .cafef-col-bar { position: absolute; width: 60%; max-width: 25px; border-radius: 2px; z-index: 2; }
 .cafef-lbl-item { flex: 1; text-align: center; font-size: 10px; color: var(--muted); font-weight: 700; white-space: nowrap; overflow: hidden; min-width: 0; -webkit-tap-highlight-color: transparent; }
-@media (max-width: 768px) { .cafef-split-panel { flex-direction: column; margin: 12px 10px; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
+@media (max-width: 768px) { .tri-content.on { gap: 12px; padding-bottom: 12px; } .cafef-split-panel { flex-direction: column; margin: 0 10px; gap: 12px; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
 .cafef-liq-legend { position:absolute; top:6px; left:0; right:0; display:flex; justify-content:center; gap:14px; font-size:10px; color:var(--muted); pointer-events:none; font-weight:700; }
 .cafef-liq-xaxis { position:absolute; bottom:0; left:0; right:0; display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-weight:600; pointer-events:none; }
 .cafef-dot { display:inline-block; width:8px; height:8px; border-radius:50%; border:2px solid; margin-right:4px; vertical-align:-1px; }
@@ -3042,9 +3042,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
      luôn bắt đầu đúng mép dải màu trên mọi bề rộng máy. */
   .health-period-tabs{left:5.8%}
   .health-score{font-size:36px}
-  .vnd-panel{margin:12px 10px 0;padding:12px 12px 10px}
-  .vnd-panel:last-child{margin-bottom:12px}
-  .vnd-chart-area{height:220px}
+  .vnd-panel{margin:0 10px;padding:12px 12px 10px}
+    .vnd-chart-area{height:220px}
   .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   .treemap-wrap{
     width:100% !important;
@@ -3097,7 +3096,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .pbox{width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;animation:none!important}
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
   html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
-  .health-body{height:auto;padding-top:24px}.health-layout{grid-template-columns:1fr 1fr}.health-period-tabs{left:5.8%}
+  .health-body{height:auto}.health-layout{grid-template-columns:1fr 1fr}.health-period-tabs{left:5.8%}
   html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   .lite-ind-dropdown{
     position:absolute !important;
