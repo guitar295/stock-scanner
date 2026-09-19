@@ -400,7 +400,24 @@ def _vnd_cached_rows(cache_key, getter):
     return rows
 
 
-@app.route("/api/vndirect_valuation")
+@app.route("/api/market_liquidity")
+def api_market_liquidity():
+    try:
+        data = _vnd_cached_rows("cafef_liquidity", lambda: requests.get("https://msh-appdata.cafef.vn/rest-api/api/v1/Liquidity/HOSE", timeout=5).json())
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+@app.route("/api/market_impact")
+def api_market_impact():
+    try:
+        data = _vnd_cached_rows("cafef_impact", lambda: requests.get("https://msh-appdata.cafef.vn/rest-api/api/v1/MarketLeaderGroup?centerId=1&take=8", timeout=5).json())
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+@app.route("/api/market_valuation")
+
 def api_vndirect_valuation():
     metric = (request.args.get("metric") or "pe").lower()
     if metric not in ("pe", "pb"):
@@ -420,7 +437,7 @@ def api_vndirect_valuation():
         return jsonify({"ok": False, "message": str(e), "rows": []}), 502
 
 
-@app.route("/api/vndirect_allocation")
+@app.route("/api/market_allocation")
 def api_vndirect_allocation():
     from_date = request.args.get("from") or "2015-01-01"
     cache_key = f"allocation:{from_date}"
@@ -1437,7 +1454,7 @@ def fetch_chart_candles(symbol, tf="1D", limit=450, before_date=None):
     except Exception as exc:
         return None, str(exc)
     if not raw_bars:
-        return None, "no_data_from_vndirect"
+        return None, "no_data_from_source"
 
     if target_tf == "1W":
         weeks = {}
@@ -1629,7 +1646,7 @@ def api_lightweight_chart(symbol):
         dchart_data, err = fetch_chart_candles(symbol, tf, limit, before_date=before_date)
         if not err and dchart_data and dchart_data.get("candles"):
             return jsonify(dchart_data)
-        return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
+        return jsonify({"error": "data_unavailable", "symbol": symbol,
                         "detail": err or "no_data"}), 502
 
     nocache = (request.args.get("nocache") == "1") or (request.args.get("refresh") == "1")
@@ -1675,7 +1692,7 @@ def api_lightweight_chart(symbol):
     if entry and entry.get("payload"):
         return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
-    return jsonify({"error": "vndirect_unavailable", "symbol": symbol,
+    return jsonify({"error": "data_unavailable", "symbol": symbol,
                     "detail": err or "no_data"}), 502
 
 @app.route("/api/cache_info")
@@ -2646,54 +2663,54 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-analysis ul{margin:0 0 12px 20px;color:#374151;font-size:14.5px;line-height:1.65;font-family:'IBM Plex Sans',sans-serif}
 .health-analysis li{margin-bottom:5px}
 .health-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;text-align:center;padding:24px}
-.vnd-panel{margin:0 14px;border:1px solid var(--border);border-radius:8px;padding:14px 16px 12px;background:#fff}
+.mkt-panel{margin:0 14px;border:1px solid var(--border);border-radius:8px;padding:14px 16px 12px;background:#fff}
 
-.cafef-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
-.cafef-split-panel > .vnd-panel { margin: 0; }
-.vnd-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
-.vnd-split-panel > .vnd-panel { margin: 0; flex: 1; min-width: 0; }
-.cafef-liquidity { flex: 1; min-width: 0; }
-.cafef-liquidity .vnd-chart-area { margin: 0 12px; }
-.cafef-impact { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.cafef-chart-container { position: relative; margin: 20px 12px 0; }
-.cafef-impact .cafef-chart-container { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.cafef-col-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
-.cafef-labels-wrap { display: flex; height: 28px; align-items: center; flex-shrink: 0; padding: 0 4px; min-width: 0; }
-.cafef-zero-line { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); z-index: 1; }
-.cafef-col-item { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
-.cafef-col-bar { position: absolute; width: 60%; max-width: 25px; border-radius: 2px; z-index: 2; }
-.cafef-lbl-item { flex: 1; text-align: center; font-size: 10px; color: var(--muted); font-weight: 700; white-space: nowrap; overflow: hidden; min-width: 0; -webkit-tap-highlight-color: transparent; }
-@media (max-width: 768px) { .tri-content.on { gap: 12px; padding-bottom: 12px; } .cafef-split-panel, .vnd-split-panel { flex-direction: column; margin: 0 10px; gap: 12px; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
-.cafef-liq-legend { position:absolute; top:6px; left:0; right:0; display:flex; justify-content:center; gap:14px; font-size:10px; color:var(--muted); pointer-events:none; font-weight:700; }
-.cafef-liq-xaxis { position:absolute; bottom:0; left:0; right:0; display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-weight:600; pointer-events:none; }
-.cafef-dot { display:inline-block; width:8px; height:8px; border-radius:50%; border:2px solid; margin-right:4px; vertical-align:-1px; }
-.vnd-panel-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
-.vnd-panel-title{font-family:var(--font-ui);font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px;color:var(--accent)}
-.vnd-status{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
-.vnd-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0 6px}
-.vnd-tabs{display:inline-flex;gap:6px}
-.vnd-tab{height:26px;padding:0 12px;display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;user-select:none}
-.vnd-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
-.vnd-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.vnd-period{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap}
-.vnd-period select{height:26px;width:auto;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);padding:0 6px;font-size:12px}
-.vnd-chart-area{position:relative;height:270px}
-.vnd-svg{width:100%;height:100%;display:block;overflow:visible}
-.vnd-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5;stroke-opacity:.35}
-.vnd-axis-label{fill:var(--muted);font-size:11px;font-weight:700}
-.vnd-x-label{fill:var(--muted);font-size:10px;font-weight:600}
-.vnd-legend{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:2px;color:var(--muted);font-size:11px;flex-wrap:wrap}
-.vnd-legend-item{display:inline-flex;align-items:center;gap:5px}
-.vnd-swatch{display:inline-block;width:12px;height:3px;border-radius:2px}
-.vnd-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
-.vnd-tile{border:1px solid var(--border);border-radius:7px;padding:8px 10px;background:var(--surf2);min-height:52px}
-.vnd-tile span{display:block;color:var(--muted);font-size:11px;font-weight:700;margin-bottom:4px}
-.vnd-tile strong{display:block;font-size:16px;line-height:20px;color:var(--text)}
-.vnd-error{display:none;margin-top:8px;border:1px solid #efc5c5;background:#fff5f5;color:#9b2424;border-radius:6px;padding:8px 10px;font-size:12px}
-.vnd-tooltip{position:fixed;z-index:50;display:none;min-width:150px;padding:8px 10px;background:rgba(17,24,39,.94);color:#fff;border-radius:6px;font-size:11px;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
-.vnd-tooltip strong{display:block;margin-bottom:4px}
-.vnd-bar-positive{fill:var(--green)}
-.vnd-bar-negative{fill:var(--red)}
+.mkt-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
+.mkt-split-panel > .mkt-panel { margin: 0; }
+.mkt-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
+.mkt-split-panel > .mkt-panel { margin: 0; flex: 1; min-width: 0; }
+.mkt-liquidity { flex: 1; min-width: 0; }
+.mkt-liquidity .mkt-chart-area { margin: 0 12px; }
+.mkt-impact { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.mkt-chart-container { position: relative; margin: 20px 12px 0; }
+.mkt-impact .mkt-chart-container { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.mkt-col-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
+.mkt-labels-wrap { display: flex; height: 28px; align-items: center; flex-shrink: 0; padding: 0 4px; min-width: 0; }
+.mkt-zero-line { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); z-index: 1; }
+.mkt-col-item { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
+.mkt-col-bar { position: absolute; width: 60%; max-width: 25px; border-radius: 2px; z-index: 2; }
+.mkt-lbl-item { flex: 1; text-align: center; font-size: 10px; color: var(--muted); font-weight: 700; white-space: nowrap; overflow: hidden; min-width: 0; -webkit-tap-highlight-color: transparent; }
+@media (max-width: 768px) { .tri-content.on { gap: 12px; padding-bottom: 12px; } .mkt-split-panel, .mkt-split-panel { flex-direction: column; margin: 0 10px; gap: 12px; } .mkt-impact { min-height: 280px; } .mkt-lbl-item { font-size: 8px; } }
+.mkt-liq-legend { position:absolute; top:6px; left:0; right:0; display:flex; justify-content:center; gap:14px; font-size:10px; color:var(--muted); pointer-events:none; font-weight:700; }
+.mkt-liq-xaxis { position:absolute; bottom:0; left:0; right:0; display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-weight:600; pointer-events:none; }
+.mkt-dot { display:inline-block; width:8px; height:8px; border-radius:50%; border:2px solid; margin-right:4px; vertical-align:-1px; }
+.mkt-panel-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.mkt-panel-title{font-family:var(--font-ui);font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px;color:var(--accent)}
+.mkt-status{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
+.mkt-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0 6px}
+.mkt-tabs{display:inline-flex;gap:6px}
+.mkt-tab{height:26px;padding:0 12px;display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;user-select:none}
+.mkt-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
+.mkt-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.mkt-period{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap}
+.mkt-period select{height:26px;width:auto;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);padding:0 6px;font-size:12px}
+.mkt-chart-area{position:relative;height:270px}
+.mkt-svg{width:100%;height:100%;display:block;overflow:visible}
+.mkt-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5;stroke-opacity:.35}
+.mkt-axis-label{fill:var(--muted);font-size:11px;font-weight:700}
+.mkt-x-label{fill:var(--muted);font-size:10px;font-weight:600}
+.mkt-legend{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:2px;color:var(--muted);font-size:11px;flex-wrap:wrap}
+.mkt-legend-item{display:inline-flex;align-items:center;gap:5px}
+.mkt-swatch{display:inline-block;width:12px;height:3px;border-radius:2px}
+.mkt-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+.mkt-tile{border:1px solid var(--border);border-radius:7px;padding:8px 10px;background:var(--surf2);min-height:52px}
+.mkt-tile span{display:block;color:var(--muted);font-size:11px;font-weight:700;margin-bottom:4px}
+.mkt-tile strong{display:block;font-size:16px;line-height:20px;color:var(--text)}
+.mkt-error{display:none;margin-top:8px;border:1px solid #efc5c5;background:#fff5f5;color:#9b2424;border-radius:6px;padding:8px 10px;font-size:12px}
+.mkt-tooltip{position:fixed;z-index:50;display:none;min-width:150px;padding:8px 10px;background:rgba(17,24,39,.94);color:#fff;border-radius:6px;font-size:11px;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.mkt-tooltip strong{display:block;margin-bottom:4px}
+.mkt-bar-positive{fill:var(--green)}
+.mkt-bar-negative{fill:var(--red)}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -3038,9 +3055,9 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   
   .health-chartbox{height:280px}
   .health-score{font-size:36px}
-  .vnd-panel{margin:0 10px;padding:12px 12px 10px}
-    .vnd-chart-area{height:220px}
-  .vnd-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mkt-panel{margin:0 10px;padding:12px 12px 10px}
+    .mkt-chart-area{height:220px}
+  .mkt-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   .treemap-wrap{
     width:100% !important;
     margin-left:0 !important;
@@ -3645,42 +3662,42 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
             </div>
           </div>
         </div>
-        <div class="cafef-split-panel">
-          <div class="vnd-panel cafef-liquidity">
-            <div class="vnd-panel-hdr">
-              <span class="vnd-panel-title">THANH KHOẢN</span>
-              <span class="vnd-status" id="cafef-liq-status">Đang tải...</span>
+        <div class="mkt-split-panel">
+          <div class="mkt-panel mkt-liquidity">
+            <div class="mkt-panel-hdr">
+              <span class="mkt-panel-title">THANH KHOẢN</span>
+              <span class="mkt-status" id="mkt-liq-status">Đang tải...</span>
             </div>
-            <div class="vnd-chart-area" style="position:relative">
-              <svg class="vnd-svg" id="cafef-liq-svg" preserveAspectRatio="none"></svg>
-              <div class="cafef-liq-legend">
-                <span><span class="cafef-dot" style="border-color:#4a75f0"></span>Hôm qua</span>
-                <span><span class="cafef-dot" style="border-color:#f59b00"></span>Hôm nay</span>
+            <div class="mkt-chart-area" style="position:relative">
+              <svg class="mkt-svg" id="mkt-liq-svg" preserveAspectRatio="none"></svg>
+              <div class="mkt-liq-legend">
+                <span><span class="mkt-dot" style="border-color:#4a75f0"></span>Hôm qua</span>
+                <span><span class="mkt-dot" style="border-color:#f59b00"></span>Hôm nay</span>
               </div>
-              <div class="cafef-liq-xaxis"><span>09:00</span><span>11:30</span><span>14:45</span></div>
+              <div class="mkt-liq-xaxis"><span>09:00</span><span>11:30</span><span>14:45</span></div>
             </div>
           </div>
-          <div class="vnd-panel cafef-impact">
-            <div class="vnd-panel-hdr">
-              <span class="vnd-panel-title">TÁC ĐỘNG</span>
-              <span class="vnd-status" id="cafef-imp-status">Đang tải...</span>
+          <div class="mkt-panel mkt-impact">
+            <div class="mkt-panel-hdr">
+              <span class="mkt-panel-title">TÁC ĐỘNG</span>
+              <span class="mkt-status" id="mkt-imp-status">Đang tải...</span>
             </div>
-            <div class="cafef-chart-container" id="cafef-imp-container"></div>
+            <div class="mkt-chart-container" id="mkt-imp-container"></div>
           </div>
         </div>
-        <div class="vnd-split-panel">
-        <div class="vnd-panel" id="vnd-valuation-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">ĐỊNH GIÁ</span>
-            <span class="vnd-status" id="vnd-valuation-status">Đang tải...</span>
+        <div class="mkt-split-panel">
+        <div class="mkt-panel" id="mkt-valuation-panel">
+          <div class="mkt-panel-hdr">
+            <span class="mkt-panel-title">ĐỊNH GIÁ</span>
+            <span class="mkt-status" id="mkt-valuation-status">Đang tải...</span>
           </div>
-          <div class="vnd-controls">
-            <div class="vnd-tabs" id="vnd-valuation-tabs">
-              <span class="vnd-tab on" data-metric="pe">P/E</span>
-              <span class="vnd-tab" data-metric="pb">P/B</span>
+          <div class="mkt-controls">
+            <div class="mkt-tabs" id="mkt-valuation-tabs">
+              <span class="mkt-tab on" data-metric="pe">P/E</span>
+              <span class="mkt-tab" data-metric="pb">P/B</span>
             </div>
-            <label class="vnd-period">Chu kỳ
-              <select id="vnd-valuation-period">
+            <label class="mkt-period">Chu kỳ
+              <select id="mkt-valuation-period">
                 <option value="90">3 tháng</option>
                 <option value="180">6 tháng</option>
                 <option value="365" selected>1 năm</option>
@@ -3689,23 +3706,23 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
               </select>
             </label>
           </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-valuation-svg" preserveAspectRatio="none"></svg>
+          <div class="mkt-chart-area">
+            <svg class="mkt-svg" id="mkt-valuation-svg" preserveAspectRatio="none"></svg>
           </div>
-          <div class="vnd-legend">
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" id="vnd-valuation-metric-swatch" style="background:#f59b00"></span><span id="vnd-valuation-metric-legend">P/E</span></span>
+          <div class="mkt-legend">
+            <span class="mkt-legend-item"><span class="mkt-swatch" style="background:#9b55ff"></span>VNINDEX</span>
+            <span class="mkt-legend-item"><span class="mkt-swatch" id="mkt-valuation-metric-swatch" style="background:#f59b00"></span><span id="mkt-valuation-metric-legend">P/E</span></span>
           </div>
-          <div class="vnd-error" id="vnd-valuation-error"></div>
+          <div class="mkt-error" id="mkt-valuation-error"></div>
         </div>
-        <div class="vnd-panel" id="vnd-allocation-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">PHÂN BỔ</span>
-            <span class="vnd-status" id="vnd-allocation-status">Đang tải...</span>
+        <div class="mkt-panel" id="mkt-allocation-panel">
+          <div class="mkt-panel-hdr">
+            <span class="mkt-panel-title">PHÂN BỔ</span>
+            <span class="mkt-status" id="mkt-allocation-status">Đang tải...</span>
           </div>
-          <div class="vnd-controls">
-            <label class="vnd-period" style="margin-left:auto">Chu kỳ
-              <select id="vnd-allocation-period">
+          <div class="mkt-controls">
+            <label class="mkt-period" style="margin-left:auto">Chu kỳ
+              <select id="mkt-allocation-period">
                 <option value="90">3 tháng</option>
                 <option value="180">6 tháng</option>
                 <option value="365" selected>1 năm</option>
@@ -3714,37 +3731,37 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
               </select>
             </label>
           </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-allocation-svg" preserveAspectRatio="none"></svg>
+          <div class="mkt-chart-area">
+            <svg class="mkt-svg" id="mkt-allocation-svg" preserveAspectRatio="none"></svg>
           </div>
-          <div class="vnd-legend">
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#9b55ff"></span>VNINDEX</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#0e9f6e"></span>Trên MA50</span>
-            <span class="vnd-legend-item"><span class="vnd-swatch" style="background:#f59b00"></span>Trên MA200</span>
+          <div class="mkt-legend">
+            <span class="mkt-legend-item"><span class="mkt-swatch" style="background:#9b55ff"></span>VNINDEX</span>
+            <span class="mkt-legend-item"><span class="mkt-swatch" style="background:#0e9f6e"></span>Trên MA50</span>
+            <span class="mkt-legend-item"><span class="mkt-swatch" style="background:#f59b00"></span>Trên MA200</span>
           </div>
-          <div class="vnd-error" id="vnd-allocation-error"></div>
+          <div class="mkt-error" id="mkt-allocation-error"></div>
         </div>
         </div>
-        <div class="vnd-split-panel">
-        <div class="vnd-panel" id="vnd-foreign-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Khối ngoại</span>
-            <span class="vnd-status" id="vnd-foreign-status">Đang tải...</span>
+        <div class="mkt-split-panel">
+        <div class="mkt-panel" id="mkt-foreign-panel">
+          <div class="mkt-panel-hdr">
+            <span class="mkt-panel-title">Khối ngoại</span>
+            <span class="mkt-status" id="mkt-foreign-status">Đang tải...</span>
           </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-foreign-svg" preserveAspectRatio="none"></svg>
+          <div class="mkt-chart-area">
+            <svg class="mkt-svg" id="mkt-foreign-svg" preserveAspectRatio="none"></svg>
           </div>
-          <div class="vnd-error" id="vnd-foreign-error"></div>
+          <div class="mkt-error" id="mkt-foreign-error"></div>
         </div>
-        <div class="vnd-panel" id="vnd-proprietary-panel">
-          <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Tự doanh</span>
-            <span class="vnd-status" id="vnd-proprietary-status">Đang tải...</span>
+        <div class="mkt-panel" id="mkt-proprietary-panel">
+          <div class="mkt-panel-hdr">
+            <span class="mkt-panel-title">Tự doanh</span>
+            <span class="mkt-status" id="mkt-proprietary-status">Đang tải...</span>
           </div>
-          <div class="vnd-chart-area">
-            <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
+          <div class="mkt-chart-area">
+            <svg class="mkt-svg" id="mkt-proprietary-svg" preserveAspectRatio="none"></svg>
           </div>
-          <div class="vnd-error" id="vnd-proprietary-error"></div>
+          <div class="mkt-error" id="mkt-proprietary-error"></div>
         </div>
         </div>
         </div>
@@ -4371,7 +4388,7 @@ function initLiteChart(){
   _liteRsiChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteRsiChart,_liteRsiCrosshairSeries,false));
   if(!_liteResizeBound){
     _liteResizeBound=true;
-    // Debounce 150ms (giống health-chart, vnd-panel) — chỉ tính lại 1 lần sau khi ngừng resize.
+    // Debounce 150ms (giống health-chart, mkt-panel) — chỉ tính lại 1 lần sau khi ngừng resize.
     let _liteResizeTimer=null;
     window.addEventListener('resize',()=>{
       clearTimeout(_liteResizeTimer);
@@ -6809,7 +6826,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
       ?(window.__liteChartPrefetch=null,await _pf.promise)
       :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
-    if(!r.ok)throw new Error('vndirect_unavailable');
+    if(!r.ok)throw new Error('data_unavailable');
     if(reqId!==_liteReqId)return;
     const j=await r.json();
     if(reqId!==_liteReqId)return;
@@ -6821,7 +6838,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   }catch(e){
     if(DOM.liteChartTitle)DOM.liteChartTitle.innerHTML='Không có dữ liệu';
     updateLiteBigPrice(null);
-    DOM.liteChartEmpty.textContent='Không lấy được dữ liệu VNDirect cho '+s;
+    DOM.liteChartEmpty.textContent='Không lấy được dữ liệu cho '+s;
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }finally{
     if(reqId===_liteReqId){
@@ -7986,88 +8003,88 @@ DOM.treemapCopyBtn?.addEventListener('click',e=>{
   e.stopPropagation();
   copyTreemapImage(e.currentTarget);
 });
-// VNDIRECT: Định giá thị trường (P/E, P/B) & Phân bổ (MA50/MA200) tải lười khi mở tab Mrk Health lần đầu, tự làm mới định kỳ theo vndirect_valuation_chart.py.
-const VND_AUTO_REFRESH_MS=5*60*1000;
-const vndValuationState={metric:'pe',period:365,rows:[]};
-const vndAllocationState={period:365,rows:[]};
-let _vndLoaded=false,_vndRefreshTimer=null,_vndResizeTimer=null;
-const vndTooltip=document.createElement('div');
-vndTooltip.className='vnd-tooltip';
-vndTooltip.id='vnd-tooltip';
-document.body.appendChild(vndTooltip);
+// MARKET: Định giá thị trường (P/E, P/B) & Phân bổ (MA50/MA200) tải lười khi mở tab Mrk Health lần đầu, tự làm mới định kỳ theo mkt_valuation_chart.
+const MKT_AUTO_REFRESH_MS=5*60*1000;
+const mktValuationState={metric:'pe',period:365,rows:[]};
+const mktAllocationState={period:365,rows:[]};
+let _mktLoaded=false,_mktRefreshTimer=null,_mktResizeTimer=null;
+const mktTooltip=document.createElement('div');
+mktTooltip.className='mkt-tooltip';
+mktTooltip.id='mkt-tooltip';
+document.body.appendChild(mktTooltip);
 
-function vndFmt(value,digits=2){
+function mktFmt(value,digits=2){
   if(!Number.isFinite(Number(value)))return'--';
   return Number(value).toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits});
 }
-function vndFmtSigned(value,digits=2){
+function mktFmtSigned(value,digits=2){
   if(!Number.isFinite(Number(value)))return'--';
   const n=Number(value);
-  return `${n>0?'+':''}${vndFmt(n,digits)}`;
+  return `${n>0?'+':''}${mktFmt(n,digits)}`;
 }
-function vndDayMonth(value){const d=new Date(value+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;}
-function vndYmd(date){return date.toISOString().slice(0,10);}
-function vndLabelDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
-function vndFullDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
-function vndNiceTicks(min,max,count=4){if(min===max)return[min];const step=(max-min)/(count-1);return Array.from({length:count},(_,idx)=>min+idx*step);}
-function vndPickXTicks(rows,count=5){if(rows.length<=count)return rows;return Array.from({length:count},(_,idx)=>rows[Math.round(idx*(rows.length-1)/(count-1))]);}
-function vndPeriodStart(days){const start=new Date();start.setDate(start.getDate()-days);return vndYmd(start);}
-function vndToPath(points){return points.map(([x,y],idx)=>`${idx?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');}
+function mktDayMonth(value){const d=new Date(value+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;}
+function mktYmd(date){return date.toISOString().slice(0,10);}
+function mktLabelDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
+function mktFullDate(value){const d=new Date(value+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
+function mktNiceTicks(min,max,count=4){if(min===max)return[min];const step=(max-min)/(count-1);return Array.from({length:count},(_,idx)=>min+idx*step);}
+function mktPickXTicks(rows,count=5){if(rows.length<=count)return rows;return Array.from({length:count},(_,idx)=>rows[Math.round(idx*(rows.length-1)/(count-1))]);}
+function mktPeriodStart(days){const start=new Date();start.setDate(start.getDate()-days);return mktYmd(start);}
+function mktToPath(points){return points.map(([x,y],idx)=>`${idx?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');}
 
-async function vndLoadJson(url){
+async function mktLoadJson(url){
   const res=await fetch(url);
   if(!res.ok)throw new Error(`HTTP ${res.status}`);
   const data=await res.json();
   if(!data.ok)throw new Error(data.message||'Không lấy được dữ liệu');
   return data;
 }
-function vndShowError(statusId,errorId,err){
+function mktShowError(statusId,errorId,err){
   $(statusId).textContent='Không tải được dữ liệu';
   const box=$(errorId);
   box.style.display='block';
   box.textContent=`Lỗi: ${err.message}`;
 }
 
-async function loadVndValuation(){
-  $('vnd-valuation-status').textContent='Đang tải...';
-  $('vnd-valuation-error').style.display='none';
+async function loadMktValuation(){
+  $('mkt-valuation-status').textContent='Đang tải...';
+  $('mkt-valuation-error').style.display='none';
   try{
-    const url=`/api/vndirect_valuation?metric=${vndValuationState.metric}&from=${vndPeriodStart(vndValuationState.period)}`;
-    const data=await vndLoadJson(url);
-    vndValuationState.rows=data.rows;
-    $('vnd-valuation-status').textContent=`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
-    renderVndValuation();
-  }catch(e){vndShowError('vnd-valuation-status','vnd-valuation-error',e);}
+    const url=`/api/market_valuation?metric=${mktValuationState.metric}&from=${mktPeriodStart(mktValuationState.period)}`;
+    const data=await mktLoadJson(url);
+    mktValuationState.rows=data.rows;
+    $('mkt-valuation-status').textContent=`${mktFullDate(data.from)} - ${mktFullDate(data.to)}`;
+    renderMktValuation();
+  }catch(e){mktShowError('mkt-valuation-status','mkt-valuation-error',e);}
 }
-async function loadVndAllocation(){
-  $('vnd-allocation-status').textContent='Đang tải...';
-  $('vnd-allocation-error').style.display='none';
+async function loadMktAllocation(){
+  $('mkt-allocation-status').textContent='Đang tải...';
+  $('mkt-allocation-error').style.display='none';
   try{
-    const url=`/api/vndirect_allocation?from=${vndPeriodStart(vndAllocationState.period)}`;
-    const data=await vndLoadJson(url);
-    vndAllocationState.rows=data.rows;
-    $('vnd-allocation-status').textContent=`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`;
-    renderVndAllocation();
-  }catch(e){vndShowError('vnd-allocation-status','vnd-allocation-error',e);}
+    const url=`/api/market_allocation?from=${mktPeriodStart(mktAllocationState.period)}`;
+    const data=await mktLoadJson(url);
+    mktAllocationState.rows=data.rows;
+    $('mkt-allocation-status').textContent=`${mktFullDate(data.from)} - ${mktFullDate(data.to)}`;
+    renderMktAllocation();
+  }catch(e){mktShowError('mkt-allocation-status','mkt-allocation-error',e);}
 }
 
 // Khối ngoại & Tự doanh: 2 bar chart theo phiên, luôn hiện đủ dữ liệu gần nhất trả về (không có bộ lọc kỳ thời gian).
-const vndForeignState={rows:[]};
-const vndProprietaryState={rows:[]};
+const mktForeignState={rows:[]};
+const mktProprietaryState={rows:[]};
 
-async function loadVndForeignFlow(){
-  $('vnd-foreign-status').textContent='Đang tải...';
-  $('vnd-foreign-error').style.display='none';
+async function loadMktForeignFlow(){
+  $('mkt-foreign-status').textContent='Đang tải...';
+  $('mkt-foreign-error').style.display='none';
   try{
-    const data=await vndLoadJson('/api/foreign_flow');
-    vndForeignState.rows=data.rows||[];
-    $('vnd-foreign-status').textContent=vndForeignState.rows.length?`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`:'--';
-    renderVndForeignFlow();
-  }catch(e){vndShowError('vnd-foreign-status','vnd-foreign-error',e);}
+    const data=await mktLoadJson('/api/foreign_flow');
+    mktForeignState.rows=data.rows||[];
+    $('mkt-foreign-status').textContent=mktForeignState.rows.length?`${mktFullDate(data.from)} - ${mktFullDate(data.to)}`:'--';
+    renderMktForeignFlow();
+  }catch(e){mktShowError('mkt-foreign-status','mkt-foreign-error',e);}
 }
-// CAFEF LIQUIDITY & IMPACT
-function drawCafefLiq(liqRes) {
-  const svg = $('cafef-liq-svg');
+// MARKET LIQUIDITY & IMPACT
+function drawMktLiq(liqRes) {
+  const svg = $('mkt-liq-svg');
   const W = 400, H = 270;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('preserveAspectRatio', 'none');
@@ -8113,21 +8130,21 @@ function drawCafefLiq(liqRes) {
     <path d="${p1}" fill="none" stroke="#f59b00" stroke-width="2" />
   `;
 }
-async function loadCafefMarket() {
+async function loadMktLiquidityImpact() {
   try {
     const [liqRes, impRes] = await Promise.all([
-      fetch('https://msh-appdata.cafef.vn/rest-api/api/v1/Liquidity/HOSE').then(r => r.json()),
-      fetch('https://msh-appdata.cafef.vn/rest-api/api/v1/MarketLeaderGroup?centerId=1&take=8').then(r => r.json())
+      fetch('/api/market_liquidity').then(r => r.json()),
+      fetch('/api/market_impact').then(r => r.json())
     ]);
     // 1. Vẽ Thanh Khoản
     if (liqRes && liqRes.length > 0) {
-      drawCafefLiq(liqRes);
-      $('cafef-liq-status').textContent = '';
+      drawMktLiq(liqRes);
+      $('mkt-liq-status').textContent = '';
     }
     
     // 2. Vẽ Tác Động (Column Chart) - Không số, margin thoáng
     if (impRes && impRes.data) {
-      const container = $('cafef-imp-container');
+      const container = $('mkt-imp-container');
       const uniqueData = [];
       const seen = new Set();
       impRes.data.forEach(d => {
@@ -8151,9 +8168,9 @@ async function loadCafefMarket() {
       const topPad = (1 - SCALE) / 2 * 100;  // equal padding top & bottom
       const zeroTopPct = topPad + (scaledMax / (scaledMax - scaledMin)) * SCALE * 100;
       
-      let barHtml = `<div class="cafef-col-wrap">`;
-      barHtml += `<div class="cafef-zero-line" style="top: ${zeroTopPct}%"></div>`;
-      let lblHtml = `<div class="cafef-labels-wrap">`;
+      let barHtml = `<div class="mkt-col-wrap">`;
+      barHtml += `<div class="mkt-zero-line" style="top: ${zeroTopPct}%"></div>`;
+      let lblHtml = `<div class="mkt-labels-wrap">`;
       
       uniqueData.forEach(d => {
         const isUp = d.score >= 0;
@@ -8163,39 +8180,39 @@ async function loadCafefMarket() {
           ? `bottom: ${100 - zeroTopPct}%; height: ${hPct}%; background: #27a892;` 
           : `top: ${zeroTopPct}%; height: ${hPct}%; background: #e64b4b;`;
           
-        barHtml += `<div class="cafef-col-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')"><div class="cafef-col-bar" style="${barStyle}"></div></div>`;
-        lblHtml += `<div class="cafef-lbl-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')">${d.symbol}</div>`;
+        barHtml += `<div class="mkt-col-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')"><div class="mkt-col-bar" style="${barStyle}"></div></div>`;
+        lblHtml += `<div class="mkt-lbl-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')">${d.symbol}</div>`;
       });
       barHtml += `</div>`;
       lblHtml += `</div>`;
       
       container.innerHTML = barHtml + lblHtml;
-      $('cafef-imp-status').textContent = '';
+      $('mkt-imp-status').textContent = '';
     }
   } catch(e) {
-    if($('cafef-liq-status')) $('cafef-liq-status').textContent = 'Lỗi';
-    if($('cafef-imp-status')) $('cafef-imp-status').textContent = 'Lỗi';
+    if($('mkt-liq-status')) $('mkt-liq-status').textContent = 'Lỗi';
+    if($('mkt-imp-status')) $('mkt-imp-status').textContent = 'Lỗi';
   }
 }
 
-async function loadVndProprietaryFlow(){
-  $('vnd-proprietary-status').textContent='Đang tải...';
-  $('vnd-proprietary-error').style.display='none';
+async function loadMktProprietaryFlow(){
+  $('mkt-proprietary-status').textContent='Đang tải...';
+  $('mkt-proprietary-error').style.display='none';
   try{
-    const data=await vndLoadJson('/api/proprietary_flow');
-    vndProprietaryState.rows=data.rows||[];
-    $('vnd-proprietary-status').textContent=vndProprietaryState.rows.length?`${vndFullDate(data.from)} - ${vndFullDate(data.to)}`:'--';
-    renderVndProprietaryFlow();
-  }catch(e){vndShowError('vnd-proprietary-status','vnd-proprietary-error',e);}
+    const data=await mktLoadJson('/api/proprietary_flow');
+    mktProprietaryState.rows=data.rows||[];
+    $('mkt-proprietary-status').textContent=mktProprietaryState.rows.length?`${mktFullDate(data.from)} - ${mktFullDate(data.to)}`:'--';
+    renderMktProprietaryFlow();
+  }catch(e){mktShowError('mkt-proprietary-status','mkt-proprietary-error',e);}
 }
 
-function renderVndFlowPanel(prefix,rows,label){
-  renderVndFlowChart(`vnd-${prefix}-svg`,rows,row=>`<strong>${vndFullDate(row.date)}</strong><div>${label} mua ròng: ${vndFmt(row.netValueBn,2)} tỷ</div>`);
+function renderMktFlowPanel(prefix,rows,label){
+  renderMktFlowChart(`mkt-${prefix}-svg`,rows,row=>`<strong>${mktFullDate(row.date)}</strong><div>${label} mua ròng: ${mktFmt(row.netValueBn,2)} tỷ</div>`);
 }
-function renderVndForeignFlow(){renderVndFlowPanel('foreign',vndForeignState.rows||[],'NN');}
-function renderVndProprietaryFlow(){renderVndFlowPanel('proprietary',vndProprietaryState.rows||[],'Tự doanh');}
+function renderMktForeignFlow(){renderMktFlowPanel('foreign',mktForeignState.rows||[],'NN');}
+function renderMktProprietaryFlow(){renderMktFlowPanel('proprietary',mktProprietaryState.rows||[],'Tự doanh');}
 
-function renderVndFlowChart(svgId,rows,tooltipBuilder){
+function renderMktFlowChart(svgId,rows,tooltipBuilder){
   const svg=$(svgId);
   svg.innerHTML='';
   if(!rows.length)return;
@@ -8210,7 +8227,7 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
   const rawMin=Math.min(0,...vals),rawMax=Math.max(0,...vals);
   const pad=(rawMax-rawMin)*0.14||1;
   const yMin=rawMin-pad,yMax=rawMax+pad;
-  // Khoảng trắng phải 5% đồng bộ renderVndChart để bar cuối thẳng hàng với điểm giá trị cuối khung Định giá/Phân bổ.
+  // Khoảng trắng phải 5% đồng bộ renderMktChart để bar cuối thẳng hàng với điểm giá trị cuối khung Định giá/Phân bổ.
   const rightPadRatio=0.05;
   const barAreaW=innerW/(1+rightPadRatio);
   const step=barAreaW/rows.length;
@@ -8224,16 +8241,16 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     svg.appendChild(el);
     return el;
   }
-  // Tick grid luôn qua đúng 0 và cách đều 2 phía, tránh vndNiceTicks() sinh tick sát 0 gây nhìn nhầm 2 đường trùng.
+  // Tick grid luôn qua đúng 0 và cách đều 2 phía, tránh mktNiceTicks() sinh tick sát 0 gây nhìn nhầm 2 đường trùng.
   const flowStepUnit=Math.max(Math.abs(yMax),Math.abs(yMin),1e-9)/3;
   const flowGridTicks=[0];
   for(let t=flowStepUnit;t<=yMax+1e-9;t+=flowStepUnit)flowGridTicks.push(t);
   for(let t=-flowStepUnit;t>=yMin-1e-9;t-=flowStepUnit)flowGridTicks.push(t);
   for(const tick of flowGridTicks){
     const y=sy(tick);
-    add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
+    add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'mkt-grid-line'});
   }
-  const tickDates=new Set(vndPickXTicks(rows,Math.min(6,rows.length)).map(r=>r.date));
+  const tickDates=new Set(mktPickXTicks(rows,Math.min(6,rows.length)).map(r=>r.date));
   rows.forEach((row,idx)=>{
     const x=margin.left+idx*step+step/2;
     const y=sy(Math.max(0,row.netValueBn));
@@ -8242,16 +8259,16 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
       x:x-barW/2,
       y:row.netValueBn>=0?y:zeroY,
       width:barW,height:h,rx:2.5,
-      class:row.netValueBn>=0?'vnd-bar-positive':'vnd-bar-negative',
+      class:row.netValueBn>=0?'mkt-bar-positive':'mkt-bar-negative',
     });
     bar.addEventListener('mousemove',event=>{
-      vndTooltip.innerHTML=tooltipBuilder(row);
-      vndTooltip.style.display='block';
-      vndTooltip.style.left=`${event.clientX+14}px`;
-      vndTooltip.style.top=`${event.clientY+14}px`;
+      mktTooltip.innerHTML=tooltipBuilder(row);
+      mktTooltip.style.display='block';
+      mktTooltip.style.left=`${event.clientX+14}px`;
+      mktTooltip.style.top=`${event.clientY+14}px`;
     });
     if(tickDates.has(row.date)){
-      add('text',{x,y:height-10,'text-anchor':'middle',class:'vnd-x-label'},vndDayMonth(row.date));
+      add('text',{x,y:height-10,'text-anchor':'middle',class:'mkt-x-label'},mktDayMonth(row.date));
     }
   });
   const last=rows[rows.length-1];
@@ -8263,33 +8280,33 @@ function renderVndFlowChart(svgId,rows,tooltipBuilder){
     'text-anchor':'start',
     fill:last.netValueBn>=0?'var(--green)':'var(--red)',
     'font-size':11,'font-weight':800,
-  },`${vndFmtSigned(last.netValueBn,1)} tỷ`);
-  svg.addEventListener('mouseleave',()=>{vndTooltip.style.display='none';});
+  },`${mktFmtSigned(last.netValueBn,1)} tỷ`);
+  svg.addEventListener('mouseleave',()=>{mktTooltip.style.display='none';});
 }
 
-function renderVndValuation(){
-  const rows=vndValuationState.rows||[];
+function renderMktValuation(){
+  const rows=mktValuationState.rows||[];
   if(!rows.length)return;
-  const metricLabel=vndValuationState.metric==='pe'?'P/E':'P/B';
-  renderVndChart({
-    svgId:'vnd-valuation-svg',rows,
-    rightSeries:[{key:'value',color:vndValuationState.metric==='pe'?'#f59b00':'#0e9f6e',digits:vndValuationState.metric==='pe'?2:3,axisDigits:vndValuationState.metric==='pe'?1:2}],
+  const metricLabel=mktValuationState.metric==='pe'?'P/E':'P/B';
+  renderMktChart({
+    svgId:'mkt-valuation-svg',rows,
+    rightSeries:[{key:'value',color:mktValuationState.metric==='pe'?'#f59b00':'#0e9f6e',digits:mktValuationState.metric==='pe'?2:3,axisDigits:mktValuationState.metric==='pe'?1:2}],
     leftColor:'#9b55ff',rightMin:null,rightMax:null,
-    tooltipBuilder:row=>`<strong>${vndFullDate(row.date)}</strong><div>VNINDEX: ${vndFmt(row.index,2)}</div><div>${metricLabel}: ${vndFmt(row.value,3)}</div>`,
+    tooltipBuilder:row=>`<strong>${mktFullDate(row.date)}</strong><div>VNINDEX: ${mktFmt(row.index,2)}</div><div>${metricLabel}: ${mktFmt(row.value,3)}</div>`,
   });
 }
-function renderVndAllocation(){
-  const rows=vndAllocationState.rows||[];
+function renderMktAllocation(){
+  const rows=mktAllocationState.rows||[];
   if(!rows.length)return;
-  renderVndChart({
-    svgId:'vnd-allocation-svg',rows,
+  renderMktChart({
+    svgId:'mkt-allocation-svg',rows,
     rightSeries:[{key:'ma50',color:'#0e9f6e',digits:1,axisDigits:0},{key:'ma200',color:'#f59b00',digits:1,axisDigits:0}],
     leftColor:'#9b55ff',rightMin:0,rightMax:100,
-    tooltipBuilder:row=>`<strong>${vndFullDate(row.date)}</strong><div>VNINDEX: ${vndFmt(row.index,2)}</div><div>Trên MA50: ${vndFmt(row.ma50,1)}%</div><div>Trên MA200: ${vndFmt(row.ma200,1)}%</div>`,
+    tooltipBuilder:row=>`<strong>${mktFullDate(row.date)}</strong><div>VNINDEX: ${mktFmt(row.index,2)}</div><div>Trên MA50: ${mktFmt(row.ma50,1)}%</div><div>Trên MA200: ${mktFmt(row.ma200,1)}%</div>`,
   });
 }
 
-function renderVndChart(config){
+function renderMktChart(config){
   const rows=config.rows||[];
   const svg=$(config.svgId);
   svg.innerHTML='';
@@ -8323,22 +8340,22 @@ function renderVndChart(config){
     svg.appendChild(el);
     return el;
   }
-  for(const tick of vndNiceTicks(idxMin-idxPad,idxMax+idxPad,4)){
+  for(const tick of mktNiceTicks(idxMin-idxPad,idxMax+idxPad,4)){
     const y=syIndex(tick);
-    add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'vnd-grid-line'});
+    add('line',{x1:margin.left,x2:width-margin.right,y1:y,y2:y,class:'mkt-grid-line'});
   }
   const axisDigits=config.rightSeries[0].axisDigits;
   const rightSuffix=config.rightMax===100?'%':''; // '%' cho khung Phân bổ (MA50/MA200), rỗng cho P/E,P/B — dùng chung cho axis label lẫn badge bên dưới
   // Bỏ vẽ các nấc giá trị trên trục phải — chỉ giữ badge giá trị hiện tại (_vBadge bên dưới) để đỡ rối mắt.
-  for(const row of vndPickXTicks(rows,5)){
+  for(const row of mktPickXTicks(rows,5)){
     const x=sx(new Date(row.date+'T00:00:00').getTime());
-    add('text',{x,y:height-10,'text-anchor':'middle',class:'vnd-x-label'},vndLabelDate(row.date));
+    add('text',{x,y:height-10,'text-anchor':'middle',class:'mkt-x-label'},mktLabelDate(row.date));
   }
   const indexPoints=rows.map(r=>[sx(new Date(r.date+'T00:00:00').getTime()),syIndex(r.index)]);
-  add('path',{d:vndToPath(indexPoints),fill:'none',stroke:config.leftColor,'stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'});
+  add('path',{d:mktToPath(indexPoints),fill:'none',stroke:config.leftColor,'stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'});
   for(const series of config.rightSeries){
     const points=rows.map(r=>[sx(new Date(r.date+'T00:00:00').getTime()),syRight(r[series.key])]);
-    add('path',{d:vndToPath(points),fill:'none',stroke:series.color,'stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'});
+    add('path',{d:mktToPath(points),fill:'none',stroke:series.color,'stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'});
   }
   const last=rows[rows.length-1];
   config.onLast?.(last);
@@ -8352,7 +8369,7 @@ function renderVndChart(config){
   };
   _vBadge(syIndex(last.index),Math.round(last.index).toLocaleString('en-US'),config.leftColor);
   for(const series of config.rightSeries){
-    _vBadge(syRight(last[series.key]),`${vndFmt(last[series.key],series.axisDigits)}${rightSuffix}`,series.color);
+    _vBadge(syRight(last[series.key]),`${mktFmt(last[series.key],series.axisDigits)}${rightSuffix}`,series.color);
   }
   // ── Crosshair & tooltip ────────────────────────────────────────────────────
   const guide=add('line',{y1:margin.top,y2:height-margin.bottom,stroke:'#9aa3b2','stroke-width':1,'stroke-dasharray':'3 4',opacity:0});
@@ -8380,55 +8397,55 @@ function renderVndChart(config){
     config.rightSeries.forEach((series,idx)=>{
       dots[idx+1].setAttribute('cx',curX);dots[idx+1].setAttribute('cy',syRight(nearest[series.key]));dots[idx+1].setAttribute('opacity','1');
     });
-    vndTooltip.innerHTML=config.tooltipBuilder(nearest);
-    vndTooltip.style.display='block';
-    vndTooltip.style.left=`${event.clientX+14}px`;
-    vndTooltip.style.top=`${event.clientY+14}px`;
+    mktTooltip.innerHTML=config.tooltipBuilder(nearest);
+    mktTooltip.style.display='block';
+    mktTooltip.style.left=`${event.clientX+14}px`;
+    mktTooltip.style.top=`${event.clientY+14}px`;
   });
   hit.addEventListener('mouseleave',()=>{
     guide.setAttribute('opacity','0');
     dots.forEach(dot=>dot.setAttribute('opacity','0'));
-    vndTooltip.style.display='none';
+    mktTooltip.style.display='none';
   });
 }
 
-function vndRefreshAll(){loadVndValuation();loadVndAllocation();loadVndForeignFlow();loadVndProprietaryFlow();
-  loadCafefMarket();}
-function vndRerenderVisible(){
-  if(vndValuationState.rows.length)renderVndValuation();
-  if(vndAllocationState.rows.length)renderVndAllocation();
-  if(vndForeignState.rows.length)renderVndForeignFlow();
-  if(vndProprietaryState.rows.length)renderVndProprietaryFlow();
+function mktRefreshAll(){loadMktValuation();loadMktAllocation();loadMktForeignFlow();loadMktProprietaryFlow();
+  loadMktLiquidityImpact();}
+function mktRerenderVisible(){
+  if(mktValuationState.rows.length)renderMktValuation();
+  if(mktAllocationState.rows.length)renderMktAllocation();
+  if(mktForeignState.rows.length)renderMktForeignFlow();
+  if(mktProprietaryState.rows.length)renderMktProprietaryFlow();
 }
-function vndInitOnce(){
-  if(_vndLoaded)return;
-  _vndLoaded=true;
-  $('vnd-valuation-tabs').addEventListener('click',e=>{
-    const btn=e.target.closest('.vnd-tab');
+function mktInitOnce(){
+  if(_mktLoaded)return;
+  _mktLoaded=true;
+  $('mkt-valuation-tabs').addEventListener('click',e=>{
+    const btn=e.target.closest('.mkt-tab');
     if(!btn)return;
     const metric=btn.dataset.metric;
-    if(metric===vndValuationState.metric)return;
-    vndValuationState.metric=metric;
-    $('vnd-valuation-tabs').querySelectorAll('.vnd-tab').forEach(b=>b.classList.toggle('on',b.dataset.metric===metric));
-    $('vnd-valuation-metric-legend').textContent=metric==='pe'?'P/E':'P/B';
-    const _ml=$('vnd-valuation-metric-swatch');if(_ml)_ml.style.background=metric==='pe'?'#f59b00':'#0e9f6e';
-    loadVndValuation();
+    if(metric===mktValuationState.metric)return;
+    mktValuationState.metric=metric;
+    $('mkt-valuation-tabs').querySelectorAll('.mkt-tab').forEach(b=>b.classList.toggle('on',b.dataset.metric===metric));
+    $('mkt-valuation-metric-legend').textContent=metric==='pe'?'P/E':'P/B';
+    const _ml=$('mkt-valuation-metric-swatch');if(_ml)_ml.style.background=metric==='pe'?'#f59b00':'#0e9f6e';
+    loadMktValuation();
   });
-  $('vnd-valuation-period').addEventListener('change',e=>{
-    vndValuationState.period=Number(e.target.value);
-    loadVndValuation();
+  $('mkt-valuation-period').addEventListener('change',e=>{
+    mktValuationState.period=Number(e.target.value);
+    loadMktValuation();
   });
-  $('vnd-allocation-period').addEventListener('change',e=>{
-    vndAllocationState.period=Number(e.target.value);
-    loadVndAllocation();
+  $('mkt-allocation-period').addEventListener('change',e=>{
+    mktAllocationState.period=Number(e.target.value);
+    loadMktAllocation();
   });
-  vndRefreshAll();
-  _vndRefreshTimer=setInterval(vndRefreshAll,VND_AUTO_REFRESH_MS);
+  mktRefreshAll();
+  _mktRefreshTimer=setInterval(mktRefreshAll,MKT_AUTO_REFRESH_MS);
 }
 window.addEventListener('resize',()=>{
-  if(!_vndLoaded)return;
-  clearTimeout(_vndResizeTimer);
-  _vndResizeTimer=setTimeout(vndRerenderVisible,150);
+  if(!_mktLoaded)return;
+  clearTimeout(_mktResizeTimer);
+  _mktResizeTimer=setTimeout(mktRerenderVisible,150);
 });
 
 // ── MARKET (Mrk Health / Treemap) — 1 thẻ, chuyển nội dung bằng tab ──
@@ -8444,8 +8461,8 @@ function triActivateTab(tab){
   if(tab==='health'){
     if(_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
     // Khung PE/PB + Phân bổ thị trường: nạp lần đầu (lazy), các lần mở lại sau chỉ cần vẽ lại theo đúng kích thước khung hiện tại (dữ liệu đã có sẵn trong state).
-    vndInitOnce();
-    requestAnimationFrame(vndRerenderVisible);
+    mktInitOnce();
+    requestAnimationFrame(mktRerenderVisible);
   }else if(tab==='treemap'){
     requestAnimationFrame(()=>renderTreemap(window._lastHmapData||{}));
   }
@@ -8462,11 +8479,11 @@ DOM.triHdr.addEventListener('click',e=>{
     const activeTab=DOM.triTabs.querySelector('.tri-tab.on');
     if(activeTab&&activeTab.dataset.tab==='health'){
       if(_healthFullHistory.length)requestAnimationFrame(_healthRenderWindow);
-      requestAnimationFrame(vndRerenderVisible);
+      requestAnimationFrame(mktRerenderVisible);
     }
   }
 });
-// Mặc định mở tab Mrk Health — phải gọi triActivateTab() (không chỉ set class) để kích hoạt vndInitOnce(), nếu không sẽ kẹt "Đang tải...".
+// Mặc định mở tab Mrk Health — phải gọi triActivateTab() (không chỉ set class) để kích hoạt mktInitOnce(), nếu không sẽ kẹt "Đang tải...".
 triActivateTab('health');
 DOM.hmapToggle.addEventListener('click',e=>{
   // Control trong header (nút MARKET/VNINDEX/FOLLOW, ô tìm mã, popout...) vẫn bấm bình thường — chỉ coi là bấm để thu/mở khi không trúng control.
