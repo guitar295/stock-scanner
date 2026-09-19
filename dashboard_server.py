@@ -3032,7 +3032,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     -webkit-overflow-scrolling:touch;
   }
   .hmap-ts-wrap::-webkit-scrollbar{display:none}
-  .health-layout{grid-template-columns:1fr}
+  .health-body{padding:12px 10px 0} .health-layout{grid-template-columns:1fr;gap:12px}
   
   .health-chartbox{height:280px}
   .health-score{font-size:36px}
@@ -7438,7 +7438,7 @@ function _healthRenderWindow(){
   const W=900,H=Math.round(Math.min(720,Math.max(320,W*aspect)));
   const scale=H/360;
   // Lề trái/phải (L/R) giữ cố định, không co theo scale (tỉ lệ cao/rộng) để tránh ăn vào dải màu và giữ đúng vị trí checkbox VNINDEX.
-  const L=52,R=128,T=Math.round(28*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
+  const L=52,R=128,T=Math.round((rectBox.width<768?30:28)*scale),B=Math.round(34*scale),plotW=W-L-R,plotH=H-T-B;
   const fs=Math.max(9,Math.round(10*scale));
   // Chừa khoảng đệm 2 bên để đường line không chạm sát mép trái/phải của khung.
   const padX=16;
