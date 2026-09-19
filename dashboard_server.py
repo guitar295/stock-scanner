@@ -2650,6 +2650,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 
 .cafef-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
 .cafef-split-panel > .vnd-panel { margin: 0; }
+.vnd-split-panel { display: flex; gap: 14px; margin: 0 14px; align-items: stretch; }
+.vnd-split-panel > .vnd-panel { margin: 0; flex: 1; min-width: 0; }
 .cafef-liquidity { flex: 1; min-width: 0; }
 .cafef-liquidity .vnd-chart-area { margin: 0 12px; }
 .cafef-impact { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -2661,7 +2663,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .cafef-col-item { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
 .cafef-col-bar { position: absolute; width: 60%; max-width: 25px; border-radius: 2px; z-index: 2; }
 .cafef-lbl-item { flex: 1; text-align: center; font-size: 10px; color: var(--muted); font-weight: 700; white-space: nowrap; overflow: hidden; min-width: 0; -webkit-tap-highlight-color: transparent; }
-@media (max-width: 768px) { .tri-content.on { gap: 12px; padding-bottom: 12px; } .cafef-split-panel { flex-direction: column; margin: 0 10px; gap: 12px; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
+@media (max-width: 768px) { .tri-content.on { gap: 12px; padding-bottom: 12px; } .cafef-split-panel, .vnd-split-panel { flex-direction: column; margin: 0 10px; gap: 12px; } .cafef-impact { min-height: 280px; } .cafef-lbl-item { font-size: 8px; } }
 .cafef-liq-legend { position:absolute; top:6px; left:0; right:0; display:flex; justify-content:center; gap:14px; font-size:10px; color:var(--muted); pointer-events:none; font-weight:700; }
 .cafef-liq-xaxis { position:absolute; bottom:0; left:0; right:0; display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-weight:600; pointer-events:none; }
 .cafef-dot { display:inline-block; width:8px; height:8px; border-radius:50%; border:2px solid; margin-right:4px; vertical-align:-1px; }
@@ -3660,15 +3662,16 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
           </div>
           <div class="vnd-panel cafef-impact">
             <div class="vnd-panel-hdr">
-              <span class="vnd-panel-title">TÁC ĐỘNG CHỈ SỐ</span>
+              <span class="vnd-panel-title">TÁC ĐỘNG</span>
               <span class="vnd-status" id="cafef-imp-status">Đang tải...</span>
             </div>
             <div class="cafef-chart-container" id="cafef-imp-container"></div>
           </div>
         </div>
+        <div class="vnd-split-panel">
         <div class="vnd-panel" id="vnd-valuation-panel">
           <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Định giá thị trường</span>
+            <span class="vnd-panel-title">ĐỊNH GIÁ</span>
             <span class="vnd-status" id="vnd-valuation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
@@ -3697,7 +3700,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         </div>
         <div class="vnd-panel" id="vnd-allocation-panel">
           <div class="vnd-panel-hdr">
-            <span class="vnd-panel-title">Phân bổ thị trường</span>
+            <span class="vnd-panel-title">PHÂN BỔ</span>
             <span class="vnd-status" id="vnd-allocation-status">Đang tải...</span>
           </div>
           <div class="vnd-controls">
@@ -3721,6 +3724,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
           </div>
           <div class="vnd-error" id="vnd-allocation-error"></div>
         </div>
+        </div>
+        <div class="vnd-split-panel">
         <div class="vnd-panel" id="vnd-foreign-panel">
           <div class="vnd-panel-hdr">
             <span class="vnd-panel-title">Khối ngoại</span>
@@ -3740,6 +3745,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
             <svg class="vnd-svg" id="vnd-proprietary-svg" preserveAspectRatio="none"></svg>
           </div>
           <div class="vnd-error" id="vnd-proprietary-error"></div>
+        </div>
         </div>
         </div>
 
