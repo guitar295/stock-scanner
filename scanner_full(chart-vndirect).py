@@ -2278,8 +2278,11 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     ts           = datetime.now(TZ_VN).strftime('%H:%M:%S')
 
     now_ts = time.time()
+    with cache_lock:
+        all_cached_keys = list(history_cache.keys())
+    ssi_query_list = [s for s in all_cached_keys if s not in ("VNINDEX", "VN30", "HNX", "UPCOM")]
     ssi_updated = set()
-    for it in (_fetch_priceboard_batch(symbols_to_rs) or []):
+    for it in (_fetch_priceboard_batch(ssi_query_list) or []):
         sym = str(it.get('stockSymbol') or '').upper().strip()
         close = float(it.get('matchedPrice') or it.get('refPrice') or 0)
         if not sym or close <= 0: continue
@@ -2293,7 +2296,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
         ssi_updated.add(sym)
 
     missing_scan = [s for s in symbols if s not in ssi_updated]
-    missing_extra = [s for s in symbols_to_rs if s not in ssi_updated and s not in symbols]
+    missing_extra = [s for s in ssi_query_list if s not in ssi_updated and s not in symbols]
 
     def _fallback_fetch(sym_list):
         if not sym_list: return
@@ -2317,7 +2320,7 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
     else:
         source_tag = "[SSI 100%]"
 
-    for symbol in symbols:
+    for symbol in all_cached_keys:
         try:
             with cache_lock: 
                 df_merged = history_cache.get(symbol)
@@ -2334,6 +2337,10 @@ def run_scan_cycle(symbols: list, now_time: int, alerted_today: dict, momentum_t
                             history_cache[symbol].loc[df_merged.index[-1], 'vpa_flag'] = today_vpa
             except Exception:
                 pass
+            
+            if symbol not in symbols:
+                continue
+
             df_merged = compute_indicators(df_merged)
 
             try:
