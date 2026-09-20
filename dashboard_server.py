@@ -4388,17 +4388,17 @@ function initLiteChart(){
   _liteRsiChart.subscribeCrosshairMove(param=>_liteHandleCrosshairMove(param,DOM.liteRsiChart,_liteRsiCrosshairSeries,false));
   if(!_liteResizeBound){
     _liteResizeBound=true;
-    // Debounce 150ms (giống health-chart, mkt-panel) — chỉ tính lại 1 lần sau khi ngừng resize.
-    let _liteResizeTimer=null;
+    // Dùng requestAnimationFrame thay cho setTimeout 150ms để Chart dãn nở siêu mượt 60 FPS theo tay kéo.
+    let _liteResizeRaf=null;
     window.addEventListener('resize',()=>{
-      clearTimeout(_liteResizeTimer);
-      _liteResizeTimer=setTimeout(()=>{
+      if(_liteResizeRaf) cancelAnimationFrame(_liteResizeRaf);
+      _liteResizeRaf=requestAnimationFrame(()=>{
         // Popout cần _liteRelayoutViewport() (không chỉ resize canvas) để tính lại pane layout
         // khi kéo cạnh cửa sổ; trên mobile còn là lưới an toàn cho 'orientationchange'.
         if(_isChartPopoutWindow)_liteRelayoutViewport();
         else _liteApplyChartSizes();
         resizeLiteDrawCanvas();redrawLiteDrawings();
-      },150);
+      });
     });
     // Vẽ lại canvas khi có nội dung cần vẽ và panel đang hiển thị.
     // Dùng document.hidden + offsetParent check để không tốn CPU khi tab ẩn hoặc panel thu gọn.
