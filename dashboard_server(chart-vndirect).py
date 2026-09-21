@@ -312,7 +312,7 @@ VND_RATIO_CODES = {
     "ma50": "OVER_MA50D_PCT_CR",
     "ma200": "OVER_MA200D_PCT_CR",
 }
-VND_TTL_SEC = 300
+VND_TTL_SEC = 120
 _vnd_cache: dict = {}
 _vnd_lock = threading.Lock()
 
@@ -412,6 +412,41 @@ def api_market_liquidity():
 def api_market_impact():
     try:
         data = _vnd_cached_rows("cafef_impact", lambda: requests.get("https://msh-appdata.cafef.vn/rest-api/api/v1/MarketLeaderGroup?centerId=1&take=8", timeout=5).json())
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+def _fetch_vps_indices():
+    try:
+        r1 = requests.get("https://bgapidatafeed.vps.com.vn/getlistindexdetail/10,11,02,03", timeout=5).json()
+        r2 = requests.get("https://histdatafeed.vps.com.vn/tradingview/historiesnearest?symbols=VNINDEX,VN30,HNX,UPCOM&props=c,v,t&resolution=1", timeout=5).json()
+        mapping = {"10": "VNINDEX", "11": "VN30", "02": "HNX", "03": "UPCOM"}
+        results = {}
+        for d in r1:
+            mc = d.get("mc")
+            if mc not in mapping: continue
+            sym = mapping[mc]
+            ref = d.get("oIndex", 0)
+            score = d.get("cIndex", 0)
+            total_val = d.get("value", 0) / 1000.0
+            hist = r2.get(sym, {})
+            closes = hist.get("c", [])
+            vols = hist.get("v", [])
+            results[sym] = {
+                "score": score,
+                "ref": ref,
+                "totalValue": total_val,
+                "closes": closes,
+                "vols": vols
+            }
+        return {"value": results}
+    except Exception as e:
+        return {}
+
+@app.route("/api/market_indices")
+def api_market_indices():
+    try:
+        data = _vnd_cached_rows("vps_indices", _fetch_vps_indices)
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 502
@@ -2549,7 +2584,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 /* ═══════════════════════════════════════════
    SIGNALS
    ═══════════════════════════════════════════ */
-.sig-list::-webkit-scrollbar{height:4px}.sig-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sig-list::-webkit-scrollbar, .hmap-outer::-webkit-scrollbar { display: none; }
+.sig-list, .hmap-outer { scrollbar-width: none; -ms-overflow-style: none; }
 .sig-list{display:grid;grid-template-columns:repeat(4,minmax(235px,1fr));gap:3px;overflow-x:auto;overflow-y:hidden}
 .sig-row{display:grid;grid-template-columns:24px max-content max-content max-content max-content;align-items:center;justify-content:space-between;column-gap:8px;padding:7px 8px;border-radius:5px;border:1px solid var(--border);cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;background:var(--surface)}
 .sig-row:hover{background:#eef3ff;border-color:rgba(26,86,219,.3);box-shadow:0 2px 8px rgba(26,86,219,.07)}
@@ -2592,8 +2628,6 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
    HEATMAP GRID
    ═══════════════════════════════════════════ */
 .hmap-outer{overflow-x:auto;padding-bottom:4px;text-align:center}
-.hmap-outer::-webkit-scrollbar{height:4px}
-.hmap-outer::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hmap-row{display:inline-flex;gap:4px;align-items:flex-start;min-width:max-content;padding:2px}
 .hmap-col{position:relative;display:flex;flex-direction:column;gap:2px;width:162px;flex-shrink:0}
 .hmap-group{display:flex;flex-direction:column;gap:2px}
@@ -3123,10 +3157,8 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   /* 1. Tín hiệu hôm nay 4 cột cuộn ngang như Heatmap */
   .sig-list{
     -webkit-overflow-scrolling:touch !important;
-    scrollbar-width:none !important;
     padding-bottom:4px !important;
   }
-  .sig-list::-webkit-scrollbar{display:none !important}
   .sig-row{min-width:235px !important}
   /* 2. Cỡ chữ Cập nhật ... tín hiệu nhỏ gọn như portrait */
   #signal-header{
@@ -3135,7 +3167,6 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
     gap:8px !important;
     padding:6px 12px !important;
     overflow-x:auto !important;
-    scrollbar-width:none !important;
   }
   #signal-header::-webkit-scrollbar{display:none !important}
   #signal-header .panel-hdr-left{flex-shrink:0 !important}
@@ -3313,6 +3344,18 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+
+/* INDICES CHARTS */
+#indices-grid { height: 125px; }
+.index-card { background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 7px 8px; display: flex; flex-direction: column; height: 125px; }
+.index-card .idx-row { display: flex; justify-content: space-between; align-items: baseline; white-space: nowrap; }
+.index-card .idx-name { font-weight: 700; font-size: 11px; color: #ca8a04; }
+.index-card .idx-val { font-size: 10px; color: var(--fg); }
+.index-card .idx-score { font-weight: 700; font-size: 12px; }
+.index-card .idx-change { font-weight: 700; font-size: 10px; }
+.idx-chart-box { height: 75px; margin-top: 5px; }
+.idx-chart-box svg { width: 100%; height: 100%; overflow: visible; }
+@media(max-width: 768px) { .indices-panel { display: none !important; } }
 </style>
 </head>
 <body>
@@ -3330,6 +3373,12 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 </header>
 
 <div class="wrap" id="main-wrap">
+  <!-- INDICES (Mini Charts) -->
+  <div class="panel indices-panel">
+    <div class="panel-body">
+      <div class="sig-list" id="indices-grid"></div>
+    </div>
+  </div>
   <!-- SIGNALS -->
   <div class="panel">
     <div class="panel-hdr signal-header-toggle" id="signal-header">
@@ -3785,7 +3834,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 
 <div class="alert-toast-wrap" id="alert-toast-wrap"></div>
 
-<footer id="footer-txt">Scanner Bot Dashboard</footer>
+<footer id="footer-txt" style="display:none;"></footer>
 
 <!-- POPUP -->
 <div class="overlay" id="overlay">
@@ -8004,7 +8053,7 @@ DOM.treemapCopyBtn?.addEventListener('click',e=>{
   copyTreemapImage(e.currentTarget);
 });
 // MARKET: Định giá thị trường (P/E, P/B) & Phân bổ (MA50/MA200) tải lười khi mở tab Mrk Health lần đầu, tự làm mới định kỳ theo mkt_valuation_chart.
-const MKT_AUTO_REFRESH_MS=5*60*1000;
+const MKT_AUTO_REFRESH_MS=2*60*1000;
 const mktValuationState={metric:'pe',period:365,rows:[]};
 const mktAllocationState={period:365,rows:[]};
 let _mktLoaded=false,_mktRefreshTimer=null,_mktResizeTimer=null;
@@ -8130,12 +8179,41 @@ function drawMktLiq(liqRes) {
     <path d="${p1}" fill="none" stroke="#f59b00" stroke-width="2" />
   `;
 }
+function drawIndexChart(data, idKey){
+  if(!data||!data.closes||!data.closes.length)return'';
+  const W=200,H=75, prices=data.closes, vols=data.vols;
+  const maxV=Math.max(...vols)||1, minP=Math.min(...prices), maxP=Math.max(...prices);
+  const pScale=(maxP-minP)||1, minPView=minP-pScale*0.2, pViewScale=pScale*1.4;
+  const refPrice=data.ref;
+  const getX=(i)=>(i/(prices.length-1))*W, getY=(p)=>H-((p-minPView)/pViewScale)*H, getVolY=(v)=>H-(v/maxV)*(H*0.45);
+  const refY=Math.floor(getY(refPrice))+0.5, refLine=`<line x1="0" y1="${refY}" x2="${W}" y2="${refY}" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,3" shape-rendering="crispEdges" />`;
+  let vPath=`M0,${H}`; vols.forEach((v,i)=>vPath+=` L${getX(i)},${getVolY(v)}`); vPath+=` L${W},${H} Z`;
+  let pPath=''; prices.forEach((p,i)=>pPath+=(i===0?'M':' L')+`${getX(i)},${getY(p)}`);
+  let pct = Math.max(0, Math.min(100, (refY / H) * 100));
+  const defs = `<defs><linearGradient id="grad-${idKey}" x1="0" y1="0" x2="0" y2="1"><stop offset="${pct}%" stop-color="#0e9f6e"/><stop offset="${pct}%" stop-color="#e02424"/></linearGradient></defs>`;
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${defs}<path d="${vPath}" fill="#7cb5ec" opacity="0.4"/>${refLine}<path d="${pPath}" fill="none" stroke="url(#grad-${idKey})" stroke-width="1.2"/></svg>`;
+}
+function renderIndices(res){
+  const grid=$('indices-grid'); if(!grid||!res||!res.value)return;
+  const maps=[{n:'VNINDEX',k:'VNINDEX'},{n:'VN30',k:'VN30'},{n:'HNX',k:'HNX'},{n:'UPCOM',k:'UPCOM'}];
+  grid.innerHTML=maps.map(m=>{
+    const data=res.value[m.k]; if(!data||!data.closes||!data.closes.length)return'';
+    const score=data.score, ref=data.ref, change=score-ref, pct=(change/ref)*100, sign=change>0?'+':'', color=change>0?'#0e9f6e':(change<0?'#e02424':'#e1b12c');
+    const isClk = (m.k==='VNINDEX' || m.k==='VN30');
+    const cStr = isClk ? 'cursor:pointer' : '';
+    const oClk = isClk ? `onclick="_hmapDesktopClick('${m.k}')"` : '';
+    const oDbl = isClk ? `ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${m.k}');openChart('${m.k}')"` : '';
+    return `<div class="index-card" style="${cStr}" ${oClk} ${oDbl}><div class="idx-row"><span class="idx-name">${m.n}</span><span class="idx-val">${(data.totalValue||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}&nbsp;T</span></div><div class="idx-row" style="margin-top:2px"><span class="idx-score" style="color:${color}">${score.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="idx-change" style="color:${color}">${sign}${change.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} (${sign}${pct.toFixed(2)}%)</span></div><div class="idx-chart-box">${drawIndexChart(data, m.k)}</div></div>`;
+  }).join('');
+}
 async function loadMktLiquidityImpact() {
   try {
-    const [liqRes, impRes] = await Promise.all([
+    const [liqRes, impRes, idxRes] = await Promise.all([
       fetch('/api/market_liquidity').then(r => r.json()),
-      fetch('/api/market_impact').then(r => r.json())
+      fetch('/api/market_impact').then(r => r.json()),
+      fetch('/api/market_indices').then(r => r.json())
     ]);
+    if(idxRes && idxRes.value) renderIndices(idxRes);
     // 1. Vẽ Thanh Khoản
     if (liqRes && liqRes.length > 0) {
       drawMktLiq(liqRes);
@@ -8547,7 +8625,7 @@ async function loadConfig(){
     if(j.session_afternoon_start!=null) _sessionConfig.a_start=_hhmmssToMinutes(j.session_afternoon_start);
     if(j.session_afternoon_end!=null)   _sessionConfig.a_end=_hhmmssToMinutes(j.session_afternoon_end)+5;
   }catch(e){}
-  DOM.footer.textContent=`Scanner Bot Dashboard • Tín hiệu tự động làm mới sau ${SIG_TTL}s • Heatmap ${HMAP_TTL}s • Mrk Health ${Math.round(HEALTH_TTL/60)} phút`;
+  if(DOM.footer) DOM.footer.textContent='';
 }
 // FETCH
 function renderStrengthList(strength){
@@ -8566,10 +8644,9 @@ async function fetchSigs(retryCount=0){
     const res=await fetch('/api/signals?t='+Date.now());
     if(!res.ok) throw new Error('not ok');
     const j=await res.json();
-    const rsMeta=`RS ${j.rs_count||0}${j.rs_asof?' @ '+j.rs_asof:''}`;
     DOM.sigMeta.textContent=j.session_stale&&j.session_date
-      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`
-      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng • ${j.strength_count||0} sức mạnh • ${rsMeta}`;
+      ?`Phiên gần nhất ${j.session_date} (chưa có phiên mới) • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`
+      :`Cập nhật ${j.updated_at} • ${j.count} tín hiệu • ${j.momentum_count||0} động lượng`;
     _sigTodayMap=new Map((j.signals||[]).map(s=>[s.symbol,s]));
     window._sigTodayMap=_sigTodayMap;
     const _curSigNow=_getSig(_liteSymbol);
