@@ -2743,8 +2743,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .mkt-error{display:none;margin-top:8px;border:1px solid #efc5c5;background:#fff5f5;color:#9b2424;border-radius:6px;padding:8px 10px;font-size:12px}
 .mkt-tooltip{position:fixed;z-index:50;display:none;min-width:150px;padding:8px 10px;background:rgba(17,24,39,.94);color:#fff;border-radius:6px;font-size:11px;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .mkt-tooltip strong{display:block;margin-bottom:4px}
-.mkt-bar-positive{fill:var(--green)}
-.mkt-bar-negative{fill:var(--red)}
+.mkt-bar-positive{fill:#27a892}
+.mkt-bar-negative{fill:#e64b4b}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
 .lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
@@ -2815,7 +2815,7 @@ html.chart-popout-mode .lite-chart-frame{
 #lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"],
 #lite-rsi-chart.hide-tv-logo a[href*="tradingview"],#lite-rsi-chart.hide-tv-logo [class*="logo"],#lite-rsi-chart.hide-tv-logo [class*="attribution"],
 #lite-macd-chart.hide-tv-logo a[href*="tradingview"],#lite-macd-chart.hide-tv-logo [class*="logo"],#lite-macd-chart.hide-tv-logo [class*="attribution"]{display:none!important}
-.lite-macd-resizer{height:4px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
+.lite-macd-resizer{height:2px;background:transparent;cursor:ns-resize;display:none;position:relative;z-index:4}
 .lite-macd-resizer.on{display:block}
 .lite-chart-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;min-width:0}
 .lite-chart-top-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -3347,9 +3347,9 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 
 /* INDICES CHARTS */
 #indices-grid { height: 125px; }
-.index-card { background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 7px 8px; display: flex; flex-direction: column; height: 125px; }
+.index-card { user-select: none; -webkit-user-select: none; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 7px 8px; display: flex; flex-direction: column; height: 125px; }
 .index-card .idx-row { display: flex; justify-content: space-between; align-items: baseline; white-space: nowrap; }
-.index-card .idx-name { font-weight: 700; font-size: 11px; color: #ca8a04; }
+.index-card .idx-name { font-weight: 700; font-size: 11px; color: var(--accent); }
 .index-card .idx-val { font-size: 10px; color: var(--fg); }
 .index-card .idx-score { font-weight: 700; font-size: 12px; }
 .index-card .idx-change { font-weight: 700; font-size: 10px; }
@@ -4323,7 +4323,7 @@ let _liteLoadingMore=false;    // đang fetch lazy-load, tránh gọi chồng
 let _liteOldestDate=null;      // date của bar đầu tiên đang có ('YYYY-MM-DD')
 let _liteChartLoading=false,_liteLazyDebounce=null;   // đang load chart lần đầu — block _liteFetchMoreHistory
 // Cấu hình chung rightPriceScale (borderColor, minimumWidth) dùng cho cả 3 chart; chỉ scaleMargins/autoScale khác nhau nên để riêng.
-const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:64};
+const LITE_PRICE_SCALE_BASE={borderColor:'#dde3ee',minimumWidth:84};
 // Resize khung 3 chart theo clientWidth/Height — dùng chung cho resize listener và _liteRelayoutViewport().
 function _liteApplyChartSizes(){
   if(_liteChart&&DOM.liteChart)_liteChart.applyOptions({width:DOM.liteChart.clientWidth,height:DOM.liteChart.clientHeight});
@@ -6806,6 +6806,8 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   _liteVolumeData=(j.volume||[]).map(v=>Array.isArray(v)?{time:v[0],value:v[1],color:v[2]}:v);
   _liteCandle.setData(_liteData);
   _liteChart.priceScale('right').applyOptions({autoScale:true});
+  if(_liteRsiChart)_liteRsiChart.priceScale('right').applyOptions({autoScale:true});
+  if(_liteMacdChart)_liteMacdChart.priceScale('right').applyOptions({autoScale:true});
   _liteUpdateWhitespace(true);
   setLiteRightOffset();
   renderLiteIndicators(true);
@@ -8202,7 +8204,7 @@ function renderIndices(res){
     const isClk = (m.k==='VNINDEX' || m.k==='VN30');
     const cStr = isClk ? 'cursor:pointer' : '';
     const oClk = isClk ? `onclick="_hmapDesktopClick('${m.k}')"` : '';
-    const oDbl = isClk ? `ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${m.k}');openChart('${m.k}')"` : '';
+    const oDbl = isClk ? `ondblclick="if(_hmapClickTimer)clearTimeout(_hmapClickTimer);_jumpLiteChart('${m.k}');openChart('${m.k}')"` : '';
     return `<div class="index-card" style="${cStr}" ${oClk} ${oDbl}><div class="idx-row"><span class="idx-name">${m.n}</span><span class="idx-val">${(data.totalValue||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}&nbsp;T</span></div><div class="idx-row" style="margin-top:2px"><span class="idx-score" style="color:${color}">${score.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="idx-change" style="color:${color}">${sign}${change.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} (${sign}${pct.toFixed(2)}%)</span></div><div class="idx-chart-box">${drawIndexChart(data, m.k)}</div></div>`;
   }).join('');
 }
@@ -8258,8 +8260,8 @@ async function loadMktLiquidityImpact() {
           ? `bottom: ${100 - zeroTopPct}%; height: ${hPct}%; background: #27a892;` 
           : `top: ${zeroTopPct}%; height: ${hPct}%; background: #e64b4b;`;
           
-        barHtml += `<div class="mkt-col-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')"><div class="mkt-col-bar" style="${barStyle}"></div></div>`;
-        lblHtml += `<div class="mkt-lbl-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(window._hmapClickTimer)clearTimeout(window._hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')">${d.symbol}</div>`;
+        barHtml += `<div class="mkt-col-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(_hmapClickTimer)clearTimeout(_hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')"><div class="mkt-col-bar" style="${barStyle}"></div></div>`;
+        lblHtml += `<div class="mkt-lbl-item" style="cursor:pointer" onclick="_hmapDesktopClick('${d.symbol}')" ondblclick="if(_hmapClickTimer)clearTimeout(_hmapClickTimer);_jumpLiteChart('${d.symbol}');openChart('${d.symbol}')">${d.symbol}</div>`;
       });
       barHtml += `</div>`;
       lblHtml += `</div>`;
