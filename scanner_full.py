@@ -361,6 +361,12 @@ def fetch_heatmap_data() -> tuple:
         if result:
             print(f"  [{ts_log}] 🗺 SSI Priceboard không khả dụng → Fallback lấy {len(result)}/{len(need)} mã từ Cache VNDirect")
 
+    with cache_lock:
+        for idx_sym in ("VNINDEX", "VN30"):
+            df = history_cache.get(idx_sym)
+            if df is not None and len(df) >= 2:
+                result[idx_sym] = _extract_heatmap_fallback(df)
+
     return result, datetime.now(TZ_VN).strftime("%H:%M  %d/%m/%Y") if result else ""
 
 

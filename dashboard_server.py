@@ -8627,6 +8627,7 @@ async function fetchHmap(retryCount=0){
     _hmapCountdown=HMAP_TTL;
     _updateHmapTsDisplay();
     const newData = j.data || {};
+    window._mainHmapKeys = new Set(Object.keys(newData));
     if(document.hidden){
       _pendingHmapData=newData;
     }else{
@@ -9161,14 +9162,14 @@ function _symDisplayFields(sym,data){
 // người dùng tự thêm ngoài TS_POOL_CONFIG/HMAP_COLS_CONFIG) — trước đây các mã này luôn hiện "--".
 // _extraQuoteAsked: nhớ lần gọi gần nhất theo mã, khớp TTL cache server EXTRA_QUOTE_TTL_SEC=20s.
 const _extraQuoteAsked=new Map();
-const _EXTRA_QUOTE_MIN_INTERVAL=15000;
+const _EXTRA_QUOTE_MIN_INTERVAL=20000;
 async function _lgFillMissingQuotes(){
   if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
   const now=Date.now(),missing=[],seen=new Set();
   _lgGetGroups().forEach(g=>g.syms.forEach(sym=>{
     if(!sym||seen.has(sym))return;
     seen.add(sym);
-    if(window._lastHmapData&&window._lastHmapData[sym])return; // đã có giá, không cần bù
+    if(window._mainHmapKeys && window._mainHmapKeys.has(sym)) return; // Có trong Heatmap chính rồi, không cần bù
     if(now-(_extraQuoteAsked.get(sym)||0)<_EXTRA_QUOTE_MIN_INTERVAL)return; // vừa hỏi gần đây, chờ thêm
     missing.push(sym);
   }));
