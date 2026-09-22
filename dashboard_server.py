@@ -3144,7 +3144,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
   @media (hover:none){html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
   .health-layout{grid-template-columns:1fr 1fr}
-  @media (hover:none){html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}}
+  @media (hover:none){html.chart-popout-mode,html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:none!important;-ms-overflow-style:none!important}html.chart-popout-mode::-webkit-scrollbar,html.chart-popout-mode body::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}}
   .lite-ind-dropdown{
     position:absolute !important;
     top:calc(100% + 4px) !important;
@@ -9153,7 +9153,7 @@ function _updateSymDisplay(sym){
 }
 function _openPopup(){
   DOM.overlay.classList.add('on');
-  document.body.style.overflow='hidden';
+  document.body.style.overflow='hidden';document.documentElement.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
   // Portrait: show float close
   if(IS_MOBILE()&&!IS_LANDSCAPE())
@@ -9178,7 +9178,7 @@ function closePopup(){
   TABS_ALL.forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   pbox.style.animation='none';
   DOM.overlay.classList.remove('on');
-  document.body.style.overflow='';
+  document.body.style.overflow='';document.documentElement.style.overflow='';
   DOM.edgeZone.classList.remove('on');
   DOM.mobClose.style.display='none';
   requestAnimationFrame(()=>{pbox.style.visibility='';pbox.style.animation='';});
