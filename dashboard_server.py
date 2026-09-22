@@ -4313,7 +4313,7 @@ let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=n
 // Mũi tên báo mua tự vẽ canvas (không dùng setMarkers()) vì setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart.
 let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price của nến LUÔN đọc live từ _liteData
 // Vị trí mũi tên tính lại tại thời điểm vẽ (không lưu cứng) để luôn khớp nến mới nhất khi auto-refresh chèn nến mới vào giữa.
-let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false;
+let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteHoverBar=null;
 let _liteMacdSoloHeight=176;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map(),_liteSessionRange=null,_liteUserInteractedZoom=false;
 const LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
@@ -4388,7 +4388,7 @@ function initLiteChart(){
   });
   // Crosshair hợp nhất (1 dọc+1 ngang) cho 2 panel: mỗi panel báo toạ độ cục bộ + offsetTop.
   function _liteHideXhair(){
-    if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
+    _liteHoverBar=null;if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
     if(DOM.liteXhairH)DOM.liteXhairH.style.display='none';
     if(DOM.liteXhairPrice)DOM.liteXhairPrice.style.display='none';
     if(DOM.liteXhairTime)DOM.liteXhairTime.style.display='none';
@@ -4415,7 +4415,7 @@ function initLiteChart(){
     if(isMain){
       const key=param&&param.time?liteTimeKey(param.time):'';
       const bar=key?_liteDataByTime.get(key):null;
-      if(bar)updateLiteTitle(bar);else updateLiteTitle(_liteData[_liteData.length-1]);
+      if(bar){_liteHoverBar=bar;updateLiteTitle(bar);}else{_liteHoverBar=null;updateLiteTitle(_liteData[_liteData.length-1]);}
       if(!param||!param.point){_liteHideXhair();return;}
       const x=param.point.x,y=(domEl.offsetTop||0)+param.point.y;
       const priceTxt=_liteCrosshairPriceTxt(priceSeries,param.point.y);
@@ -4426,7 +4426,7 @@ function initLiteChart(){
     if(!param||!param.point){_liteHideXhair();return;}
     const key=param.time?liteTimeKey(param.time):'';
     const bar=key?_liteDataByTime.get(key):null;
-    if(bar)updateLiteTitle(bar);
+    if(bar){_liteHoverBar=bar;updateLiteTitle(bar);}
     const x=param.point.x,y=(domEl.offsetTop||0)+param.point.y;
     const priceTxt=_liteCrosshairPriceTxt(priceSeries,param.point.y);
     const timeTxt=key?fmtLiteDate(key):'';
@@ -6838,7 +6838,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     return;
   }
   _liteChartLoading=true;
-  _liteBuyArrowData=null;
+  _liteBuyArrowData=null;_liteHoverBar=null;
   if(_liteDrawCtx&&DOM.liteChart)_liteDrawCtx.clearRect(0,0,DOM.liteChart.clientWidth,DOM.liteChart.clientHeight);
 
   const tf=_liteTf||'1D',mb=_marketBundle||(window.parent!==window?window.parent?._marketBundle:null);
@@ -6925,7 +6925,7 @@ async function _liteQuietRefreshChart(){
         lastVol.color=_liteVolColorFor(lastVol,_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
         _liteVolume.update(lastVol);
       }
-      updateLiteTitle(_liteData[_liteData.length-1]);
+      if(!_liteHoverBar||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time))updateLiteTitle(_liteData[_liteData.length-1]);
       updateLiteBigPrice(_liteData[_liteData.length-1]);
     }
     const curSig=_getSig(sym);
@@ -6969,7 +6969,7 @@ async function _liteQuietRefreshChart(){
       _liteUpdateIndicatorData();
       if(!_liteApplyVisibleLogicalRange(prevRangeBeforeUpdate))setLiteRightOffset();
     }
-    updateLiteTitle(_liteData[_liteData.length-1]);
+    if(!_liteHoverBar||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time))updateLiteTitle(_liteData[_liteData.length-1]);
     updateLiteBigPrice(_liteData[_liteData.length-1]);
     _liteFetchVolForecast(sym);
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
@@ -7083,7 +7083,7 @@ function bindLiteChartControls(){
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag!=='input'&&tag!=='textarea')DOM.liteChartFrame.focus();
   });
-  DOM.liteChartFrame?.addEventListener('mouseleave',()=>{_litePointerInside=false;});
+  DOM.liteChartFrame?.addEventListener('mouseleave',()=>{_litePointerInside=false;_liteHoverBar=null;if(_liteData&&_liteData.length)updateLiteTitle(_liteData[_liteData.length-1]);});
   DOM.liteChartFrame?.addEventListener('keydown',e=>{
     // Đang gõ chữ (công cụ Text) thì bỏ qua phím tắt khung chart; đây là lớp bảo vệ thêm phòng focus chưa kịp chuyển.
     if(_liteTextEditPos)return;
