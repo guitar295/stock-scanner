@@ -2521,7 +2521,7 @@ try{
   --sab:env(safe-area-inset-bottom,0px);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html,body{overflow-y:auto;scrollbar-width:none;background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh;-webkit-text-size-adjust:100%;text-size-adjust:100%}html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;width:0;height:0}
 
 /* ═══════════════════════════════════════════
    HEADER — desktop
@@ -2550,7 +2550,7 @@ header h1{
    ═══════════════════════════════════════════ */
 .wrap{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px var(--shadow)}
-.panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
+.panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:var(--surf2);border-bottom:1px solid var(--border)}
 .panel-hdr-left{display:flex;align-items:center;gap:8px}
 .panel-title{font-family:var(--font-ui);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}
 .panel-meta{font-size:10px;color:var(--muted)}
@@ -2658,16 +2658,16 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 #tri-content-treemap{position:relative}
 .tri-hdr{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-start;gap:16px}
 .tri-tabs{display:flex;align-items:center;gap:4px}
-.tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;padding:3px 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
+.tri-tab{font-family:var(--font-ui);font-size:13px;font-weight:600;height:26px;display:inline-flex;align-items:center;padding:0 9px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
 .tri-tab:hover:not(.on){background:#eef3ff;color:var(--accent)}
 .tri-tab.on{color:var(--accent);font-weight:800}
-.tri-toggle{font-size:12px;color:var(--muted);transition:transform .15s;margin-left:auto}
+.tri-toggle{font-size:12px;color:var(--muted);transition:transform .15s;margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px}
 .tri-panel:not(.collapsed) .tri-toggle{transform:rotate(90deg);color:var(--accent)}
 /* Cơ chế thu/mở thẻ dùng chung cho tri-panel/hmap-panel/lite-chart-panel: .collapsed ẩn nội
    dung phụ header+thân, LUÔN dùng !important để @media mobile không ghi đè ngược lại (bug cũ:
    hmap-ts-wrap vẫn hiện trên mobile dù đã thu gọn, vì rule ẩn thiếu !important). */
-.tri-panel.collapsed .tri-tabs,
-.tri-panel.collapsed>.tri-body{display:none!important}
+.tri-panel.collapsed .tri-tabs,.tri-panel.collapsed>.tri-body{display:none!important}
+.tri-panel.collapsed .tri-hdr,.hmap-panel.collapsed .hmap-panel-hdr,.lite-chart-panel.collapsed .panel-hdr{height:42px;min-height:42px;box-sizing:border-box;padding:0 16px}
 .tri-content{display:none}
 .tri-content.on{display:flex;flex-direction:column;gap:14px;padding-bottom:14px}
 .health-svg{cursor:crosshair;display:block;width:100%;height:100%;position:absolute;top:0;left:0}
@@ -2746,17 +2746,17 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .mkt-bar-positive{fill:#27a892}
 .mkt-bar-negative{fill:#e64b4b}
 .lite-chart-panel .panel-hdr{cursor:pointer;user-select:none}
-.lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.lite-chart-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px}
 .lite-chart-panel:not(.collapsed) .lite-chart-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 .lite-chart-panel.collapsed .lite-chart-top-row>*:not(.panel-title),
 .lite-chart-panel.collapsed .lite-draw-toolbar{display:none!important}
 .lite-chart-panel.collapsed .lite-chart-frame{display:none!important}
 /* Cửa sổ CHART popout: ẩn hết dashboard, chỉ hiện panel CHART. Dùng html.chart-popout-mode
    (gắn ở <head>, không phải body) để có hiệu lực ngay lần vẽ đầu, không đợi JS cuối trang. */
-html.chart-popout-mode>body>header,
+html.chart-popout-mode,html.chart-popout-mode body{overflow:hidden!important}html.chart-popout-mode>body>header,
 html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
-html.chart-popout-mode #lite-chart-popout-btn{display:none}
+html.chart-popout-mode #lite-chart-popout-btn{display:none}html.chart-popout-mode .lite-chart-toggle-icon{transform:rotate(90deg)!important;color:var(--accent)!important}html.chart-popout-mode .lite-chart-panel .panel-hdr{cursor:default!important}
 /* HTML gốc panel CHART luôn có sẵn class .collapsed (JS mới gỡ ra để mở) — vô hiệu hoá 2 rule
    ẩn của .collapsed ngay khi html.chart-popout-mode có mặt để panel luôn hiện mở sẵn, khỏi nháy
    thu/mở khi JS/mạng chậm. Dùng display:flex (không dùng revert) vì các con trực tiếp của
@@ -2796,7 +2796,7 @@ html.chart-popout-mode .lite-chart-frame{
   }
 }
 .hmap-panel-hdr{cursor:pointer;user-select:none}
-.hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.hmap-toggle-icon{font-size:12px;color:var(--muted);transition:transform .15s;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px}
 .hmap-panel:not(.collapsed) .hmap-toggle-icon{transform:rotate(90deg);color:var(--accent)}
 /* Đồng bộ với .tri-panel.collapsed / .lite-chart-panel.collapsed ở trên & dưới: mọi rule ẩn khi
    thu gọn đều dùng !important để không bị @media max-width:768px ghi đè (xem giải thích ở khối
@@ -2889,7 +2889,7 @@ html.chart-popout-mode .lite-chart-frame{
 .lg-ghdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .lg-add-btn{width:16px;height:16px;line-height:14px;text-align:center;padding:0;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--accent);font-size:12px;font-weight:800;cursor:pointer}
 .lg-add-btn:hover{background:#eef3ff;border-color:var(--accent)}
-.lg-caret{font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.lg-caret{font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px}
 .lg-group.open .lg-caret{transform:rotate(90deg)}
 .lg-symlist{display:flex;flex-direction:column}
 .lg-sym-item{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;border-top:1px solid #f1f5f9}
@@ -3010,7 +3010,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 /* ═══════════════════════════════════════════
    MOBILE CHUNG (PORTRAIT + LANDSCAPE)
    ═══════════════════════════════════════════ */
-@media (max-width:768px), screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape){
+@media (max-width:768px) and (hover:none), screen and (orientation:landscape) and (max-height:550px) and (hover:none), screen and (max-width:1024px) and (orientation:landscape) and (hover:none){
   .lite-chart-toolbar{flex-direction:column;gap:4px}
   .lite-chart-top-row{width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .lite-chart-top-row::-webkit-scrollbar{display:none}
@@ -3142,9 +3142,9 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 @media screen and (orientation:landscape) and (max-height:550px), screen and (max-width:1024px) and (orientation:landscape){
   .pbox{width:100vw!important;height:100dvh!important;border-radius:0!important;border:none!important;animation:none!important}
   .lite-chart-frame{height:auto!important;max-height:none!important;min-height:280px!important}
-  html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
+  @media (hover:none){html.chart-popout-mode #lite-chart-panel{height:auto!important;min-height:calc(100dvh - 16px)!important}}html.chart-popout-mode #main-wrap{padding:8px 15px 8px 8px!important}
   .health-layout{grid-template-columns:1fr 1fr}
-  html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
+  @media (hover:none){html.chart-popout-mode,html.chart-popout-mode body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:none!important;-ms-overflow-style:none!important}html.chart-popout-mode::-webkit-scrollbar,html.chart-popout-mode body::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}}
   .lite-ind-dropdown{
     position:absolute !important;
     top:calc(100% + 4px) !important;
@@ -3374,7 +3374,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 
 <div class="wrap" id="main-wrap">
   <!-- INDICES (Mini Charts) -->
-  <div class="panel indices-panel">
+  <div class="panel indices-panel" style="display:none">
     <div class="panel-body">
       <div class="sig-list" id="indices-grid"></div>
     </div>
@@ -8196,9 +8196,9 @@ function drawIndexChart(data, idKey){
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${defs}<path d="${vPath}" fill="#7cb5ec" opacity="0.4"/>${refLine}<path d="${pPath}" fill="none" stroke="url(#grad-${idKey})" stroke-width="1.2"/></svg>`;
 }
 function renderIndices(res){
-  const grid=$('indices-grid'); if(!grid||!res||!res.value)return;
+  const grid=$('indices-grid'), panel=grid?.closest('.indices-panel'); if(!grid||!res||!res.value){if(panel)panel.style.display='none';return;}
   const maps=[{n:'VNINDEX',k:'VNINDEX'},{n:'VN30',k:'VN30'},{n:'HNX',k:'HNX'},{n:'UPCOM',k:'UPCOM'}];
-  grid.innerHTML=maps.map(m=>{
+  const html=maps.map(m=>{
     const data=res.value[m.k]; if(!data||!data.closes||!data.closes.length)return'';
     const score=data.score, ref=data.ref, change=score-ref, pct=(change/ref)*100, sign=change>0?'+':'', color=change>0?'#0e9f6e':(change<0?'#e02424':'#e1b12c');
     const isClk = (m.k==='VNINDEX' || m.k==='VN30');
@@ -8207,6 +8207,8 @@ function renderIndices(res){
     const oDbl = isClk ? `ondblclick="if(_hmapClickTimer)clearTimeout(_hmapClickTimer);_jumpLiteChart('${m.k}');openChart('${m.k}')"` : '';
     return `<div class="index-card" style="${cStr}" ${oClk} ${oDbl}><div class="idx-row"><span class="idx-name">${m.n}</span><span class="idx-val">${(data.totalValue||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}&nbsp;T</span></div><div class="idx-row" style="margin-top:2px"><span class="idx-score" style="color:${color}">${score.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="idx-change" style="color:${color}">${sign}${change.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} (${sign}${pct.toFixed(2)}%)</span></div><div class="idx-chart-box">${drawIndexChart(data, m.k)}</div></div>`;
   }).join('');
+  grid.innerHTML=html;
+  if(panel)panel.style.display=(res.value?.VNINDEX?.closes?.length)?'':'none';
 }
 async function loadMktLiquidityImpact() {
   try {
@@ -8571,8 +8573,8 @@ DOM.hmapToggle.addEventListener('click',e=>{
   DOM.hmapPanel.classList.toggle('collapsed');
 });
 DOM.liteChartToggle.addEventListener('click',e=>{
-  // Control trong thanh công cụ vẫn bấm bình thường khi thẻ mở. #lite-fav-btn (nút ⭐)
-  // phải nằm trong danh sách loại trừ — thiếu nó sẽ bị hiểu nhầm thành bấm header, tự thu gọn thẻ.
+  if(_isChartPopoutWindow)return;
+  // Control trong thanh công cụ vẫn bấm bình thường khi thẻ mở (#lite-fav-btn phải nằm trong loại trừ).
   if(e.target.closest('.lite-chart-search-wrap,.lite-tf-tabs,.lite-indicators,.lite-draw-toolbar,#lite-fav-btn,#lite-groups-toggle-btn,#lite-vietstock-toggle-btn,#lite-fireant-toggle-btn,.panel-title'))return;
   const collapsed=DOM.liteChartPanel.classList.toggle('collapsed');
   _isChartPanelOpen=!collapsed;
@@ -9151,7 +9153,7 @@ function _updateSymDisplay(sym){
 }
 function _openPopup(){
   DOM.overlay.classList.add('on');
-  document.body.style.overflow='hidden';
+  document.body.style.overflow='hidden';document.documentElement.style.overflow='hidden';
   DOM.edgeZone.classList.add('on');
   // Portrait: show float close
   if(IS_MOBILE()&&!IS_LANDSCAPE())
@@ -9176,7 +9178,7 @@ function closePopup(){
   TABS_ALL.forEach(t=>{const f=$('iframe-'+t);if(f)f.src='about:blank';});
   pbox.style.animation='none';
   DOM.overlay.classList.remove('on');
-  document.body.style.overflow='';
+  document.body.style.overflow='';document.documentElement.style.overflow='';
   DOM.edgeZone.classList.remove('on');
   DOM.mobClose.style.display='none';
   requestAnimationFrame(()=>{pbox.style.visibility='';pbox.style.animation='';});
@@ -9669,7 +9671,7 @@ _chartSyncChannel?.addEventListener('message',_onPopoutSyncMessage);
   _liteLSSet('chart_popout_open','1');
   window.addEventListener('beforeunload',()=>{_liteLSSet('chart_popout_open','0');});
   document.documentElement.classList.add('chart-popout-mode');
-  DOM.liteChartPanel.classList.remove('collapsed');
+  DOM.liteChartPanel.classList.remove('collapsed');_isChartPanelOpen=true;
   if(!DOM.liteFireantIframe.src||DOM.liteFireantIframe.src==='about:blank')DOM.liteFireantIframe.src='https://fireant.vn/charts';
   const qsym=(new URLSearchParams(window.location.search).get('sym')||'').trim();
   if(qsym){_liteSymbol=qsym.toUpperCase();}
