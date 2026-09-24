@@ -4659,8 +4659,11 @@ function updateLiteTitle(bar){
 async function _liteLoadCompareSeries(){
   if(!_liteChart||!_liteChecked('compare')||!_liteData.length)return;
   try{
-    const sym=_liteCompareSym||'VNINDEX',r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(_liteTf||'1D')+'&limit='+Math.max(300,_liteData.length));
-    if(!r.ok)return; const j=await r.json(); if(!_liteChecked('compare')||!j.candles?.length)return; const m=new Map();j.candles.forEach(c=>m.set(liteTimeKey(c.time),c.close));let lv=null;
+    const sym=_liteCompareSym||'VNINDEX',tf=_liteTf||'1D',mb=_marketBundle||(window.parent!==window?window.parent?._marketBundle:null);
+    let raw=mb&&mb[sym]&&tf==='1D'&&mb[sym].candles?.length?[...mb[sym].candles]:null;
+    if(raw){const le=_getLiveEntry(sym);if(le?.price&&raw.length){const d=new Date(),ts=le.date||(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')),lIdx=raw.length-1,rL=raw[lIdx],lTime=Array.isArray(rL)?rL[0]:rL.time;if(lTime&&String(lTime).startsWith(ts)){const last=Array.isArray(rL)?[...rL]:{...rL};if(Array.isArray(last))last[4]=le.price;else last.close=le.price;raw[lIdx]=last;}}}
+    else{const r=await fetch('/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit='+Math.max(300,_liteData.length));if(!r.ok)return;const j=await r.json();raw=j.candles;}
+    if(!_liteChecked('compare')||!raw?.length)return; const m=new Map();raw.forEach(c=>m.set(liteTimeKey(Array.isArray(c)?c[0]:c.time),Array.isArray(c)?c[4]:c.close));let lv=null;
     _liteCompareData=_liteData.map(b=>{const k=liteTimeKey(b.time);if(m.has(k))lv=m.get(k);return lv!=null?{time:b.time,value:lv}:null}).filter(Boolean);
     if(!_liteCompareSeries){_liteCompareSeries=_liteChart.addLineSeries({priceScaleId:'compare',color:_liteIndColors.compare||'#f59b00',lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true});_liteChart.priceScale('compare').applyOptions({visible:false,scaleMargins:{top:0.08,bottom:0.18}});}
     const rng=_liteGetVisibleLogicalRange();_liteCompareSeries.setData(_liteCompareData);_liteUpdateCompareBadge();if(rng)_liteApplyVisibleLogicalRange(rng);
