@@ -1299,13 +1299,13 @@ def api_quote_extra():
             with _extra_quote_lock:
                 for s, v in fresh.items():
                     if isinstance(v, dict) and "price" in v and "pct" in v:
-                        _extra_quote_cache[s] = {"price": v["price"], "pct": v["pct"], "ts": now}
+                        _extra_quote_cache[s] = {**v, "ts": now}
         except Exception as e:
             print(f"  [Dashboard] ❌ Fetch quote_extra lỗi: {e}")
 
     with _extra_quote_lock:
         data = {
-            s: {"price": _extra_quote_cache[s]["price"], "pct": _extra_quote_cache[s]["pct"]}
+            s: {k: val for k, val in _extra_quote_cache[s].items() if k != "ts"}
             for s in syms if s in _extra_quote_cache
         }
     return jsonify({"data": _json_safe(data)})
@@ -2560,8 +2560,6 @@ header h1{
 .journal-overlay.on{display:flex}
 .journal-box{width:min(1500px,98vw);height:92vh;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.18);display:flex;flex-direction:column;overflow:hidden}
 .journal-frame{width:100%;height:100%;border:none;display:block;flex:1}
-.pbar-wrap{height:2px;overflow:hidden}
-.pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));opacity:.5}
 .panel-body{padding:12px 14px}
 footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-top:1px solid var(--border);background:var(--surface)}
 
@@ -2731,15 +2729,10 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .mkt-chart-area{position:relative;height:270px}
 .mkt-svg{width:100%;height:100%;display:block;overflow:visible}
 .mkt-grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:4 5;stroke-opacity:.35}
-.mkt-axis-label{fill:var(--muted);font-size:11px;font-weight:700}
 .mkt-x-label{fill:var(--muted);font-size:10px;font-weight:600}
 .mkt-legend{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:2px;color:var(--muted);font-size:11px;flex-wrap:wrap}
 .mkt-legend-item{display:inline-flex;align-items:center;gap:5px}
 .mkt-swatch{display:inline-block;width:12px;height:3px;border-radius:2px}
-.mkt-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
-.mkt-tile{border:1px solid var(--border);border-radius:7px;padding:8px 10px;background:var(--surf2);min-height:52px}
-.mkt-tile span{display:block;color:var(--muted);font-size:11px;font-weight:700;margin-bottom:4px}
-.mkt-tile strong{display:block;font-size:16px;line-height:20px;color:var(--text)}
 .mkt-error{display:none;margin-top:8px;border:1px solid #efc5c5;background:#fff5f5;color:#9b2424;border-radius:6px;padding:8px 10px;font-size:12px}
 .mkt-tooltip{position:fixed;z-index:50;display:none;min-width:150px;padding:8px 10px;background:rgba(17,24,39,.94);color:#fff;border-radius:6px;font-size:11px;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .mkt-tooltip strong{display:block;margin-bottom:4px}
@@ -2805,8 +2798,6 @@ html.chart-popout-mode .lite-chart-frame{
 .hmap-panel.collapsed .hmap-ts-wrap{display:none!important}
 .hmap-panel.collapsed .hmap-toggle-icon{margin-left:auto}
 .hmap-panel.collapsed>.panel-body{display:none!important}
-.frame-shrink{width:100%;height:720px;overflow:hidden;position:relative;background:#fff}
-.frame-shrink iframe{position:absolute;top:0;left:0;width:125%;height:125%;border:none;background:#fff;transform:scale(.8);transform-origin:0 0}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
 #lite-chart{width:100%;height:540px}
@@ -3091,14 +3082,12 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
   .health-score{font-size:36px}
   .mkt-panel{margin:0 10px;padding:12px 12px 10px}
     .mkt-chart-area{height:220px}
-  .mkt-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   .treemap-wrap{
     width:100% !important;
     margin-left:0 !important;
     aspect-ratio:16/9;
     height:auto;
   }
-  .frame-shrink{height:70vh}
 
   /* Panel CHART trên mobile/iPhone: toolbar cuộn ngang mượt (-webkit-overflow-scrolling:touch),
      input font-size 16px để iOS không tự zoom, hỗ trợ safe-area cho notch/Home bar. Dropdown
@@ -3388,7 +3377,6 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       </div>
       <span class="panel-meta" id="sig-meta">Đang tải...</span>
     </div>
-    <div class="pbar-wrap"><div class="pbar-fill" id="pbar-sig"></div></div>
     <div class="panel-body">
       <div class="sig-list" id="sig-list">
         <div class="empty"><div class="big">📡</div><div>Đang tải...</div></div>
@@ -3417,7 +3405,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
           <span class="s-icon">🔍</span>
           <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
-        <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;line-height:1" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span id="hmap-status" style="font-size:10px;line-height:1;display:inline-flex;align-items:center"></span>
+        <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;display:inline-flex;align-items:center;transform:translateY(1.5px)" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span id="hmap-status" style="font-size:10px;display:inline-flex;align-items:center;transform:translateY(1.5px)"></span>
       </div>
       <div class="panel-meta hmap-ts-wrap"><span id="hmap-ts">Đang tải...</span></div>
       <span class="hmap-toggle-icon">▶</span>
@@ -3818,15 +3806,12 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
         </div>
         </div>
         </div>
-
-      </div>
       <div class="tri-content" id="tri-content-treemap">
         <button class="lite-draw-btn treemap-copy-btn" id="treemap-copy-btn" title="Sao chép ảnh Treemap vào clipboard" aria-label="Sao chép ảnh Treemap vào clipboard"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h8.8L18 7h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <div class="treemap-wrap" id="treemap-wrap"><svg class="treemap-svg" id="treemap-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
     </div>
   </div>
-</div>
 
 
 <!-- TRADE JOURNAL -->
@@ -3981,7 +3966,7 @@ const DOM={
   liteAlertChatWrap:$('lite-alert-chat-wrap'),liteAlertAfter:$('lite-alert-after'),
   liteAlertSave:$('lite-alert-save'),liteAlertTest:$('lite-alert-test'),
   liteAlertSeen:$('lite-alert-seen'),liteAlertList:$('lite-alert-list'),alertToastWrap:$('alert-toast-wrap'),
-  pbarSig:$('pbar-sig'),healthCopyBtn:$('health-copy-btn'),
+  healthCopyBtn:$('health-copy-btn'),
   journalOverlay:$('journal-overlay'),journalFrame:$('journal-frame'),
   overlay:$('overlay'),pbox:$('pbox'),
   ptitle:$('ptitle'),popupSearch:$('popup-search'),popupCtabs:$('popup-ctabs'),
@@ -6942,7 +6927,8 @@ async function _liteQuietRefreshChart(){
     const liveEntry=_getLiveEntry(sym);
     if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
       const last=_liteData[_liteData.length-1];
-      if(liveEntry.date&&liteTimeKey(last.time).startsWith(liveEntry.date)){
+      const d=new Date(),ts=liveEntry.date||(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+      if(ts&&liteTimeKey(last.time).startsWith(ts)){
         last.close=liveEntry.price;
         if(liveEntry.open)last.open=liveEntry.open;
         if(liveEntry.high)last.high=Math.max(last.high,liveEntry.price);
@@ -7313,8 +7299,6 @@ let _suppressFlashUntil=0,_hmapFlashEnabled=localStorage.getItem('hmap_flash_ena
 function _patchHeatmapCell(sym,price,pct,totalVal,prevPrice){
   const old=window._lastHmapData?.[sym];
   const oldPrice=typeof prevPrice==='number'?prevPrice:(typeof old?.price==='number'?old.price:0);
-  window._lastHmapData=window._lastHmapData||{};
-  window._lastHmapData[sym]={price,pct,total_value:totalVal>0?totalVal:(old?.total_value||0)};
   const sign=pct>=0?'+':'',style=cellStyle(pct),hasChanged=oldPrice>0&&price>0&&price!==oldPrice,isChanged=hasChanged&&_hmapFlashEnabled&&Date.now()>_suppressFlashUntil,isUp=price>oldPrice;
 
   document.querySelectorAll(`.hmap-cell[data-sym="${sym}"]`).forEach(cell=>{
@@ -7381,6 +7365,7 @@ function renderHeatmap(d){
     if(oldP>0&&it.price>0&&it.price!==oldP)changed.push({s,it,oldP});
     else unchanged.push({s,it,oldP:oldP||0});
   });
+  window._lastHmapData=Object.assign({},window._lastHmapData,d);
   unchanged.forEach(({s,it,oldP})=>{_patchHeatmapCell(s,it.price||0,it.pct||0,it.total_value||0,oldP);});
   if(changed.length){
     const maxDelay=Math.max(600,(HMAP_TTL-1.2)*1000);
@@ -8757,11 +8742,6 @@ async function fetchHmap(retryCount=0){
     }
   }
 }
-function startBar(elOrId,sec){
-  const el=typeof elOrId==='string'?$(elOrId):elOrId;if(!el)return;
-  el.style.transition='none';el.style.width='0%';
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition=`width ${sec}s linear`;el.style.width='100%';}));
-}
 // PRICE ALERTS
 function _esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function alertReq(path,opts={}){
@@ -9737,9 +9717,8 @@ async function init(){
   await _loadMarketBundle();
   loadLiteChart(_liteSymbol);
   await loadConfig();
-  startBar(DOM.pbarSig,SIG_TTL);
   await Promise.all([fetchSigs(),fetchHmap(),fetchHealth(),loadAlerts(),pollAlertFeed(false)]);
-  setInterval(async()=>{startBar(DOM.pbarSig,SIG_TTL);await fetchSigs();},SIG_TTL*1000);
+  setInterval(fetchSigs,SIG_TTL*1000);
   setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
