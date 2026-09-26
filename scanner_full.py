@@ -1314,7 +1314,7 @@ def load_history_for_symbol(symbol: str):
     time.sleep(0.08)
     for attempt in range(3):
         try:
-            df = _fetch_history_candles(symbol, limit=1000)
+            df = _fetch_history_candles(symbol, limit=5000)
             if df is None or len(df) < 60: return None
             df['vpa_flag'] = calc_vpa_flag(df)
             return df
@@ -1620,7 +1620,7 @@ def _date_str_from_df(df: pd.DataFrame) -> str:
 def fetch_index_history(symbol: str) -> pd.DataFrame | None:
     for attempt in range(3):
         try:
-            df_raw = _fetch_history_candles(symbol, limit=1000)
+            df_raw = _fetch_history_candles(symbol, limit=5000)
             if df_raw is None or df_raw.empty: return None
             df_raw = df_raw.dropna(subset=['close'])
             if len(df_raw) < 10: return None
@@ -1653,7 +1653,7 @@ def fetch_fresh_for_chart(symbol: str, current_date: date) -> pd.DataFrame | Non
     """Fetch dữ liệu tươi từ server (không qua cache)."""
     for attempt in range(3):
         try:
-            df_raw = _fetch_history_candles(symbol, limit=1000)
+            df_raw = _fetch_history_candles(symbol, limit=5000)
             if df_raw is None or len(df_raw) < 60: return None
 
             today_rows = df_raw[df_raw.index.date == current_date]
