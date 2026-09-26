@@ -1,8 +1,0 @@
-pandas
-requests
-mplfinance
-pytz
-numpy
-matplotlib
-pillow
-flask
