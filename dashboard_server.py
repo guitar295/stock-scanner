@@ -1458,7 +1458,7 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
             except Exception:
                 raw_bars = None
 
-        if not raw_bars:
+        if not raw_bars or (before_date and len(raw_bars) < 50):
             raw_bars = _fetch_candle_raw_daily(symbol, from_ts, to_ts)
             
             # --- TỐI ƯU (LAZY CACHING): Lưu mã lẻ vào history_cache để tránh spam DStock mỗi 5s ---
@@ -7014,11 +7014,11 @@ async function _liteFetchMoreHistory(){
     const rawNew=j.candles;
     rawNew.forEach((b,i)=>{b.pct=i>0?((b.close-rawNew[i-1].close)/rawNew[i-1].close*100):0;});
     const prevLen=_liteData.length,cMap=new Map();
-    [...rawNew,..._liteData].forEach(b=>{if(b&&b.time)cMap.set(liteTimeKey(b.time),b);});
+    [...rawNew,..._liteData].forEach(b=>{if(b&&b.time)cMap.set(tf==='1M'?liteTimeKey(b.time).substring(0,7):liteTimeKey(b.time),b);});
     _liteData=Array.from(cMap.values()).sort((a,b)=>liteTimeKey(a.time).localeCompare(liteTimeKey(b.time)));
-    _liteDataByTime=cMap;
+    _liteDataByTime=new Map(_liteData.map(b=>[liteTimeKey(b.time),b]));
     const vMap=new Map();
-    [...(j.volume||[]),..._liteVolumeData].forEach(v=>{if(v&&v.time)vMap.set(liteTimeKey(v.time),v);});
+    [...(j.volume||[]),..._liteVolumeData].forEach(v=>{if(v&&v.time)vMap.set(tf==='1M'?liteTimeKey(v.time).substring(0,7):liteTimeKey(v.time),v);});
     _liteVolumeData=Array.from(vMap.values()).sort((a,b)=>liteTimeKey(a.time).localeCompare(liteTimeKey(b.time)));
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=Array.from(new Set([...j.history_signals,..._liteHistorySignals]));
     _liteOldestDate=_liteData.length?liteTimeKey(_liteData[0].time):null;
