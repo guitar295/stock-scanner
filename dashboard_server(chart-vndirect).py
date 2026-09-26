@@ -1423,14 +1423,14 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
         to_ts = int(datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=TZ_VN).timestamp()) + 86400
 
     if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
-        fetch_limit = limit * 7 + 60; from_ts = to_ts - fetch_limit * 86400
+        fetch_limit = limit * 7 + 60; from_ts = max(0, to_ts - fetch_limit * 86400)
         target_tf = "1W"
     elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
-        fetch_limit = limit * 31 + 90; from_ts = to_ts - fetch_limit * 86400
+        fetch_limit = limit * 31 + 90; from_ts = max(0, to_ts - fetch_limit * 86400)
         target_tf = "1M"
     else:
         fetch_limit = max(150, limit)
-        from_ts = to_ts - int(fetch_limit * 1.6 + 30) * 86400
+        from_ts = max(0, to_ts - int(fetch_limit * 1.6 + 30) * 86400)
         target_tf = "1D"
 
     try:
