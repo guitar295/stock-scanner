@@ -565,14 +565,14 @@ def send_telegram_signal(msg, image_paths=None, image_path=None, notify_text=Non
 # =============================================================================
 # BƯỚC 4: DANH SÁCH MÃ QUÉT
 # =============================================================================
-vn30_symbols = [
-    'AAA','ACB','ANV','BFC','BID','BSR','BVH','BWE','CII','CRE','CTD','CTG','CTI','CTR','CTS',
-    'DBC','DCM','DGW','DIG','DPG','DPM','DXG','FCN','FPT','FRT','FTS','GAS','GEG','GEX','GMD',
-    'GVR','HAG','HAX','HBC','HCM','HDB','HDC','HDG','HNG','HPG','HSG','HTN','IDC','IJC','KBC',
-    'KDH','KSB','LPB','MBB','MBS','MSB','MSN','MWG','NKG','NLG','NTL','NVL','PC1','PET','PLC',
-    'PLX','PNJ','POW','PVD','PVS','PVT','REE','SBT','SCR','SHB','SHS','SSI','STB','SZC','TCB',
-    'TIG','TNG','TPB','VCB','VCI','VGT','VHC','VHM','VIB','VIC','VJC','VNM','VPB','VRE',
-    'MIG','HAH','HHV','BSI','C4G','G36','OIL','VGC','VND','BAF','ORS'
+SIGNAL_SCAN_SYMBOLS = [
+    'AAA', 'ACB', 'ANV', 'BAF', 'BFC', 'BID', 'BSI', 'BSR', 'BVH', 'BWE', 'C4G', 'CII', 'CRE', 'CTD', 'CTG',
+    'CTI', 'CTR', 'CTS', 'DBC', 'DCM', 'DGW', 'DIG', 'DPG', 'DPM', 'DXG', 'FCN', 'FPT', 'FRT', 'FTS', 'G36',
+    'GAS', 'GEG', 'GEX', 'GMD', 'GVR', 'HAG', 'HAH', 'HAX', 'HBC', 'HCM', 'HDB', 'HDC', 'HDG', 'HHV', 'HNG',
+    'HPG', 'HSG', 'HTN', 'IDC', 'IJC', 'KBC', 'KDH', 'KSB', 'LPB', 'MBB', 'MBS', 'MIG', 'MSB', 'MSN', 'MWG',
+    'NKG', 'NLG', 'NTL', 'NVL', 'OIL', 'ORS', 'PC1', 'PET', 'PLC', 'PLX', 'PNJ', 'POW', 'PVD', 'PVS', 'PVT',
+    'REE', 'SBT', 'SCR', 'SHB', 'SHS', 'SSI', 'STB', 'SZC', 'TCB', 'TIG', 'TNG', 'TPB', 'VCB', 'VCI', 'VGC',
+    'VGT', 'VHC', 'VHM', 'VIB', 'VIC', 'VJC', 'VND', 'VNM', 'VPB', 'VRE',
 ]
 heatmap_symbols = {
     s
@@ -580,9 +580,9 @@ heatmap_symbols = {
     for group in col["groups"]
     for s in group["syms"]
 }
-cache_symbol_set = set(vn30_symbols) | set(TS_POOL_CONFIG) | heatmap_symbols
-_HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(vn30_symbols))
-symbols_to_scan = list(dict.fromkeys(vn30_symbols))
+cache_symbol_set = set(SIGNAL_SCAN_SYMBOLS) | set(TS_POOL_CONFIG) | heatmap_symbols
+_HEATMAP_NEED_SYMBOLS = list(set(_HEATMAP_NEED_SYMBOLS) | set(SIGNAL_SCAN_SYMBOLS))
+symbols_to_scan = list(dict.fromkeys(SIGNAL_SCAN_SYMBOLS))
 symbols_to_rs = list(dict.fromkeys(cache_symbol_set))
 symbols_to_cache = list(dict.fromkeys(symbols_to_rs + ["VNINDEX", "VN30"]))
 
