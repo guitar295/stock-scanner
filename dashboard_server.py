@@ -7004,7 +7004,7 @@ async function _liteFetchMoreHistory(){
   const sym=_liteSymbol,tf=_liteTf,oldestDate=_liteOldestDate;
   _liteLoadingMore=true;
   try{
-    const url='/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=600&before='+encodeURIComponent(oldestDate);
+    const url='/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=800&before='+encodeURIComponent(oldestDate);
     const r=await fetch(url);
     if(!r.ok){return;}
     const j=await r.json();
