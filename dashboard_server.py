@@ -1399,7 +1399,7 @@ def _default_calc_signals(df):
 
 _calc_signals_fn = None
 
-def fetch_chart_candles(symbol, tf="1D", limit=450, before_date=None):
+def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
     - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
@@ -1672,9 +1672,9 @@ def api_lightweight_chart(symbol):
     before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 600) or 600)
+        limit = int(request.args.get("limit", 800) or 800)
     except (TypeError, ValueError):
-        limit = 600
+        limit = 800
     limit = max(5, min(1000, limit))
 
     if before_date:
@@ -2500,7 +2500,7 @@ try{
   if(_pfSym){
     window.__liteChartPrefetch={
       sym:_pfSym,tf:'1D',
-      promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=450')
+      promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=800')
     };
   }
 }catch(e){}
@@ -6892,7 +6892,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     const _pf=window.__liteChartPrefetch;
     const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
       ?(window.__liteChartPrefetch=null,await _pf.promise)
-      :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
+      :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=800');
     if(!r.ok)throw new Error('data_unavailable');
     if(reqId!==_liteReqId)return;
     const j=await r.json();

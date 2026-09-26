@@ -3069,7 +3069,7 @@ def export_market_bundle(cache, lock, out_path=MARKET_BUNDLE_FILE):
         for sym, df in sym_items:
             if df is None or len(df) < 5:
                 continue
-            sub_df = df.tail(450)
+            sub_df = df.tail(800)
             bars_1d, vols_1d = _format_df_bars_vols(sub_df)
 
             _, hist_sigs = calc_signals_for_df(sub_df)
