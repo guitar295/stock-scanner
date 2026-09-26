@@ -591,7 +591,7 @@ HMAP_COLS_CONFIG = [
     {"groups": [{"name": "ĐẦU TƯ CÔNG", "syms": ["FCN", "HHV", "LCG", "VCG", "C4G", "CTD", "HBC", "HSG", "NKG", "HPG", "KSB", "PLC"]}]},
 ]
 
-TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BFC", "BID", "BMI", "BSR", "BVB", "BVH", "BWE", "BAF", "CII", "CKG", "CRE", "CTD", "CTG", "CTI", "CTR", "CTS", "ORS", "D2D", "DBC", "DCM", "DSE", "DGW", "DIG", "DPG", "DPM", "DRC", "DRH", "DXG", "FCN", "FPT", "FRT", "FTS", "GAS", "GEG", "GEX", "GMD", "GVR", "HAG", "HAX", "HBC", "HCM", "HDB", "HDC", "VCK", "HDG", "HNG", "HPG", "HSG", "HTN", "HVN", "IDC", "IJC", "KBC", "KDH", "KSB", "LCG", "LDG", "LPB", "MBB", "MBS", "MSB", "MSN", "MWG", "NKG", "NLG", "NTL", "NVL", "PC1", "PDR", "PET", "PHR", "PLC", "PLX", "PNJ", "POW", "PTB", "PVD", "PVS", "PVT", "QNS", "REE", "SBT", "SCR", "SHB", "SHS", "SSI", "STB", "SZC", "TCB", "TDM", "TIG", "TNG", "TPB", "TV2", "VCB", "VCI", "VCS", "VGT", "VHC", "VHM", "VIB", "VIC", "VJC", "VNM", "VPB", "VRE"]
+TS_POOL_CONFIG = ["AAA", "ACB", "AGG", "ANV", "BAF", "BFC", "BID", "BMI", "BSI", "BSR", "BVB", "BVH", "BWE", "CEO", "CII", "CKG", "CRE", "CTD", "CTG", "CTI", "CTR", "CTS", "D2D", "DBC", "DCM", "DGW", "DIG", "DPG", "DPM", "DRC", "DRH", "DSE", "DXG", "FCN", "FPT", "FRT", "FTS", "GAS", "GEG", "GEX", "GMD", "GVR", "HAG", "HAH", "HAX", "HBC", "HCM", "HDB", "HDC", "HDG", "HHV", "HNG", "HPG", "HSG", "HTN", "HVN", "IDC", "IJC", "KBC", "KDH", "KSB", "LCG", "LDG", "LPB", "MBB", "MBS", "MIG", "MSB", "MSN", "MWG", "NKG", "NLG", "NTL", "NVL", "OIL", "ORS", "PC1", "PDR", "PET", "PHR", "PLC", "PLX", "PNJ", "POW", "PTB", "PVC", "PVD", "PVS", "PVT", "QNS", "REE", "SBT", "SCR", "SHB", "SHS", "SSI", "STB", "SZC", "TCB", "TDM", "TIG", "TNG", "TPB", "TV2", "VCB", "VCI", "VCK", "VCS", "VGT", "VHC", "VHM", "VIB", "VIC", "VJC", "VND", "VNM", "VPB", "VRE"]
 
 
 def _now_vn_iso():
@@ -1399,7 +1399,7 @@ def _default_calc_signals(df):
 
 _calc_signals_fn = None
 
-def fetch_chart_candles(symbol, tf="1D", limit=450, before_date=None):
+def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
     - limit: số nến tối đa muốn trả (default 400 ≈ 1.8 năm D — đủ 200 nến lùi cho MA200).
     - before_date: chuỗi 'YYYY-MM-DD' — nếu set, chỉ lấy bar CŨ HƠN date này
@@ -1423,10 +1423,10 @@ def fetch_chart_candles(symbol, tf="1D", limit=450, before_date=None):
         to_ts = int(datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=TZ_VN).timestamp()) + 86400
 
     if tf_upper in ("1W", "W", "WEEK", "WEEKLY"):
-        from_ts = to_ts - (limit * 7 + 60) * 86400
+        fetch_limit = limit * 7 + 60; from_ts = to_ts - fetch_limit * 86400
         target_tf = "1W"
     elif tf_upper in ("1M", "M", "MONTH", "MONTHLY"):
-        from_ts = to_ts - (limit * 31 + 90) * 86400
+        fetch_limit = limit * 31 + 90; from_ts = to_ts - fetch_limit * 86400
         target_tf = "1M"
     else:
         fetch_limit = max(150, limit)
@@ -1436,14 +1436,14 @@ def fetch_chart_candles(symbol, tf="1D", limit=450, before_date=None):
     try:
         raw_bars = None
         df_cached = None
-        if not before_date and target_tf == "1D" and _get_history_cache:
+        if _get_history_cache:
             try:
                 with _cache_lock:
                     cache_dict = _get_history_cache() if callable(_get_history_cache) else _get_history_cache
                     df_c = cache_dict.get(symbol) if isinstance(cache_dict, dict) else None
                 if df_c is not None and len(df_c) >= 60:
-                    df_cached = df_c
-                    df_sub = df_cached.tail(limit)
+                    df_cached = df_c; fl = limit if target_tf == "1D" else fetch_limit
+                    df_sub = df_cached[df_cached.index < pd.to_datetime(before_date)].tail(fl) if before_date else df_cached.tail(fl)
                     raw_bars = []
                     for row in df_sub.itertuples():
                         idx_dt = row.Index
@@ -1672,9 +1672,9 @@ def api_lightweight_chart(symbol):
     before_date = (request.args.get("before") or "").strip() or None
 
     try:
-        limit = int(request.args.get("limit", 450) or 450)
+        limit = int(request.args.get("limit", 800) or 800)
     except (TypeError, ValueError):
-        limit = 450
+        limit = 800
     limit = max(5, min(1000, limit))
 
     if before_date:
@@ -2500,7 +2500,7 @@ try{
   if(_pfSym){
     window.__liteChartPrefetch={
       sym:_pfSym,tf:'1D',
-      promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=450')
+      promise:fetch('/api/lightweight_chart/'+encodeURIComponent(_pfSym)+'?tf=1D&limit=800')
     };
   }
 }catch(e){}
@@ -2907,9 +2907,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 .lg-sym-item.lg-follow.on{background:#eaf1fd}
 .lg-sym-item.lg-follow+.lg-sym-item:not(.lg-follow){border-top:1px solid var(--border)}
 .lite-rect-tooltip{position:absolute;z-index:8;display:none;padding:3px 8px;border-radius:5px;font-family:var(--font-mono);font-size:11px;font-weight:700;background:rgba(255,255,255,.94);border:1px solid var(--border);box-shadow:0 2px 8px rgba(17,24,39,.16);pointer-events:none;white-space:nowrap;transform:translate(8px,-100%)}
-.lite-xhair-v{position:absolute;top:0;bottom:0;left:0;width:0;border-left:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
-.lite-xhair-h{position:absolute;left:0;right:0;top:0;height:0;border-top:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
-.lite-xhair-price{position:absolute;right:1px;top:0;transform:translateY(-50%);min-width:54px;padding:2px 6px;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;text-align:center;white-space:nowrap}
+.lite-xhair-v{position:absolute;top:0;left:0;width:0;border-left:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
+.lite-xhair-h{position:absolute;left:0;top:0;height:0;border-top:1px dashed rgba(55,65,81,.55);pointer-events:none;z-index:4;display:none}
+.lite-xhair-price{position:absolute;left:calc(100% - 84px);top:0;transform:translateY(-50%);width:50px;padding:2px 0 2px 11px;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Trebuchet MS',Roboto,Ubuntu,sans-serif;font-size:12px;font-weight:400;color:#fff;background:#1f2937;border-radius:0 3px 3px 0;pointer-events:none;z-index:5;display:none;text-align:left;white-space:nowrap}
+.lite-xhair-time{position:absolute;top:0;transform:translateX(-50%);min-width:68px;height:24px;line-height:24px;padding:0 6px;box-sizing:border-box;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:#1f2937;border-radius:3px;pointer-events:none;z-index:5;display:none;text-align:center;white-space:nowrap}
 .lite-draw-toolbar{display:flex;align-items:center;gap:3px;flex-wrap:wrap;padding-left:6px;border-left:1px solid var(--border)}
 .lite-draw-btn{width:24px;height:24px;border:1px solid transparent;border-radius:6px;background:transparent;color:#374151;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lite-draw-btn:hover{background:#f1f5f9}
@@ -4324,7 +4325,7 @@ function _liteApplyChartSizes(){
   if(_liteMacdChart&&DOM.liteMacdChart)_liteMacdChart.applyOptions({width:DOM.liteMacdChart.clientWidth,height:DOM.liteMacdChart.clientHeight});
 }
 function initLiteChart(){
-  if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;
+  if(_liteChart||!DOM.liteChart||!window.LightweightCharts)return;if(!window.__liteM){window.__liteM=1;const _m=CanvasRenderingContext2D.prototype.measureText;CanvasRenderingContext2D.prototype.measureText=function(t){return(typeof t==='string'&&/^[-+]?[\d,]+\.\d{2}$/.test(t))?_m.call(this,t.replace(/\d/g,'0')):_m.call(this,t);};}
   const chartOpts={
     layout:{background:{type:'solid',color:'#fff'},textColor:'#111827'},
     grid:{vertLines:{color:'#eef2f7'},horzLines:{color:'#eef2f7'}},
@@ -4387,17 +4388,17 @@ function initLiteChart(){
     if(DOM.liteXhairTime)DOM.liteXhairTime.style.display='none';
   }
   function _liteMoveXhair(x,y,priceTxt,timeTxt){
-    if(DOM.liteXhairV){DOM.liteXhairV.style.left=x+'px';DOM.liteXhairV.style.display='block';}
-    if(DOM.liteXhairH){DOM.liteXhairH.style.top=y+'px';DOM.liteXhairH.style.display='block';}
+    const pW=(_liteChart&&_liteChart.paneSize?_liteChart.paneSize().width:0)||(DOM.liteChart?DOM.liteChart.clientWidth-((_liteChart&&_liteChart.priceScale&&_liteChart.priceScale('right').width())||84):0);
+    const bEl=(DOM.liteMacdChart&&DOM.liteMacdChart.style.display!=='none')?DOM.liteMacdChart:((DOM.liteRsiChart&&DOM.liteRsiChart.style.display!=='none')?DOM.liteRsiChart:DOM.liteChart), bChart=(bEl===DOM.liteMacdChart)?_liteMacdChart:((bEl===DOM.liteRsiChart)?_liteRsiChart:_liteChart);
+    const bY=(bEl?bEl.offsetTop:0)+((bChart&&bChart.paneSize)?bChart.paneSize().height:(bEl?bEl.clientHeight-26:0));
+    if(DOM.liteXhairV){DOM.liteXhairV.style.left=x+'px';if(bY)DOM.liteXhairV.style.height=bY+'px';DOM.liteXhairV.style.display='block';}
+    if(DOM.liteXhairH){DOM.liteXhairH.style.top=y+'px';if(pW)DOM.liteXhairH.style.width=pW+'px';DOM.liteXhairH.style.display='block';}
     if(DOM.liteXhairPrice){
-      DOM.liteXhairPrice.style.top=y+'px';
-      DOM.liteXhairPrice.textContent=priceTxt;
-      DOM.liteXhairPrice.style.display=priceTxt?'block':'none';
-    }
+      if(!window._liteMCtx){window._liteMCtx=document.createElement('canvas').getContext('2d');window._liteMCtx.font="12px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";}
+      if(priceTxt){const l=priceTxt.length; if(window._xhL!==l){window._xhL=l; window._xhW=(Math.ceil(window._liteMCtx.measureText(priceTxt.replace(/\d/g,'0')).width)+16)+'px';} DOM.liteXhairPrice.style.width=window._xhW;}
+      if(pW)DOM.liteXhairPrice.style.left=pW+'px';DOM.liteXhairPrice.style.top=y+'px';DOM.liteXhairPrice.textContent=priceTxt;DOM.liteXhairPrice.style.display=priceTxt?'block':'none';}
     if(DOM.liteXhairTime){
-      DOM.liteXhairTime.style.left=x+'px';
-      DOM.liteXhairTime.textContent=timeTxt;
-      DOM.liteXhairTime.style.display=timeTxt?'block':'none';
+      DOM.liteXhairTime.style.left=x+'px';if(bY)DOM.liteXhairTime.style.top=(bY+1)+'px';DOM.liteXhairTime.textContent=timeTxt;DOM.liteXhairTime.style.display=timeTxt?'block':'none';
     }
   }
   function _liteCrosshairPriceTxt(series,localY){
@@ -4522,7 +4523,7 @@ function _liteTitleSegments(bar){
     {text:' C:',color:'#111827'},
     {text:fmtLiteNum(bar.close),color:col},
     {text:' (',color:'#111827'},
-    {text:`${sign}${pct.toFixed(2)}%`,color:col},
+    {text:Math.abs(pct)<0.005?'00.00%':`${sign}${pct.toFixed(2)}%`,color:col},
     {text:')',color:'#111827'}
   ];
   if(Number.isFinite(_liteRsScore))segments.push({text:' '+rsBadge(_liteRsScore),color:'__html',_rs:Math.round(_liteRsScore)});
@@ -4638,7 +4639,7 @@ function updateLiteTitle(bar){
   const col=(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0)?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   t.querySelector('.lct-sym').textContent=_liteSymbol; t.querySelector('.lct-tf').textContent=` [${tf}] `; t.querySelector('.lct-time').textContent=fmtLiteDate(bar.time);
   const upd=(cls,val)=>{const e=t.querySelector(cls); if(e){e.textContent=val; e.style.color=col;}};
-  upd('.lct-val-o',fmtLiteNum(bar.open)); upd('.lct-val-h',fmtLiteNum(bar.high)); upd('.lct-val-l',fmtLiteNum(bar.low)); upd('.lct-val-c',fmtLiteNum(bar.close)); upd('.lct-val-pct',`${pct>0?'+':''}${pct.toFixed(2)}%`);
+  upd('.lct-val-o',fmtLiteNum(bar.open)); upd('.lct-val-h',fmtLiteNum(bar.high)); upd('.lct-val-l',fmtLiteNum(bar.low)); upd('.lct-val-c',fmtLiteNum(bar.close)); upd('.lct-val-pct',Math.abs(pct)<0.005?'00.00%':`${pct>0?'+':''}${pct.toFixed(2)}%`);
   const rsEl=t.querySelector('.lct-val-rs'); if(rsEl) rsEl.innerHTML=Number.isFinite(_liteRsScore)?' '+rsBadge(_liteRsScore):'';
 }
 async function _liteLoadCompareSeries(){
@@ -6891,7 +6892,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     const _pf=window.__liteChartPrefetch;
     const r=(_pf&&_pf.sym===s&&_pf.tf===_liteTf)
       ?(window.__liteChartPrefetch=null,await _pf.promise)
-      :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=450');
+      :await fetch('/api/lightweight_chart/'+encodeURIComponent(s)+'?tf='+encodeURIComponent(_liteTf)+'&limit=800');
     if(!r.ok)throw new Error('data_unavailable');
     if(reqId!==_liteReqId)return;
     const j=await r.json();
@@ -7003,7 +7004,7 @@ async function _liteFetchMoreHistory(){
   const sym=_liteSymbol,tf=_liteTf,oldestDate=_liteOldestDate;
   _liteLoadingMore=true;
   try{
-    const url='/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=600&before='+encodeURIComponent(oldestDate);
+    const url='/api/lightweight_chart/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf)+'&limit=800&before='+encodeURIComponent(oldestDate);
     const r=await fetch(url);
     if(!r.ok){return;}
     const j=await r.json();
