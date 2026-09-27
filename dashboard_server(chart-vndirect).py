@@ -1430,7 +1430,7 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
         target_tf = "1M"
     else:
         fetch_limit = max(150, limit)
-        from_ts = max(0, to_ts - int(fetch_limit * 1.6 + 30) * 86400)
+        from_ts = max(0, to_ts - int((5000 if not before_date else fetch_limit) * 1.6 + 30) * 86400)
         target_tf = "1D"
 
     try:
@@ -1462,7 +1462,7 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
             raw_bars = _fetch_candle_raw_daily(symbol, from_ts, to_ts)
             
             # --- TỐI ƯU (LAZY CACHING): Lưu mã lẻ vào history_cache để tránh spam DStock mỗi 5s ---
-            if raw_bars and target_tf == "1D" and not before_date and _get_history_cache:
+            if raw_bars and not before_date and _get_history_cache:
                 try:
                     bars_for_df = []
                     for b in raw_bars:
@@ -2141,6 +2141,7 @@ def api_journal_delete_image(image_id):
 @app.route("/data/<path:filename>")
 def serve_data_static(filename):
     """Phục vụ trực tiếp các file JSON tĩnh từ scanner/data/trade-journal/ cho Cloudflare Pages & Dashboard."""
+    if filename == "market_bundle.json" and not hasattr(serve_data_static, "_mb"): setattr(serve_data_static, "_mb", print("  [Dashboard] ✅ Trình duyệt đã nạp MARKET_BUNDLE từ đĩa."))
     file_path = os.path.join(_DASHBOARD_DATA_DIR, filename)
     if not os.path.isfile(file_path):
         return jsonify({"error": "not_found"}), 404
