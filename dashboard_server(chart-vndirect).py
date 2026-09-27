@@ -1652,12 +1652,15 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
         volume.append({"time": t_val, "value": v, "color": color})
 
     has_more = before_date is not None and len(final_bars) >= 20
+    last_vol = final_bars[-1].get("volume") if final_bars else None
+    vf_data = _vol_forecast_fn(symbol, current_vol=last_vol) if (_vol_forecast_fn and not before_date and target_tf == "1D") else None
 
     payload = {
         "symbol": symbol,
         "timeframe": target_tf,
         "candles": candles,
         "volume": volume,
+        "vol_forecast": vf_data,
         "last_date": str(candles[-1]["time"]),
         "has_more": has_more,
         "signal": signal_info,
@@ -6988,8 +6991,8 @@ async function _liteQuietRefreshChart(){
       if(!_liteApplyVisibleLogicalRange(prevRangeBeforeUpdate))setLiteRightOffset();
     }
     if(!_liteHoverBar||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time))updateLiteTitle(_liteData[_liteData.length-1]);
+    if(j.vol_forecast){_liteVolForecast=j.vol_forecast;}else{_liteFetchVolForecast(sym);}
     updateLiteBigPrice(_liteData[_liteData.length-1]);_liteUpdateCompareLive();
-    _liteFetchVolForecast(sym);
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
     const sigLive=_getSig(sym)||j.signal||null;
     _liteCurrentSignal=sigLive&&sigLive.state!=='DEAD'?sigLive:null;
