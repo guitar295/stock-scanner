@@ -1430,7 +1430,7 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
         target_tf = "1M"
     else:
         fetch_limit = max(150, limit)
-        from_ts = max(0, to_ts - int(fetch_limit * 1.6 + 30) * 86400)
+        from_ts = max(0, to_ts - int((5000 if not before_date else fetch_limit) * 1.6 + 30) * 86400)
         target_tf = "1D"
 
     try:
@@ -1460,6 +1460,8 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
 
         if not raw_bars or (before_date and len(raw_bars) < 50):
             raw_bars = _fetch_candle_raw_daily(symbol, from_ts, to_ts)
+            action = f"LAZY LOAD (before={before_date})" if before_date else "MỞ CHART"
+            print(f"🌐 [CHART LOG] {symbol} ({target_tf}) | {action} ──> GỌI TRỰC TIẾP VNDIRECT ({len(raw_bars) if raw_bars else 0} nến)")
             
             # --- TỐI ƯU (LAZY CACHING): Lưu mã lẻ vào history_cache để tránh spam DStock mỗi 5s ---
             if raw_bars and target_tf == "1D" and not before_date and _get_history_cache:
@@ -1484,8 +1486,12 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
                             cache_dict = _get_history_cache() if callable(_get_history_cache) else _get_history_cache
                             if isinstance(cache_dict, dict):
                                 cache_dict[symbol] = df_new
+                    raw_bars = raw_bars[-limit:]
                 except Exception as e:
                     print(f"  [Dashboard] Lỗi Lazy Cache cho mã {symbol}: {e}")
+        else:
+            action = f"LAZY LOAD (before={before_date})" if before_date else "MỞ CHART"
+            print(f"📦 [CHART LOG] {symbol} ({target_tf}) | {action} ──> LẤY TỪ HISTORY_CACHE RAM ({len(raw_bars)} nến)")
     except Exception as exc:
         return None, str(exc)
     if not raw_bars:
