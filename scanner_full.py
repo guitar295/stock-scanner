@@ -2843,6 +2843,8 @@ def dashboard_vol_forecast_fn(symbol: str, current_vol: float = None):
         vol = float(current_vol) if (current_vol is not None and current_vol == current_vol) else float(today.get("volume", float("nan")))
         prev_vol = float(prev.get("volume", float("nan")))
         vma50 = float(sub["volume"].tail(50).mean())
+        c_val, p_val = float(today.get("close", 0.0)), float(prev.get("close", 0.0))
+        pct_val = round((c_val - p_val) / p_val * 100, 2) if p_val > 0 else 0.0
 
         ratio_prev = (vol / prev_vol) if (prev_vol > 0 and vol == vol) else None
         ratio_ma50 = (vol / vma50) if (vma50 > 0 and vol == vol) else None
@@ -2851,6 +2853,9 @@ def dashboard_vol_forecast_fn(symbol: str, current_vol: float = None):
             "symbol": symbol,
             "bar_date": bar_date,
             "progress": round(progress, 4),
+            "close": c_val,
+            "open": float(today.get("open", c_val)),
+            "pct": pct_val,
             "volume": vol if vol == vol else None,
             "prev_volume": prev_vol if prev_vol == prev_vol else None,
             "vma50": vma50 if vma50 == vma50 else None,

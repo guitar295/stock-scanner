@@ -1652,8 +1652,8 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
         volume.append({"time": t_val, "value": v, "color": color})
 
     has_more = before_date is not None and len(final_bars) >= 20
-    last_vol = final_bars[-1].get("volume") if final_bars else None
-    vf_data = _vol_forecast_fn(symbol, current_vol=last_vol) if (_vol_forecast_fn and not before_date and target_tf == "1D") else None
+    today_vol = (live_data.get("volume") if live_data else None) or (raw_bars[-1].get("volume") if raw_bars else None)
+    vf_data = _vol_forecast_fn(symbol, current_vol=today_vol) if (_vol_forecast_fn and not before_date) else None
 
     payload = {
         "symbol": symbol,
@@ -4551,6 +4551,7 @@ function updateLiteBigPrice(bar){
   if(!el)return;
   if(!bar||!_liteChecked('signalgrp_on')||!_liteChecked('bigprice')){el.classList.remove('on');el.innerHTML='';return;}
   
+  const fc=_liteVolForecast,sameSym=fc&&fc.symbol===_liteSymbol;
   let target = bar;
   if (_liteSymbol && window._marketBundle && _marketBundle[_liteSymbol] && _marketBundle[_liteSymbol].candles && _marketBundle[_liteSymbol].candles.length > 1) {
     const c1d=_marketBundle[_liteSymbol].candles,last=c1d[c1d.length-1],prev=c1d[c1d.length-2];
@@ -4563,6 +4564,8 @@ function updateLiteBigPrice(bar){
       if (liveEntry.open) openPrice = liveEntry.open;
     }
     target = { close: closePrice, open: openPrice, pct: ((closePrice - prevClose) / prevClose) * 100 };
+  } else if (sameSym && Number.isFinite(fc.close)) {
+    target = { close: fc.close, open: fc.open, pct: fc.pct };
   }
 
   const pct=Number.isFinite(target.pct)?target.pct:0;
@@ -4571,8 +4574,6 @@ function updateLiteBigPrice(bar){
   const up=Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close>=target.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const sign=pct>0?'+':(pct<0?'':'');
-  const fc=_liteVolForecast;
-  const sameSym=fc&&fc.symbol===_liteSymbol;
   const progress=sameSym&&Number.isFinite(fc.progress)?fc.progress:null;
   const fmtEst=v=>(Number.isFinite(v)&&progress>0.001)?(v/progress).toFixed(2):'--';
   const fmtProgress=v=>Number.isFinite(v)?String(Math.round(v*100)/100):'--';
