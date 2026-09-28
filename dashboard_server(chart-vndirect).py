@@ -1652,8 +1652,8 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
         volume.append({"time": t_val, "value": v, "color": color})
 
     has_more = before_date is not None and len(final_bars) >= 20
-    last_vol = final_bars[-1].get("volume") if final_bars else None
-    vf_data = _vol_forecast_fn(symbol, current_vol=last_vol) if (_vol_forecast_fn and not before_date and target_tf == "1D") else None
+    today_vol = (live_data.get("volume") if live_data else None) or (raw_bars[-1].get("volume") if raw_bars else None)
+    vf_data = _vol_forecast_fn(symbol, current_vol=today_vol) if (_vol_forecast_fn and not before_date) else None
 
     payload = {
         "symbol": symbol,
@@ -4551,6 +4551,7 @@ function updateLiteBigPrice(bar){
   if(!el)return;
   if(!bar||!_liteChecked('signalgrp_on')||!_liteChecked('bigprice')){el.classList.remove('on');el.innerHTML='';return;}
   
+  const fc=_liteVolForecast,sameSym=fc&&fc.symbol===_liteSymbol;
   let target = bar;
   if (_liteSymbol && window._marketBundle && _marketBundle[_liteSymbol] && _marketBundle[_liteSymbol].candles && _marketBundle[_liteSymbol].candles.length > 1) {
     const c1d=_marketBundle[_liteSymbol].candles,last=c1d[c1d.length-1],prev=c1d[c1d.length-2];
@@ -4563,6 +4564,8 @@ function updateLiteBigPrice(bar){
       if (liveEntry.open) openPrice = liveEntry.open;
     }
     target = { close: closePrice, open: openPrice, pct: ((closePrice - prevClose) / prevClose) * 100 };
+  } else if (sameSym && Number.isFinite(fc.close)) {
+    target = { close: fc.close, open: fc.open, pct: fc.pct };
   }
 
   const pct=Number.isFinite(target.pct)?target.pct:0;
@@ -4571,8 +4574,6 @@ function updateLiteBigPrice(bar){
   const up=Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close>=target.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const sign=pct>0?'+':(pct<0?'':'');
-  const fc=_liteVolForecast;
-  const sameSym=fc&&fc.symbol===_liteSymbol;
   const progress=sameSym&&Number.isFinite(fc.progress)?fc.progress:null;
   const fmtEst=v=>(Number.isFinite(v)&&progress>0.001)?(v/progress).toFixed(2):'--';
   const fmtProgress=v=>Number.isFinite(v)?String(Math.round(v*100)/100):'--';
@@ -4633,11 +4634,30 @@ function liteTimeKey(t){
   }
   return String(t||'');
 }
+function _liteToggleSymStats(bar){
+  let p=$('lct-pop');
+  if(!bar||!bar.close){
+    if(p&&p.style.display!=='none'){p.style.display='none';return;}
+    if((_liteTf||'1D')!=='1D'||!_liteData||_liteData.length<4)return;
+    if(!p){
+      p=document.createElement('div'); p.id='lct-pop'; p.style.cssText='position:absolute;top:24px;left:0;text-align:center;background:#fff;color:#111827;border:1px solid #e5e7eb;padding:5px 8px;border-radius:4px;font-family:var(--font-mono);font-size:10px;line-height:1.4;z-index:20;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.12);pointer-events:auto';
+      DOM.liteChartTitle?.appendChild(p); document.addEventListener('click',e=>{if(!e.target.closest('#lct-pop')&&!e.target.closest('.lct-sym'))p.style.display='none';});
+    }
+    p.style.display='block';
+  }
+  if(!p||p.style.display==='none'||(_liteTf||'1D')!=='1D'||!_liteData)return;
+  const b=(bar&&bar.close)?bar:(_liteHoverBar||_liteData[_liteData.length-1]), idx=_liteData.indexOf(b); if(idx<3)return;
+  const isLast=idx===_liteData.length-1, c0=(isLast?_getLiveEntry(_liteSymbol)?.price:null)||b.close;
+  const p1=((c0-_liteData[idx-1].close)/_liteData[idx-1].close*100).toFixed(2), p2=((c0-_liteData[idx-2].close)/_liteData[idx-2].close*100).toFixed(2), p3=((c0-_liteData[idx-3].close)/_liteData[idx-3].close*100).toFixed(2);
+  const fP=v=>`<span style="color:${v>0?'#26a69a':v<0?'#ef5350':'#b45309'}">${v>0?'+':''}${v}%</span>`, fT=v=>!Number.isFinite(v)?'--':(v>=10?Math.round(v):v.toFixed(1))+'T';
+  const tv=(isLast&&_getLiveEntry(_liteSymbol)?.total_value)?_getLiveEntry(_liteSymbol).total_value/1e9:((_liteVolumeData[idx]?.value||0)*c0/1e6); let sV=0, cnt=Math.min(20,idx+1); for(let i=idx-cnt+1;i<=idx;i++) sV+=((_liteVolumeData[i]?.value||0)*_liteData[i].close/1e6);
+  p.innerHTML=`<div>${fP(p1)} / ${fP(p2)} / ${fP(p3)}</div><div>TV ${fT(tv)} &nbsp;/&nbsp; AV ${fT(sV/cnt)}</div>`;
+}
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
   const t=DOM.liteChartTitle;
   if(!t.querySelector('.lct-sym')){
-    t.innerHTML=`<span class="lct-sym" style="color:#111827"></span><span class="lct-tf" style="color:#111827"></span><span class="lct-time" style="color:#111827"></span><span style="color:#111827"> |</span><span class="lct-open"><span style="color:#111827"> O:</span><span class="lct-val-o"></span></span><span class="lct-hl"><span style="color:#111827"> H:</span><span class="lct-val-h"></span><span style="color:#111827"> L:</span><span class="lct-val-l"></span></span><span style="color:#111827"> C:</span><span class="lct-val-c"></span><span style="color:#111827"> (</span><span class="lct-val-pct"></span><span style="color:#111827">)</span><span class="lct-val-rs"></span>`;
+    t.innerHTML=`<span class="lct-sym" style="color:#111827;pointer-events:auto" onclick="_liteToggleSymStats()"></span><span class="lct-tf" style="color:#111827"></span><span class="lct-time" style="color:#111827"></span><span style="color:#111827"> |</span><span class="lct-open"><span style="color:#111827"> O:</span><span class="lct-val-o"></span></span><span class="lct-hl"><span style="color:#111827"> H:</span><span class="lct-val-h"></span><span style="color:#111827"> L:</span><span class="lct-val-l"></span></span><span style="color:#111827"> C:</span><span class="lct-val-c"></span><span style="color:#111827"> (</span><span class="lct-val-pct"></span><span style="color:#111827">)</span><span class="lct-val-rs"></span>`;
   }
   const tf=(_liteTf||'D').replace(/^1/,''), pct=Number.isFinite(bar.pct)?bar.pct:0;
   const col=(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0)?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
@@ -4645,6 +4665,7 @@ function updateLiteTitle(bar){
   const upd=(cls,val)=>{const e=t.querySelector(cls); if(e){e.textContent=val; e.style.color=col;}};
   upd('.lct-val-o',fmtLiteNum(bar.open)); upd('.lct-val-h',fmtLiteNum(bar.high)); upd('.lct-val-l',fmtLiteNum(bar.low)); upd('.lct-val-c',fmtLiteNum(bar.close)); upd('.lct-val-pct',Math.abs(pct)<0.005?'00.00%':`${pct>0?'+':''}${pct.toFixed(2)}%`);
   const rsEl=t.querySelector('.lct-val-rs'); if(rsEl) rsEl.innerHTML=Number.isFinite(_liteRsScore)?' '+rsBadge(_liteRsScore):'';
+  _liteToggleSymStats(bar);
 }
 async function _liteLoadCompareSeries(){
   if(!_liteChart||!_liteChecked('compare')||!_liteData.length)return;
@@ -4707,6 +4728,7 @@ function setLiteRightOffset(){
 }
 function setLiteTf(tf){
   _liteTf=tf || '1D';
+  const p=$('lct-pop');if(p)p.style.display='none';
   DOM.liteChartTf?.querySelectorAll('.lite-tf-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.tf===_liteTf));
 }
 function applyLiteTf(tf,force=false){
