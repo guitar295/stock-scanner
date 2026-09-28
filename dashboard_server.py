@@ -4413,7 +4413,7 @@ function initLiteChart(){
     if(isMain){
       const key=param&&param.time?liteTimeKey(param.time):'';
       const bar=key?_liteDataByTime.get(key):null;
-      if(bar){_liteHoverBar=bar;updateLiteTitle(bar);}else{_liteHoverBar=null;updateLiteTitle(_liteData[_liteData.length-1]);}
+      if(bar){_liteHoverBar=bar;updateLiteTitle(bar);updateLiteBigPrice(bar);}else{_liteHoverBar=null;updateLiteTitle(_liteData[_liteData.length-1]);updateLiteBigPrice(_liteData[_liteData.length-1]);}
       if(!param||!param.point){_liteHideXhair();return;}
       const x=param.point.x,y=(domEl.offsetTop||0)+param.point.y;
       const priceTxt=_liteCrosshairPriceTxt(priceSeries,param.point.y);
@@ -4424,7 +4424,7 @@ function initLiteChart(){
     if(!param||!param.point){_liteHideXhair();return;}
     const key=param.time?liteTimeKey(param.time):'';
     const bar=key?_liteDataByTime.get(key):null;
-    if(bar){_liteHoverBar=bar;updateLiteTitle(bar);}
+    if(bar){_liteHoverBar=bar;updateLiteTitle(bar);updateLiteBigPrice(bar);}
     const x=param.point.x,y=(domEl.offsetTop||0)+param.point.y;
     const priceTxt=_liteCrosshairPriceTxt(priceSeries,param.point.y);
     const timeTxt=key?fmtLiteDate(key):'';
@@ -4544,7 +4544,7 @@ async function _liteFetchVolForecast(sym){
   }catch(e){
     if(reqId===_liteVolForecastReqId&&sym===_liteSymbol)_liteVolForecast=null;
   }
-  if(reqId===_liteVolForecastReqId&&sym===_liteSymbol)updateLiteBigPrice(_liteData[_liteData.length-1]);
+  if(reqId===_liteVolForecastReqId&&sym===_liteSymbol&&(!_liteHoverBar||!_liteData.length||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time)))updateLiteBigPrice(_liteData[_liteData.length-1]);
 }
 function updateLiteBigPrice(bar){
   const el=DOM.liteChartBigPrice;
@@ -4552,37 +4552,26 @@ function updateLiteBigPrice(bar){
   if(!bar||!_liteChecked('signalgrp_on')||!_liteChecked('bigprice')){el.classList.remove('on');el.innerHTML='';return;}
   
   const fc=_liteVolForecast,sameSym=fc&&fc.symbol===_liteSymbol;
-  let target = bar;
-  if (_liteSymbol && window._marketBundle && _marketBundle[_liteSymbol] && _marketBundle[_liteSymbol].candles && _marketBundle[_liteSymbol].candles.length > 1) {
-    const c1d=_marketBundle[_liteSymbol].candles,last=c1d[c1d.length-1],prev=c1d[c1d.length-2];
-    const isArr=Array.isArray(last);
-    let closePrice=isArr?last[4]:last.close, openPrice=isArr?last[1]:last.open;
-    const prevClose=Array.isArray(prev)?prev[4]:prev.close;
-    const liveEntry=_getLiveEntry(_liteSymbol);
-    if (liveEntry && liveEntry.price) {
-      closePrice = liveEntry.price;
-      if (liveEntry.open) openPrice = liveEntry.open;
-    }
-    target = { close: closePrice, open: openPrice, pct: ((closePrice - prevClose) / prevClose) * 100 };
-  } else if (sameSym && Number.isFinite(fc.close)) {
-    target = { close: fc.close, open: fc.open, pct: fc.pct };
-  }
-
-  const pct=Number.isFinite(target.pct)?target.pct:0;
-  const change=Number.isFinite(target.close)&&Number.isFinite(target.pct)&&pct!==0
-    ?target.close-target.close/(1+pct/100):(Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close-target.open:0);
-  const up=Number.isFinite(target.close)&&Number.isFinite(target.open)?target.close>=target.open:pct>=0;
+  const pct=Number.isFinite(bar.pct)?bar.pct:0;
+  const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)&&pct!==0
+    ?bar.close-bar.close/(1+pct/100):(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close-bar.open:0);
+  const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
   const sign=pct>0?'+':(pct<0?'':'');
-  const progress=sameSym&&Number.isFinite(fc.progress)?fc.progress:null;
-  const fmtEst=v=>(Number.isFinite(v)&&progress>0.001)?(v/progress).toFixed(2):'--';
-  const fmtProgress=v=>Number.isFinite(v)?String(Math.round(v*100)/100):'--';
-  const ratioPrev=sameSym?fc.ratio_prev:null;
-  const ratioMA50=sameSym?fc.ratio_ma50:null;
+  const isLatest=!_liteHoverBar||!_liteData.length||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time);
+  const isD1Today=isLatest&&(_liteTf||'1D')==='1D'&&sameSym;
+  const hIdx=_liteVolumeData.findIndex(v=>liteTimeKey(v.time)===liteTimeKey(bar.time));
+  const hVol=hIdx>=0?_liteVolumeData[hIdx]?.value:null;
+  const rPrev=isD1Today?fc.ratio_prev:(hIdx>0&&_liteVolumeData[hIdx-1]?.value?hVol/_liteVolumeData[hIdx-1].value:null);
+  const rMA50=isD1Today?fc.ratio_ma50:(()=>{const sl=_liteVolumeData.slice(Math.max(0,hIdx-50),hIdx).map(v=>v.value);return sl.length&&hVol?hVol/(sl.reduce((a,b)=>a+b,0)/sl.length):null;})();
+  const prog=isD1Today&&Number.isFinite(fc.progress)?fc.progress:null;
+  const fV=v=>Number.isFinite(v)?v.toFixed(2):'--';
+  const fE=v=>(Number.isFinite(v)&&prog>0.001)?(v/prog).toFixed(2):'--';
+  const volStr=isD1Today?`--(${fE(rPrev)}-${fE(rMA50)}/${Number.isFinite(prog)?String(Math.round(prog*100)/100):'--'})`:`--(${fV(rPrev)}-${fV(rMA50)})`;
   el.classList.add('on');
   el.innerHTML=
-    `<span class="bp-price" style="color:${col}">${fmtLiteNum(target.close)}</span>`+
-    `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)--(${fmtEst(ratioPrev)}-${fmtEst(ratioMA50)}/${fmtProgress(progress)})</span>`;
+    `<span class="bp-price" style="color:${col}">${fmtLiteNum(bar.close)}</span>`+
+    `<span class="bp-sub" style="color:${col}">${sign}${fmtLiteNum(change)}(${sign}${pct.toFixed(2)}%)${volStr}</span>`;
 }
 function _liteCleanSym(v){
   return String(v||'')
@@ -6952,7 +6941,7 @@ async function _liteQuietRefreshChart(){
   _liteQuietRefreshing=true;
   try{
     const liveEntry=_getLiveEntry(sym);
-    if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length){
+    if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length&&window._marketBundle&&window._marketBundle[sym]){
       const last=_liteData[_liteData.length-1];
       const d=new Date(),ts=liveEntry.date||(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
       if(ts&&liteTimeKey(last.time).startsWith(ts)){
@@ -6968,8 +6957,11 @@ async function _liteQuietRefreshChart(){
         lastVol.color=_liteVolColorFor(lastVol,_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
         _liteVolume.update(lastVol);
       }
-      if(!_liteHoverBar||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time))updateLiteTitle(_liteData[_liteData.length-1]);
-      updateLiteBigPrice(_liteData[_liteData.length-1]);_liteUpdateCompareLive();
+      if(!_liteHoverBar||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time)){
+        updateLiteTitle(_liteData[_liteData.length-1]);
+        updateLiteBigPrice(_liteData[_liteData.length-1]);
+      }
+      _liteUpdateCompareLive();
     }
     const curSig=_getSig(sym);
     if(curSig)_liteApplyBuySignal(curSig.state!=='DEAD'?curSig:null);
@@ -6982,7 +6974,7 @@ async function _liteQuietRefreshChart(){
     const rawBar=j.candles[j.candles.length-1];
     const key=liteTimeKey(rawBar.time);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
-    if(tf==='1D'&&liveEntry&&liveEntry.price){
+    if(tf==='1D'&&liveEntry&&liveEntry.price&&window._marketBundle&&window._marketBundle[sym]){
       if(liveEntry.date&&key.startsWith(liveEntry.date)){
         rawBar.close=liveEntry.price;
         if(liveEntry.open)rawBar.open=liveEntry.open;
@@ -7012,9 +7004,12 @@ async function _liteQuietRefreshChart(){
       _liteUpdateIndicatorData();
       if(!_liteApplyVisibleLogicalRange(prevRangeBeforeUpdate))setLiteRightOffset();
     }
-    if(!_liteHoverBar||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time))updateLiteTitle(_liteData[_liteData.length-1]);
+    if(!_liteHoverBar||liteTimeKey(_liteHoverBar.time)===liteTimeKey(_liteData[_liteData.length-1].time)){
+      updateLiteTitle(_liteData[_liteData.length-1]);
+      updateLiteBigPrice(_liteData[_liteData.length-1]);
+    }
     if(j.vol_forecast){_liteVolForecast=j.vol_forecast;}else{_liteFetchVolForecast(sym);}
-    updateLiteBigPrice(_liteData[_liteData.length-1]);_liteUpdateCompareLive();
+    _liteUpdateCompareLive();
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
     const sigLive=_getSig(sym)||j.signal||null;
     _liteCurrentSignal=sigLive&&sigLive.state!=='DEAD'?sigLive:null;
@@ -7092,7 +7087,7 @@ function bindLiteChartControls(){
     const name=e.target?.name;
     if(val==='signal'||val==='volcolor'||val==='signalgrp_on'||val==='bigprice'){
       if(val!=='signal'&&val!=='bigprice')_liteRefreshVolumeTop(_liteChecked('signalgrp_on')&&_liteChecked('volcolor'));
-      if(val==='bigprice'||val==='signalgrp_on')updateLiteBigPrice(_liteData&&_liteData.length?_liteData[_liteData.length-1]:null);
+      if(val==='bigprice'||val==='signalgrp_on')updateLiteBigPrice(_liteHoverBar||(_liteData&&_liteData.length?_liteData[_liteData.length-1]:null));
       if(val!=='bigprice'){ // bigprice riêng lẻ không đụng tới marker tín hiệu hay hình vẽ tay — khỏi vẽ lại thừa
         _liteApplyBuySignal();
         redrawLiteDrawings(); // renderLiteIndicators() không chạy ở nhánh này nên không ai tự redraw — phải tự gọi
@@ -7126,7 +7121,7 @@ function bindLiteChartControls(){
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag!=='input'&&tag!=='textarea')DOM.liteChartFrame.focus();
   });
-  DOM.liteChartFrame?.addEventListener('mouseleave',()=>{_litePointerInside=false;_liteHoverBar=null;if(_liteData&&_liteData.length)updateLiteTitle(_liteData[_liteData.length-1]);});
+  DOM.liteChartFrame?.addEventListener('mouseleave',()=>{_litePointerInside=false;_liteHoverBar=null;if(_liteData&&_liteData.length){updateLiteTitle(_liteData[_liteData.length-1]);updateLiteBigPrice(_liteData[_liteData.length-1]);}});
   DOM.liteChartFrame?.addEventListener('keydown',e=>{
     // Đang gõ chữ (công cụ Text) thì bỏ qua phím tắt khung chart; đây là lớp bảo vệ thêm phòng focus chưa kịp chuyển.
     if(_liteTextEditPos)return;
