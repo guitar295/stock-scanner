@@ -6863,7 +6863,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
   initLiteChart();
   if(DOM.liteChartTitle&&!window.LightweightCharts)DOM.liteChartTitle.textContent='Thiếu thư viện chart';
   DOM.liteChartEmpty.textContent=window.LightweightCharts?'Đang tải chart...':'Không tải được Lightweight Charts';
-  DOM.liteChartEmpty.style.display='flex';
+  if(!window.LightweightCharts||!_liteData||!_liteData.length)DOM.liteChartEmpty.style.display='flex';
   if(!window.LightweightCharts){
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),1200);
     return;
@@ -6921,6 +6921,7 @@ async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync
     if(DOM.liteChartTitle)DOM.liteChartTitle.innerHTML='Không có dữ liệu';
     updateLiteBigPrice(null);
     DOM.liteChartEmpty.textContent='Không lấy được dữ liệu cho '+s;
+    DOM.liteChartEmpty.style.display='flex';
     if(retry>0)setTimeout(()=>loadLiteChart(s,retry-1,skipPopoutSync),LITE_CHART_RETRY_DELAY);
   }finally{
     if(reqId===_liteReqId){
