@@ -392,8 +392,9 @@ def _vnd_cached_rows(cache_key, getter):
     now = time.time()
     with _vnd_lock:
         cached = _vnd_cache.get(cache_key)
-        if cached and now - cached["updated_at"] < VND_TTL_SEC:
+        if cached and now - cached.get("updated_at", 0) < VND_TTL_SEC:
             return cached["rows"]
+        _vnd_cache[cache_key] = {"rows": (cached["rows"] if cached else []), "updated_at": now + 10}
     rows = getter()
     with _vnd_lock:
         _vnd_cache[cache_key] = {"rows": rows, "updated_at": time.time()}
@@ -1060,8 +1061,15 @@ def _attach_rs_payload(payload: dict, symbol: str) -> dict:
         payload.pop("rs", None)
     return payload
 
+_sig_cache, _sig_lock = {"ts": 0, "data": {}}, threading.Lock()
+
 @app.route("/api/signals")
 def api_signals():
+    now = time.time()
+    with _sig_lock:
+        if now - _sig_cache["ts"] < 10 and _sig_cache["data"]: return jsonify(_sig_cache["data"])
+        _sig_cache["ts"] = now + 10
+
     alerted = _get_alerted_today() if _get_alerted_today else {}
     momentum = _get_momentum_today() if _get_momentum_today else {}
     attent = _get_attent_today() if _get_attent_today else {}
@@ -1108,7 +1116,7 @@ def api_signals():
         for sym, rs in sorted(rs_scores.items(), key=lambda item: item[1], reverse=True)
         if rs > 80
     ]
-    return jsonify({
+    payload = {
         "signals": result,
         "count":   len(result),
         "momentum": momentum_result,
@@ -1124,7 +1132,9 @@ def api_signals():
         "updated_at": datetime.now(TZ_VN).strftime("%H:%M:%S"),
         "session_date": session_date.strftime("%d/%m/%Y") if session_date else None,
         "session_stale": session_stale,
-    })
+    }
+    _sig_cache["data"], _sig_cache["ts"] = payload, time.time()
+    return jsonify(payload)
 
 def _fetch_priceboard_batch(symbols: list[str]) -> list[dict]:
     if not symbols:
@@ -1247,6 +1257,7 @@ def _bg_fetch_heatmap():
             _heatmap_cache["updated_at"] = time.time()
             if data and isinstance(data, dict):
                 _heatmap_cache["data"].update(data)
+                _heatmap_cache["safe_data"] = _json_safe(_heatmap_cache["data"])
                 if ts: _heatmap_cache["ts"] = ts
         if data and isinstance(data, dict):
             if _sync_heatmap_fn: _sync_heatmap_fn(data)
@@ -1263,10 +1274,10 @@ def api_heatmap():
         threading.Thread(target=_bg_fetch_heatmap, daemon=True).start()
     with _heatmap_lock:
         snap_time = _heatmap_cache["updated_at"]
-        data = _heatmap_cache["data"]
+        safe_data = _heatmap_cache.get("safe_data") or _json_safe(_heatmap_cache["data"])
         ts = _heatmap_cache["ts"]
     return jsonify({
-        "data":      _json_safe(data),
+        "data":      safe_data,
         "timestamp": ts,
         "cached_age": int(now - snap_time),
     })
@@ -1289,10 +1300,10 @@ def api_quote_extra():
 
     now = time.time()
     with _extra_quote_lock:
-        need_fetch = [
-            s for s in syms
-            if s not in _extra_quote_cache or now - _extra_quote_cache[s]["ts"] > EXTRA_QUOTE_TTL_SEC
-        ]
+        need_fetch = []
+        for s in syms:
+            if s not in _extra_quote_cache or now - _extra_quote_cache[s].get("ts", 0) > EXTRA_QUOTE_TTL_SEC:
+                need_fetch.append(s); _extra_quote_cache[s] = {"ts": now + 10}
     if need_fetch:
         try:
             fresh = _extra_quote_fn(need_fetch) or {}
@@ -1322,6 +1333,9 @@ def api_market_health():
     payload["pending_refresh"] = pending_refresh
     return jsonify(_json_safe(payload))
 
+_vol_fc_cache = {}
+_vol_fc_lock = threading.Lock()
+
 @app.route("/api/vol_forecast/<symbol>")
 def api_vol_forecast(symbol):
     """NGUỒN DUY NHẤT cho khối 'Giá phóng to' trên panel CHART — trả progress
@@ -1329,8 +1343,19 @@ def api_vol_forecast(symbol):
     symbol = symbol.upper().strip()
     if not _vol_forecast_fn:
         return jsonify({"symbol": symbol, "error": "unavailable"}), 503
+
+    now = time.time()
+    with _vol_fc_lock:
+        entry = _vol_fc_cache.get(symbol)
+        if entry and now - entry.get("ts", 0) < 2.5:
+            return jsonify(entry["data"])
+        _vol_fc_cache[symbol] = {"data": (entry["data"] if entry else {}), "ts": now + 10}
+
     try:
-        return jsonify(_vol_forecast_fn(symbol))
+        data = _vol_forecast_fn(symbol)
+        with _vol_fc_lock:
+            _vol_fc_cache[symbol] = {"data": data, "ts": now}
+        return jsonify(data)
     except Exception as exc:
         return jsonify({"symbol": symbol, "error": "exception", "detail": str(exc)}), 500
 
@@ -1491,6 +1516,64 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
     if not raw_bars:
         return None, "no_data_from_source"
 
+    # --- BẮC CẦU LIVE PRICE (Patch nến thô cuối cùng) ---
+    live_data = None
+    if raw_bars and not before_date:
+        # 1. Ưu tiên 1: Lấy từ _heatmap_cache (siêu tốc, update 5s/lần)
+        with _heatmap_lock:
+            h_data = _heatmap_cache.get("data", {})
+            h_updated = _heatmap_cache.get("updated_at", 0)
+            
+            # Chỉ dùng Heatmap nếu dữ liệu vẫn còn tươi (được update trong vòng 60s)
+            if time.time() - h_updated <= 60:
+                if symbol in h_data and "price" in h_data[symbol]:
+                    live_data = h_data[symbol]
+        
+        # 2. Ưu tiên 2 (Fallback): Lấy qua hàm ngoại vi (cache 5s)
+        if live_data is None and _extra_quote_fn:
+            now_ts_sec = time.time()
+            need_fetch = False
+            with _extra_quote_lock:
+                cached_eq = _extra_quote_cache.get(symbol)
+                if not cached_eq or now_ts_sec - cached_eq.get("ts", 0) > 4.5:
+                    need_fetch = True
+                    _extra_quote_cache[symbol] = {"ts": now_ts_sec + 10}
+                else:
+                    live_data = cached_eq
+            
+            if need_fetch:
+                try:
+                    fresh = _extra_quote_fn([symbol]) or {}
+                    if symbol in fresh and "price" in fresh[symbol]:
+                        live_data = fresh[symbol]
+                        with _extra_quote_lock:
+                            _extra_quote_cache[symbol] = {
+                                "price": live_data["price"], 
+                                "pct": live_data.get("pct", 0), 
+                                "open": live_data.get("open"),
+                                "high": live_data.get("high"),
+                                "low": live_data.get("low"),
+                                "volume": live_data.get("volume"),
+                                "date": live_data.get("date"),
+                                "ts": now_ts_sec
+                            }
+                except Exception as e:
+                    print(f"  [Dashboard] ❌ Fallback live price cho {symbol} lỗi: {e}")
+
+    # Áp dụng dữ liệu live vào cây nến cuối cùng nếu có
+    if live_data:
+        last_b = raw_bars[-1]
+        live_d = live_data.get("date")
+        dt_str = last_b.get("time_str") or time.strftime("%Y-%m-%d", time.gmtime(last_b["t"] + 25200))
+        if not live_d or live_d == dt_str:
+            for k in ("open", "high", "low", "volume"):
+                if live_data.get(k) is not None: last_b[k] = live_data[k]
+            if live_data.get("price") is not None: 
+                last_b["close"] = live_data["price"]
+                last_b["high"] = max(last_b.get("high", 0), live_data["price"])
+                last_b["low"] = min(last_b.get("low", float('inf')), live_data["price"])
+    # ------------------------------------------------
+
     if target_tf == "1W":
         weeks = {}
         for bar in raw_bars:
@@ -1585,60 +1668,6 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
     candles = []
     volume = []
     
-    # --- BẮC CẦU LIVE PRICE (Patch nến cuối cùng) ---
-    live_data = None
-    if target_tf == "1D" and final_bars and not before_date:
-        # 1. Ưu tiên 1: Lấy từ _heatmap_cache (siêu tốc, update 5s/lần)
-        with _heatmap_lock:
-            h_data = _heatmap_cache.get("data", {})
-            h_updated = _heatmap_cache.get("updated_at", 0)
-            
-            # Chỉ dùng Heatmap nếu dữ liệu vẫn còn tươi (được update trong vòng 60s)
-            if time.time() - h_updated <= 60:
-                if symbol in h_data and "price" in h_data[symbol]:
-                    live_data = h_data[symbol]
-        
-        # 2. Ưu tiên 2 (Fallback): Lấy qua hàm ngoại vi (cache 5s)
-        if live_data is None and _extra_quote_fn:
-            now_ts_sec = time.time()
-            need_fetch = False
-            with _extra_quote_lock:
-                cached_eq = _extra_quote_cache.get(symbol)
-                # Dùng 4.5s thay vì 5s để bù trừ độ trễ mạng, khớp nhịp 5s của Frontend
-                if not cached_eq or now_ts_sec - cached_eq.get("ts", 0) > 4.5:
-                    need_fetch = True
-                else:
-                    live_data = cached_eq
-            
-            if need_fetch:
-                try:
-                    fresh = _extra_quote_fn([symbol]) or {}
-                    if symbol in fresh and "price" in fresh[symbol]:
-                        live_data = fresh[symbol]
-                        with _extra_quote_lock:
-                            _extra_quote_cache[symbol] = {
-                                "price": live_data["price"], 
-                                "pct": live_data.get("pct", 0), 
-                                "open": live_data.get("open"),
-                                "high": live_data.get("high"),
-                                "low": live_data.get("low"),
-                                "volume": live_data.get("volume"),
-                                "date": live_data.get("date"),
-                                "ts": now_ts_sec
-                            }
-                except Exception as e:
-                    print(f"  [Dashboard] ❌ Fallback live price cho {symbol} lỗi: {e}")
-
-    # Áp dụng dữ liệu live vào cây nến cuối cùng nếu có
-    if live_data:
-        last_b = final_bars[-1]
-        live_d = live_data.get("date")
-        if not live_d or live_d == last_b["time"]:
-            for k in ("open", "high", "low", "volume"):
-                if live_data.get(k) is not None: last_b[k] = live_data[k]
-            if live_data.get("price") is not None: last_b["close"] = live_data["price"]
-    # ------------------------------------------------
-    
     for b in final_bars:
         t_val = b["time"]
         o, c = b.get("open") or b.get("close") or 0.0, b.get("close") or 0.0
@@ -1688,44 +1717,29 @@ def api_lightweight_chart(symbol):
                         "detail": err or "no_data"}), 502
 
     nocache = (request.args.get("nocache") == "1") or (request.args.get("refresh") == "1")
-    cache_key = (symbol, tf)
+    is_short = (limit <= 50) or nocache
+    cache_key = (symbol, tf, "short") if is_short else (symbol, tf)
     now_ts = time.time()
+    ttl = 2.5 if is_short else _LITE_CHART_CACHE_TTL
+
     with _lite_chart_cache_lock:
         entry = _lite_chart_cache.get(cache_key)
+        if not entry or now_ts - entry.get("ts", 0) >= ttl:
+            _lite_chart_cache[cache_key] = {"payload": (entry["payload"] if entry else {"candles": [], "volume": []}), "ts": now_ts + 10}
+            entry = None
 
-    if not nocache and entry and (now_ts - entry["ts"]) < _LITE_CHART_CACHE_TTL:
+    if entry and (now_ts - entry.get("ts", 0)) < ttl:
         return jsonify(_attach_rs_payload(entry["payload"], symbol))
 
     dchart_data, err = fetch_chart_candles(symbol, tf, limit)
     if not err and dchart_data and dchart_data.get("candles"):
         dchart_data["has_more"] = True
-        if limit >= 400 and not nocache:
-            with _lite_chart_cache_lock:
-                if len(_lite_chart_cache) >= _LITE_CHART_CACHE_MAX and cache_key not in _lite_chart_cache:
-                    oldest_k = min(_lite_chart_cache, key=lambda k: _lite_chart_cache[k].get("ts", 0))
-                    _lite_chart_cache.pop(oldest_k, None)
-                _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
-        elif entry and entry.get("payload"):
-            with _lite_chart_cache_lock:
-                fp = entry["payload"]
-                fc = fp.get("candles", [])
-                fv = fp.get("volume", [])
-                lb = dchart_data["candles"][-1]
-                lv = dchart_data["volume"][-1]
-                if fc:
-                    if fc[-1].get("time") == lb.get("time"): fc[-1] = lb
-                    else: fc.append(lb)
-                if fv:
-                    if fv[-1].get("time") == lv.get("time"): fv[-1] = lv
-                    else: fv.append(lv)
-                if limit < 60:
-                    dchart_data["signal"] = fp.get("signal")
-                    dchart_data["history_signals"] = fp.get("history_signals", [])
-                else:
-                    if "signal" in dchart_data: fp["signal"] = dchart_data["signal"]
-                    if "history_signals" in dchart_data: fp["history_signals"] = dchart_data["history_signals"]
-                entry["ts"] = now_ts
-        return jsonify(dchart_data)
+        with _lite_chart_cache_lock:
+            if len(_lite_chart_cache) >= _LITE_CHART_CACHE_MAX and cache_key not in _lite_chart_cache:
+                oldest_k = min(_lite_chart_cache, key=lambda k: _lite_chart_cache[k].get("ts", 0))
+                _lite_chart_cache.pop(oldest_k, None)
+            _lite_chart_cache[cache_key] = {"payload": dchart_data, "ts": now_ts}
+        return jsonify(_attach_rs_payload(dchart_data, symbol))
 
     if entry and entry.get("payload"):
         return jsonify(_attach_rs_payload(entry["payload"], symbol))
@@ -4553,7 +4567,7 @@ function updateLiteBigPrice(bar){
   
   const fc=_liteVolForecast,sameSym=fc&&fc.symbol===_liteSymbol;
   const pct=Number.isFinite(bar.pct)?bar.pct:0;
-  const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)&&pct!==0
+  const change=Number.isFinite(bar.close)&&Number.isFinite(bar.pct)
     ?bar.close-bar.close/(1+pct/100):(Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close-bar.open:0);
   const up=Number.isFinite(bar.close)&&Number.isFinite(bar.open)?bar.close>=bar.open:pct>=0;
   const col=up?LITE_CANDLE_UP_COLOR:LITE_CANDLE_DOWN_COLOR;
@@ -4623,24 +4637,26 @@ function liteTimeKey(t){
   }
   return String(t||'');
 }
+function _repositionLctPop(){const p=$('lct-pop'),s=DOM.liteChartSignal,t=DOM.liteChartTitle; if(p&&p.style.display!=='none'&&t) p.style.top=(s&&s.classList.contains('on'))?(s.getBoundingClientRect().bottom-t.getBoundingClientRect().top+2)+'px':'24px';}
 function _liteToggleSymStats(bar){
   let p=$('lct-pop');
   if(!bar||!bar.close){
     if(p&&p.style.display!=='none'){p.style.display='none';return;}
-    if((_liteTf||'1D')!=='1D'||!_liteData||_liteData.length<4)return;
+    if(!_liteData||_liteData.length<4)return;
     if(!p){
       p=document.createElement('div'); p.id='lct-pop'; p.style.cssText='position:absolute;top:24px;left:0;text-align:center;background:#fff;color:#111827;border:1px solid #e5e7eb;padding:5px 8px;border-radius:4px;font-family:var(--font-mono);font-size:10px;line-height:1.4;z-index:20;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.12);pointer-events:auto';
-      DOM.liteChartTitle?.appendChild(p); document.addEventListener('click',e=>{if(!e.target.closest('#lct-pop')&&!e.target.closest('.lct-sym'))p.style.display='none';});
+      DOM.liteChartTitle?.appendChild(p);
     }
     p.style.display='block';
   }
-  if(!p||p.style.display==='none'||(_liteTf||'1D')!=='1D'||!_liteData)return;
+  if(!p||p.style.display==='none'||!_liteData)return;
   const b=(bar&&bar.close)?bar:(_liteHoverBar||_liteData[_liteData.length-1]), idx=_liteData.indexOf(b); if(idx<3)return;
   const isLast=idx===_liteData.length-1, c0=(isLast?_getLiveEntry(_liteSymbol)?.price:null)||b.close;
   const p1=((c0-_liteData[idx-1].close)/_liteData[idx-1].close*100).toFixed(2), p2=((c0-_liteData[idx-2].close)/_liteData[idx-2].close*100).toFixed(2), p3=((c0-_liteData[idx-3].close)/_liteData[idx-3].close*100).toFixed(2);
   const fP=v=>`<span style="color:${v>0?'#26a69a':v<0?'#ef5350':'#b45309'}">${v>0?'+':''}${v}%</span>`, fT=v=>!Number.isFinite(v)?'--':(v>=10?Math.round(v):v.toFixed(1))+'T';
   const tv=(isLast&&_getLiveEntry(_liteSymbol)?.total_value)?_getLiveEntry(_liteSymbol).total_value/1e9:((_liteVolumeData[idx]?.value||0)*c0/1e6); let sV=0, cnt=Math.min(20,idx+1); for(let i=idx-cnt+1;i<=idx;i++) sV+=((_liteVolumeData[i]?.value||0)*_liteData[i].close/1e6);
   p.innerHTML=`<div>${fP(p1)} / ${fP(p2)} / ${fP(p3)}</div><div>TV ${fT(tv)} &nbsp;/&nbsp; AV ${fT(sV/cnt)}</div>`;
+  _repositionLctPop();
 }
 function updateLiteTitle(bar){
   if(!DOM.liteChartTitle||!bar)return;
@@ -4698,6 +4714,7 @@ function _liteApplyBuySignal(sigOverride){
     _liteBuyArrowData=null;
     if(DOM.liteChartSignal){DOM.liteChartSignal.classList.remove('on');DOM.liteChartSignal.innerHTML='';}
   }
+  _repositionLctPop();
 }
 function setLiteRightOffset(){
   if(!_liteData.length||!_liteChart)return;
@@ -4717,7 +4734,7 @@ function setLiteRightOffset(){
 }
 function setLiteTf(tf){
   _liteTf=tf || '1D';
-  const p=$('lct-pop');if(p)p.style.display='none';
+
   DOM.liteChartTf?.querySelectorAll('.lite-tf-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.tf===_liteTf));
 }
 function applyLiteTf(tf,force=false){
@@ -6823,6 +6840,7 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
   _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
   const rawCandles=j.candles||[];
+  if(rawCandles.length){const lp=(window._mainHmapKeys?.has(s)?_getLiveEntry(s)?.price:window._lastKnownPrice?.[s]); if(lp){const L=rawCandles[rawCandles.length-1]; Array.isArray(L)?(L[4]=lp):(L.close=lp);}}
   _liteData=new Array(rawCandles.length);
   for(let i=0;i<rawCandles.length;i++){
     const raw=rawCandles[i];
@@ -6857,6 +6875,7 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
 
 async function loadLiteChart(sym='FPT',retry=LITE_CHART_RETRY_MAX,skipPopoutSync=false){
   const s=(sym||'FPT').toUpperCase().trim(),reqId=++_liteReqId;
+  if(window._lastLiteSymbol!==s){window._lastKnownPrice={}; window._lastLiteSymbol=s;}
   _liteSymbol=s;
   _updateVietstockIframeIfActive(s);
   if(!DOM.liteChart)return;
@@ -6942,7 +6961,7 @@ async function _liteQuietRefreshChart(){
   _liteQuietRefreshing=true;
   try{
     const liveEntry=_getLiveEntry(sym);
-    if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length&&window._marketBundle&&window._marketBundle[sym]){
+    if(tf==='1D'&&liveEntry&&liveEntry.price&&_liteData.length&&window._mainHmapKeys?.has(sym)){
       const last=_liteData[_liteData.length-1];
       const d=new Date(),ts=liveEntry.date||(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
       if(ts&&liteTimeKey(last.time).startsWith(ts)){
@@ -6973,9 +6992,10 @@ async function _liteQuietRefreshChart(){
     if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
     _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
+    (window._lastKnownPrice ??= {})[sym] = rawBar.close;
     const key=liteTimeKey(rawBar.time);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
-    if(tf==='1D'&&liveEntry&&liveEntry.price&&window._marketBundle&&window._marketBundle[sym]){
+    if(tf==='1D'&&liveEntry&&liveEntry.price&&window._mainHmapKeys?.has(sym)){
       if(liveEntry.date&&key.startsWith(liveEntry.date)){
         rawBar.close=liveEntry.price;
         if(liveEntry.open)rawBar.open=liveEntry.open;
