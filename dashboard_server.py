@@ -1295,7 +1295,7 @@ def api_quote_extra():
         if s and s.isalnum() and 1 <= len(s) <= 10 and s not in syms:
             syms.append(s)
     syms = syms[:EXTRA_QUOTE_MAX_SYMS]
-    if not syms or not _extra_quote_fn:
+    if not syms:
         return jsonify({"data": {}})
 
     now = time.time()
@@ -1306,7 +1306,11 @@ def api_quote_extra():
                 need_fetch.append(s); _extra_quote_cache[s] = {"ts": now + 10}
     if need_fetch:
         try:
-            fresh = _extra_quote_fn(need_fetch) or {}
+            vn = [s for s in need_fetch if s not in _GLOBAL_MAP]
+            fresh = (_extra_quote_fn(vn) if vn and _extra_quote_fn else {}) or {}
+            for s in [s for s in need_fetch if s in _GLOBAL_MAP]:
+                g = _fetch_global_chart(s, '1D', 2)
+                if g and g.get('candles'): fresh[s] = {'price': g['candles'][-1]['close'], 'pct': g['candles'][-1]['pct']}
             with _extra_quote_lock:
                 for s, v in fresh.items():
                     if isinstance(v, dict) and "price" in v and "pct" in v:
@@ -1422,7 +1426,64 @@ def _fetch_candle_raw_daily(symbol, from_ts, to_ts):
 def _default_calc_signals(df):
     return None, []
 
-_calc_signals_fn = None
+# --- GLOBAL ASSETS CHARTS (GOLD / BTC / DJI) ---
+_GLOBAL_MAP = {'GOLD': 'GC=F', 'GOL': 'GC=F', 'GOD': 'GC=F', 'XAU': 'GC=F', 'VANG': 'GC=F', 'BTC': 'BTC-USD', 'BITCOIN': 'BTC-USD', 'DJI': '^DJI', 'US30': '^DJI', 'DOWJONES': '^DJI'}
+_global_cache_file = os.path.join(_DASHBOARD_DATA_DIR, "global_chart_cache.json")
+_global_cache, _global_lock = {}, threading.Lock()
+if os.path.exists(_global_cache_file):
+    try: _global_cache = json.load(open(_global_cache_file, encoding='utf-8'))
+    except Exception: pass
+
+def _save_global_cache_to_disk():
+    try:
+        with open(_global_cache_file + ".tmp", "w", encoding="utf-8") as f: json.dump(_global_cache, f, ensure_ascii=False)
+        os.replace(_global_cache_file + ".tmp", _global_cache_file)
+    except Exception: pass
+
+def _fetch_global_chart(sym, tf='1D', limit=800, before_date=None):
+    raw_sym = _GLOBAL_MAP.get(str(sym).upper().strip())
+    if not raw_sym: return None
+    now, lim = time.time(), int(limit or 800)
+    with _global_lock:
+        entry = _global_cache.get(raw_sym)
+        has_data = bool(entry and entry.get('daily'))
+        need_fetch = not entry or (now - entry.get('ts', 0) >= 60.0)
+        if need_fetch: _global_cache.setdefault(raw_sym, {'daily': []})['ts'] = now + 10
+    if need_fetch:
+        def _fetch():
+            import urllib.request
+            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{raw_sym}?interval=1d&range=20y'
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            try:
+                with urllib.request.urlopen(req, timeout=6) as r: res = json.loads(r.read().decode())['chart']['result'][0]
+                ts, q = res.get('timestamp') or [], res['indicators']['quote'][0]
+                daily = [{'time': datetime.fromtimestamp(ts[i]).strftime('%Y-%m-%d'), 'open': round(q['open'][i] or q['close'][i], 2), 'high': round(q['high'][i] or q['close'][i], 2), 'low': round(q['low'][i] or q['close'][i], 2), 'close': round(q['close'][i], 2), 'volume': q['volume'][i] or 0} for i in range(len(ts)) if q['close'][i] is not None]
+                with _global_lock:
+                    _global_cache[raw_sym] = {'daily': daily, 'ts': time.time()}
+                    _save_global_cache_to_disk()
+            except Exception: pass
+        threading.Thread(target=_fetch, daemon=True).start() if has_data else _fetch()
+    with _global_lock: raw_daily = list((_global_cache.get(raw_sym) or {}).get('daily') or [])
+    if not raw_daily: return None
+    tf_up = str(tf).upper().strip()
+    if tf_up in ('1W', 'W', '1M', 'M'):
+        groups = {}
+        for b in raw_daily:
+            k = datetime.fromisoformat(b['time']).isocalendar()[:2] if tf_up in ('1W', 'W') else b['time'][:7]
+            if k not in groups: groups[k] = dict(b)
+            else:
+                g = groups[k]
+                g['high'] = max(g['high'], b['high']); g['low'] = min(g['low'], b['low']); g['close'] = b['close']; g['volume'] += b['volume']; g['time'] = b['time']
+        bars = list(groups.values())
+    else: bars = raw_daily
+    if before_date: bars = [b for b in bars if b['time'] < str(before_date)]
+    has_more = len(bars) > lim
+    candles, volume = [], []
+    for i, b in enumerate(bars):
+        pct = round(((b['close'] - bars[i-1]['close']) / bars[i-1]['close'] * 100), 2) if i > 0 else 0.0
+        candles.append({'time': b['time'], 'open': b['open'], 'high': b['high'], 'low': b['low'], 'close': b['close'], 'pct': pct})
+        volume.append({'time': b['time'], 'value': b['volume'], 'color': '#26a69a' if b['close'] >= b['open'] else '#ef5350'})
+    return {'symbol': str(sym).upper(), 'timeframe': tf, 'candles': candles[-lim:], 'volume': volume[-lim:], 'vol_forecast': None, 'rs': None, 'has_more': has_more, 'signal': None, 'history_signals': [], 'is_global': True}
 
 def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
     """Fetch + build candles/volume cho panel CHART.
@@ -1700,6 +1761,9 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
 @app.route("/api/lightweight_chart/<symbol>")
 def api_lightweight_chart(symbol):
     symbol = symbol.upper().strip()
+    if symbol in _GLOBAL_MAP:
+        res = _fetch_global_chart(symbol, request.args.get("tf") or "1D", request.args.get("limit") or 800, before_date=(request.args.get("before") or "").strip() or None)
+        if res: return jsonify(res)
     tf = (request.args.get("tf") or "1D").strip()
     before_date = (request.args.get("before") or "").strip() or None
 
@@ -3354,7 +3418,10 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
 /* INDICES CHARTS */
-#indices-grid { height: 125px; }
+#indices-grid{height:125px;display:flex;gap:3px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none!important;-ms-overflow-style:none!important}
+#indices-grid::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+#indices-grid .index-card{flex:0 0 calc((100% - 9px)/4);min-width:235px}
+.idx-grow{display:grid;grid-template-columns:24px 44px 1fr auto;column-gap:8px;align-items:center;padding:3px 4px;border-radius:4px;cursor:pointer}.idx-grow:hover{background:#eef3ff}
 .index-card { user-select: none; -webkit-user-select: none; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 7px 8px; display: flex; flex-direction: column; height: 125px; }
 .index-card .idx-row { display: flex; justify-content: space-between; align-items: baseline; white-space: nowrap; }
 .index-card .idx-name { font-weight: 700; font-size: 11px; color: var(--accent); }
@@ -4654,7 +4721,7 @@ function _liteToggleSymStats(bar){
   const isLast=idx===_liteData.length-1, c0=(isLast?_getLiveEntry(_liteSymbol)?.price:null)||b.close;
   const p1=((c0-_liteData[idx-1].close)/_liteData[idx-1].close*100).toFixed(2), p2=((c0-_liteData[idx-2].close)/_liteData[idx-2].close*100).toFixed(2), p3=((c0-_liteData[idx-3].close)/_liteData[idx-3].close*100).toFixed(2);
   const fP=v=>`<span style="color:${v>0?'#26a69a':v<0?'#ef5350':'#b45309'}">${v>0?'+':''}${v}%</span>`, fT=v=>!Number.isFinite(v)?'--':(v>=10?Math.round(v):v.toFixed(1))+'T';
-  const tv=(isLast&&_getLiveEntry(_liteSymbol)?.total_value)?_getLiveEntry(_liteSymbol).total_value/1e9:((_liteVolumeData[idx]?.value||0)*c0/1e6); let sV=0, cnt=Math.min(20,idx+1); for(let i=idx-cnt+1;i<=idx;i++) sV+=((_liteVolumeData[i]?.value||0)*_liteData[i].close/1e6);
+  const tv=(isLast&&_liteTf==='1D'&&_getLiveEntry(_liteSymbol)?.total_value)?_getLiveEntry(_liteSymbol).total_value/1e9:((_liteVolumeData[idx]?.value||0)*c0/1e6); let sV=0, cnt=Math.min(20,idx+1); for(let i=idx-cnt+1;i<=idx;i++) sV+=((_liteVolumeData[i]?.value||0)*_liteData[i].close/1e6);
   p.innerHTML=`<div>${fP(p1)} / ${fP(p2)} / ${fP(p3)}</div><div>TV ${fT(tv)} &nbsp;/&nbsp; AV ${fT(sV/cnt)}</div>`;
   _repositionLctPop();
 }
@@ -6838,9 +6905,9 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
     if(window.parent&&window.parent!==window)window.parent.postMessage({type:'CHART_EMBED_SYM_CHANGE',symbol:s},'*');
   }
   if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
-  _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
+  _liteRsScore=(!j.is_global&&j.rs!=null&&Number.isFinite(Number(j.rs)))?Number(j.rs):null;
   const rawCandles=j.candles||[];
-  if(rawCandles.length){const lp=(window._mainHmapKeys?.has(s)?_getLiveEntry(s)?.price:window._lastKnownPrice?.[s]); if(lp){const L=rawCandles[rawCandles.length-1]; Array.isArray(L)?(L[4]=lp):(L.close=lp);}}
+  if(!j.is_global&&rawCandles.length){const lp=(window._mainHmapKeys?.has(s)?_getLiveEntry(s)?.price:window._lastKnownPrice?.[s]); if(lp){const L=rawCandles[rawCandles.length-1]; Array.isArray(L)?(L[4]=lp):(L.close=lp);}}
   _liteData=new Array(rawCandles.length);
   for(let i=0;i<rawCandles.length;i++){
     const raw=rawCandles[i];
@@ -6865,7 +6932,7 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   updateLiteTitle(_liteData[_liteData.length-1]);
   _liteVolForecast=j.vol_forecast||null;
   updateLiteBigPrice(_liteData[_liteData.length-1]);
-  if(!_liteVolForecast)_liteFetchVolForecast(_liteSymbol);
+  if(!j.is_global&&!_liteVolForecast)_liteFetchVolForecast(_liteSymbol);
   _liteHistorySignals=j.history_signals||[];
   const curSig=_getSig(s)||j.signal||null;
   _liteCurrentSignal=curSig&&curSig.state!=='DEAD'?curSig:null;
@@ -6990,9 +7057,10 @@ async function _liteQuietRefreshChart(){
     if(!r.ok)return;
     const j=await r.json();
     if(sym!==_liteSymbol||tf!==_liteTf||!j.candles||!j.candles.length)return;
-    _liteRsScore=Number.isFinite(Number(j.rs))?Number(j.rs):null;
+    _liteRsScore=(!j.is_global&&j.rs!=null&&Number.isFinite(Number(j.rs)))?Number(j.rs):null;
     const rawBar=j.candles[j.candles.length-1];
     (window._lastKnownPrice ??= {})[sym] = rawBar.close;
+    if(j.is_global&&(tf==='1D'||!tf)){const oldP=window._lastHmapData?.[sym]?.price||0;(window._lastHmapData??={})[sym]={price:rawBar.close,pct:rawBar.pct};_patchHeatmapCell(sym,rawBar.close,rawBar.pct,0,oldP);}
     const key=liteTimeKey(rawBar.time);
     const rawVol=(j.volume||[]).find(v=>liteTimeKey(v.time)===key);
     if(tf==='1D'&&liveEntry&&liveEntry.price&&window._mainHmapKeys?.has(sym)){
@@ -7029,7 +7097,7 @@ async function _liteQuietRefreshChart(){
       updateLiteTitle(_liteData[_liteData.length-1]);
       updateLiteBigPrice(_liteData[_liteData.length-1]);
     }
-    if(j.vol_forecast){_liteVolForecast=j.vol_forecast;}else{_liteFetchVolForecast(sym);}
+    if(j.vol_forecast){_liteVolForecast=j.vol_forecast;}else if(!j.is_global){_liteFetchVolForecast(sym);}
     _liteUpdateCompareLive();
     if(j.history_signals&&j.history_signals.length)_liteHistorySignals=j.history_signals;
     const sigLive=_getSig(sym)||j.signal||null;
@@ -7361,7 +7429,8 @@ function _patchHeatmapCell(sym,price,pct,totalVal,prevPrice){
   document.querySelectorAll(`.lg-sym-item[data-sym="${sym}"]`).forEach(item=>{
     const pEl=item.querySelector('.lg-sym-price'),pctEl=item.querySelector('.lg-sym-pct');
     const color=pct>0?'var(--green)':pct<0?'var(--red)':'#b45309';
-    if(pEl&&!item.closest('.lg-group')?.dataset.group?.includes('STRENGTH'))pEl.textContent=fmtP(price);
+    const gName=item.closest('.lg-group')?.dataset.group||'';
+    if(pEl&&!gName.includes('STRENGTH')&&!gName.includes('SỨC MẠNH'))pEl.textContent=fmtP(price);
     if(pctEl){
       pctEl.textContent=`${sign}${pct.toFixed(1)}%`;
       pctEl.style.color=color;
@@ -8253,8 +8322,11 @@ function drawIndexChart(data, idKey){
   const defs = `<defs><linearGradient id="grad-${idKey}" x1="0" y1="0" x2="0" y2="1"><stop offset="${pct}%" stop-color="#0e9f6e"/><stop offset="${pct}%" stop-color="#e02424"/></linearGradient></defs>`;
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${defs}<path d="${vPath}" fill="#7cb5ec" opacity="0.4"/>${refLine}<path d="${pPath}" fill="none" stroke="url(#grad-${idKey})" stroke-width="1.2"/></svg>`;
 }
+const _IC_GOLD='<svg width="20" height="15" viewBox="0 0 24 16"><path d="M4 14L1 4H19L22 14Z" fill="#d97706"/><path d="M1 4L5 1H23L19 4Z" fill="#fde68a"/><path d="M19 4L23 1L22 14Z" fill="#b45309" opacity=".6"/></svg>';
+const _IC_BTC='<svg width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#f7931a"/><path d="M15.4 10.4c.2-1.3-.8-2-2.2-2.4l.4-1.8-1.1-.3-.4 1.7c-.3-.1-.6-.1-.9-.2l.4-1.7-1.1-.3-.4 1.8c-.3-.1-.5-.1-.7-.2l-1.5-.4-.3 1.2s.8.2.8.2c.4.1.5.4.5.6l-.5 2.1c0 0 .1 0 .2.1l-.2-.1-.7 3c-.1.2-.2.5-.6.4 0 0-.8-.2-.8-.2l-.6 1.3 1.4.3c.3.1.5.2.8.2l-.4 1.8 1.1.3.4-1.7c.3.1.6.1.9.2l-.4 1.7 1.1.3.4-1.8c1.8.3 3.1.2 3.7-1.4.5-1.3 0-2-1-2.5.7-.2 1.2-.8 1.3-1.8zm-2.4 3.7c-.3 1.3-2.5.6-3.2.4l.6-2.3c.7.2 2.9.5 2.6 1.9zm.3-3.7c-.3 1.1-2.1.6-2.7.4l.5-2.1c.6.1 2.5.4 2.2 1.7z" fill="#fff"/></svg>';
 function renderIndices(res){
   const grid=$('indices-grid'), panel=grid?.closest('.indices-panel'); if(!grid||!res||!res.value){if(panel)panel.style.display='none';return;}
+  window._lastIdxRes=res;
   const maps=[{n:'VNINDEX',k:'VNINDEX'},{n:'VN30',k:'VN30'},{n:'HNX',k:'HNX'},{n:'UPCOM',k:'UPCOM'}];
   const html=maps.map(m=>{
     const data=res.value[m.k]; if(!data||!data.closes||!data.closes.length)return'';
@@ -8265,7 +8337,8 @@ function renderIndices(res){
     const oDbl = isClk ? `ondblclick="if(_hmapClickTimer)clearTimeout(_hmapClickTimer);_jumpLiteChart('${m.k}');openChart('${m.k}')"` : '';
     return `<div class="index-card" style="${cStr}" ${oClk} ${oDbl}><div class="idx-row"><span class="idx-name">${m.n}</span><span class="idx-val">${(data.totalValue||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}&nbsp;T</span></div><div class="idx-row" style="margin-top:2px"><span class="idx-score" style="color:${color}">${score.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="idx-change" style="color:${color}">${sign}${change.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} (${sign}${pct.toFixed(2)}%)</span></div><div class="idx-chart-box">${drawIndexChart(data, m.k)}</div></div>`;
   }).join('');
-  grid.innerHTML=html;
+  const gCard=res.value?.VNINDEX?.closes?.length?`<div class="index-card"><div class="idx-row"><span class="idx-name">QUỐC TẾ</span></div><div style="display:grid;grid-template-rows:repeat(3,1fr);align-items:center;flex:1;font-size:11px;margin-top:5px">${[['GOLD','GOLD',_IC_GOLD],['BTC','BTC',_IC_BTC],['DJI','DJI','🇺🇸']].map(([k,s,ic])=>{const it=(window._lastHmapData||{})[k]||{},p=it.pct,c=p>0?'#0e9f6e':p<0?'#e02424':'#d97706',pr=it.price!=null?Number(it.price).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'--',pct=p!=null?(p>0?'+':'')+Number(p).toFixed(2)+'%':'--';return `<div class="idx-grow" onclick="_hmapDesktopClick('${k}')" ondblclick="if(_hmapClickTimer)clearTimeout(_hmapClickTimer);_jumpLiteChart('${k}');openChart('${k}')"><span style="display:flex;align-items:center;justify-content:center;height:18px;line-height:1">${ic}</span><span style="font-weight:700">${s}</span><span style="text-align:center;font-weight:600">${pr}</span><span style="text-align:right;font-weight:700;color:${c}">${pct}</span></div>`;}).join('')}</div></div>`:'';
+  grid.innerHTML=html+gCard;
   if(panel)panel.style.display=(res.value?.VNINDEX?.closes?.length)?'':'none';
 }
 async function loadMktLiquidityImpact() {
@@ -9297,24 +9370,27 @@ function _symDisplayFields(sym,data){
 // _extraQuoteAsked: nhớ lần gọi gần nhất theo mã, khớp TTL cache server EXTRA_QUOTE_TTL_SEC=20s.
 const _extraQuoteAsked=new Map();
 const _EXTRA_QUOTE_MIN_INTERVAL=20000;
-async function _lgFillMissingQuotes(){
-  if(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on'))return;
+async function _lgFillMissingQuotes(force=false){
+  if(!force&&(!DOM.lgSidebar||!DOM.lgSidebar.classList.contains('on')))return;
   const now=Date.now(),missing=[],seen=new Set();
-  _lgGetGroups().forEach(g=>g.syms.forEach(sym=>{
+  ['GOLD','BTC','DJI',..._lgGetGroups().flatMap(g=>g.syms)].forEach(sym=>{
     if(!sym||seen.has(sym))return;
     seen.add(sym);
     if(window._mainHmapKeys && window._mainHmapKeys.has(sym)) return; // Có trong Heatmap chính rồi, không cần bù
     if(now-(_extraQuoteAsked.get(sym)||0)<_EXTRA_QUOTE_MIN_INTERVAL)return; // vừa hỏi gần đây, chờ thêm
     missing.push(sym);
-  }));
+  });
   if(!missing.length)return;
   missing.forEach(sym=>_extraQuoteAsked.set(sym,now));
   try{
     const j=await fetch('/api/quote_extra?syms='+encodeURIComponent(missing.join(','))).then(r=>r.json());
     const data=j.data||{};
     if(Object.keys(data).length){
+      const old=Object.assign({},window._lastHmapData||{}),entries=Object.entries(data);
       window._lastHmapData=Object.assign({},window._lastHmapData,data);
-      _lgRenderList(); // vẽ lại đúng 1 lần để hiện giá/% vừa lấy được (mã đã có data nên lần gọi kế _lgFillMissingQuotes sẽ tự bỏ qua, không lặp vô hạn)
+      if(entries.some(([s])=>!old[s]?.price))_lgRenderList();
+      if(window._lastIdxRes)renderIndices(window._lastIdxRes);
+      entries.forEach(([s,it],i)=>setTimeout(()=>_patchHeatmapCell(s,it.price||0,it.pct||0,0,old[s]?.price),(i/entries.length)*Math.max(600,(HMAP_TTL-1.2)*1000)+Math.random()*150));
     }
   }catch(e){console.error('_lgFillMissingQuotes:',e);}
 }
@@ -9452,9 +9528,13 @@ function _lgSymRow(sym,draggable,g=null){
     +`<span class="lg-sym-pct" style="color:${color}">${pctStr}</span>`
     +`<span class="lg-sym-price">${rightValue}</span></div>`;
 }
+let _lgLastRenderKey='';
 function _lgRenderList(){
   if(!DOM.lgList)return;
-  const groups=_lgGetGroups();
+  const groups=_lgGetGroups(), curG=groups.find(g=>g.name===_lgActiveGroupName);
+  const curKey=_lgActiveGroupName+'|'+_lgActiveSym+'|'+(curG?_lgSortSyms(curG.syms,curG).join(','):'')+'|'+(curG?_lgSortModeFor(curG):'')+'|'+LG_FAVORITES.join(',')+'|'+groups.map(g=>g.name).join(';');
+  if(DOM.lgList.children.length && curKey===_lgLastRenderKey) return _lgFillMissingQuotes();
+  _lgLastRenderKey=curKey;
   DOM.lgList.innerHTML=groups.map(g=>{
     const open=g.name===_lgActiveGroupName;
     let body='';
@@ -9752,6 +9832,7 @@ async function init(){
     loadLiteChart(_liteSymbol);
     DOM.liteChartFrame?.focus();
     await Promise.all([fetchSigs(),fetchHmap()]);
+    _lgFillMissingQuotes(true);
     setInterval(fetchSigs,SIG_TTL*1000);
     setInterval(fetchHmap,HMAP_TTL*1000);
     setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
@@ -9761,10 +9842,12 @@ async function init(){
   loadLiteChart(_liteSymbol);
   await loadConfig();
   await Promise.all([fetchSigs(),fetchHmap(),fetchHealth(),loadAlerts(),pollAlertFeed(false)]);
+  _lgFillMissingQuotes(true);
   setInterval(fetchSigs,SIG_TTL*1000);
   setInterval(fetchHealth,HEALTH_TTL*1000);
   setInterval(()=>pollAlertFeed(true),ALERT_POLL_SEC*1000);
   setInterval(_liteQuietRefreshChart,LITE_CHART_AUTOREFRESH_SEC*1000);
+  setInterval(async()=>{const p=document.querySelector('.indices-panel');if(!p||p.offsetParent===null)return;try{const j=await fetch('/api/quote_extra?syms=GOLD,BTC,DJI').then(r=>r.json());if(j?.data){window._lastHmapData=Object.assign({},window._lastHmapData,j.data);if(window._lastIdxRes)renderIndices(window._lastIdxRes);}}catch(e){}},60000);
   let _off=false;
   const _checkConn=async()=>{
     if(document.hidden&&!_off)return;
