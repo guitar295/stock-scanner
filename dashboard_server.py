@@ -2904,7 +2904,9 @@ html.chart-popout-mode .lite-chart-frame{
 .lite-ind-label{cursor:pointer}
 .lite-ind-label:hover{color:var(--accent)}
 .lite-ind-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
-.lite-indicators input{width:12px;height:12px;margin:0}
+.lite-indicators input[type="checkbox"],.lite-ind-dropdown input[type="checkbox"]{-webkit-appearance:none;appearance:none;width:12px;height:12px;margin:0;border:1px solid var(--border);border-radius:3px;background:#fff;cursor:pointer;display:inline-grid;place-content:center;vertical-align:middle;box-sizing:border-box}
+.lite-indicators input[type="checkbox"]:checked,.lite-ind-dropdown input[type="checkbox"]:checked{background:var(--accent);border-color:var(--accent)}
+.lite-indicators input[type="checkbox"]:checked::after,.lite-ind-dropdown input[type="checkbox"]:checked::after{content:"";width:3px;height:6px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg);margin-top:-1px}
 .lite-ind-group{position:relative;display:flex;align-items:center;gap:4px}
 .lite-ind-color-visible{position:static!important;width:14px!important;height:14px!important;opacity:1!important;pointer-events:auto!important;border:1px solid var(--border);border-radius:3px;padding:0;cursor:pointer}
 .lite-ind-dropdown-sub-title{font-size:9px;font-weight:700;color:var(--muted);margin:4px 0 1px;letter-spacing:.03em}
@@ -3491,7 +3493,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
           <span class="s-icon">🔍</span>
           <input class="hmap-search-input" id="hmap-search" type="text" placeholder="Tìm" maxlength="10" autocomplete="off" spellcheck="false">
         </div>
-        <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;display:inline-flex;align-items:center;transform:translateY(1.5px)" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span id="hmap-status" style="font-size:10px;display:inline-flex;align-items:center;transform:translateY(1.5px)"></span>
+        <button class="hmap-link-btn" id="hmap-follow-btn">FOLLOW</button><button class="lite-draw-btn" id="hmap-popout-btn" style="width:22px;height:22px;margin-left:2px" title="Mở CHART trong cửa sổ riêng" aria-label="Mở CHART trong cửa sổ riêng">⧉</button><button id="hmap-flash-btn" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;display:inline-flex;align-items:center;transform:translateY(1.5px)" title="Nháy giá: Đang Bật (Click để Tắt)">⚡</button><span id="hmap-status" style="font-size:10px;display:inline-flex;align-items:center;transform:translateY(1.5px)"></span>
       </div>
       <div class="panel-meta hmap-ts-wrap"><span id="hmap-ts">Đang tải...</span></div>
       <span class="hmap-toggle-icon">▶</span>
@@ -7467,9 +7469,9 @@ function renderHeatmap(d){
   const maxRows=Math.max(...HMAP_COLS.map(cd=>cd.groups.reduce((s,g)=>s+g.syms.length,0)));
   const tsSyms=TS_POOL.filter(s=>d[s]!==undefined).sort((a,b)=>((d[b]||{}).pct||0)-((d[a]||{}).pct||0)).slice(0,maxRows);
   const tsCol=DOM.hmapGrid.querySelector('.hmap-col');
-  if(tsCol&&tsCol.querySelectorAll('.hmap-cell').length<tsSyms.length){
-    tsCol.innerHTML=mkGroup('TRADING STOCKS',tsSyms,d);
-  }
+  const gEl=tsCol?.querySelector('.hmap-group'),cSyms=Array.from(tsCol?.querySelectorAll('.hmap-cell')||[],c=>c.dataset.sym);
+  tsSyms.filter(s=>!cSyms.includes(s)).forEach(s=>{const t=document.createElement('div');t.innerHTML=mkCell(s,d);if(t.firstElementChild)gEl?.appendChild(t.firstElementChild);});
+  cSyms.filter(s=>!tsSyms.includes(s)).forEach(s=>tsCol?.querySelector(`.hmap-cell[data-sym="${s}"]`)?.remove());
 
   const old=Object.assign({},window._lastHmapData||{}),changed=[],unchanged=[];
   Object.keys(d).forEach(s=>{
@@ -9754,7 +9756,7 @@ function openChartPopout(){
   if(!_chartPopoutWin){alert('Trình duyệt chặn popup!');return;}
 }
 document.getElementById('lite-chart-popout-align-btn')?.addEventListener('click',togglePopoutAlign);
-document.getElementById('lite-chart-popout-btn')?.addEventListener('click',openChartPopout);
+['lite-chart-popout-btn','hmap-popout-btn'].forEach(id=>document.getElementById(id)?.addEventListener('click',openChartPopout));
 function _onPopoutSyncMessage(e){
   if(!e||!e.data)return;
   const d=e.data;
