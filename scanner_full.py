@@ -305,9 +305,9 @@ def _parse_trade_date(it: dict) -> str:
     if len(raw) >= 10 and '-' in raw[:10]:
         return raw[:10]
     now_dt = datetime.now(TZ_VN)
-    now_date = now_dt.date()
-    now_time = int(now_dt.strftime("%H%M%S"))
-    return _expected_last_session(now_date, now_time).strftime('%Y-%m-%d')
+    if now_dt.weekday() < 5 and int(now_dt.strftime("%H%M%S")) >= 85500:
+        return now_dt.strftime('%Y-%m-%d')
+    return _expected_last_session(now_dt.date(), int(now_dt.strftime("%H%M%S"))).strftime('%Y-%m-%d')
 
 def _extract_heatmap_fallback(df):
     ref_p, close, vol = float(df.iloc[-2]['close']), float(df.iloc[-1]['close']), float(df.iloc[-1]['volume'])

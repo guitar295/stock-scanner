@@ -1626,7 +1626,7 @@ def fetch_chart_candles(symbol, tf="1D", limit=800, before_date=None):
         last_b = raw_bars[-1]
         live_d = live_data.get("date")
         dt_str = last_b.get("time_str") or time.strftime("%Y-%m-%d", time.gmtime(last_b["t"] + 25200))
-        if not live_d or live_d == dt_str:
+        if live_d and live_d == dt_str:
             for k in ("open", "high", "low", "volume"):
                 if live_data.get(k) is not None: last_b[k] = live_data[k]
             if live_data.get("price") is not None: 
@@ -2829,7 +2829,7 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 /* Cửa sổ CHART popout: ẩn hết dashboard, chỉ hiện panel CHART. Dùng html.chart-popout-mode
    (gắn ở <head>, không phải body) để có hiệu lực ngay lần vẽ đầu, không đợi JS cuối trang. */
 html.chart-popout-mode,html.chart-popout-mode body{overflow:hidden!important}html.chart-popout-mode>body>header,
-html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel){display:none!important}
+html.chart-popout-mode #main-wrap>*:not(#lite-chart-panel):not(#overlay){display:none!important}
 html.chart-popout-mode #main-wrap{padding:8px}
 html.chart-popout-mode #lite-chart-popout-btn{display:none}html.chart-popout-mode .lite-chart-toggle-icon{transform:rotate(90deg)!important;color:var(--accent)!important}html.chart-popout-mode .lite-chart-panel .panel-hdr{cursor:default!important}
 /* HTML gốc panel CHART luôn có sẵn class .collapsed (JS mới gỡ ra để mở) — vô hiệu hoá 2 rule
@@ -6909,7 +6909,7 @@ function _liteApplyChartPayload(j,s,skipPopoutSync){
   if(DOM.liteAlertSymbol)DOM.liteAlertSymbol.value=_liteSymbol;
   _liteRsScore=(!j.is_global&&j.rs!=null&&Number.isFinite(Number(j.rs)))?Number(j.rs):null;
   const rawCandles=j.candles||[];
-  if(!j.is_global&&rawCandles.length){const lp=(window._mainHmapKeys?.has(s)?_getLiveEntry(s)?.price:window._lastKnownPrice?.[s]); if(lp){const L=rawCandles[rawCandles.length-1]; Array.isArray(L)?(L[4]=lp):(L.close=lp);}}
+  if(!j.is_global&&rawCandles.length){const le=_getLiveEntry(s),lp=(window._mainHmapKeys?.has(s)?le?.price:window._lastKnownPrice?.[s]); if(lp){const L=rawCandles[rawCandles.length-1],lt=liteTimeKey(Array.isArray(L)?L[0]:L.time); if(le?.date&&lt.startsWith(le.date)){Array.isArray(L)?(L[4]=lp):(L.close=lp);}}}
   _liteData=new Array(rawCandles.length);
   for(let i=0;i<rawCandles.length;i++){
     const raw=rawCandles[i];
