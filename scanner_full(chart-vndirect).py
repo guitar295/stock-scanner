@@ -305,9 +305,9 @@ def _parse_trade_date(it: dict) -> str:
     if len(raw) >= 10 and '-' in raw[:10]:
         return raw[:10]
     now_dt = datetime.now(TZ_VN)
-    now_date = now_dt.date()
-    now_time = int(now_dt.strftime("%H%M%S"))
-    return _expected_last_session(now_date, now_time).strftime('%Y-%m-%d')
+    if now_dt.weekday() < 5 and int(now_dt.strftime("%H%M%S")) >= 85500:
+        return now_dt.strftime('%Y-%m-%d')
+    return _expected_last_session(now_dt.date(), int(now_dt.strftime("%H%M%S"))).strftime('%Y-%m-%d')
 
 def _extract_heatmap_fallback(df):
     ref_p, close, vol = float(df.iloc[-2]['close']), float(df.iloc[-1]['close']), float(df.iloc[-1]['volume'])
@@ -2843,6 +2843,8 @@ def dashboard_vol_forecast_fn(symbol: str, current_vol: float = None):
         vol = float(current_vol) if (current_vol is not None and current_vol == current_vol) else float(today.get("volume", float("nan")))
         prev_vol = float(prev.get("volume", float("nan")))
         vma50 = float(sub["volume"].tail(50).mean())
+        c_val, p_val = float(today.get("close", 0.0)), float(prev.get("close", 0.0))
+        pct_val = round((c_val - p_val) / p_val * 100, 2) if p_val > 0 else 0.0
 
         ratio_prev = (vol / prev_vol) if (prev_vol > 0 and vol == vol) else None
         ratio_ma50 = (vol / vma50) if (vma50 > 0 and vol == vol) else None
@@ -2851,6 +2853,9 @@ def dashboard_vol_forecast_fn(symbol: str, current_vol: float = None):
             "symbol": symbol,
             "bar_date": bar_date,
             "progress": round(progress, 4),
+            "close": c_val,
+            "open": float(today.get("open", c_val)),
+            "pct": pct_val,
             "volume": vol if vol == vol else None,
             "prev_volume": prev_vol if prev_vol == prev_vol else None,
             "vma50": vma50 if vma50 == vma50 else None,
