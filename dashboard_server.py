@@ -419,8 +419,8 @@ def api_market_impact():
 
 def _fetch_vps_indices():
     try:
-        r1 = requests.get("https://bgapidatafeed.vps.com.vn/getlistindexdetail/10,11,02,03", timeout=5).json()
-        r2 = requests.get("https://histdatafeed.vps.com.vn/tradingview/historiesnearest?symbols=VNINDEX,VN30,HNX,UPCOM&props=c,v,t&resolution=1", timeout=5).json()
+        r1 = requests.get("https://bgapidatafeed.vps.com.vn/getlistindexdetail/10,11,02,03", timeout=5, headers={"User-Agent": "Mozilla/5.0"}).json()
+        r2 = requests.get("https://histdatafeed.vps.com.vn/tradingview/historiesnearest?symbols=VNINDEX,VN30,HNX,UPCOM&props=c,v,t&resolution=1", timeout=5, headers={"User-Agent": "Mozilla/5.0"}).json()
         mapping = {"10": "VNINDEX", "11": "VN30", "02": "HNX", "03": "UPCOM"}
         results = {}
         for d in r1:
