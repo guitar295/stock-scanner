@@ -404,7 +404,7 @@ def _vnd_cached_rows(cache_key, getter):
 @app.route("/api/market_liquidity")
 def api_market_liquidity():
     try:
-        data = _vnd_cached_rows("cafef_liquidity", lambda: requests.get("https://msh-appdata.cafef.vn/rest-api/api/v1/Liquidity/HOSE", timeout=5).json())
+        data = _vnd_cached_rows("cafef_liquidity", lambda: requests.get("https://msh-appdata.cafef.vn/rest-api/api/v1/Liquidity/HOSE", timeout=5, headers={"User-Agent": "Mozilla/5.0"}).json())
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 502
@@ -412,7 +412,7 @@ def api_market_liquidity():
 @app.route("/api/market_impact")
 def api_market_impact():
     try:
-        data = _vnd_cached_rows("cafef_impact", lambda: requests.get("https://msh-appdata.cafef.vn/rest-api/api/v1/MarketLeaderGroup?centerId=1&take=8", timeout=5).json())
+        data = _vnd_cached_rows("cafef_impact", lambda: requests.get("https://msh-appdata.cafef.vn/rest-api/api/v1/MarketLeaderGroup?centerId=1&take=8", timeout=5, headers={"User-Agent": "Mozilla/5.0"}).json())
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 502
