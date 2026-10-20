@@ -2285,7 +2285,7 @@ def start_dashboard(alerted_today_ref, history_cache_ref, cache_lock_ref,
     def _run():
         import logging
         logging.getLogger('werkzeug').setLevel(logging.ERROR)
-        app.run(host="0.0.0.0", port=port, threaded=True, use_reloader=False)
+        app.run(host="127.0.0.1", port=port, threaded=True, use_reloader=False)
 
     threading.Thread(target=_run, daemon=True).start()
 
