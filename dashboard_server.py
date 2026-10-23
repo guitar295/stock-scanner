@@ -4475,7 +4475,7 @@ function initLiteChart(){
     if(DOM.liteXhairTime)DOM.liteXhairTime.style.display='none';
   };
   _liteMoveXhair=function(x,y,priceTxt,timeTxt){
-    const pW=(_liteChart&&_liteChart.paneSize?_liteChart.paneSize().width:0)||(DOM.liteChart?DOM.liteChart.clientWidth-((_liteChart&&_liteChart.priceScale&&_liteChart.priceScale('right').width())||84):0);
+    const pW=(_liteChart&&_liteChart.paneSize?_liteChart.paneSize().width:0)||(DOM.liteChart?DOM.liteChart.clientWidth-((_liteChart&&_liteChart.priceScale&&_liteChart.priceScale('right').width())||84):0);if(pW&&(x<0||x>pW)){_liteHideXhair();return;}
     const bEl=(DOM.liteMacdChart&&DOM.liteMacdChart.style.display!=='none')?DOM.liteMacdChart:((DOM.liteRsiChart&&DOM.liteRsiChart.style.display!=='none')?DOM.liteRsiChart:DOM.liteChart), bChart=(bEl===DOM.liteMacdChart)?_liteMacdChart:((bEl===DOM.liteRsiChart)?_liteRsiChart:_liteChart);
     const bY=(bEl?bEl.offsetTop:0)+((bChart&&bChart.paneSize)?bChart.paneSize().height:(bEl?bEl.clientHeight-26:0));
     if(DOM.liteXhairV){DOM.liteXhairV.style.left=x+'px';if(bY)DOM.liteXhairV.style.height=bY+'px';DOM.liteXhairV.style.display='block';}
@@ -5628,7 +5628,7 @@ function redrawLiteDrawings(){
     _liteDrawCtx.clearRect(0,0,w,h);
     return;
   }
-  _liteDrawCtx.clearRect(0,0,w,h);
+  _liteDrawCtx.clearRect(0,0,w,h);_liteDrawCtx.save();_liteClipMainPlot(_liteDrawCtx);
   _liteDrawTrendCloud(_liteDrawCtx);
   _liteDrawBBBand(_liteDrawCtx);
   _liteDrawBuyArrow(_liteDrawCtx);
@@ -5639,7 +5639,7 @@ function redrawLiteDrawings(){
   if(_liteArcPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteArcPending);
   if(_liteZigzagPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteZigzagPending);
   if(_liteLinePending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteLinePending);
-  _liteUpdateFloatingBar();
+  _liteDrawCtx.restore();_liteUpdateFloatingBar();
 }
 function _liteFinishZigzag(){
   if(!_liteZigzagPending)return false;
