@@ -2759,8 +2759,8 @@ footer{text-align:center;padding:9px;color:var(--muted);font-size:10px;border-to
 .health-period-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .health-body{padding:12px 14px 0;background:#fff;display:block}
 #tri-content-health{position:relative}
-.treemap-copy-btn,.health-copy-btn,.chart-copy-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
-.treemap-copy-btn:hover,.health-copy-btn:hover,.chart-copy-btn:hover{background:#f1f5f9}
+.treemap-copy-btn,.health-copy-btn,.chart-copy-btn,.macd-expand-btn{position:absolute;top:8px;right:2px;z-index:5;background:#fff;border:1px solid var(--border)}
+.treemap-copy-btn:hover,.health-copy-btn:hover,.chart-copy-btn:hover,.macd-expand-btn:hover{background:#f1f5f9}
 .health-layout{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
 .health-chartbox{min-height:328px;border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;position:relative}
 .health-side{display:flex;flex-direction:column;gap:12px;min-width:0}
@@ -2882,9 +2882,9 @@ html.chart-popout-mode .lite-chart-frame{
 .hmap-panel.collapsed>.panel-body{display:none!important}
 .lite-chart-frame{width:100%;height:720px;background:#fff;position:relative}
 .lite-chart-frame:focus,.lite-chart-frame:focus-visible{outline:none}
-#lite-chart{width:100%;height:540px}
+#lite-chart{width:100%;height:540px}.lite-chart-frame table tr:last-child td:last-child{border-top:1px solid var(--border)}
 #lite-rsi-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
-#lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none}
+#lite-macd-chart{width:100%;height:176px;border-top:1px solid var(--border);display:none;position:relative}
 #lite-chart.hide-tv-logo a[href*="tradingview"],#lite-chart.hide-tv-logo [class*="logo"],#lite-chart.hide-tv-logo [class*="attribution"],
 #lite-rsi-chart.hide-tv-logo a[href*="tradingview"],#lite-rsi-chart.hide-tv-logo [class*="logo"],#lite-rsi-chart.hide-tv-logo [class*="attribution"],
 #lite-macd-chart.hide-tv-logo a[href*="tradingview"],#lite-macd-chart.hide-tv-logo [class*="logo"],#lite-macd-chart.hide-tv-logo [class*="attribution"]{display:none!important}
@@ -3735,7 +3735,7 @@ body:not(.key-nav) .lg-sym-item.lg-follow:hover,
       <canvas class="lite-draw-canvas" id="lite-draw-canvas"></canvas>
       <div id="lite-rsi-chart"></div>
       <div class="lite-macd-resizer" id="lite-macd-resizer"></div>
-      <div id="lite-macd-chart"></div>
+      <div id="lite-macd-chart"><button class="lite-draw-btn macd-expand-btn" id="lite-macd-expand-btn" title="Phóng to / Thu nhỏ MACD" aria-label="Phóng to / Thu nhỏ MACD">⛶</button></div>
       <iframe id="lite-vietstock-iframe" class="lite-vietstock-iframe" src="about:blank" title="Vietstock chart"></iframe>
       <iframe id="lite-fireant-iframe" class="lite-fireant-iframe" src="about:blank" title="Fireant chart" allowfullscreen></iframe>
       <div class="lite-xhair-v" id="lite-xhair-v"></div>
@@ -4018,7 +4018,7 @@ const DOM={
   liteFireantToggleBtn:$('lite-fireant-toggle-btn'),liteFireantIframe:$('lite-fireant-iframe'),
   liteChart:$('lite-chart'),
   liteChartFrame:$('lite-chart-frame'),liteChartSearch:$('lite-chart-search'),
-  liteRsiChart:$('lite-rsi-chart'),liteMacdChart:$('lite-macd-chart'),
+  liteRsiChart:$('lite-rsi-chart'),liteMacdChart:$('lite-macd-chart'),liteMacdExpandBtn:$('lite-macd-expand-btn'),
   liteMacdResizer:$('lite-macd-resizer'),liteChartInput:$('lite-chart-input'),
   liteChartTf:$('lite-chart-tf'),liteIndicators:$('lite-indicators'),
   liteChartTitle:$('lite-chart-title'),liteChartEmpty:$('lite-chart-empty'),
@@ -4390,12 +4390,12 @@ function _liteSyncVisibleRangeFrom(source,range){
 }
 let _liteChart=null,_liteRsiChart=null,_liteMacdChart=null,_liteCandle=null,_liteVolume=null,_liteRsiCrosshairSeries=null,_liteMacdCrosshairSeries=null,_liteSymbol=_liteLSGet(LITE_LAST_SYMBOL_KEY,'VNINDEX');
 const _chartSyncChannel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('chart_popout_sync'):null;
-let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null;
+let _liteMainWhite=null,_liteRsiWhite=null,_liteMacdWhite=null,_liteBBFillData=null,_liteTrendFillData=null,_liteMoveXhair=null,_liteHideXhair=null;
 // Mũi tên báo mua tự vẽ canvas (không dùng setMarkers()) vì setMarkers() làm trục giá autoScale lại mỗi lần bật/tắt, gây co giãn chart.
 let _liteBuyArrowData=null; // {color} | null — CHỈ giữ màu; time/price của nến LUÔN đọc live từ _liteData
 // Vị trí mũi tên tính lại tại thời điểm vẽ (không lưu cứng) để luôn khớp nến mới nhất khi auto-refresh chèn nến mới vào giữa.
 let _liteTf='1D',_liteResizeBound=false,_liteSyncing=false,_litePointerInside=false,_liteHoverBar=null,_liteCompareSeries=null,_liteCompareSym=_liteLSGet('dashboard_lite_compare_sym','VNINDEX'),_liteCompareData=[];
-let _liteMacdSoloHeight=176;
+let _liteMacdSoloHeight=176,_liteMacdExpanded=false;
 let _liteData=[],_liteVolumeData=[],_liteIndicatorSeries=[],_liteDataByTime=new Map(),_liteSessionRange=null,_liteUserInteractedZoom=false;
 const LITE_RIGHT_OFFSET=22,LITE_HIST_SCALE=2.1;
 // Lazy load lịch sử: khi user kéo trái đến đầu dữ liệu, tự động fetch thêm bar cũ hơn.
@@ -4468,14 +4468,14 @@ function initLiteChart(){
     _liteSyncVisibleRangeFrom(_liteMacdChart,range);
   });
   // Crosshair hợp nhất (1 dọc+1 ngang) cho 2 panel: mỗi panel báo toạ độ cục bộ + offsetTop.
-  function _liteHideXhair(){
+  _liteHideXhair=function(){
     _liteHoverBar=null;if(DOM.liteXhairV)DOM.liteXhairV.style.display='none';
     if(DOM.liteXhairH)DOM.liteXhairH.style.display='none';
     if(DOM.liteXhairPrice)DOM.liteXhairPrice.style.display='none';
     if(DOM.liteXhairTime)DOM.liteXhairTime.style.display='none';
-  }
-  function _liteMoveXhair(x,y,priceTxt,timeTxt){
-    const pW=(_liteChart&&_liteChart.paneSize?_liteChart.paneSize().width:0)||(DOM.liteChart?DOM.liteChart.clientWidth-((_liteChart&&_liteChart.priceScale&&_liteChart.priceScale('right').width())||84):0);
+  };
+  _liteMoveXhair=function(x,y,priceTxt,timeTxt){
+    const pW=(_liteChart&&_liteChart.paneSize?_liteChart.paneSize().width:0)||(DOM.liteChart?DOM.liteChart.clientWidth-((_liteChart&&_liteChart.priceScale&&_liteChart.priceScale('right').width())||84):0);if(pW&&(x<0||x>pW)){_liteHideXhair();return;}
     const bEl=(DOM.liteMacdChart&&DOM.liteMacdChart.style.display!=='none')?DOM.liteMacdChart:((DOM.liteRsiChart&&DOM.liteRsiChart.style.display!=='none')?DOM.liteRsiChart:DOM.liteChart), bChart=(bEl===DOM.liteMacdChart)?_liteMacdChart:((bEl===DOM.liteRsiChart)?_liteRsiChart:_liteChart);
     const bY=(bEl?bEl.offsetTop:0)+((bChart&&bChart.paneSize)?bChart.paneSize().height:(bEl?bEl.clientHeight-26:0));
     if(DOM.liteXhairV){DOM.liteXhairV.style.left=x+'px';if(bY)DOM.liteXhairV.style.height=bY+'px';DOM.liteXhairV.style.display='block';}
@@ -4990,12 +4990,12 @@ function applyLitePaneLayout(skipWidthSync){
   const bothPanes=showRsi&&showMacd;
   const compactPaneH=132;
   const rsiH=showRsi?(bothPanes?compactPaneH:176):0;
-  const macdH=showMacd?(bothPanes?compactPaneH:_liteMacdSoloHeight):0;
+  const macdH=showMacd?(_liteMacdExpanded?Math.round(totalH*0.5):(bothPanes?compactPaneH:_liteMacdSoloHeight)):0;
   const splitterH=showMacd?4:0;
   const lowerH=rsiH+macdH+splitterH;
   const mainH=isMobile
     ?(isPortraitMobile?Math.max(300,Math.round(window.innerHeight*0.56)):Math.max(280,Math.round(window.innerHeight*0.72)))
-    :(showRsi||showMacd?Math.max(300,totalH-lowerH):totalH);
+    :(showRsi||showMacd?Math.max(160,totalH-lowerH):totalH);
   const showMainTimeScale=!showRsi&&!showMacd;
   const showRsiTimeScale=showRsi&&!showMacd;
   const showMacdTimeScale=showMacd;
@@ -5628,7 +5628,7 @@ function redrawLiteDrawings(){
     _liteDrawCtx.clearRect(0,0,w,h);
     return;
   }
-  _liteDrawCtx.clearRect(0,0,w,h);
+  _liteDrawCtx.clearRect(0,0,w,h);_liteDrawCtx.save();_liteClipMainPlot(_liteDrawCtx);
   _liteDrawTrendCloud(_liteDrawCtx);
   _liteDrawBBBand(_liteDrawCtx);
   _liteDrawBuyArrow(_liteDrawCtx);
@@ -5639,7 +5639,7 @@ function redrawLiteDrawings(){
   if(_liteArcPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteArcPending);
   if(_liteZigzagPending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteZigzagPending);
   if(_liteLinePending)_liteDrawShapeToCanvas(_liteDrawCtx,_liteLinePending);
-  _liteUpdateFloatingBar();
+  _liteDrawCtx.restore();_liteUpdateFloatingBar();
 }
 function _liteFinishZigzag(){
   if(!_liteZigzagPending)return false;
@@ -6074,13 +6074,13 @@ function _liteStartShapeDrag(hit,ev){
   const move=ev2=>{
     const cur=_litePtFromEvent(ev2);if(!cur||!_liteDragInfo)return;
     _liteApplyDrag(d,_liteDragInfo,cur);
-    redrawLiteDrawings();
+    redrawLiteDrawings();if((d.type==='hline'||d.type==='vline')&&_liteMoveXhair){const{x,y}=_liteXYFromEvent(ev2),p=d.points[0],pX=d.type==='vline'?(_liteLogicalToX(p.l)||x):x,pY=d.type==='hline'?(_litePriceToY(p.p)||y):y,tL=d.type==='vline'?p.l:cur.l,idx=Math.round(tL),b=(_liteData&&_liteData[idx])||null,tTs=d.type==='vline'?p.ts:cur.ts,tTxt=b?fmtLiteDate(b.time):(tTs?fmtLiteDate(new Date(tTs).toISOString().slice(0,10)):'');if(b&&b!==_liteHoverBar){_liteHoverBar=b;updateLiteTitle(b);updateLiteBigPrice(b);}_liteMoveXhair(pX,pY,fmtLiteNum(d.type==='hline'?p.p:cur.p),tTxt);}
   };
   const up=()=>{
     window.removeEventListener('pointermove',move);
     window.removeEventListener('pointerup',up);
     _liteDragInfo=null;
-    saveLiteDrawings();
+    saveLiteDrawings();if((d.type==='hline'||d.type==='vline')&&_liteHideXhair)_liteHideXhair();
   };
   window.addEventListener('pointermove',move);
   window.addEventListener('pointerup',up);
@@ -6553,8 +6553,8 @@ function bindLiteDrawToolbar(){
       _liteLinePending.points[1]=p;
       redrawLiteDrawings();
       return;
-    }
-  });
+    }if((_liteDrawTool==='hline'||_liteDrawTool==='vline')&&_liteMoveXhair){const p=_litePtFromEvent(e);if(p){const{x,y}=_liteXYFromEvent(e),idx=Math.round(p.l),b=(_liteData&&_liteData[idx])||null,tTxt=b?fmtLiteDate(b.time):(p.ts?fmtLiteDate(new Date(p.ts).toISOString().slice(0,10)):'');if(b&&b!==_liteHoverBar){_liteHoverBar=b;updateLiteTitle(b);updateLiteBigPrice(b);}_liteMoveXhair(_liteDrawTool==='vline'?(_liteLogicalToX(p.l)||x):x,_liteDrawTool==='hline'?(_litePriceToY(p.p)||y):y,fmtLiteNum(p.p),tTxt);}}
+  });DOM.liteDrawCanvas.addEventListener('pointerleave',()=>{if((_liteDrawTool==='hline'||_liteDrawTool==='vline')&&_liteHideXhair)_liteHideXhair();});
   DOM.liteDrawCanvas.addEventListener('dblclick',e=>{
     if(_liteDrawTool==='zigzag'&&_liteZigzagPending){
       e.preventDefault();
@@ -6605,14 +6605,14 @@ function bindLiteDrawToolbar(){
       const id=_liteDrawSeq++;
       _liteDrawings.push({id,type:'hline',points:[p0,p0],color:_liteDrawColor});
       saveLiteDrawings();
-      setLiteDrawTool('cursor');_liteSelectShape(id);
+      setLiteDrawTool('cursor');if(_liteHideXhair)_liteHideXhair();_liteSelectShape(id);
       return;
     }
     if(_liteDrawTool==='vline'){
       const id=_liteDrawSeq++;
       _liteDrawings.push({id,type:'vline',points:[p0,p0],color:_liteDrawColor});
       saveLiteDrawings();
-      setLiteDrawTool('cursor');_liteSelectShape(id);
+      setLiteDrawTool('cursor');if(_liteHideXhair)_liteHideXhair();_liteSelectShape(id);
       return;
     }
     if(_liteDrawTool==='trendline'||_liteDrawTool==='rect'||_liteDrawTool==='arrow'||_liteDrawTool==='channel'||_liteDrawTool==='arc'){
@@ -7267,6 +7267,12 @@ function bindLiteChartControls(){
       loadLiteChart(raw,0);
     }
   });
+  DOM.liteMacdExpandBtn?.addEventListener('click',()=>{
+    const prevRange=_liteGetVisibleLogicalRange();
+    _liteMacdExpanded=!_liteMacdExpanded;
+    applyLitePaneLayout();
+    _liteApplyVisibleLogicalRange(prevRange);
+  });
   DOM.liteMacdResizer?.addEventListener('pointerdown',e=>{
     e.preventDefault();
     const startY=e.clientY,startH=_liteMacdSoloHeight||DOM.liteMacdChart.clientHeight||176;
@@ -7283,7 +7289,7 @@ function bindLiteChartControls(){
     };
     const move=ev=>{
       pendingH=Math.max(120,Math.min(340,startH-(ev.clientY-startY)));
-      _liteMacdSoloHeight=pendingH;
+      _liteMacdSoloHeight=pendingH;_liteMacdExpanded=false;
       if(rafId===null)rafId=requestAnimationFrame(flush);
     };
     const up=()=>{
